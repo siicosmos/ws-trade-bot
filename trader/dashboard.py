@@ -416,6 +416,14 @@ function tickClock() {
     el.style.color = secs <= 10 ? "#3fb950" : secs <= 30 ? "#d29922" : "#f85149";
   }
 }
+window.addEventListener("pageshow", (e) => {
+  if (e.persisted) {
+    fetch("/api/summary").then((r) => {
+      if (r.status === 401) location.href = "/login";
+    }).catch(() => {});
+  }
+});
+
 tickClock();
 setInterval(tickClock, 1000);
 </script>

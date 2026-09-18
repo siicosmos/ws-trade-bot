@@ -130,6 +130,11 @@ def create_app(cfg, store: Store, risk, executor, account=None,
         session.clear()
         return redirect("/login")
 
+    @app.after_request
+    def no_store(resp):
+        resp.headers.setdefault("Cache-Control", "no-store")
+        return resp
+
     @app.get("/")
     def dashboard_page():
         return Response(DASHBOARD_HTML, mimetype="text/html")

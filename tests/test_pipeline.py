@@ -714,3 +714,13 @@ def test_login_logout_flow():
     redirected = client.get("/")
     assert redirected.status_code == 302
     assert redirected.headers["Location"].endswith("/login")
+
+
+def test_no_store_headers():
+    app, store, account = _make_app(auth_token="s3cret")
+    client = app.test_client()
+    client.post("/login", data={"password": "s3cret"})
+    resp = client.get("/")
+    assert resp.headers["Cache-Control"] == "no-store"
+    api_resp = client.get("/api/summary")
+    assert api_resp.headers["Cache-Control"] == "no-store"
