@@ -184,8 +184,34 @@ def load_config():
         log("config.yaml not found - copy config.example.yaml to config.yaml")
         sys.exit(1)
     with open(path, "r", encoding="utf-8") as f:
-        raw = yaml.safe_load(f) or {}
-    return raw.get("reader") or {}
+        return yaml.safe_load(f) or {}
+
+
+def notify_restart(webhook_url, reason):
+    if not webhook_url:
+        return
+    try:
+        requests.post(
+            webhook_url,
+            timeout=10,
+            json={
+                "embeds": [
+                    {
+                        "title": "Reader restarting",
+                        "color": 3066993,
+                        "fields": [
+                            {
+                                "name": "reason",
+                                "value": str(reason)[:1000],
+                                "inline": True,
+                            }
+                        ],
+                    }
+                ]
+            },
+        )
+    except requests.RequestException:
+        pass
 
 
 def status_base_url(pipeline_url):
@@ -462,7 +488,11 @@ def git_head(root):
 
 
 def main():
-    cfg = load_config()
+    raw_cfg = load_config()
+    cfg = raw_cfg.get("reader") or {}
+    webhook_url = str(
+        (raw_cfg.get("discord") or {}).get("webhook_url") or ""
+    )
     pipeline_url = cfg.get("pipeline_url", "http://localhost:8080/alert")
     marker = str(cfg.get("channel_marker", ""))
     poll_interval = float(cfg.get("poll_interval", 0.5))
@@ -512,6 +542,9 @@ def main():
             head = git_head(repo_root())
             if head and start_head and head != start_head:
                 log("repo updated on disk - restarting reader for new code")
+                notify_restart(
+                    webhook_url, f"code updated to {head[:8]}"
+                )
                 os._exit(77)
 
         try:

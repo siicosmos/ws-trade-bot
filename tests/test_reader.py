@@ -439,3 +439,23 @@ def test_find_discord_window_prefers_pid(monkeypatch):
         ),
     )
     assert insp.find_discord_window() is discord_win
+
+
+def test_notify_restart_posts_webhook(monkeypatch):
+    calls = []
+
+    def fake_post(url, json=None, timeout=None):
+        calls.append((url, json))
+
+    monkeypatch.setattr(dr.requests, "post", fake_post)
+    dr.notify_restart("http://hook", "code updated to abc1234")
+    assert len(calls) == 1
+    url, payload = calls[0]
+    assert url == "http://hook"
+    embed = payload["embeds"][0]
+    assert embed["title"] == "Reader restarting"
+    assert embed["fields"][0]["value"] == "code updated to abc1234"
+
+    calls.clear()
+    dr.notify_restart("", "anything")
+    assert calls == []
