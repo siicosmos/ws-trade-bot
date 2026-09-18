@@ -449,7 +449,8 @@ def test_persist_env_tokens():
             content = f.read()
         assert "export WS_ACCESS_TOKEN=acc1" in content
         assert "export WS_REFRESH_TOKEN=ref1" in content
-        assert os.stat(path).st_mode & 0o777 == 0o600
+        if os.name == "posix":
+            assert os.stat(path).st_mode & 0o777 == 0o600
 
         assert wt.persist_env_tokens(path=path) is False
 
