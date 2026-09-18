@@ -161,7 +161,7 @@ def looks_like_message(text):
 
 
 def log(msg):
-    log(f"{time.strftime('%H:%M:%S')} {msg}")
+    print(f"{time.strftime('%H:%M:%S')} {msg}")
 
 
 def find_config_path():
