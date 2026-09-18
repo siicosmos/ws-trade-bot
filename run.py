@@ -16,20 +16,27 @@ def main():
 
     cfg = load_config(args.config)
     store = Store(args.db)
+    mode = cfg.trading.mode
 
-    if cfg.trading.dry_run:
+    account = None
+    executor = None
+
+    if mode == "paper":
         account = PaperAccount(cfg, store)
         executor = PaperExecutor(cfg, store, account)
-        mode = "PAPER"
-    else:
+    elif mode == "live":
         account = WealthsimpleAccount(cfg)
         executor = WealthsimpleExecutor(cfg, account)
-        mode = "LIVE"
+    elif not cfg.discord.webhook_url:
+        print(
+            "WARNING: notify mode but discord.webhook_url is not set - "
+            "alerts will not reach your phone"
+        )
 
     risk = RiskEngine(cfg, store, account)
 
     app = create_app(cfg, store, risk, executor, account)
-    print(f"pipeline running in {mode} mode on {cfg.pipeline.host}:{cfg.pipeline.port}")
+    print(f"pipeline running in {mode.upper()} mode on {cfg.pipeline.host}:{cfg.pipeline.port}")
     app.run(host=cfg.pipeline.host, port=cfg.pipeline.port, threaded=True)
 
 

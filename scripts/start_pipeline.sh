@@ -21,4 +21,11 @@ if [ ! -f config.yaml ]; then
   echo "created config.yaml - edit it before going live"
 fi
 
+if [ -f ws_tokens.env ]; then
+  set -a
+  . ./ws_tokens.env
+  set +a
+  echo "loaded Wealthsimple tokens from ws_tokens.env"
+fi
+
 exec .venv/bin/python run.py -c config.yaml

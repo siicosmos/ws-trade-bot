@@ -1,7 +1,7 @@
 import hashlib
 
 from .executor import ExecutionResult
-from .notify import notify_discord
+from .notify import notify_alert, notify_discord
 from .parser import parse_alert
 from .risk import RiskEngine
 
@@ -24,6 +24,13 @@ def process_alert(text: str, author: str, cfg, store, risk: RiskEngine, executor
 
     if alert is None:
         return {"status": "ignored", "reason": "no actionable signal"}
+
+    if cfg.trading.mode == "notify":
+        notify_alert(cfg.discord.webhook_url, alert)
+        return {"status": "notified", "alert": alert.to_dict()}
+
+    if executor is None:
+        return {"status": "error", "reason": "no executor configured"}
 
     allowed, reason = risk.evaluate(alert)
     if not allowed:

@@ -28,6 +28,7 @@ def _fresh_store():
 
 
 def _setup(**trading_kw):
+    trading_kw.setdefault("mode", "paper")
     store = _fresh_store()
     cfg = ConfigStub(TradingConfig(**trading_kw))
     account = PaperAccount(cfg, store)
@@ -189,3 +190,45 @@ def test_account_endpoint():
     assert data["per_trade_budget"] == 500
     assert len(data["positions"]) == 1
     assert data["positions"][0]["qty"] == 2
+
+
+def test_notify_mode_forwards_without_trading():
+    cfg, store, account, risk = _setup(mode="notify")
+    res = process_alert(
+        "BOUGHT 0DTE SPY 759c @ 1.5 @everyone small size", "",
+        cfg, store, risk, None,
+    )
+    assert res["status"] == "notified"
+    assert res["alert"]["kind"] == "option"
+    assert store.trades_today("paper") == 0
+    assert store.open_risk("paper") == 0
+    assert store.list_positions("paper") == []
+
+
+def test_notify_mode_sell_alert():
+    cfg, store, account, risk = _setup(mode="notify")
+    res = process_alert(
+        "SOLD 1/4 0DTE SPX 7650c @ 2.0 @everyone +30%", "",
+        cfg, store, risk, None,
+    )
+    assert res["status"] == "notified"
+    assert res["alert"]["action"] == "SELL"
+    assert res["alert"]["scale"] == 0.25
+
+
+def test_notify_mode_ignores_non_signals():
+    cfg, store, account, risk = _setup(mode="notify")
+    res = process_alert("executed 2.15 ^", "", cfg, store, risk, None)
+    assert res["status"] == "ignored"
+
+
+def test_notify_mode_dedupes_repeat_messages():
+    cfg, store, account, risk = _setup(mode="notify")
+    res1 = process_alert(
+        "BOUGHT 0DTE SPY 759c @ 1.5", "", cfg, store, risk, None
+    )
+    res2 = process_alert(
+        "BOUGHT 0DTE SPY 759c @ 1.5", "", cfg, store, risk, None
+    )
+    assert res1["status"] == "notified"
+    assert res2["status"] == "ignored"

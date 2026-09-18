@@ -6,7 +6,7 @@ discord:
   webhook_url: "YOUR_PRIVATE_SERVER_WEBHOOK_URL"
 
 trading:
-  dry_run: true
+  mode: notify
   order_type: limit
   limit_offset_pct: 0.5
   position_size_cad: 100

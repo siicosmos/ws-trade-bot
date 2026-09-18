@@ -18,6 +18,7 @@ class DiscordConfig:
 
 @dataclass
 class TradingConfig:
+    mode: str = "notify"
     dry_run: bool = True
     order_type: str = "limit"
     limit_offset_pct: float = 0.5
@@ -74,8 +75,13 @@ def load_config(path: str) -> Config:
         _get(raw.get("discord") or {}, "webhook_url", "")
     )
 
+    mode = str(_get(trading_raw, "mode", "notify")).lower()
+    if mode not in ("notify", "paper", "live"):
+        mode = "notify"
+
     trading = TradingConfig(
-        dry_run=bool(_get(trading_raw, "dry_run", True)),
+        mode=mode,
+        dry_run=mode != "live",
         order_type=str(_get(trading_raw, "order_type", "limit")).lower(),
         limit_offset_pct=float(_get(trading_raw, "limit_offset_pct", 0.5)),
         position_size_cad=float(_get(trading_raw, "position_size_cad", 100.0)),
