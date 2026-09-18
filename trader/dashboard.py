@@ -67,6 +67,7 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   <span id="mode" class="badge notify">notify</span>
   <span id="stops" style="color:var(--muted);font-size:12px"></span>
   <span id="reader" style="color:var(--muted);font-size:12px"></span>
+  <span id="git" style="color:var(--muted);font-size:12px"></span>
   <span id="updated"></span>
 </header>
 
@@ -183,6 +184,23 @@ async function loadSignals() {
     html += "<tr><td>" + fmtTime(s.ts) + '</td><td class="msg">' + (s.text || "").replace(/</g, "&lt;") + "</td><td>" + tag + "</td></tr>";
   }
   el.innerHTML = html + "</table>";
+}
+
+async function loadGitStatus() {
+  const s = await api("/api/update_status");
+  const el = document.getElementById("git");
+  if (!s || s.status !== "active") { el.textContent = ""; return; }
+  let checked = "not checked yet";
+  if (s.last_check) {
+    const age = Math.round(Date.now() / 1000 - s.last_check);
+    checked = age < 60 ? age + "s ago" : Math.round(age / 60) + "m ago";
+  }
+  let text = "git: " + (s.result || "unknown");
+  if (s.head) text += " @ " + s.head;
+  text += " (" + checked + ")";
+  if (s.errors) text += " · " + s.errors + " errors";
+  el.textContent = text;
+  el.style.color = (s.result || "").indexOf("error") >= 0 || (s.result || "").indexOf("failed") >= 0 ? "var(--red)" : "var(--muted)";
 }
 
 async function loadTrades() {
@@ -334,7 +352,7 @@ async function saveSettings() {
 
 async function load() {
   try {
-    await Promise.all([loadSummary(), loadPositions(), loadSignals(), loadTrades(), loadSettings()]);
+    await Promise.all([loadSummary(), loadPositions(), loadSignals(), loadTrades(), loadSettings(), loadGitStatus()]);
     document.getElementById("updated").textContent = "updated " + new Date().toLocaleTimeString();
   } catch (e) { /* handled in api() */ }
 }

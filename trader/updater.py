@@ -21,6 +21,10 @@ class AutoUpdater:
         self.last_result = "not checked yet"
         self.errors = 0
         self.start_head = self._head()
+        self.branch = ""
+        r = _git(self.root, "rev-parse", "--abbrev-ref", "HEAD")
+        if r.returncode == 0:
+            self.branch = r.stdout.strip()
 
     def start(self):
         if self._thread is None:

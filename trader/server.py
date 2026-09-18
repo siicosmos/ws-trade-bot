@@ -240,6 +240,8 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                 "last_check": updater.last_check,
                 "result": updater.last_result,
                 "errors": updater.errors,
+                "head": (updater.start_head or "")[:8],
+                "branch": updater.branch,
             }
         )
 

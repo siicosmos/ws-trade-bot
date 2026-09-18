@@ -168,6 +168,13 @@ def run_notify_phase():
         code, resp = post_alert("executed 2.15 ^")
         check("fill confirmation ignored", resp["status"] == "ignored")
 
+        upd = requests.get(f"{_current_base()}/api/update_status", timeout=5).json()
+        check(
+            "git status on portal",
+            upd.get("status") == "active" and len(upd.get("head", "")) == 8,
+            str(upd),
+        )
+
         code, resp = post_alert("Typo on the last alert, it was 760c not 759c")
         check("correction forwarded without trading", code == 200 and resp["status"] == "correction", str(resp))
 
