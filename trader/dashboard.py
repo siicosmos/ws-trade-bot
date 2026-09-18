@@ -266,16 +266,20 @@ async function loadGitStatus() {
   const s = await api("/api/update_status");
   const el = document.getElementById("git");
   if (!s || s.status !== "active") { el.textContent = ""; return; }
-  let checked = "not checked yet";
-  if (s.last_check) {
-    checked = fmtAge(Math.round(Date.now() / 1000 - s.last_check));
-  }
-  let text = "git: " + (s.result || "unknown");
+  const checked = s.last_check
+    ? "checked " + fmtAge(Math.round(Date.now() / 1000 - s.last_check))
+    : "first check pending";
+  let result = s.result || "unknown";
+  if (result === "not checked yet") result = "pending";
+  let text = "git: " + result;
   if (s.head) text += " @ " + s.head;
   text += " (" + checked;
   if (s.last_pull && s.last_pull.ts) {
-    const how = s.last_pull.how === "pull" ? "" : s.last_pull.how + " ";
-    text += " · last pull " + how +
+    const how =
+      s.last_pull.how === "auto" || s.last_pull.how === "manual"
+        ? s.last_pull.how + " "
+        : "";
+    text += " · last " + how + "pull " +
       fmtAge(Math.round(Date.now() / 1000 - s.last_pull.ts));
   }
   text += ")";

@@ -132,3 +132,16 @@ def test_long_text_wraps_and_webhooks_are_textareas():
     assert 'textarea id="' in js
     assert "grid-column:1/-1" in js
     assert "function autoGrow(" in js
+
+
+def test_git_status_wording():
+    # "not checked yet" appeared twice (as result and as age); pulls say
+    # "last auto/manual pull Xm ago" and the age is labeled "checked"
+    import trader.dashboard as dash
+
+    js = re.findall(r"<script>(.*?)</script>", dash.DASHBOARD_HTML, re.S)[0]
+    assert '"first check pending"' in js
+    assert '"checked " + fmtAge' in js
+    assert 'result === "not checked yet"' in js
+    assert 's.last_pull.how === "auto" || s.last_pull.how === "manual"' in js
+    assert '" · last " + how + "pull "' in js
