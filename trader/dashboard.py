@@ -32,11 +32,18 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   .badge.live { background: #f8514933; color: var(--red); }
   .badge.live::before { content: "\\25CF "; animation: pulse 1.5s infinite; }
   @keyframes pulse { 50% { opacity: .3; } }
-  #updated { color: var(--muted); font-size: 12px; margin-left: auto; }
+  #updated {
+    color: var(--muted); font-size: 12px; margin-left: auto;
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+  }
   #clock {
-    color: #fff; font-size: 12px; font-weight: 700; margin-left: 8px;
+    color: #7ee0ff; font-size: 12px; font-weight: 700; margin-left: 8px;
     border: 1px solid var(--border); border-radius: 6px;
     padding: 2px 8px; background: var(--panel);
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+    text-shadow: 0 0 10px rgba(88, 166, 255, 0.55);
   }
   .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin-bottom: 28px; }
   .card {
@@ -399,8 +406,9 @@ function tickClock() {
     "now " + new Date().toLocaleTimeString();
   if (lastRefresh) {
     const secs = Math.max(0, Math.round((Date.now() - lastRefresh) / 1000));
-    document.getElementById("updated").textContent =
-      "data refreshed " + fmtAge(secs);
+    const el = document.getElementById("updated");
+    el.textContent = "data refreshed " + fmtAge(secs);
+    el.style.color = secs <= 10 ? "#3fb950" : secs <= 30 ? "#d29922" : "#f85149";
   }
 }
 tickClock();
