@@ -1,0 +1,5 @@
+Flask
+PyYAML
+requests
+wealthsimple-python[keyring]
+pytest
