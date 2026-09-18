@@ -782,3 +782,52 @@ def test_dashboard_escapes_untrusted_text():
     for field in ("s.text", "s.channel", "p.contract_key", "t.detail",
                   "t.ticker", "a.label"):
         assert f"esc({field}" in js
+
+
+def test_notify_sell_fields_scaling_and_sold(monkeypatch):
+    import json as json_mod
+
+    import trader.notify as notify
+    from trader.parser import parse_alert
+
+    posts = []
+    monkeypatch.setattr(
+        notify.requests, "post",
+        lambda url, json=None, timeout=None: posts.append(json),
+    )
+
+    alert = parse_alert(
+        "ALL OUT 09/18 SPY 753c @ 6.22 exiting swing runners here for 120%"
+    )
+    notify.notify_alert("http://hook", alert)
+
+    embed = posts[0]["embeds"][0]
+    fields = {f["name"]: f["value"] for f in embed["fields"]}
+    assert fields["scaling"] == "**+120%**"
+    assert fields["sold"] == "ALL"
+    assert "**SELL**" in fields["type"]
+    assert "scale" not in fields
+
+
+def test_notify_buy_fields_bold(monkeypatch):
+    import trader.notify as notify
+    from trader.parser import parse_alert
+
+    posts = []
+    monkeypatch.setattr(
+        notify.requests, "post",
+        lambda url, json=None, timeout=None: posts.append(json),
+    )
+
+    alert = parse_alert(
+        "BOUGHT 09/25 ARM 300c @ 1.65 @everyone small size likely swing"
+    )
+    notify.notify_alert("http://hook", alert)
+
+    embed = posts[0]["embeds"][0]
+    fields = {f["name"]: f["value"] for f in embed["fields"]}
+    assert "**BUY**" in fields["type"]
+    assert fields["underlying"] == "**ARM**"
+    assert fields["premium"] == "**$1.65**"
+    assert fields["size"] == "**small**"
+    assert "sold" not in fields and "scaling" not in fields

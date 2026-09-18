@@ -52,7 +52,11 @@ def notify_alert(webhook_url: str, alert, sizing=None, correction=False):
         return
 
     if alert.kind == "option":
-        title = f"{alert.action} {alert.underlying} {alert.strike:g}{alert.right}"
+        emoji = "🟢" if alert.action == "BUY" else "🔴"
+        title = (
+            f"{emoji} {alert.action} {alert.underlying} "
+            f"{alert.strike:g}{alert.right}"
+        )
         if alert.expiry:
             title += f" exp {alert.expiry}"
         if alert.premium:
@@ -60,24 +64,32 @@ def notify_alert(webhook_url: str, alert, sizing=None, correction=False):
         if alert.gain_pct is not None:
             title += f" {alert.gain_pct:+g}%"
         fields = {
-            "type": alert.action,
-            "underlying": alert.underlying,
+            "type": f"{emoji} **{alert.action}**",
+            "underlying": f"**{alert.underlying}**",
             "strike": alert.strike,
             "right": "CALL" if alert.right == "C" else "PUT",
             "expiry": alert.expiry,
-            "premium": alert.premium,
-            "scale": format_scale(alert.scale),
-            "size": alert.size,
+            "premium": f"**${alert.premium:g}**",
         }
+        if alert.action == "SELL":
+            if alert.gain_pct is not None:
+                fields["scaling"] = f"**{alert.gain_pct:+g}%**"
+            if alert.scale is not None:
+                fields["sold"] = format_scale(alert.scale).upper()
+        elif alert.scale is not None:
+            fields["scale"] = format_scale(alert.scale)
+        if alert.size:
+            fields["size"] = f"**{alert.size}**"
     else:
-        title = f"{alert.action} {alert.ticker}"
+        emoji = "🟢" if alert.action == "BUY" else "🔴"
+        title = f"{emoji} {alert.action} {alert.ticker}"
         if alert.entry:
             title += f" @ ${alert.entry:g}"
         if alert.gain_pct is not None:
             title += f" {alert.gain_pct:+g}%"
         fields = {
-            "type": alert.action,
-            "ticker": alert.ticker,
+            "type": f"{emoji} **{alert.action}**",
+            "ticker": f"**{alert.ticker}**",
             "price": alert.entry or alert.premium,
         }
 

@@ -114,10 +114,16 @@ TP_RE = re.compile(
 )
 
 GAIN_RE = re.compile(r"([+-]\s?\d{1,3}(?:\.\d+)?)\s*%")
+# "for 120%", "at 120%", "up 120%" - gains stated without a sign
+GAIN_WORD_RE = re.compile(
+    r"\b(?:for|at|up|of)\s+(\d{1,3}(?:\.\d+)?)\s*%", re.I
+)
 
 
 def _gain(text: str) -> Optional[float]:
     m = GAIN_RE.search(text or "")
+    if not m:
+        m = GAIN_WORD_RE.search(text or "")
     if not m:
         return None
     try:

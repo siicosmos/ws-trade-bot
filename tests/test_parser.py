@@ -211,3 +211,17 @@ def test_gain_pct_parsed():
     assert c.gain_pct == -10.0
     d = parse_alert("BOUGHT 0DTE SPX 7645c @ .65 tiny size")
     assert d.gain_pct is None
+
+
+def test_gain_from_unsigned_percentages():
+    from trader.parser import parse_alert
+
+    a = parse_alert(
+        "ALL OUT 09/18 SPY 753c @ 6.22 exiting swing runners here for 120%"
+    )
+    assert a.gain_pct == 120
+    b = parse_alert("SOLD half at 45% - trimming here")
+    assert b.gain_pct == 45
+    # size percentages ("2% budget") and other numbers stay ignored
+    c = parse_alert("BOUGHT 09/25 ARM 300c @ 1.65 small size")
+    assert c.gain_pct is None
