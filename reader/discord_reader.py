@@ -387,6 +387,7 @@ def main():
     current_channel = None
     announced_channel = None
     last_title_channel = None
+    resync = False
     wait_attempts = 0
     empty_polls = 0
     sync_counter = 99
@@ -405,9 +406,18 @@ def main():
                 and last_title_channel is not None
                 and title_channel != last_title_channel
             ):
-                container = None
                 tail = []
+                resync = True
                 current_channel = title_channel
+                if container is not None:
+                    try:
+                        cname = normalize_channel_name(
+                            (container.Name or "")[:80], title_channel
+                        )
+                    except UIAError:
+                        cname = ""
+                    if cname != title_channel:
+                        container = None
             if title_channel:
                 last_title_channel = title_channel
 
@@ -470,7 +480,11 @@ def main():
                 continue
             empty_polls = 0
 
-            fresh = new_messages(msgs, tail)
+            if resync:
+                fresh = msgs[-3:]
+                resync = False
+            else:
+                fresh = new_messages(msgs, tail)
             if fresh:
                 tail = msgs
                 for text in fresh:
