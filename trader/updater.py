@@ -1,7 +1,11 @@
+import json
 import os
 import subprocess
 import threading
 import time
+
+
+UPDATE_RECORD = ".last_update.json"
 
 
 def _git(root, *args):
@@ -41,9 +45,38 @@ class AutoUpdater:
         current = self._head()
         return bool(current and self.start_head and current != self.start_head)
 
+    def _record_update(self, how):
+        new = self._head()
+        try:
+            with open(
+                os.path.join(self.root, UPDATE_RECORD), "w"
+            ) as f:
+                json.dump(
+                    {
+                        "how": how,
+                        "commit": new[:8] if new else "?",
+                        "ts": time.time(),
+                    },
+                    f,
+                )
+        except OSError:
+            pass
+
+    def last_pull(self):
+        try:
+            with open(os.path.join(self.root, UPDATE_RECORD)) as f:
+                data = json.load(f)
+            if isinstance(data, dict) and data.get("ts"):
+                return data
+        except (OSError, ValueError):
+            pass
+        return None
+
     def _restart_for_local_change(self):
         new = self._head()
         from .notify import notify_discord
+
+        self._record_update("manual")
 
         notify_discord(
             self.webhook_url,
@@ -134,5 +167,6 @@ class AutoUpdater:
         )
 
         print("auto-update: restarting pipeline...")
+        self._record_update("auto")
         self._restart()
         return True

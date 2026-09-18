@@ -33,6 +33,7 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   .badge.live::before { content: "\\25CF "; animation: pulse 1.5s infinite; }
   @keyframes pulse { 50% { opacity: .3; } }
   #updated { color: var(--muted); font-size: 12px; margin-left: auto; }
+  #clock { color: var(--text); font-size: 12px; margin-left: 8px; }
   .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin-bottom: 28px; }
   .card {
     background: var(--panel); border: 1px solid var(--border);
@@ -69,6 +70,7 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   <span id="reader" style="color:var(--muted);font-size:12px"></span>
   <span id="git" style="color:var(--muted);font-size:12px"></span>
   <span id="updated"></span>
+  <span id="clock" style="color:var(--muted);font-size:12px"></span>
 </header>
 
 <div class="cards" id="accounts"></div>
@@ -186,18 +188,29 @@ async function loadSignals() {
   el.innerHTML = html + "</table>";
 }
 
+function fmtAge(secs) {
+  if (secs < 60) return secs + "s ago";
+  if (secs < 3600) return Math.round(secs / 60) + "m ago";
+  if (secs < 86400) return Math.round(secs / 3600) + "h ago";
+  return Math.round(secs / 86400) + "d ago";
+}
+
 async function loadGitStatus() {
   const s = await api("/api/update_status");
   const el = document.getElementById("git");
   if (!s || s.status !== "active") { el.textContent = ""; return; }
   let checked = "not checked yet";
   if (s.last_check) {
-    const age = Math.round(Date.now() / 1000 - s.last_check);
-    checked = age < 60 ? age + "s ago" : Math.round(age / 60) + "m ago";
+    checked = fmtAge(Math.round(Date.now() / 1000 - s.last_check));
   }
   let text = "git: " + (s.result || "unknown");
   if (s.head) text += " @ " + s.head;
-  text += " (" + checked + ")";
+  text += " (" + checked;
+  if (s.last_pull && s.last_pull.ts) {
+    text += " · last pull " + s.last_pull.how + " " +
+      fmtAge(Math.round(Date.now() / 1000 - s.last_pull.ts));
+  }
+  text += ")";
   if (s.errors) text += " · " + s.errors + " errors";
   el.textContent = text;
   el.style.color = (s.result || "").indexOf("error") >= 0 || (s.result || "").indexOf("failed") >= 0 ? "var(--red)" : "var(--muted)";
@@ -353,12 +366,17 @@ async function saveSettings() {
 async function load() {
   try {
     await Promise.all([loadSummary(), loadPositions(), loadSignals(), loadTrades(), loadSettings(), loadGitStatus()]);
-    document.getElementById("updated").textContent = "updated " + new Date().toLocaleTimeString();
+    document.getElementById("updated").textContent = "refreshed " + new Date().toLocaleTimeString();
   } catch (e) { /* handled in api() */ }
 }
 
 load();
 setInterval(load, 5000);
+function tickClock() {
+  document.getElementById("clock").textContent = "now " + new Date().toLocaleTimeString();
+}
+tickClock();
+setInterval(tickClock, 1000);
 </script>
 </body>
 </html>

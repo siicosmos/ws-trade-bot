@@ -105,3 +105,20 @@ def test_check_once_pulls_and_restarts(tmp_path):
     assert (work / "f.txt").read_text() == "2"
     remote_head = _git(str(other), "rev-parse", "HEAD").stdout.strip()
     assert _git(str(work), "rev-parse", "HEAD").stdout.strip() == remote_head
+
+
+def test_update_record_roundtrip(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init"], cwd=repo, capture_output=True, check=True)
+    _commit(repo, "a")
+
+    up = AutoUpdater(_cfg(), str(repo), "")
+    assert up.last_pull() is None
+    up._record_update("manual")
+    record = up.last_pull()
+    assert record["how"] == "manual"
+    assert record["commit"]
+    assert record["ts"] > 0
+    up._record_update("auto")
+    assert up.last_pull()["how"] == "auto"

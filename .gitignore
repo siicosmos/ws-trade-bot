@@ -8,3 +8,4 @@ reader/discord_tree.txt
 .env
 ws_tokens.env
 certs/
+.last_update.json

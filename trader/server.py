@@ -242,6 +242,7 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                 "errors": updater.errors,
                 "head": (updater.start_head or "")[:8],
                 "branch": updater.branch,
+                "last_pull": updater.last_pull(),
             }
         )
 
