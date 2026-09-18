@@ -548,7 +548,7 @@ def test_heartbeat_status_reports_quiet_allowed_channel():
     assert heartbeat_status(True, "") == (None, False)
 
 
-def test_heartbeat_fires_while_channel_quiet(monkeypatch):
+def test_heartbeat_fires_while_channel_quiet(monkeypatch, tmp_path):
     # regression: a quiet channel (no recent messages) used to skip the
     # heartbeat entirely, so the portal said "waiting for any open
     # channel" while the reader was attached and healthy
@@ -576,6 +576,7 @@ def test_heartbeat_fires_while_channel_quiet(monkeypatch):
         heartbeats.append((channel, ok))
         return None
 
+    monkeypatch.setattr(dr, "SEEN_FILE", str(tmp_path / "seen.json"))
     monkeypatch.setattr(dr, "load_config", lambda: cfg)
     monkeypatch.setattr(dr, "sync_clock", lambda: None)
     monkeypatch.setattr(dr, "git_head", lambda root: "abc123")
@@ -696,7 +697,7 @@ def test_post_message_reports_success(monkeypatch):
     assert not dr.post_message("http://x", "text")
 
 
-def test_unsent_messages_are_retried(monkeypatch):
+def test_unsent_messages_are_retried(monkeypatch, tmp_path):
     # regression: a post that failed while the pipeline was restarting
     # used to be marked seen anyway, silently swallowing the alert
     import discord_reader as dr
@@ -723,6 +724,7 @@ def test_unsent_messages_are_retried(monkeypatch):
         attempts["n"] += 1
         return attempts["n"] > 3   # pipeline down for the first 3 tries
 
+    monkeypatch.setattr(dr, "SEEN_FILE", str(tmp_path / "seen.json"))
     monkeypatch.setattr(dr, "load_config", lambda: cfg)
     monkeypatch.setattr(dr, "sync_clock", lambda: None)
     monkeypatch.setattr(dr, "git_head", lambda root: "abc123")
@@ -762,3 +764,42 @@ def test_unsent_messages_are_retried(monkeypatch):
 
     # failed 3 times, then succeeded (delivered on the 4th attempt)
     assert attempts["n"] >= 4, attempts
+
+
+def test_day_floor_catches_up_whole_day(monkeypatch):
+    from datetime import datetime
+
+    import discord_reader as dr
+
+    fake_now = datetime(2026, 9, 18, 14, 3)
+    monkeypatch.setattr(dr, "true_now", lambda: fake_now)
+    day_floor = fake_now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    # this morning's alert, discovered 7+ hours later: still deliverable
+    morning = "APP — 06:39\nBOUGHT 09/25 ARM 300c @ 1.65 small size"
+    assert dr.is_recent_message(morning, floor=day_floor)
+
+    # yesterday's full-dated message: excluded
+    yesterday = (
+        "September 17, 2026 at 10:04 AM\nBOUGHT SPY 750c full size"
+    )
+    assert not dr.is_recent_message(yesterday, floor=day_floor)
+
+
+def test_seen_persistence_round_trip(tmp_path, monkeypatch):
+    import time as time_mod
+
+    import discord_reader as dr
+
+    monkeypatch.setattr(dr, "SEEN_FILE", str(tmp_path / "seen.json"))
+
+    seen, seen_at = dr.load_seen()
+    assert seen == set() and seen_at == {}
+
+    seen_at["delivered today"] = time_mod.time() - 10
+    seen_at["delivered long ago"] = time_mod.time() - 49 * 3600
+    dr.save_seen(seen_at)
+
+    seen2, seen_at2 = dr.load_seen()
+    assert "delivered today" in seen2
+    assert "delivered long ago" not in seen2

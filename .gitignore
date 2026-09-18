@@ -10,3 +10,4 @@ ws_tokens.env
 certs/
 .last_update.json
 .session_key
+.reader_seen.json

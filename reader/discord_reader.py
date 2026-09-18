@@ -1,3 +1,4 @@
+import json
 import os
 import re
 import subprocess
@@ -231,10 +232,10 @@ def is_recent_message(text, max_age_minutes=10, floor=None):
     if ts is None:
         return True
     if floor is not None:
-        # floor = reader boot time: accept anything newer, so messages
-        # that arrived during a UIA blind period (window stale overnight)
-        # still get delivered late instead of being dropped as "old".
-        # Pre-boot history stays excluded, so restarts replay nothing.
+        # floor = start of day: anything timestamped today is deliverable,
+        # even hours late (found later, or delivered during a UIA blind
+        # period); earlier history stays excluded. The persisted seen-set
+        # keeps delivery at-most-once per day.
         return (
             ts >= floor - timedelta(minutes=2)
             and ts <= true_now() + timedelta(minutes=5)
@@ -651,6 +652,32 @@ def repo_root():
     return os.path.abspath(os.path.join(here, ".."))
 
 
+SEEN_FILE = os.path.join(repo_root(), ".reader_seen.json")
+SEEN_RETAIN_SECONDS = 48 * 3600
+
+
+def load_seen():
+    """Messages already delivered, surviving reader restarts."""
+    try:
+        with open(SEEN_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return set(), {}
+    cutoff = time.time() - SEEN_RETAIN_SECONDS
+    fresh = {t: when for t, when in data.items() if when >= cutoff}
+    return set(fresh), fresh
+
+
+def save_seen(seen_at):
+    try:
+        tmp = SEEN_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(seen_at, f)
+        os.replace(tmp, SEEN_FILE)
+    except OSError:
+        pass
+
+
 def git_head(root):
     try:
         r = subprocess.run(
@@ -702,10 +729,12 @@ def main():
     sync_clock()
     last_clock_check = time.time()
 
-    # messages newer than this are always deliverable, even hours late -
-    # they arrived while this reader was running (possibly during a UIA
-    # blind period) and must not be dropped by the staleness gate
-    boot_floor = true_now()
+    # anything timestamped today is deliverable, even hours late - the
+    # seen-set (persisted across restarts) keeps delivery at-most-once
+    day_floor = (
+        true_now().replace(hour=0, minute=0, second=0, microsecond=0)
+        - timedelta(minutes=2)
+    )
 
     start_head = git_head(repo_root())
     last_head_check = time.time()
@@ -713,6 +742,14 @@ def main():
     tail = []
     pending = []   # (text, ts, channel) awaiting successful delivery
     last_read_summary = None
+
+    def mark_seen(text):
+        seen.add(text)
+        seen_at[text] = time.time()
+        if len(seen) > 5000:
+            seen.clear()
+            seen_at.clear()
+        save_seen(seen_at)
     log("looking for Discord window...")
     window = None
     while window is None:
@@ -732,8 +769,8 @@ def main():
     current_channel = None
     announced_channel = None
     last_title_channel = None
-    resync = False
-    seen = set()
+    resync = True    # first attach catches up today's unseen messages
+    seen, seen_at = load_seen()
     wait_attempts = 0
     empty_polls = 0
     last_stale_log = 0.0
@@ -892,7 +929,7 @@ def main():
                 poll_interval = new_poll
                 max_items = new_max
 
-            msgs = current_messages(container, max_items, boot_floor)
+            msgs = current_messages(container, max_items, day_floor)
             summary = (
                 f"{len(msgs)} message(s) read"
                 + (f", newest: {msgs[-1][0][:70]!r}" if msgs else "")
@@ -918,9 +955,7 @@ def main():
                     if post_message(
                         pipeline_url, text, auth_token, ts, verify_tls, chan
                     ):
-                        seen.add(text)
-                        if len(seen) > 5000:
-                            seen.clear()
+                        mark_seen(text)
                     else:
                         retry.append((text, ts, chan))
                 pending = retry
@@ -943,9 +978,7 @@ def main():
                         pipeline_url, text, auth_token, ts, verify_tls,
                         current_channel or "",
                     ):
-                        seen.add(text)
-                        if len(seen) > 5000:
-                            seen.clear()
+                        mark_seen(text)
                     else:
                         pending.append((text, ts, current_channel or ""))
             elif msgs != tail:
