@@ -223,7 +223,7 @@ _log_hook = None
 
 
 def log(msg):
-    line = f"{time.strftime('%H:%M:%S')} {msg}"
+    line = f"{time.strftime('%d/%b/%Y %H:%M:%S')} {msg}"
     print(line)
     if _log_hook is not None:
         _log_hook.add(line)
