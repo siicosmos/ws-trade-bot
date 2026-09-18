@@ -1,5 +1,6 @@
 import argparse
 import os
+import sys
 
 from trader.account import PaperAccount, WealthsimpleAccount
 from trader.config import load_config
@@ -20,6 +21,18 @@ def main():
     args = ap.parse_args()
 
     cfg = load_config(args.config)
+    if (
+        not cfg.pipeline.auth_token
+        and cfg.pipeline.host not in ("127.0.0.1", "localhost", "::1")
+    ):
+        print(
+            "REFUSING to start: pipeline.auth_token is empty while binding "
+            f"to {cfg.pipeline.host} (reachable by other machines)."
+        )
+        print('generate one with:  python -c "import secrets; '
+              'print(secrets.token_urlsafe(24))"')
+        print("then set it under pipeline: in config.yaml and restart")
+        sys.exit(1)
     store = Store(args.db)
     mode = cfg.trading.mode
 

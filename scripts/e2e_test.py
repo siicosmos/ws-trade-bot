@@ -137,7 +137,8 @@ def run_notify_phase():
     write_config(cfg_path, "notify")
     proc, health = start_pipeline(cfg_path, db_path)
     try:
-        check("health reports notify mode", health.get("mode") == "notify")
+        summary = requests.get(f"{_current_base()}/api/summary", timeout=5).json()
+        check("summary reports notify mode", summary.get("mode") == "notify")
 
         page = requests.get(f"{_current_base()}/", timeout=5)
         check("dashboard page serves", page.status_code == 200 and "WS Trade Bot" in page.text)
@@ -215,7 +216,8 @@ def run_paper_cycle_phase():
     write_config(cfg_path, "paper")
     proc, health = start_pipeline(cfg_path, db_path)
     try:
-        check("health reports paper mode", health.get("mode") == "paper")
+        summary = requests.get(f"{_current_base()}/api/summary", timeout=5).json()
+        check("summary reports paper mode", summary.get("mode") == "paper")
 
         code, resp = post_alert("BOUGHT 0DTE SPY 759c @ 1.5 @everyone medium size")
         check("medium buy executed", resp["status"] == "executed" and resp["detail"], resp.get("status"))

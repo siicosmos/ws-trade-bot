@@ -113,6 +113,19 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 <div id="settings" class="card"></div>
 
 <script>
+function esc(s) {
+  let out = "";
+  for (const ch of String(s ?? "")) {
+    if (ch === "<") out += "&lt;";
+    else if (ch === ">") out += "&gt;";
+    else if (ch === "&") out += "&amp;";
+    else if (ch === '"') out += "&quot;";
+    else if (ch === "'") out += "&#39;";
+    else out += ch;
+  }
+  return out;
+}
+
 async function api(path) {
   const res = await fetch(path);
   if (res.status === 401) { location.href = "/login"; throw new Error("unauthorized"); }
@@ -158,7 +171,7 @@ async function loadSummary() {
     const card = document.createElement("div");
     card.className = "card";
     card.innerHTML =
-      '<div class="label">' + a.label + '</div>' +
+      '<div class="label">' + esc(a.label) + '</div>' +
       '<div class="value">' + fmtMoney(a.value) +
       (a.value_age ? ' <span style="font-size:12px;color:#d29922">(cached ' + a.value_age + ')</span>' : '') + '</div>' +
       '<div class="riskbar"><div style="width:' + pct + '%;background:' + color + '"></div></div>' +
@@ -174,7 +187,7 @@ async function loadPositions() {
   if (!rows.length) { el.innerHTML = '<div class="empty">no open positions</div>'; return; }
   let html = "<table><tr><th>Account</th><th>Contract</th><th class=num>Qty</th><th class=num>Avg Premium</th><th class=num>Cost</th></tr>";
   for (const p of rows) {
-    html += "<tr><td>" + p.account + "</td><td>" + p.contract_key + "</td>" +
+    html += "<tr><td>" + esc(p.account) + "</td><td>" + esc(p.contract_key) + "</td>" +
       '<td class=num>' + p.qty + "</td>" +
       '<td class=num>' + (p.avg_premium ?? "—") + "</td>" +
       '<td class=num>' + fmtMoney((p.qty || 0) * (p.avg_premium || 0) * 100) + "</td></tr>";
@@ -213,9 +226,9 @@ async function loadSignals() {
   if (!visible.length) { el.innerHTML = '<div class="empty">no matching alerts (ignored hidden)</div>'; return; }
   let html = "<table><tr><th>Time</th><th>Message</th><th>Status</th></tr>";
   for (const s of visible) {
-    const test = (s.channel || "").toLowerCase().indexOf("test") >= 0 ? ' <span class="tag skip" title="from ' + (s.channel || "") + '">test</span>' : "";
+    const test = (s.channel || "").toLowerCase().indexOf("test") >= 0 ? ' <span class="tag skip" title="from ' + esc(s.channel || "") + '">test</span>' : "";
     const tag = (s.parsed ? '<span class="tag buy">signal</span>' : (s.correction ? '<span class="tag skip">correction</span>' : '<span class="tag ignored">ignored</span>')) + test;
-    html += "<tr><td>" + fmtTime(s.ts) + '</td><td class="msg">' + (s.text || "").replace(/</g, "&lt;") + "</td><td>" + tag + "</td></tr>";
+    html += "<tr><td>" + fmtTime(s.ts) + '</td><td class="msg">' + esc(s.text || "") + "</td><td>" + tag + "</td></tr>";
   }
   el.innerHTML = html + "</table>";
 }
@@ -260,12 +273,12 @@ async function loadTrades() {
     if (t.status === "executed") statusTag = "ok";
     else if (t.status === "skipped") statusTag = "skip";
     else if (t.status === "error") statusTag = "error";
-    html += "<tr><td>" + fmtTime(t.ts) + "</td><td>" + t.mode + "</td>" +
-      '<td><span class="tag ' + actionTag + '">' + t.action + "</span></td>" +
-      '<td class=num>' + t.qty + "</td><td>" + t.ticker + "</td>" +
+    html += "<tr><td>" + fmtTime(t.ts) + "</td><td>" + esc(t.mode) + "</td>" +
+      '<td><span class="tag ' + actionTag + '">' + esc(t.action) + "</span></td>" +
+      '<td class=num>' + t.qty + "</td><td>" + esc(t.ticker) + "</td>" +
       '<td class=num>' + (t.price ?? "—") + "</td>" +
-      '<td><span class="tag ' + statusTag + '">' + t.status + "</span></td>" +
-      '<td class="detail">' + (t.detail || "").replace(/</g, "&lt;") + "</td></tr>";
+      '<td><span class="tag ' + statusTag + '">' + esc(t.status) + "</span></td>" +
+      '<td class="detail">' + esc(t.detail || "") + "</td></tr>";
   }
   el.innerHTML = html + "</table>";
 }
@@ -292,13 +305,13 @@ async function loadSettings() {
   }
   for (const [k, hint] of [["ticker_whitelist", "e.g. SPY, SPX - empty = allow all"], ["skip_underlyings", "e.g. SPX - empty = none"]]) {
     html += '<div style="grid-column:1/-1"><label style="color:var(--muted);font-size:11px;text-transform:uppercase">' + k.replace('_', ' ') + ' (comma-separated)</label>' +
-      '<input id="set-' + k + '" type="text" value="' + (t[k] || []).join(', ') + '" placeholder="' + hint + '" style="width:100%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px"></div>';
+      '<input id="set-' + k + '" type="text" value="' + esc((t[k] || []).join(', ')) + '" placeholder="' + hint + '" style="width:100%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px"></div>';
   }
   html += "</div>";
   html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-top:14px">';
   html += '<div style="color:var(--muted);font-size:12px;grid-column:1/-1">size tiers (risk % cap / min / max contracts)</div>';
   for (const [name, tier] of Object.entries(t.size_tiers)) {
-    html += '<div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">' + name + '</label>' +
+    html += '<div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">' + esc(name) + '</label>' +
       '<input id="tier-' + name + '-risk" type="number" step="any" value="' + tier.risk_pct_max + '" title="risk % cap" style="width:100%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px">' +
       '<div style="display:flex;gap:6px;margin-top:4px"><input id="tier-' + name + '-min" type="number" value="' + tier.contracts_min + '" title="min contracts" style="width:50%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px">' +
       '<input id="tier-' + name + '-max" type="number" value="' + tier.contracts_max + '" title="max contracts" style="width:50%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px"></div></div>';
@@ -309,10 +322,10 @@ async function loadSettings() {
     html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px">';
     s.accounts.forEach((a, i) => {
       html += '<div style="border:1px solid var(--border);border-radius:8px;padding:10px">' +
-        '<div style="color:var(--text);font-weight:600;margin-bottom:6px">' + a.label +
+        '<div style="color:var(--text);font-weight:600;margin-bottom:6px">' + esc(a.label) +
         ' <label style="float:right;color:var(--muted);font-size:11px"><input id="set-acct-' + i + '-enabled" type="checkbox"' + (a.enabled ? " checked" : "") + '> on</label></div>' +
         '<label style="color:var(--muted);font-size:10px;text-transform:uppercase">account id</label>' +
-        '<input id="set-acct-' + i + '-id" type="text" value="' + (a.account_id || "") + '" style="width:100%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:12px">' +
+        '<input id="set-acct-' + i + '-id" type="text" value="' + esc(a.account_id || "") + '" style="width:100%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:12px">' +
         '<label style="color:var(--muted);font-size:10px;text-transform:uppercase;margin-top:4px;display:block">max contracts</label>' +
         '<input id="set-acct-' + i + '-max" type="number" value="' + (a.max_contracts_per_trade ?? "") + '" placeholder="global 10" style="width:100%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:12px">' +
         '<label style="color:var(--muted);font-size:10px;text-transform:uppercase;margin-top:4px;display:block">risk % (default trades)</label>' +
@@ -325,19 +338,19 @@ async function loadSettings() {
   html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-top:14px">' +
     '<div style="color:var(--muted);font-size:12px;grid-column:1/-1">reader (channel marker: empty = follow whatever channel is open in Discord)</div>' +
     '<div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">channel marker</label>' +
-    '<input id="set-reader-channel_marker" type="text" value="' + (s.reader.channel_marker || "") + '" placeholder="e.g. player-alerts" style="width:100%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px"></div>' +
+    '<input id="set-reader-channel_marker" type="text" value="' + esc(s.reader.channel_marker || "") + '" placeholder="e.g. player-alerts" style="width:100%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px"></div>' +
     '<div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">poll interval (s)</label>' +
     '<input id="set-reader-poll_interval" type="number" step="any" value="' + s.reader.poll_interval + '" style="width:100%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px"></div>' +
     '<div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">max messages kept</label>' +
     '<input id="set-reader-max_items" type="number" value="' + s.reader.max_items + '" style="width:100%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px"></div>' +
             '<div style="margin-bottom:6px"><label style="color:var(--muted);font-size:12px">Allowed channels (comma-separated, empty = any)</label>' +
-            '<input id="set-reader-channels" type="text" value="' + (s.reader.channels || []).join(",") + '" placeholder="e.g. test-alerts, player-alerts" style="width:100%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px"></div>' +
+            '<input id="set-reader-channels" type="text" value="' + esc((s.reader.channels || []).join(",")) + '" placeholder="e.g. test-alerts, player-alerts" style="width:100%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px"></div>' +
     "</div>";
   html += '<div style="display:flex;gap:10px;margin-top:14px;align-items:center;flex-wrap:wrap">' +
     '<label style="color:var(--muted);font-size:12px"><input id="set-au-enabled" type="checkbox"' + (s.auto_update.enabled ? " checked" : "") + '> auto-update</label>' +
     '<label style="color:var(--muted);font-size:12px">every <input id="set-au-interval" type="number" value="' + s.auto_update.interval_seconds + '" style="width:80px;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:13px">s</label>' +
     '<label style="color:var(--muted);font-size:12px"><input id="set-quotes-enabled" type="checkbox"' + (s.quotes.enabled ? " checked" : "") + '> live option quotes (stop monitor)</label>' +
-    '<span style="color:var(--muted);font-size:12px">quotes: ' + s.quotes.provider + '</span></div>';
+    '<span style="color:var(--muted);font-size:12px">quotes: ' + esc(s.quotes.provider) + '</span></div>';
   el.innerHTML = html;
 }
 

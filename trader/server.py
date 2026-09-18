@@ -1,3 +1,4 @@
+import hmac
 import logging
 import os
 import secrets
@@ -59,6 +60,11 @@ def install_quiet_filter():
         werkzeug.addFilter(QuietPathsFilter())
 
 
+LOGIN_FAIL_LIMIT = 5
+LOCKOUT_SECONDS = 900
+_LOGIN_FAILS = {}
+
+
 def _load_secret_key(config_path):
     if not config_path:
         return secrets.token_hex(32)
@@ -87,6 +93,12 @@ def create_app(cfg, store: Store, risk, executor, account=None,
     install_quiet_filter()
     app.secret_key = _load_secret_key(config_path)
     app.permanent_session_lifetime = timedelta(days=30)
+    app.config["MAX_CONTENT_LENGTH"] = 1024 * 1024
+    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+    if getattr(cfg.pipeline, "tls_cert", "") and getattr(
+        cfg.pipeline, "tls_key", ""
+    ):
+        app.config["SESSION_COOKIE_SECURE"] = True
     mode = cfg.trading.mode
     app.reader_state = {
         "channel": None,
@@ -101,7 +113,8 @@ def create_app(cfg, store: Store, risk, executor, account=None,
             return None
         if session.get("auth"):
             return None
-        if request.headers.get("X-Auth-Token") == token:
+        supplied = request.headers.get("X-Auth-Token", "")
+        if supplied and hmac.compare_digest(supplied, token):
             return None
         if request.path.startswith("/api/") or request.path == "/alert":
             return jsonify({"error": "unauthorized"}), 401
@@ -112,13 +125,34 @@ def create_app(cfg, store: Store, risk, executor, account=None,
         token = cfg.pipeline.auth_token
         if not token:
             return redirect("/")
+        ip = request.remote_addr or "?"
+        now = time.time()
+        entry = _LOGIN_FAILS.get(ip)
+        if entry and entry.get("locked_until", 0) > now:
+            return Response(
+                LOGIN_HTML("too many attempts - try again later"),
+                403,
+                mimetype="text/html",
+                headers={"Cache-Control": "no-store"},
+            )
         error = None
         if request.method == "POST":
-            if request.form.get("password", "") == token:
+            supplied = request.form.get("password", "")
+            if supplied and hmac.compare_digest(supplied, token):
+                _LOGIN_FAILS.pop(ip, None)
                 session.permanent = True
                 session["auth"] = True
                 return redirect("/")
-            error = "wrong access token"
+            count = (entry or {}).get("count", 0) + 1
+            if count >= LOGIN_FAIL_LIMIT:
+                _LOGIN_FAILS[ip] = {
+                    "count": count,
+                    "locked_until": now + LOCKOUT_SECONDS,
+                }
+                error = "too many attempts - try again later"
+            else:
+                _LOGIN_FAILS[ip] = {"count": count, "locked_until": 0}
+                error = "wrong access token"
             time.sleep(1)
         return Response(
             LOGIN_HTML(error), mimetype="text/html",
@@ -141,7 +175,7 @@ def create_app(cfg, store: Store, risk, executor, account=None,
 
     @app.get("/health")
     def health():
-        return jsonify({"status": "ok", "mode": mode})
+        return jsonify({"status": "ok"})
 
     @app.get("/favicon.ico")
     def favicon():

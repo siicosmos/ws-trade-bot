@@ -724,3 +724,61 @@ def test_no_store_headers():
     assert resp.headers["Cache-Control"] == "no-store"
     api_resp = client.get("/api/summary")
     assert api_resp.headers["Cache-Control"] == "no-store"
+
+
+def test_login_rate_limit():
+    import trader.server as srv
+
+    app, store, account = _make_app(auth_token="s3cret")
+    client = app.test_client()
+    srv._LOGIN_FAILS.clear()
+    old_limit = srv.LOGIN_FAIL_LIMIT
+    srv.LOGIN_FAIL_LIMIT = 3
+    try:
+        for _ in range(3):
+            client.post("/login", data={"password": "nope"})
+        locked = client.post("/login", data={"password": "s3cret"})
+        assert locked.status_code == 403
+        assert "too many attempts" in locked.get_data(as_text=True)
+    finally:
+        srv.LOGIN_FAIL_LIMIT = old_limit
+        srv._LOGIN_FAILS.clear()
+
+
+def test_health_discloses_nothing():
+    app, store, account = _make_app(auth_token="s3cret")
+    client = app.test_client()
+    resp = client.get("/health")
+    assert resp.status_code == 200
+    assert set(resp.get_json().keys()) == {"status"}
+
+
+def test_refuses_non_localhost_without_token(tmp_path):
+    import subprocess
+    import sys
+
+    cfg_path = tmp_path / "open.yaml"
+    cfg_path.write_text(
+        "pipeline:\n  host: \"0.0.0.0\"\n  port: 8080\n  auth_token: \"\"\n"
+        "trading:\n  mode: notify\n"
+    )
+    r = subprocess.run(
+        [sys.executable, "run.py", "-c", str(cfg_path), "--db",
+         str(tmp_path / "x.db")],
+        capture_output=True, text=True, timeout=60,
+    )
+    assert r.returncode != 0
+    assert "auth_token" in (r.stdout + r.stderr)
+
+
+def test_dashboard_escapes_untrusted_text():
+    import re
+    import trader.dashboard as dash
+
+    js = re.findall(r"<script>(.*?)</script>",
+                   dash.DASHBOARD_HTML, re.S)[0]
+    assert "function esc(" in js
+    assert '.replace(/</g, "&lt;")' not in js
+    for field in ("s.text", "s.channel", "p.contract_key", "t.detail",
+                  "t.ticker", "a.label"):
+        assert f"esc({field}" in js

@@ -9,9 +9,10 @@ netsh interface portproxy delete v4tov4 listenport=8080 listenaddress=0.0.0.0 2>
 
 $rule = Get-NetFirewallRule -DisplayName "WS Trade Bot" 2>$null
 if (-not $rule) {
-  New-NetFirewallRule -DisplayName "WS Trade Bot" -Direction Inbound -LocalPort 8080 -Protocol TCP -Action Allow | Out-Null
+  New-NetFirewallRule -DisplayName "WS Trade Bot" -Direction Inbound -LocalPort 8080 -Protocol TCP -Action Allow -Profile Private | Out-Null
 }
 
 $lanIp = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.InterfaceAlias -notmatch "Loopback|vEthernet" } | Select-Object -First 1).IPAddress
 Write-Host "dashboard reachable on your network at: https://${lanIp}:8080" -ForegroundColor Green
 Write-Host "browser login: any username, password = your pipeline.auth_token"
+Write-Host "firewall rule allows port 8080 on Private networks only (Tailscale/LAN); use Tailscale for off-LAN access" -ForegroundColor Cyan
