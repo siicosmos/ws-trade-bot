@@ -19,11 +19,21 @@ def test_quiet_filter_drops_monitoring_lines():
         '127.0.0.1 - - [18/Sep/2026 07:15:10] "GET /api/summary HTTP/1.1" 200 -'
     ))
     assert not f.filter(_record(
+        '127.0.0.1 - - [18/Sep/2026 07:15:10] "GET /api/settings HTTP/1.1" 200 -'
+    ))
+    assert not f.filter(_record(
         '127.0.0.1 - - [18/Sep/2026 07:15:10] "GET /health HTTP/1.1" 200 -'
+    ))
+    assert not f.filter(_record(
+        '127.0.0.1 - - [18/Sep/2026 07:15:10] "GET / HTTP/1.1" 200 -'
+    ))
+    assert not f.filter(_record(
+        '127.0.0.1 - - [18/Sep/2026 07:15:10] '
+        '"GET /.well-known/appspecific/com.chrome.devtools.json HTTP/1.1" 404 -'
     ))
 
 
-def test_quiet_filter_keeps_trade_lines():
+def test_quiet_filter_keeps_meaningful_lines():
     f = QuietPathsFilter()
     assert f.filter(_record(
         '127.0.0.1 - - [18/Sep/2026 07:15:10] "POST /alert HTTP/1.1" 200 -'

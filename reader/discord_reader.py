@@ -116,9 +116,9 @@ def child_texts(ctrl, sample=10):
     return texts
 
 
-def find_message_container(window, marker, title_channel=""):
+def find_message_container(window, marker, title_channel="", diag=None):
     candidates = []
-    for ctrl, depth in auto.WalkControl(window, includeTop=False, maxDepth=14):
+    for ctrl, depth in auto.WalkControl(window, includeTop=False, maxDepth=30):
         try:
             if ctrl.ControlType not in (
                 auto.ControlType.ListControl,
@@ -144,6 +144,13 @@ def find_message_container(window, marker, title_channel=""):
             and title_channel.lower() in (ctrl.Name or "").lower()
         ):
             score += 3
+        if diag is not None:
+            try:
+                diag.append(
+                    (ctrl.ControlTypeName, (ctrl.Name or "")[:40], score)
+                )
+            except auto.COMError:
+                pass
         if score > 0 and score >= best_score:
             best = ctrl
             best_score = score
@@ -159,7 +166,7 @@ def message_items(container):
 
 def item_text(item):
     parts = []
-    for ctrl, depth in auto.WalkControl(item, includeTop=False, maxDepth=8):
+    for ctrl, depth in auto.WalkControl(item, includeTop=False, maxDepth=12):
         try:
             if ctrl.ControlType == auto.ControlType.TextControl and ctrl.Name:
                 parts.append(ctrl.Name.strip())
@@ -291,7 +298,8 @@ def main():
     container = None
     current_channel = None
     announced_channel = None
-    announced_wait = False
+    wait_attempts = 0
+    empty_polls = 0
     sync_counter = 99
 
     while True:
@@ -313,16 +321,22 @@ def main():
                 announced_channel = title_channel
 
             if container is None:
+                diag = []
                 container = find_message_container(
-                    window, marker, title_channel
+                    window, marker, title_channel, diag
                 )
                 if container is None:
-                    if not announced_wait:
+                    wait_attempts += 1
+                    if wait_attempts == 1 or wait_attempts % 6 == 0:
                         print(
-                            f"waiting for a channel matching {marker!r} - "
-                            f"open it in Discord or clear the marker"
+                            f"no message pane found "
+                            f"(title channel: {title_channel!r}) - "
+                            f"{len(diag)} candidates scanned:"
                         )
-                        announced_wait = True
+                        for ctype, cname, score in diag[-8:]:
+                            print(
+                                f"  [{ctype}] name={cname!r} score={score}"
+                            )
                     resp = sync_with_server(
                         base_url, auth_token, None, False
                     )
@@ -333,7 +347,7 @@ def main():
                         print(f"channel marker -> {marker!r}")
                     time.sleep(5)
                     continue
-                announced_wait = False
+                wait_attempts = 0
 
             try:
                 name = clean_channel((container.Name or "")[:80])
@@ -353,9 +367,13 @@ def main():
 
             msgs = current_messages(container, max_items)
             if not msgs:
-                container = None
+                empty_polls += 1
+                if empty_polls >= 10:
+                    container = None
+                    empty_polls = 0
                 time.sleep(poll_interval)
                 continue
+            empty_polls = 0
 
             fresh = new_messages(msgs, tail)
             if fresh:

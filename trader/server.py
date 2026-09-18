@@ -7,15 +7,26 @@ from .dashboard import DASHBOARD_HTML
 from .pipeline import process_alert
 from .store import Store
 
-QUIET_PATHS = (
+QUIET_GET_PATHS = (
+    "/",
     "/health",
     "/favicon.ico",
-    "/api/reader_status",
     "/api/summary",
     "/api/positions",
     "/api/signals",
     "/api/trades",
+    "/api/settings",
+    "/api/reader_status",
     "/api/update_status",
+)
+
+QUIET_POST_PATHS = (
+    "/api/reader_status",
+)
+
+
+QUIET_GET_PREFIXES = (
+    "/.well-known/",
 )
 
 
@@ -25,7 +36,16 @@ class QuietPathsFilter(logging.Filter):
             msg = record.getMessage()
         except Exception:
             return True
-        return not any(f" {path} HTTP" in msg for path in QUIET_PATHS)
+        for path in QUIET_POST_PATHS:
+            if f" {path} HTTP" in msg:
+                return False
+        for path in QUIET_GET_PATHS:
+            if f"GET {path} HTTP" in msg:
+                return False
+        for prefix in QUIET_GET_PREFIXES:
+            if f"GET {prefix}" in msg:
+                return False
+        return True
 
 
 def install_quiet_filter():

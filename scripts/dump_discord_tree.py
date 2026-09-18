@@ -13,7 +13,7 @@ def main():
         print("Discord window not found")
         return
     print(f"window: {window.Name!r}")
-    for ctrl, depth in auto.WalkControl(window, includeTop=False, maxDepth=14):
+    for ctrl, depth in auto.WalkControl(window, includeTop=False, maxDepth=30):
         try:
             if ctrl.ControlType not in (
                 auto.ControlType.ListControl,
