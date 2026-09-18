@@ -101,6 +101,14 @@ def account_sizing(alert, cfg, account, store=None) -> list:
         contracts = plan["qty"] if (value is not None and price) else None
         warnings = []
 
+        stale_fn = getattr(account, "stale_age", None)
+        if value is not None and callable(stale_fn):
+            age = stale_fn(label)
+            if age:
+                warnings.append(
+                    f"using cached account value ({age} old)"
+                )
+
         if value is not None and value > 0 and price:
             if plan["qty"] < 1:
                 if plan["affordable"] >= 1:

@@ -1,3 +1,4 @@
+import json
 import sqlite3
 import threading
 from datetime import datetime, timedelta, timezone
@@ -259,6 +260,31 @@ class Store:
             ).fetchall()
         keys = ["ts", "text", "parsed"]
         return [dict(zip(keys, r)) for r in rows]
+
+    def get_cached_value(self, label: str):
+        with self._lock, self._conn:
+            row = self._conn.execute(
+                "SELECT value FROM meta WHERE key = ?",
+                (f"ws_value:{label}",),
+            ).fetchone()
+        if not row:
+            return None
+        try:
+            data = json.loads(row[0])
+        except (ValueError, TypeError):
+            return None
+        if not isinstance(data, dict) or "value" not in data:
+            return None
+        return data
+
+    def set_cached_value(self, label: str, value: float, ts: str):
+        payload = json.dumps({"value": float(value), "ts": ts})
+        with self._lock, self._conn:
+            self._conn.execute(
+                "INSERT INTO meta (key, value) VALUES (?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (f"ws_value:{label}", payload),
+            )
 
     def paper_equity(self, label: str = "default"):
         with self._lock, self._conn:

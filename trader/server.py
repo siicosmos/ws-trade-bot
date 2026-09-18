@@ -43,10 +43,13 @@ def create_app(cfg, store: Store, risk, executor, account=None) -> Flask:
         out = []
         for label, value in values.items():
             open_risk = store.open_risk(mode, label)
+            stale_fn = getattr(account, "stale_age", None)
+            value_age = stale_fn(label) if callable(stale_fn) else None
             out.append(
                 {
                     "label": label,
                     "value": value,
+                    "value_age": value_age,
                     "open_risk": open_risk,
                     "open_risk_pct": (
                         round(open_risk / value * 100, 2)

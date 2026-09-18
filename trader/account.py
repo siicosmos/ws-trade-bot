@@ -1,4 +1,5 @@
 import time
+from datetime import datetime, timezone
 from typing import List
 
 from .config import WSAccountConfig
@@ -53,13 +54,15 @@ class PaperAccount:
 
 
 class WealthsimpleAccount:
-    def __init__(self, cfg, cache_seconds=900):
+    def __init__(self, cfg, store=None, cache_seconds=900):
         self.cfg = cfg
+        self.store = store
         self.cache_seconds = cache_seconds
         self._cache = None
         self._cache_ts = 0.0
         self._ws = None
         self._resolved = None
+        self._stale = {}
 
     def _client(self):
         if self._ws is None:
@@ -72,33 +75,95 @@ class WealthsimpleAccount:
         if self._resolved is None:
             out = []
             for acct in effective_accounts(self.cfg):
-                out.append((account_label(acct), acct.account_id))
+                out.append((account_label(acct), acct.account_id or None))
             if not out or all(not account_id for _, account_id in out):
-                ws = self._client()
-                out = [("default", resolve_account_id(ws, self.cfg))]
+                try:
+                    ws = self._client()
+                    first = resolve_account_id(ws, self.cfg)
+                    out = [("default", first)]
+                except Exception:
+                    out = [("default", None)]
             self._resolved = out
         return self._resolved
+
+    def _try_fetch(self):
+        try:
+            ws = self._client()
+        except Exception:
+            return None
+        result = {}
+        any_ok = False
+        for label, account_id in self._resolve():
+            if not account_id:
+                result[label] = None
+                continue
+            try:
+                fin = ws.get_account_current_financials(account_id)
+                result[label] = float(fin["netLiquidationValueV2"]["amount"])
+                any_ok = True
+            except Exception:
+                result[label] = None
+        return result if any_ok else None
+
+    def _load_cached(self):
+        if not self.store:
+            return None
+        out = {}
+        for label, _ in self._resolve():
+            cached = self.store.get_cached_value(label)
+            if cached and cached.get("value") is not None:
+                out[label] = cached["value"]
+                self._stale[label] = cached.get("ts")
+        return out or None
+
+    def stale_age(self, label: str):
+        ts = self._stale.get(label)
+        if not ts:
+            return None
+        try:
+            delta = datetime.now(timezone.utc) - datetime.fromisoformat(ts)
+        except (ValueError, TypeError):
+            return None
+        if delta.total_seconds() < 0:
+            return None
+        seconds = int(delta.total_seconds())
+        if seconds < 90:
+            return f"{seconds}s"
+        minutes = seconds // 60
+        if minutes < 90:
+            return f"{minutes}m"
+        hours = minutes // 60
+        if hours < 36:
+            return f"{hours}h"
+        return f"{hours // 24}d"
 
     def values(self) -> dict:
         now = time.time()
         if self._cache is not None and now - self._cache_ts < self.cache_seconds:
             return self._cache
-        ws = self._client()
-        result = {}
-        for label, account_id in self._resolve():
-            try:
-                fin = ws.get_account_current_financials(account_id)
-                result[label] = float(fin["netLiquidationValueV2"]["amount"])
-            except Exception:
-                result[label] = None
-        if all(v is None for v in result.values()):
-            raise RuntimeError(
-                "could not fetch account values from Wealthsimple"
-            )
-        self._cache = result
-        self._cache_ts = now
-        persist_env_tokens()
-        return result
+
+        result = self._try_fetch()
+        if result is not None:
+            self._cache = result
+            self._cache_ts = now
+            self._stale = {}
+            if self.store is not None:
+                ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
+                for label, v in result.items():
+                    if v is not None:
+                        self.store.set_cached_value(label, v, ts)
+            persist_env_tokens()
+            return result
+
+        cached = self._load_cached()
+        if cached:
+            self._cache = cached
+            self._cache_ts = now
+            return cached
+
+        raise RuntimeError(
+            "could not fetch Wealthsimple values and no cached value available"
+        )
 
     def value(self, label: str = "default"):
         return self.values().get(label)

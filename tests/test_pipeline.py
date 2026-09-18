@@ -467,3 +467,83 @@ def test_persist_env_tokens():
         else:
             os.environ["WS_REFRESH_TOKEN"] = old[1]
         os.unlink(path)
+
+
+def test_cached_value_roundtrip():
+    from datetime import datetime, timedelta, timezone
+
+    store = _fresh_store()
+    assert store.get_cached_value("RRSP") is None
+    ts = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+    store.set_cached_value("RRSP", 50000.0, ts)
+    cached = store.get_cached_value("RRSP")
+    assert cached["value"] == 50000.0
+    assert cached["ts"] == ts
+
+
+def test_ws_account_falls_back_to_cached_values():
+    from datetime import datetime, timedelta, timezone
+    from trader.account import WealthsimpleAccount
+
+    accounts = [
+        WSAccountConfig(account_id="rrsp", label="RRSP"),
+        WSAccountConfig(account_id="pers", label="Personal"),
+    ]
+    store = _fresh_store()
+    cfg = ConfigStub(TradingConfig(mode="notify"), accounts=accounts)
+    ts = (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat()
+    store.set_cached_value("RRSP", 51234.0, ts)
+    store.set_cached_value("Personal", 1987.0, ts)
+
+    acc = WealthsimpleAccount(cfg, store)
+
+    def boom():
+        raise RuntimeError("no tokens")
+
+    acc._client = boom
+    values = acc.values()
+    assert values["RRSP"] == 51234.0
+    assert values["Personal"] == 1987.0
+    assert acc.stale_age("RRSP") == "3h"
+    assert acc.stale_age("Personal") == "3h"
+
+
+def test_ws_account_raises_without_cache():
+    from trader.account import WealthsimpleAccount
+
+    cfg = ConfigStub(TradingConfig(mode="notify"))
+    store = _fresh_store()
+    acc = WealthsimpleAccount(cfg, store)
+
+    def boom():
+        raise RuntimeError("no tokens")
+
+    acc._client = boom
+    try:
+        acc.values()
+        assert False, "expected RuntimeError"
+    except RuntimeError:
+        pass
+
+
+def test_account_sizing_shows_stale_warning():
+    from datetime import datetime, timedelta, timezone
+    from trader.account import WealthsimpleAccount
+
+    accounts = [WSAccountConfig(account_id="rrsp", label="RRSP")]
+    store = _fresh_store()
+    cfg = ConfigStub(TradingConfig(mode="notify"), accounts=accounts)
+    ts = (datetime.now(timezone.utc) - timedelta(minutes=90)).isoformat()
+    store.set_cached_value("RRSP", 50000.0, ts)
+
+    acc = WealthsimpleAccount(cfg, store)
+
+    def boom():
+        raise RuntimeError("no tokens")
+
+    acc._client = boom
+    alert = parse_alert("BOUGHT 0DTE SPY 759c @ 1.5 @everyone small size")
+    rows = account_sizing(alert, cfg, acc, store)
+    assert rows[0]["value"] == 50000.0
+    assert rows[0]["contracts"] == 2
+    assert any("cached account value" in w for w in rows[0]["warnings"])

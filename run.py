@@ -25,7 +25,7 @@ def main():
         account = PaperAccount(cfg, store)
         executor = PaperExecutor(cfg, store, account)
     elif mode == "live":
-        account = WealthsimpleAccount(cfg)
+        account = WealthsimpleAccount(cfg, store)
         executor = WealthsimpleExecutor(cfg, account)
     else:
         if not cfg.discord.webhook_url:
@@ -34,15 +34,25 @@ def main():
                 "alerts will not reach your phone"
             )
         try:
-            account = WealthsimpleAccount(cfg)
+            account = WealthsimpleAccount(cfg, store)
             account.values()
-            print("sizing alerts will use live Wealthsimple account values")
+            stale = None
+            stale_fn = getattr(account, "stale_age", None)
+            if callable(stale_fn):
+                first = next(iter(account.values().keys()), None)
+                if first:
+                    stale = stale_fn(first)
+            if stale:
+                print(
+                    f"WS values unreachable - using cached values ({stale} old)"
+                )
+            else:
+                print("sizing alerts will use live Wealthsimple account values")
         except Exception:
             account = PaperAccount(cfg, store)
             print(
-                "note: Wealthsimple values unavailable "
-                "(run scripts/ws_login.py) - "
-                "using paper values for sizing alerts"
+                "note: Wealthsimple values unavailable and no cache "
+                "(run scripts/ws_login.py) - using paper values for sizing alerts"
             )
 
     risk = RiskEngine(cfg, store, account)
