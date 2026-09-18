@@ -311,3 +311,39 @@ def test_merged_config_channels():
     assert not dr.merged_config(
         {"channels": ["test-alerts"]}, "", 0.5, 40, ["test-alerts"]
     )[4]
+
+
+def test_channel_allowed_substring_match():
+    channels = ["test-alerts", "player-alerts"]
+    assert dr.channel_allowed("#🚨│player-alerts", channels, "")
+    assert dr.channel_allowed("🚨│player-alerts", channels, "")
+    assert not dr.channel_allowed("#trade-alerts", channels, "")
+    assert not dr.channel_allowed("general", channels, "")
+
+
+def test_find_message_container_strict_title(monkeypatch):
+    rail = _fake_ctrl(
+        name="服务器",
+        children=[
+            _item(text="Let's Play Some Doto community"),
+            _item(text="my-trade-alert-server SPX Plays"),
+        ],
+    )
+    monkeypatch.setattr(
+        dr.auto, "WalkControl", lambda *a, **k: [(rail, 1)]
+    )
+    monkeypatch.setattr(dr, "item_text", lambda it: it.text)
+    assert dr.find_message_container(
+        object(), "", "trade-alerts", strict_title=True
+    ) is None
+    assert dr.find_message_container(
+        object(), "", "trade-alerts", strict_title=False
+    ) is rail
+
+
+def test_strip_ui_noise_author_prefix():
+    raw = (
+        "DoubleL 1:11 AM 1:11 AM Friday, September 18, 2026 1:11 AM "
+        "BOUGHT 08/26 AVGO 352"
+    )
+    assert dr.strip_ui_noise(raw) == "BOUGHT 08/26 AVGO 352"

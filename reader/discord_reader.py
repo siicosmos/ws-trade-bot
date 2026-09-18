@@ -36,11 +36,13 @@ CHROME_RE = re.compile(
 
 
 TS_PREFIX_RE = re.compile(
-    r"^\s*\d{1,2}:\d{2}\s*(?:AM|PM)?\s*"
-    r"(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)?,?\s*"
-    r"(?:January|February|March|April|May|June|July|August|September"
-    r"|October|November|December)\s+\d{1,2},\s*\d{4}\s*"
-    r"(?:\d{1,2}:\d{2}\s*(?:AM|PM)?)?\s*",
+    r"^\s*(?:[^\d:,]{1,20}?\s+)?"
+    r"(?:\d{1,2}:\d{2}\s*(?:AM|PM)?[\s,]*){1,2}"
+    r"(?:(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)"
+    r"[\s,]*)?"
+    r"(?:(?:January|February|March|April|May|June|July|August|September"
+    r"|October|November|December)\s+\d{1,2},\s*\d{4}[\s,]*)"
+    r"(?:at\s+)?(?:\d{1,2}:\d{2}\s*(?:AM|PM)?\s*)?",
     re.I,
 )
 
@@ -248,7 +250,8 @@ def child_texts(ctrl, sample=10):
     return texts
 
 
-def find_message_container(window, marker, title_channel="", diag=None):
+def find_message_container(window, marker, title_channel="", diag=None,
+                            strict_title=False):
     candidates = []
     after_title_match = 0
     for ctrl, depth in auto.WalkControl(window, includeTop=False, maxDepth=30):
@@ -294,10 +297,12 @@ def find_message_container(window, marker, title_channel="", diag=None):
         if matches_title and score >= best_score:
             best = ctrl
             best_score = score
-        if score > 0 and score >= fallback_score:
+        if not strict_title and score > 0 and score >= fallback_score:
             fallback = ctrl
             fallback_score = score
-    return best if best is not None else fallback
+    if best is not None:
+        return best
+    return None if strict_title else fallback
 
 
 def message_items(container):
@@ -377,7 +382,8 @@ def channel_allowed(title_channel, channels, marker):
         return True
     if not channels or not title_channel:
         return True
-    return title_channel.lstrip("#").lower() in channels
+    name = title_channel.lstrip("#").lower()
+    return any(entry in name for entry in channels)
 
 
 def merged_config(resp, marker, poll_interval, max_items, channels):
@@ -527,10 +533,13 @@ def main():
                         window, marker,
                         "" if marker else title_channel,
                         diag,
+                        strict_title=bool(channels) and not marker,
                     )
                 if container is None:
                     wait_attempts += 1
-                    if wait_attempts == 1 or wait_attempts % 6 == 0:
+                    if allowed and (
+                        wait_attempts == 1 or wait_attempts % 6 == 0
+                    ):
                         print(
                             f"no message pane found "
                             f"(title channel: {title_channel!r}) - "
