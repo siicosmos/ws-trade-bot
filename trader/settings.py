@@ -22,6 +22,7 @@ EDITABLE_READER = {
     "poll_interval": ("float", 0.2, 10),
     "max_items": ("int", 5, 200),
 }
+EDITABLE_READER_LISTS = ("channels",)
 EDITABLE_ACCOUNT_NUMERIC = {
     "risk_per_trade_pct": (0.0, 100.0),
     "max_contracts_per_trade": (0, 1000),
@@ -35,6 +36,8 @@ def get_settings(cfg) -> dict:
         trading[k] = getattr(cfg.trading, k)
     trading["size_tiers"] = cfg.trading.size_tiers
     reader = {k: getattr(cfg.reader, k) for k in EDITABLE_READER}
+    for k in EDITABLE_READER_LISTS:
+        reader[k] = getattr(cfg.reader, k)
     accounts = [
         {
             "account_id": a.account_id,
@@ -144,6 +147,23 @@ def apply_settings(cfg, payload: dict, config_path=None) -> tuple:
         setattr(cfg.reader, key, value)
         applied[f"reader.{key}"] = value
 
+    for key in EDITABLE_READER_LISTS:
+        if key not in reader_payload:
+            continue
+        raw = reader_payload[key]
+        if not isinstance(raw, list):
+            errors.append(f"reader.{key}: expected a list")
+            continue
+        value = sorted(
+            {
+                str(c).strip().lower()[:100]
+                for c in raw
+                if str(c).strip()
+            }
+        )
+        setattr(cfg.reader, key, value)
+        applied[f"reader.{key}"] = value
+
     accounts_payload = payload.get("accounts")
     if isinstance(accounts_payload, list):
         existing = {a.label: a for a in cfg.wealthsimple.accounts}
@@ -237,6 +257,8 @@ def _persist(cfg, config_path):
 
     reader = raw.setdefault("reader", {})
     for key in EDITABLE_READER:
+        reader[key] = getattr(cfg.reader, key)
+    for key in EDITABLE_READER_LISTS:
         reader[key] = getattr(cfg.reader, key)
 
     ws = raw.setdefault("wealthsimple", {})

@@ -256,6 +256,8 @@ async function loadSettings() {
     '<input id="set-reader-poll_interval" type="number" step="any" value="' + s.reader.poll_interval + '" style="width:100%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px"></div>' +
     '<div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">max messages kept</label>' +
     '<input id="set-reader-max_items" type="number" value="' + s.reader.max_items + '" style="width:100%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px"></div>' +
+            '<div style="margin-bottom:6px"><label style="color:var(--muted);font-size:12px">Allowed channels (comma-separated, empty = any)</label>' +
+            '<input id="set-reader-channels" type="text" value="' + (s.reader.channels || []).join(",") + '" placeholder="e.g. test-alerts, player-alerts" style="width:100%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px"></div>' +
     "</div>";
   html += '<div style="display:flex;gap:10px;margin-top:14px;align-items:center;flex-wrap:wrap">' +
     '<label style="color:var(--muted);font-size:12px"><input id="set-au-enabled" type="checkbox"' + (s.auto_update.enabled ? " checked" : "") + '> auto-update</label>' +
@@ -302,6 +304,7 @@ async function saveSettings() {
       channel_marker: val("set-reader-channel_marker"),
       poll_interval: num("set-reader-poll_interval"),
       max_items: parseInt(val("set-reader-max_items")),
+      channels: val("set-reader-channels").split(",").map(function(s) { return s.trim(); }).filter(Boolean),
     },
     auto_update: { enabled: document.getElementById("set-au-enabled").checked, interval_seconds: parseInt(val("set-au-interval")) },
   };

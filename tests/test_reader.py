@@ -289,3 +289,25 @@ def test_is_recent_message():
     assert not dr.is_recent_message(
         "11:59 PM December 31, 2099 11:59 PM future message"
     )
+
+
+def test_channel_allowed():
+    channels = ["test-alerts", "player-alerts"]
+    assert dr.channel_allowed("#test-alerts", channels, "")
+    assert dr.channel_allowed("test-alerts", channels, "")
+    assert not dr.channel_allowed("trade-alerts", channels, "")
+    assert dr.channel_allowed("anything", channels, "player-alerts")
+    assert dr.channel_allowed("anything", [], "")
+    assert dr.channel_allowed("", channels, "")
+
+
+def test_merged_config_channels():
+    resp = {"channels": ["Player-Alerts", " test-alerts ", ""]}
+    marker, poll, items, channels, changed = dr.merged_config(
+        resp, "", 0.5, 40, ["test-alerts"]
+    )
+    assert changed
+    assert channels == ["player-alerts", "test-alerts"]
+    assert not dr.merged_config(
+        {"channels": ["test-alerts"]}, "", 0.5, 40, ["test-alerts"]
+    )[4]

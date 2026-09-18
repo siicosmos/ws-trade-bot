@@ -92,6 +92,7 @@ class ReaderConfig:
     channel_marker: str = ""
     max_items: int = 40
     auth_token: str = ""
+    channels: list = field(default_factory=list)
 
 
 @dataclass
@@ -255,6 +256,11 @@ def load_config(path: str) -> Config:
             ),
             max_items=int(_get(raw.get("reader") or {}, "max_items", 40)),
             auth_token=str(_get(raw.get("reader") or {}, "auth_token", "")),
+            channels=[
+                str(c).strip().lower()
+                for c in (raw.get("reader") or {}).get("channels") or []
+                if str(c).strip()
+            ],
         ),
         quotes=QuotesConfig(
             provider=str(

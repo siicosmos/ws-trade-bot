@@ -215,6 +215,7 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                 "channel_marker": cfg.reader.channel_marker,
                 "poll_interval": cfg.reader.poll_interval,
                 "max_items": cfg.reader.max_items,
+                "channels": cfg.reader.channels,
             }
         )
 

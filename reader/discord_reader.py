@@ -372,14 +372,34 @@ def sync_with_server(base_url, auth_token, channel, ok):
     return None
 
 
-def merged_config(resp, marker, poll_interval, max_items):
-    marker_changed = False
+def channel_allowed(title_channel, channels, marker):
+    if marker:
+        return True
+    if not channels or not title_channel:
+        return True
+    return title_channel.lstrip("#").lower() in channels
+
+
+def merged_config(resp, marker, poll_interval, max_items, channels):
+    changed = False
     if resp is None:
-        return marker, poll_interval, max_items, False
+        return marker, poll_interval, max_items, channels, False
     new_marker = resp.get("channel_marker")
     if isinstance(new_marker, str) and new_marker != marker:
         marker = new_marker
-        marker_changed = True
+        changed = True
+    new_channels = resp.get("channels")
+    if isinstance(new_channels, list):
+        normalized = sorted(
+            {
+                str(c).strip().lower()[:100]
+                for c in new_channels
+                if str(c).strip()
+            }
+        )
+        if normalized != channels:
+            channels = normalized
+            changed = True
     try:
         p = float(resp.get("poll_interval"))
         if 0.2 <= p <= 10:
@@ -392,7 +412,7 @@ def merged_config(resp, marker, poll_interval, max_items):
             max_items = m
     except (TypeError, ValueError):
         pass
-    return marker, poll_interval, max_items, marker_changed
+    return marker, poll_interval, max_items, channels, changed
 
 
 def repo_root():
@@ -419,6 +439,13 @@ def main():
     marker = str(cfg.get("channel_marker", ""))
     poll_interval = float(cfg.get("poll_interval", 0.5))
     max_items = int(cfg.get("max_items", 40))
+    channels = sorted(
+        {
+            str(c).strip().lower()[:100]
+            for c in cfg.get("channels") or []
+            if str(c).strip()
+        }
+    )
     auth_token = cfg.get("auth_token", "")
     base_url = status_base_url(pipeline_url)
 
@@ -438,6 +465,8 @@ def main():
         print(f"channel marker: {marker!r}")
     else:
         print("channel marker empty - following whatever channel is open")
+    if channels:
+        print(f"allowed channels: {channels}")
 
     container = None
     current_channel = None
@@ -457,8 +486,10 @@ def main():
                 title_channel = ""
             if not title_channel:
                 title_channel = last_title_channel or ""
+            allowed = channel_allowed(title_channel, channels, marker)
             if (
                 not marker
+                and allowed
                 and title_channel
                 and last_title_channel is not None
                 and title_channel != last_title_channel
@@ -475,16 +506,28 @@ def main():
                         cname = ""
                     if cname != title_channel:
                         container = None
+            if not allowed:
+                if announced_channel is not None:
+                    print(
+                        f"channel {title_channel!r} not in allowed "
+                        f"channels {channels} - waiting"
+                    )
+                    announced_channel = None
+                    current_channel = None
+                container = None
+                tail = []
+                resync = False
             if title_channel:
                 last_title_channel = title_channel
 
             if container is None:
                 diag = []
-                container = find_message_container(
-                    window, marker,
-                    "" if marker else title_channel,
-                    diag,
-                )
+                if allowed:
+                    container = find_message_container(
+                        window, marker,
+                        "" if marker else title_channel,
+                        diag,
+                    )
                 if container is None:
                     wait_attempts += 1
                     if wait_attempts == 1 or wait_attempts % 6 == 0:
@@ -500,11 +543,16 @@ def main():
                     resp = sync_with_server(
                         base_url, auth_token, None, False
                     )
-                    marker, poll_interval, max_items, changed = merged_config(
-                        resp, marker, poll_interval, max_items
+                    marker, poll_interval, max_items, channels, changed = (
+                        merged_config(
+                            resp, marker, poll_interval, max_items, channels
+                        )
                     )
                     if changed:
-                        print(f"channel marker -> {marker!r}")
+                        print(
+                            f"channel config -> marker={marker!r} "
+                            f"channels={channels}"
+                        )
                     time.sleep(5)
                     continue
                 wait_attempts = 0
@@ -579,13 +627,19 @@ def main():
             resp = sync_with_server(
                 base_url, auth_token, current_channel, container is not None
             )
-            new_marker, new_poll, new_max, changed = merged_config(
-                resp, marker, poll_interval, max_items
+            new_marker, new_poll, new_max, new_channels, changed = (
+                merged_config(
+                    resp, marker, poll_interval, max_items, channels
+                )
             )
             if changed:
                 marker = new_marker
+                channels = new_channels
                 container = None
-                print(f"channel marker -> {marker!r}")
+                print(
+                    f"channel config -> marker={marker!r} "
+                    f"channels={channels}"
+                )
             poll_interval = new_poll
             max_items = new_max
 

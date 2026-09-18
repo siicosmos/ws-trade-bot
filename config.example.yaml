@@ -18,6 +18,9 @@ reader:
   channel_marker: ""
   max_items: 40
   auth_token: ""
+  channels:
+    - test-alerts
+    - player-alerts
 
 discord:
   webhook_url: "YOUR_PRIVATE_SERVER_WEBHOOK_URL"

@@ -529,3 +529,40 @@ def test_account_settings_validation():
     personal = [a for a in cfg.wealthsimple.accounts
                 if a.label == "Personal"][0]
     assert personal.max_contracts_per_trade == 3
+
+
+def test_reader_channels_setting(tmp_path):
+    import os
+    import yaml
+
+    from trader.config import load_config
+    from trader.settings import apply_settings, get_settings
+
+    cfg_path = tmp_path / "config.yaml"
+    with open(cfg_path, "w") as f:
+        f.write("reader:\n  poll_interval: 0.5\n")
+    cfg = load_config(str(cfg_path))
+    assert cfg.reader.channels == []
+
+    applied, errors = apply_settings(
+        cfg,
+        {"reader": {"channels": ["Test-Alerts", "player-alerts"]}},
+        str(cfg_path),
+    )
+    assert not errors, errors
+    assert cfg.reader.channels == ["player-alerts", "test-alerts"]
+
+    s = get_settings(cfg)
+    assert s["reader"]["channels"] == ["player-alerts", "test-alerts"]
+
+    with open(cfg_path) as f:
+        raw = yaml.safe_load(f)
+    assert set(raw["reader"]["channels"]) == {
+        "player-alerts", "test-alerts",
+    }
+
+    applied, errors = apply_settings(
+        cfg, {"reader": {"channels": []}}, str(cfg_path)
+    )
+    assert not errors, errors
+    assert cfg.reader.channels == []
