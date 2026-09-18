@@ -37,16 +37,21 @@ CHROME_RE = re.compile(
 )
 
 
-TS_PREFIX_RE = re.compile(
-    r"^\s*(?:[^\d:,]{1,20}?\s+)?"
-    r"(?:\d{1,2}:\d{2}\s*(?:AM|PM)?[\s,]*){1,2}"
+DATE_TIME_CORE = (
+    r"(?:\d{1,2}:\d{2}\s*(?:AM|PM)?[\s,]*){0,2}"
     r"(?:(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)"
     r"[\s,]*)?"
     r"(?:(?:January|February|March|April|May|June|July|August|September"
     r"|October|November|December)\s+\d{1,2},\s*\d{4}[\s,]*)"
-    r"(?:at\s+)?(?:\d{1,2}:\d{2}\s*(?:AM|PM)?\s*)?",
+    r"(?:at\s+)?(?:\d{1,2}:\d{2}\s*(?:AM|PM)?\s*)?"
+)
+
+TS_PREFIX_RE = re.compile(
+    r"^\s*(?:[^\d:,]{1,24}?\s+)?" + DATE_TIME_CORE,
     re.I,
 )
+
+MID_META_RE = re.compile(DATE_TIME_CORE, re.I)
 
 UI_NOISE_RE = re.compile(
     "|".join(
@@ -113,9 +118,59 @@ def strip_ui_noise(text):
     if not text:
         return text
     text = UI_NOISE_RE.sub(" ", text)
+    if not TS_PREFIX_RE.match(text):
+        mid = MID_META_RE.search(text)
+        if mid and mid.start() > 0:
+            text = text[mid.start():]
     text = TS_PREFIX_RE.sub("", text)
     text = META_LEAD_RE.sub("", text)
     return re.sub(r"\s{2,}", " ", text).strip()
+
+
+_clock_offset = 0.0
+
+
+def internet_offset():
+    try:
+        import socket
+        import struct
+
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.settimeout(5)
+        s.sendto(b"\x1b" + 47 * b"\0", ("pool.ntp.org", 123))
+        data, _ = s.recvfrom(1024)
+        s.close()
+        true_unix = struct.unpack("!12I", data)[10] - 2208988800
+        return true_unix - time.time()
+    except OSError:
+        pass
+    try:
+        from email.utils import parsedate_to_datetime
+
+        r = requests.head("https://www.cloudflare.com", timeout=5)
+        date_hdr = r.headers.get("Date")
+        if date_hdr:
+            return parsedate_to_datetime(date_hdr).timestamp() - time.time()
+    except (requests.RequestException, ValueError, TypeError):
+        pass
+    return None
+
+
+def true_now():
+    return datetime.now() + timedelta(seconds=_clock_offset)
+
+
+def sync_clock():
+    global _clock_offset
+    offset = internet_offset()
+    if offset is None:
+        return
+    if abs(offset - _clock_offset) > 5:
+        log(
+            f"local clock off by {offset:+.0f}s vs internet time "
+            f"- correcting"
+        )
+    _clock_offset = offset
 
 
 def parse_message_time(text):
@@ -130,7 +185,7 @@ def parse_message_time(text):
         hour += 12
     elif ampm.upper() == "AM" and hour == 12:
         hour = 0
-    now = datetime.now()
+    now = true_now()
     d = DATE_RE.search(text)
     if d:
         month = MONTHS[d.group(1).lower()]
@@ -154,6 +209,9 @@ def meta_time(text):
     m = META_LEAD_RE.match(text)
     if m:
         return parse_message_time(m.group(0))
+    m = MID_META_RE.search(text)
+    if m:
+        return parse_message_time(m.group(0))
     return None
 
 
@@ -161,7 +219,7 @@ def is_recent_message(text, max_age_minutes=10):
     ts = meta_time(text)
     if ts is None:
         return True
-    age = (datetime.now() - ts).total_seconds() / 60
+    age = (true_now() - ts).total_seconds() / 60
     return -5 <= age <= max_age_minutes
 
 
@@ -594,6 +652,9 @@ def main():
         str(discord_cfg.get("reader_log_webhook_url") or "")
     )
 
+    sync_clock()
+    last_clock_check = time.time()
+
     start_head = git_head(repo_root())
     last_head_check = time.time()
 
@@ -624,6 +685,10 @@ def main():
     sync_counter = 99
 
     while True:
+        if time.time() - last_clock_check > 600:
+            last_clock_check = time.time()
+            sync_clock()
+
         if time.time() - last_head_check > 10:
             last_head_check = time.time()
             head = git_head(repo_root())

@@ -472,3 +472,46 @@ def test_notify_restart_posts_webhook(monkeypatch):
     calls.clear()
     dr.notify_restart("", "anything")
     assert calls == []
+
+
+def test_true_now_applies_clock_offset():
+    from datetime import datetime
+    dr._clock_offset = 90.0
+    try:
+        assert (dr.true_now() - datetime.now()).total_seconds() > 89
+    finally:
+        dr._clock_offset = 0.0
+    assert abs((dr.true_now() - datetime.now()).total_seconds()) < 1
+
+
+def test_is_recent_uses_offset(monkeypatch):
+    from datetime import datetime, timedelta
+    future = datetime.now() + timedelta(hours=3)
+    text = future.strftime("%A, %B ") + f"{future.day}, {future.year} " + future.strftime("%I:%M %p")
+    assert not dr.is_recent_message(text)
+    dr._clock_offset = 3 * 3600.0
+    try:
+        assert dr.is_recent_message(text)
+    finally:
+        dr._clock_offset = 0.0
+
+
+def test_internet_offset_shape():
+    offset = dr.internet_offset()
+    assert offset is None or abs(offset) < 300
+
+
+def test_embed_prefixed_message_is_old_and_cleaned():
+    raw = (
+        "📢 SPX Plays • Option Alert APP 9/1/2026 10:42 AM "
+        "📢 SPX Plays • Option Alert 9/1/2026 10:42 AM "
+        "Tuesday, September 1, 2026 10:42 AM "
+        "BOUGHT 0DTE SPX 7620p @ 1.5 small size SL 15m > 7644"
+    )
+    ts = dr.meta_time(raw)
+    assert ts is not None
+    assert (ts.year, ts.month, ts.day) == (2026, 9, 1)
+    assert not dr.is_recent_message(raw)
+    assert dr.strip_ui_noise(raw) == (
+        "BOUGHT 0DTE SPX 7620p @ 1.5 small size SL 15m > 7644"
+    )
