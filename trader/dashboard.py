@@ -32,8 +32,12 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   .badge.live { background: #f8514933; color: var(--red); }
   .badge.live::before { content: "\\25CF "; animation: pulse 1.5s infinite; }
   @keyframes pulse { 50% { opacity: .3; } }
+  #timebox {
+    margin-left: auto; display: flex; align-items: center;
+    white-space: nowrap; flex-shrink: 0;
+  }
   #updated {
-    color: var(--muted); font-size: 12px; margin-left: auto;
+    color: var(--muted); font-size: 12px;
     font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
     font-variant-numeric: tabular-nums;
   }
@@ -79,8 +83,7 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   <span id="mode" class="badge notify">notify</span>
   <span id="reader" style="color:var(--muted);font-size:12px"></span>
   <span id="git" style="color:var(--muted);font-size:12px"></span>
-  <span id="updated"></span>
-  <span id="clock"></span>
+  <span id="timebox"><span id="updated"></span><span id="clock"></span></span>
   <span id="stops" style="color:var(--muted);font-size:12px;flex-basis:100%;margin-top:-4px"></span>
 </header>
 
