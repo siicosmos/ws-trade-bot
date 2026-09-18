@@ -44,12 +44,7 @@ class AutoUpdater:
         notify_discord(
             self.webhook_url,
             "Pipeline restarting",
-            {
-                "reason": (
-                    f"code updated to {new[:8] if new else '?'} "
-                    f"(git pull detected)"
-                )
-            },
+            {"reason": f"code updated to {new[:8] if new else '?'}"},
             ok=True,
         )
         print("auto-update: local code changed - restarting pipeline...")
