@@ -22,12 +22,11 @@ def process_alert(
     if not text or not text.strip():
         return {"status": "ignored", "reason": "empty message"}
 
-    key = _message_key(text, author)
-    if store.seen_signal(key):
-        return {"status": "ignored", "reason": "duplicate message"}
-
     alert = parse_alert(text, cfg.parser.custom_patterns)
     correction = is_correction(text)
+    key = _message_key(text, author)
+    if (alert is not None or correction) and store.seen_signal(key):
+        return {"status": "ignored", "reason": "duplicate message"}
     store.record_signal(
         key, author, text, alert is not None, correction=correction
     )

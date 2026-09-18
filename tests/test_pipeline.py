@@ -647,3 +647,25 @@ def test_ignored_message_forwarded_plain(monkeypatch):
     assert res["status"] == "ignored"
     plain = [p for p in sent if p[1] and "content" in p[1]]
     assert plain and plain[0][1]["content"] == "executed 2.15 ^"
+
+
+def test_repeated_plain_message_notifies_each_time(monkeypatch):
+    import trader.notify as notify_mod
+
+    sent = []
+
+    def fake_post(url, json=None, timeout=None, **kw):
+        sent.append((url, json))
+
+    monkeypatch.setattr(notify_mod.requests, "post", fake_post)
+
+    cfg, store, account, risk = _setup(mode="notify")
+    cfg.discord.webhook_url = "http://hook"
+    for _ in range(2):
+        res = process_alert(
+            "executed 2.15 ^", "", cfg, store, risk, None, account
+        )
+        assert res["status"] == "ignored"
+    plain = [p for p in sent if p[1] and "content" in p[1]]
+    assert len(plain) == 2
+    assert plain[0][1]["content"] == "executed 2.15 ^"
