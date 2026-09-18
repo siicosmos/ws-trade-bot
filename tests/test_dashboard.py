@@ -227,3 +227,15 @@ def test_badges_do_not_wrap():
     # the short and ws tags use the mini variant
     assert 'tag skip mini' in html
     assert 'tag ignored mini' in html
+
+
+def test_utc_storage_rendered_locally():
+    import trader.dashboard as dash
+
+    js = re.findall(r"<script>(.*?)</script>",
+                    dash.DASHBOARD_HTML, re.S)[0]
+    # stored UTC gets a Z and renders via the browser clock mechanism
+    assert 'if (!/[zZ+]/.test(s.slice(-6))) s += "Z";' in js
+    assert "d.getHours()" in js and "d.getMinutes()" in js
+    # ws expiry dates are ET trading dates - display date only
+    assert 'String(p.expiry || "").slice(0, 10)' in js

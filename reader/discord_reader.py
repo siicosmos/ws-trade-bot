@@ -605,15 +605,37 @@ def _uia_prop(obj, name):
     return value() if callable(value) else value
 
 
+_snap_warn_ts = 0.0
+
+
 def snap_to_bottom(container, log_fn=None):
     """Discord virtualizes the message list: only the scrolled-in
     viewport exists in the accessibility tree, so a pane left higher
-    up hides the newest alerts. Snap it to the bottom."""
-    try:
-        pattern = container.GetScrollPattern()
-    except Exception:
-        return
+    up hides the newest alerts. Snap it (or a scrollable ancestor)
+    to the bottom."""
+    global _snap_warn_ts
+    node = container
+    pattern = None
+    for _ in range(4):
+        if node is None:
+            break
+        try:
+            pattern = node.GetScrollPattern()
+        except Exception:
+            pattern = None
+        if pattern:
+            break
+        try:
+            node = node.GetParentControl()
+        except Exception:
+            node = None
     if not pattern:
+        if log_fn and time.time() - _snap_warn_ts > 300:
+            log_fn(
+                "no scroll pattern on the message pane or its "
+                "ancestors - cannot auto-scroll"
+            )
+            _snap_warn_ts = time.time()
         return
     try:
         visible = _uia_prop(pattern, "VerticalViewSize")

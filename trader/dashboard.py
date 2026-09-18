@@ -206,7 +206,15 @@ function fmtMoney(v) {
 
 function fmtTime(ts) {
   if (!ts) return "—";
-  return ts.replace("T", " ").slice(5, 16);
+  let s = String(ts);
+  // stored values are UTC; render in the browser's timezone just
+  // like the clock does
+  if (!/[zZ+]/.test(s.slice(-6))) s += "Z";
+  const d = new Date(s);
+  if (isNaN(d)) return String(ts);
+  const pad = (n) => String(n).padStart(2, "0");
+  return pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + " " +
+    pad(d.getHours()) + ":" + pad(d.getMinutes());
 }
 
 async function loadSummary() {
@@ -288,7 +296,8 @@ async function loadPositions() {
     ) + "</td><td><span style=\"font-weight:600\">" +
       esc(p.underlying || "") + " " + esc(p.strike || "") + esc(p.right || "") +
       '</span><br><span style="font-size:11px;color:var(--muted)">' +
-      esc(p.expiry || "") + "</span> " + dteBadge(p.expiry) + "</td>" +
+      esc(String(p.expiry || "").slice(0, 10)) + "</span> " +
+      dteBadge(p.expiry) + "</td>" +
       '<td class=num>' + (p.short ? "-" + p.qty : p.qty) + (p.short ? ' <span class="tag skip mini" title="short position">short</span>' : (p.spread ? ' <span class="tag ignored mini" title="multi-leg spread">spread</span>' : "")) + "</td>" +
       '<td class=num>' + (p.avg_premium != null
         ? (p.spread ? fmtSigned(avgTotal) : "$" + avgTotal.toLocaleString("en-CA", { maximumFractionDigits: 2 })) +

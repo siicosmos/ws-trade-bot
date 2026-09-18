@@ -892,7 +892,9 @@ def test_store_keeps_message_time():
     epoch = time_mod.time() - 3600  # an hour ago
     store.record_signal("k", "a", "text", True, ts_epoch=epoch)
     row = store.recent_signals()[0]
-    from datetime import datetime
+    from datetime import datetime, timezone
 
-    expect = datetime.fromtimestamp(epoch).isoformat(timespec="seconds")
+    expect = datetime.fromtimestamp(
+        epoch, tz=timezone.utc
+    ).isoformat(timespec="seconds")
     assert row["ts"] == expect

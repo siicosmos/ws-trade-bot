@@ -128,8 +128,11 @@ class Store:
     def record_signal(self, message_key: str, author: str, text: str, parsed: bool,
                       correction: bool = False, channel: str = "",
                       ts_epoch=None):
+        # everything is stored in UTC; the browser renders it in the
+        # user's timezone
         ts = (
-            datetime.fromtimestamp(ts_epoch).isoformat(timespec="seconds")
+            datetime.fromtimestamp(ts_epoch, tz=timezone.utc)
+            .isoformat(timespec="seconds")
             if ts_epoch else self._now()
         )
         with self._lock, self._conn:
