@@ -56,13 +56,14 @@ def notify_alert(webhook_url: str, alert, sizing=None):
         value = row.get("value")
         contracts = row.get("contracts")
         if value is not None and contracts is not None:
-            fields[f"{label} sizing"] = (
+            line = (
                 f"{contracts} contracts "
-                f"(${row.get('budget') or 0:,.0f} risk @ "
-                f"{row.get('risk_pct')}%)"
-                if contracts > 0
-                else f"too small (budget ${row.get('budget') or 0:,.0f})"
+                f"(${row.get('budget') or 0:,.0f} risk @ {row.get('risk_pct')}%)"
             )
+            warnings = row.get("warnings") or []
+            if warnings:
+                line += " — WARNING: " + "; ".join(warnings)
+            fields[f"{label} sizing"] = line
         elif value is not None:
             fields[f"{label} sizing"] = (
                 f"${value:,.0f} (no price to size against)"

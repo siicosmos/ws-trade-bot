@@ -28,7 +28,9 @@ def process_alert(
         return {"status": "ignored", "reason": "no actionable signal"}
 
     if cfg.trading.mode == "notify":
-        sizing = account_sizing(alert, cfg, account) if account else []
+        sizing = (
+            account_sizing(alert, cfg, account, store) if account else []
+        )
         notify_alert(cfg.discord.webhook_url, alert, sizing)
         return {
             "status": "notified",

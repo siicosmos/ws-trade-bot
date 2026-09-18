@@ -158,8 +158,8 @@ def test_multi_account_paper_execution():
     buy = parse_alert("BOUGHT 0DTE SPY 759c @ 1.5 @everyone medium size")
     res = ex.execute(buy, cfg, store)
     assert res.ok
-    assert res.breakdown["RRSP"] == "10x @ 1.5"
-    assert res.breakdown["Personal"] == "0 (risk budget too small)"
+    assert res.breakdown["RRSP"] == "10x @ 1.5 (capped from 15)"
+    assert res.breakdown["Personal"] == "0 (risk budget $90 < $150/contract)"
     assert res.qty == 10
     assert store.get_position("paper", buy.contract_key(), "RRSP") == 10
     assert store.get_position("paper", buy.contract_key(), "Personal") == 0
@@ -203,7 +203,7 @@ def test_multi_account_open_risk_cap_skips_only_that_account():
     assert 750 >= 2000 * 0.30
 
     res = ex.execute(buy, cfg, store)
-    assert "skipped (open risk cap reached)" in res.breakdown["Personal"]
+    assert "skipped (open risk cap reached" in res.breakdown["Personal"]
     assert "x @ 1.5" in res.breakdown["RRSP"]
 
 
@@ -325,3 +325,40 @@ def test_account_endpoint_multi_account():
     assert data["accounts"]["Personal"]["open_risk_pct"] == 15.0
     accounts_in_positions = {p["account"] for p in data["positions"]}
     assert accounts_in_positions == {"Personal"}
+
+
+def test_account_sizing_warnings():
+    accounts = [
+        WSAccountConfig(account_id="rrsp", label="RRSP",
+                        max_contracts_per_trade=20, paper_value=50000),
+        WSAccountConfig(account_id="pers", label="Personal",
+                        paper_value=2000),
+    ]
+    store = _fresh_store()
+    cfg = ConfigStub(TradingConfig(mode="notify", risk_per_trade_pct=5,
+                                   max_open_risk_pct=30),
+                     accounts=accounts)
+    account = PaperAccount(cfg, store)
+
+    big = parse_alert("BOUGHT 0DTE SPY 759c @ 1.5 @everyone big size")
+    rows = account_sizing(big, cfg, account, store)
+    by_label = {r["label"]: r for r in rows}
+    assert by_label["RRSP"]["contracts"] == 30
+    assert by_label["RRSP"]["final_contracts"] == 20
+    assert by_label["RRSP"]["warnings"] == ["over contract cap (20)"]
+    assert by_label["Personal"]["contracts"] == 1
+    assert by_label["Personal"]["final_contracts"] == 1
+    assert by_label["Personal"]["warnings"] == []
+
+    store.apply_position("paper", big, 4, premium=1.5, account="Personal")
+    rows = account_sizing(big, cfg, account, store)
+    by_label = {r["label"]: r for r in rows}
+    assert any("open risk cap" in w for w in by_label["Personal"]["warnings"])
+
+    small = parse_alert("BOUGHT 0DTE SPY 759c @ 1.5 @everyone small size")
+    rows = account_sizing(small, cfg, account, store)
+    by_label = {r["label"]: r for r in rows}
+    assert by_label["Personal"]["contracts"] == 0
+    assert by_label["Personal"]["warnings"] == [
+        "budget $30 below $150 per-contract cost"
+    ]

@@ -30,22 +30,26 @@ def effective_contract_cap(acct, cfg) -> int:
     return cfg.trading.max_contracts_per_trade
 
 
-def contracts_for(alert, cfg, account_value: float, price, acct=None) -> int:
+def raw_contracts_for(alert, cfg, account_value, price, acct=None) -> int:
     if not price or price <= 0 or not account_value or account_value <= 0:
         return 0
     budget = account_value * (effective_risk_pct(acct, cfg, alert) / 100.0)
-    cost_per_contract = float(price) * 100
-    qty = int(budget // cost_per_contract)
+    return int(budget // (float(price) * 100))
+
+
+def contracts_for(alert, cfg, account_value: float, price, acct=None) -> int:
+    qty = raw_contracts_for(alert, cfg, account_value, price, acct)
     cap = effective_contract_cap(acct, cfg)
     if cap and cap > 0:
         qty = min(qty, cap)
     return max(0, qty)
 
 
-def account_sizing(alert, cfg, account) -> list:
+def account_sizing(alert, cfg, account, store=None) -> list:
     price = alert.premium if alert.kind == "option" else (
         alert.entry or alert.premium
     )
+    mode = "live" if cfg.trading.mode == "live" else "paper"
     rows = []
     for acct in effective_accounts(cfg):
         label = account_label(acct)
@@ -57,12 +61,43 @@ def account_sizing(alert, cfg, account) -> list:
                 value = None
         risk_pct = effective_risk_pct(acct, cfg, alert)
         budget = value * (risk_pct / 100.0) if value else None
+
         contracts = None
         if budget is not None and price:
             contracts = int(budget // (float(price) * 100))
-            cap = effective_contract_cap(acct, cfg)
-            if cap and cap > 0:
-                contracts = min(contracts, cap)
+
+        cap = effective_contract_cap(acct, cfg)
+        final_contracts = contracts
+        if (
+            contracts is not None
+            and cap and cap > 0
+        ):
+            final_contracts = min(contracts, cap)
+
+        warnings = []
+        if contracts is not None and price:
+            cost = float(price) * 100
+            if contracts < 1:
+                warnings.append(
+                    f"budget ${budget:,.0f} below ${cost:,.0f} per-contract cost"
+                )
+            elif cap and cap > 0 and contracts > cap:
+                warnings.append(f"over contract cap ({cap})")
+        if (
+            alert.action == "BUY"
+            and store is not None
+            and value
+            and final_contracts
+            and cfg.trading.max_open_risk_pct > 0
+        ):
+            open_risk = store.open_risk(mode, label)
+            limit = value * (cfg.trading.max_open_risk_pct / 100.0)
+            if open_risk >= limit:
+                warnings.append(
+                    f"open risk cap reached "
+                    f"(${open_risk:,.0f} of ${limit:,.0f} deployed)"
+                )
+
         rows.append(
             {
                 "label": label,
@@ -71,6 +106,8 @@ def account_sizing(alert, cfg, account) -> list:
                 "budget": budget,
                 "price": price,
                 "contracts": contracts,
+                "final_contracts": final_contracts,
+                "warnings": warnings,
             }
         )
     return rows
@@ -119,18 +156,28 @@ class PaperExecutor:
             for acct in effective_accounts(cfg):
                 label = account_label(acct)
                 value = self.account.value(label)
+                raw = raw_contracts_for(alert, cfg, value, price, acct)
                 qty = contracts_for(alert, cfg, value, price, acct)
-                if qty < 1:
-                    breakdown[label] = "0 (risk budget too small)"
+                if raw < 1:
+                    budget = value * (
+                        effective_risk_pct(acct, cfg, alert) / 100.0
+                    )
+                    breakdown[label] = (
+                        f"0 (risk budget ${budget:,.0f} < "
+                        f"${price * 100:,.0f}/contract)"
+                    )
                     continue
+                note = f" (capped from {raw})" if raw > qty else ""
                 if _at_open_risk_cap(store, self.mode, label, value, cfg):
-                    breakdown[label] = "skipped (open risk cap reached)"
+                    breakdown[label] = (
+                        f"skipped (open risk cap reached, wanted {qty}x)"
+                    )
                     continue
                 store.apply_position(
                     self.mode, alert, qty, premium=price, account=label
                 )
                 store.adjust_paper_equity(-qty * price * 100, label)
-                breakdown[label] = f"{qty}x @ {price}"
+                breakdown[label] = f"{qty}x @ {price}{note}"
                 total += qty
             ok = total > 0
             detail = (
@@ -334,12 +381,24 @@ class WealthsimpleExecutor:
                     value = self.account.value(label)
                 except Exception:
                     value = None
+                raw = raw_contracts_for(alert, cfg, value, limit, acct)
                 qty = contracts_for(alert, cfg, value, limit, acct)
-                if qty < 1:
-                    breakdown[label] = "0 (risk budget too small)"
+                if raw < 1:
+                    budget = (
+                        value * (effective_risk_pct(acct, cfg, alert) / 100.0)
+                        if value
+                        else 0
+                    )
+                    breakdown[label] = (
+                        f"0 (risk budget ${budget:,.0f} < "
+                        f"${float(limit) * 100:,.0f}/contract)"
+                    )
                     continue
+                note = f" (capped from {raw})" if raw > qty else ""
                 if _at_open_risk_cap(store, self.mode, label, value, cfg):
-                    breakdown[label] = "skipped (open risk cap reached)"
+                    breakdown[label] = (
+                        f"skipped (open risk cap reached, wanted {qty}x)"
+                    )
                     continue
                 order = ws.buy_option(
                     account_id, opt["id"], qty, float(limit)
@@ -347,7 +406,7 @@ class WealthsimpleExecutor:
                 store.apply_position(
                     self.mode, alert, qty, premium=float(limit), account=label
                 )
-                breakdown[label] = f"{qty}x @ {limit}"
+                breakdown[label] = f"{qty}x @ {limit}{note}"
                 total += qty
                 order_ids.append(str(order.get("orderId") or ""))
             else:
