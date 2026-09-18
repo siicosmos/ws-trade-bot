@@ -212,3 +212,14 @@ def test_positions_table_always_fits_panel():
     assert "table-layout: fixed" in html
     assert 'class="pos"' in html
     assert "max-width: 1400px" in html
+
+
+def test_badges_do_not_wrap():
+    import trader.dashboard as dash
+
+    html = dash.DASHBOARD_HTML
+    assert "white-space: nowrap" in html
+    assert "tag.mini" in html
+    # the short and ws tags use the mini variant
+    assert 'tag skip mini' in html
+    assert 'tag ignored mini' in html

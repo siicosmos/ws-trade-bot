@@ -95,8 +95,8 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   .pos { table-layout: fixed; font-size: 12px; }
   .pos th, .pos td { padding: 6px 5px; word-break: break-word; }
   .pos th:nth-child(1), .pos td:nth-child(1) { width: 12%; }
-  .pos th:nth-child(2), .pos td:nth-child(2) { width: 24%; }
-  .pos th:nth-child(3), .pos td:nth-child(3) { width: 9%; }
+  .pos th:nth-child(2), .pos td:nth-child(2) { width: 22%; }
+  .pos th:nth-child(3), .pos td:nth-child(3) { width: 11%; }
   .pos th:nth-child(4), .pos td:nth-child(4) { width: 13%; }
   .pos th:nth-child(5), .pos td:nth-child(5) { width: 13%; }
   .pos th:nth-child(6), .pos td:nth-child(6) { width: 14%; }
@@ -104,7 +104,8 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   th { text-align: left; color: var(--muted); font-weight: 600; padding: 8px 10px; border-bottom: 1px solid var(--border); font-size: 11px; text-transform: uppercase; }
   td { padding: 8px 10px; border-bottom: 1px solid #21262d; font-variant-numeric: tabular-nums; }
   tr:hover td { background: #1c2129; }
-  .tag { padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+  .tag { padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; white-space: nowrap; }
+  .tag.mini { padding: 0 5px; font-size: 10px; }
   .tag.buy { color: var(--green); background: #3fb95022; }
   .tag.sell { color: var(--red); background: #f8514922; }
   .tag.ok { color: var(--green); background: #3fb95022; }
@@ -166,7 +167,7 @@ function dteBadge(expiry) {
   else if (days === 1) color = "#db6d28";
   else if (days <= 7) color = "#d29922";
   else color = "#3fb950";
-  return '<span style="padding:1px 8px;border-radius:999px;font-size:11px;font-weight:700;background:' +
+  return '<span style="padding:0 5px;border-radius:999px;font-size:10px;font-weight:700;white-space:nowrap;background:' +
     color + "22;color:" + color + '">' + days + "dte</span>";
 }
 
@@ -278,13 +279,13 @@ async function loadPositions() {
       Math.abs(pl).toLocaleString("en-CA", { maximumFractionDigits: 2 }) + ")</span>";
     html += "<tr><td>" + esc(p.account) + (
       p.source === "ws"
-        ? ' <span class="tag ignored" title="live from Wealthsimple">ws</span>'
+        ? ' <span class="tag ignored mini" title="live from Wealthsimple">ws</span>'
         : ""
     ) + "</td><td><span style=\"font-weight:600\">" +
       esc(p.underlying || "") + " " + esc(p.strike || "") + esc(p.right || "") +
       '</span><br><span style="font-size:11px;color:var(--muted)">' +
       esc(p.expiry || "") + "</span> " + dteBadge(p.expiry) + "</td>" +
-      '<td class=num>' + (p.short ? "-" + p.qty : p.qty) + (p.short ? ' <span class="tag skip" title="short position">short</span>' : "") + "</td>" +
+      '<td class=num>' + (p.short ? "-" + p.qty : p.qty) + (p.short ? ' <span class="tag skip mini" title="short position">short</span>' : "") + "</td>" +
       '<td class=num>' + (p.avg_premium != null
         ? "$" + avgTotal.toLocaleString("en-CA", { maximumFractionDigits: 2 }) +
           '<span class="subv">($' + p.avg_premium + ")</span>"
