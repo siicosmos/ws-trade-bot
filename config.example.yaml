@@ -63,8 +63,7 @@ trading:
   max_consecutive_losses: 2
   min_dte_days: 0
   paper_account_value: 10000
-  skip_underlyings:
-    - SPX
+  skip_underlyings: []
   max_trades_per_day: 5
   cooldown_seconds: 60
   dedupe_window_minutes: 10
