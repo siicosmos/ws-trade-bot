@@ -1,14 +1,18 @@
-"""Wealthsimple GraphQL field discovery via validation errors.
+"""Wealthsimple GraphQL field discovery via the library document.
 
-Introspection is disabled on their endpoint, so fields are
-discovered by querying candidate names on the live shapes:
-unknown fields fail validation with "Cannot query field" (often
-with "Did you mean" suggestions), known ones return values.
+Free-form queries are rejected (UNPROCESSABLE_ENTITY) even when
+shaped exactly like the library's, so this probe starts from the
+library's own FetchIdentityPositions document verbatim - the one
+query proven to work in production - and inserts one candidate
+field at a time:
 
-The financials query shape that works is probed at runtime: the
-library-exact header, a filterless variant, and a null-filtered
-variant are tried with a totalValue control and the first that
-executes wins.
+  control A: the untouched document (verifies graphql access)
+  control B: document + totalValue in `current` (verifies that
+             modified documents are accepted at all)
+
+If B works, every margin / buying-power / multi-leg candidate is
+probed the same way: unknown fields fail with "Cannot query field"
+(plus did-you-mean suggestions), known ones return values.
 
 Runs once shortly after the pipeline starts; results go to the
 log and the update webhook.
@@ -16,6 +20,66 @@ log and the update webhook.
 import re
 import threading
 import time
+
+# Verbatim from wealthsimple_python.client.get_positions - keep in
+# sync if the library updates.
+LIB_DOC = """
+        query FetchIdentityPositions($identityId: ID!, $currency: Currency!, $first: Int, $cursor: String,
+                                     $accountIds: [ID!], $aggregated: Boolean, $currencyOverride: CurrencyOverride,
+                                     $filter: PositionFilter, $includeSecurity: Boolean = false) {
+          identity(id: $identityId) {
+            id
+            financials(filter: {accounts: $accountIds}) {
+              current(currency: $currency) {
+                id
+                positions(first: $first, after: $cursor, aggregated: $aggregated, filter: $filter) {
+                  edges {
+                    node {
+                      id quantity percentageOfAccount positionDirection
+                      bookValue { amount currency __typename }
+                      averagePrice { amount currency __typename }
+                      marketAveragePrice: averagePrice(currencyOverride: $currencyOverride) { amount currency __typename }
+                      marketBookValue: bookValue(currencyOverride: $currencyOverride) { amount currency __typename }
+                      totalValue(currencyOverride: $currencyOverride) { amount currency __typename }
+                      unrealizedReturns { amount currency __typename }
+                      marketUnrealizedReturns: unrealizedReturns(currencyOverride: $currencyOverride) { amount currency __typename }
+                      security {
+                        id securityType currency status logoUrl features
+                        stock @include(if: $includeSecurity) {
+                          name symbol primaryExchange primaryMic __typename
+                        }
+                        optionDetails @include(if: $includeSecurity) {
+                          strikePrice optionType expiryDate osiSymbol multiplier maturity
+                          underlyingSecurity {
+                            id
+                            stock { name symbol primaryExchange __typename }
+                            __typename
+                          }
+                          __typename
+                        }
+                        quoteV2(currency: null) @include(if: $includeSecurity) {
+                          securityId currency price sessionPrice ask bid quotedAsOf previousBaseline __typename
+                        }
+                        __typename
+                      }
+                      __typename
+                    }
+                    __typename
+                  }
+                  pageInfo { hasNextPage endCursor __typename }
+                  totalCount status __typename
+                }
+                __typename
+              }
+              __typename
+            }
+            __typename
+          }
+        }
+"""
+
+CURRENT_ANCHOR = "current(currency: $currency) {\n                id\n"
+NODE_ANCHOR = "id quantity percentageOfAccount positionDirection\n"
 
 FINANCIAL_FIELDS = [
     "totalValue",
@@ -51,72 +115,6 @@ POSITION_FIELDS = [
     "marginRequirement",
 ]
 
-LIB_HEADER = """
-query FetchIdentityPositions($identityId: ID!, $currency: Currency!, $first: Int, $cursor: String,
-                             $accountIds: [ID!], $aggregated: Boolean, $currencyOverride: CurrencyOverride,
-                             $filter: PositionFilter, $includeSecurity: Boolean = false) {
-"""
-
-T_LIB_FIN = LIB_HEADER + """
-  identity(id: $identityId) {
-    financials(filter: {accounts: $accountIds}) {
-      current(currency: $currency) {
-        FIELD
-        __typename
-      }
-      __typename
-    }
-    __typename
-  }
-}
-"""
-
-T_NOFILTER = """
-query ProbeField($identityId: ID!, $currency: Currency!) {
-  identity(id: $identityId) {
-    financials {
-      current(currency: $currency) {
-        FIELD
-      }
-    }
-  }
-}
-"""
-
-T_NULLFILTER = """
-query ProbeField($identityId: ID!, $currency: Currency!, $accountIds: [ID!]) {
-  identity(id: $identityId) {
-    financials(filter: {accounts: $accountIds}) {
-      current(currency: $currency) {
-        FIELD
-      }
-    }
-  }
-}
-"""
-
-T_LIB_POS = LIB_HEADER + """
-  identity(id: $identityId) {
-    financials(filter: {accounts: $accountIds}) {
-      current(currency: $currency) {
-        positions(first: $first, after: $cursor, aggregated: $aggregated, filter: $filter) {
-          edges {
-            node {
-              FIELD
-            }
-          }
-          pageInfo { hasNextPage endCursor __typename }
-          totalCount status __typename
-        }
-        __typename
-      }
-      __typename
-    }
-    __typename
-  }
-}
-"""
-
 SUGGESTION_RE = re.compile(r"Did you mean ['\"]([\w]+)['\"]")
 
 
@@ -132,18 +130,20 @@ def _fmt(value):
     return str(value)
 
 
-def _probe_field(ws, template, field, variables, path):
-    query = template.replace("FIELD", field)
+def _run(ws, doc, variables, path):
+    """Run one document and extract the value at path."""
     try:
-        result = ws.graphql_query("ProbeField", query, variables) or {}
+        result = ws.graphql_query("FetchIdentityPositions", doc, variables)
     except Exception as e:
         msg = str(e)
         if "Cannot query field" in msg or "Unknown field" in msg:
             hint = SUGGESTION_RE.search(msg)
             return None, (f"no (did you mean '{hint.group(1)}'?)"
                           if hint else "no")
-        return None, f"error: {msg[:200]}"
-    node = result.get("data") or {}
+        if "must have a selection set" in msg:
+            return None, "yes (object type)"
+        return None, f"error: {msg[:160]}"
+    node = (result or {}).get("data") or {}
     for key in path:
         if isinstance(node, list):
             try:
@@ -159,20 +159,6 @@ def _probe_field(ws, template, field, variables, path):
     if node is None:
         return None, "yes (no value returned)"
     return node, "yes"
-
-
-def _lib_vars(identity_id):
-    return {
-        "identityId": identity_id,
-        "currency": "CAD",
-        "accountIds": None,
-        "first": 1,
-        "cursor": None,
-        "aggregated": False,
-        "currencyOverride": "MARKET",
-        "filter": None,
-        "includeSecurity": False,
-    }
 
 
 def probe_schema(account):
@@ -191,61 +177,70 @@ def probe_schema(account):
     if not identity_id:
         return "schema probe: no identity id available"
 
-    fin_path = ["identity", "financials", "current", "totalValue"]
-    variants = [
-        ("lib-null-ids", T_LIB_FIN, _lib_vars(identity_id)),
-        ("no-filter", T_NOFILTER,
-         {"identityId": identity_id, "currency": "CAD"}),
-        ("null-filter", T_NULLFILTER,
-         {"identityId": identity_id, "currency": "CAD",
-          "accountIds": None}),
-    ]
+    account_ids = None
+    resolve = getattr(account, "_resolve", None)
+    if callable(resolve):
+        try:
+            account_ids = [
+                aid for _, aid in resolve() if aid
+            ] or None
+        except Exception:
+            account_ids = None
+    variables = {
+        "identityId": identity_id,
+        "currency": "CAD",
+        "accountIds": account_ids,
+        "first": 500,
+        "cursor": None,
+        "aggregated": False,
+        "currencyOverride": "MARKET",
+        "filter": None,
+        "includeSecurity": False,
+    }
+
     lines = []
-    template = None
-    variables = None
-    for name, tmpl, vars_ in variants:
-        value, status = _probe_field(
-            ws, tmpl, "totalValue", vars_, fin_path
-        )
-        if value is not None:
-            lines.append(f"probe template: {name} (control totalValue = "
-                         f"{_fmt(value)})")
-            template = tmpl
-            variables = vars_
-            break
-        lines.append(f"template {name}: {status}")
-    if template is None:
-        return "schema probe: no working financials query shape\n" + \
-            "\n".join(lines)
+    edges = ["identity", "financials", "current", "positions", "edges"]
+    value, status = _run(ws, LIB_DOC, variables, edges)
+    if value is None:
+        return ("schema probe: control A (library document) failed - "
+                f"{status}")
+    lines.append(f"control A (library document): {len(value)} positions")
+
+    doc_b = LIB_DOC.replace(
+        CURRENT_ANCHOR, CURRENT_ANCHOR + "                totalValue\n"
+    )
+    fin_path = ["identity", "financials", "current", "totalValue"]
+    value, status = _run(ws, doc_b, variables, fin_path)
+    if value is None:
+        return ("schema probe: control B (document + totalValue) failed - "
+                f"{status}\n" + "\n".join(lines) +
+                "\nmodified documents appear rejected")
+    lines.append(f"control B (document + totalValue): {_fmt(value)}")
 
     lines.append("financials.current:")
     for field in FINANCIAL_FIELDS:
-        value, status = _probe_field(
-            ws, template, field, variables, fin_path[:-1] + [field]
+        doc = LIB_DOC.replace(
+            CURRENT_ANCHOR, CURRENT_ANCHOR + "                " + field + "\n"
+        )
+        value, status = _run(
+            ws, doc, variables, fin_path[:-1] + [field]
         )
         if value is not None:
             lines.append(f"  {field} = {_fmt(value)}")
         else:
             lines.append(f"  {field}: {status}")
 
-    pos_vars = _lib_vars(identity_id)
-    pos_path = ["identity", "financials", "current", "positions",
-                "edges", 0, "node", "quantity"]
-    value, status = _probe_field(
-        ws, T_LIB_POS, "quantity", pos_vars, pos_path
-    )
-    if value is None and not status.startswith("yes"):
-        lines.append(f"position probing unavailable ({status})")
-    else:
-        lines.append("position:")
-        for field in POSITION_FIELDS:
-            value, status = _probe_field(
-                ws, T_LIB_POS, field, pos_vars, pos_path[:-1] + [field]
-            )
-            if value is not None:
-                lines.append(f"  {field} = {_fmt(value)}")
-            else:
-                lines.append(f"  {field}: {status}")
+    lines.append("position:")
+    node_path = edges + [0, "node"]
+    for field in POSITION_FIELDS:
+        doc = LIB_DOC.replace(
+            NODE_ANCHOR, NODE_ANCHOR + "                      " + field + "\n"
+        )
+        value, status = _run(ws, doc, variables, node_path + [field])
+        if value is not None:
+            lines.append(f"  {field} = {_fmt(value)}")
+        else:
+            lines.append(f"  {field}: {status}")
     return "\n".join(lines)
 
 

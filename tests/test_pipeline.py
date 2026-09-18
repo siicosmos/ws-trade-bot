@@ -1484,37 +1484,58 @@ def test_summary_allocation_values():
 def test_schema_probe_report_and_chunking():
     import re as _re
     from trader.schema_probe import (
-        FINANCIAL_FIELDS, POSITION_FIELDS, _post, MAX_MESSAGE, probe_schema,
+        CURRENT_ANCHOR, FINANCIAL_FIELDS, LIB_DOC, NODE_ANCHOR,
+        POSITION_FIELDS, _post, MAX_MESSAGE, probe_schema,
     )
+
+    # insertion anchors must exist in the library document
+    assert CURRENT_ANCHOR in LIB_DOC
+    assert NODE_ANCHOR in LIB_DOC
 
     class FakeWS:
         identity_id = "id1"
 
         def graphql_query(self, op, query, variables):
+            assert op == "FetchIdentityPositions"
+            if query == LIB_DOC:
+                return {"data": {"identity": {"financials": {
+                    "current": {"positions": {"edges": [
+                        {"node": {"id": "p1"}}]}}}}}}
             field = None
-            for name in FINANCIAL_FIELDS + POSITION_FIELDS:
-                if _re.search(r"\n\s+" + _re.escape(name) + r"\n", query):
+            for name in FINANCIAL_FIELDS:
+                if ("\n                " + name + "\n" in query
+                        and "\n                " + name + "\n"
+                        not in LIB_DOC):
                     field = name
                     break
+            if field is None:
+                for name in POSITION_FIELDS:
+                    if ("\n                      " + name + "\n"
+                            in query):
+                        field = name
+                        break
             if field == "buyingPower":
                 raise Exception(
                     'GraphQL errors: [{"message": "Cannot query field '
                     "'buyingPower' on type 'X'. "
-                    'Did you mean \'totalValue\'?"}]'
+                    "Did you mean 'totalValue'?\"}]"
                 )
             if field == "marginAvailable":
                 raise Exception(
                     'GraphQL errors: [{"message": "Cannot query field '
                     "'marginAvailable' on type 'X'.\"}]"
                 )
-            if field == "strategy":
+            if field == "legs":
+                raise Exception(
+                    "GraphQL errors: [{\"message\": \"Field 'legs' of "
+                    "type 'Legs' must have a selection set\"}]"
+                )
+            if field in ("strategy", "quantity"):
+                key = field
                 return {"data": {"identity": {"financials": {"current": {
                     "positions": {"edges": [{"node": {
-                        "strategy": "VERTICAL"}}]}}}}}}
-            if field == "quantity":
-                return {"data": {"identity": {"financials": {"current": {
-                    "positions": {"edges": [{"node": {
-                        "quantity": "3"}}]}}}}}}
+                        key: "VERTICAL" if field == "strategy"
+                        else "3"}}]}}}}}}
             if field == "totalValue":
                 return {"data": {"identity": {"financials": {"current": {
                     "totalValue": {"amount": "62000.00",
@@ -1528,12 +1549,14 @@ def test_schema_probe_report_and_chunking():
             return FakeWS()
 
     report = probe_schema(FakeAccount())
-    assert "probe template: lib-null-ids" in report
+    assert "control A (library document): 1 positions" in report
+    assert "control B (document + totalValue): 62000.00 CAD" in report
     assert "totalValue = 62000.00 CAD" in report
     assert "buyingPower: no (did you mean 'totalValue'?)" in report
     assert "marginAvailable: no" in report
     assert "quantity = 3" in report
     assert "strategy = VERTICAL" in report
+    assert "legs: yes (object type)" in report
 
     sent = []
     import trader.notify as notify_mod
