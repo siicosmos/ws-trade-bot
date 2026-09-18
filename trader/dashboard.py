@@ -1,4 +1,4 @@
-DASHBOARD_HTML = """<!DOCTYPE html>
+DASHBOARD_HTML = r"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -169,7 +169,7 @@ async function loadSignals() {
   if (!rows.length) { el.innerHTML = '<div class="empty">no alerts yet</div>'; return; }
   let html = "<table><tr><th>Time</th><th>Message</th><th>Status</th></tr>";
   for (const s of rows) {
-    const tag = s.parsed ? '<span class="tag buy">signal</span>' : '<span class="tag ignored">ignored</span>';
+    const tag = s.parsed ? '<span class="tag buy">signal</span>' : (s.correction ? '<span class="tag skip">correction</span>' : '<span class="tag ignored">ignored</span>');
     html += "<tr><td>" + fmtTime(s.ts) + '</td><td class="msg">' + (s.text || "").replace(/</g, "&lt;") + "</td><td>" + tag + "</td></tr>";
   }
   el.innerHTML = html + "</table>";
