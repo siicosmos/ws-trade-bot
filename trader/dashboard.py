@@ -271,7 +271,7 @@ async function loadSummary() {
     card.innerHTML =
       '<div class="label">' + esc(a.label) + '</div>' +
       '<div class="value">' + (hideValue ? "••••••" :
-        (showUsd ? fmtMoney(a.usd_value) : fmtMoney(a.value)) +
+        (showUsd ? fmtMoney(a.usd_value) + " USD" : fmtMoney(a.value) + " CAD") +
         (a.value_age ? ' <span style="font-size:12px;color:#d29922">(cached ' + a.value_age + ')</span>' : '') +
         (showUsd
           ? ' <span style="font-size:13px;color:var(--muted)">' + fmtMoney(a.value) + ' CAD</span>'
