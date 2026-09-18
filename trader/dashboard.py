@@ -33,7 +33,11 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   .badge.live::before { content: "\\25CF "; animation: pulse 1.5s infinite; }
   @keyframes pulse { 50% { opacity: .3; } }
   #updated { color: var(--muted); font-size: 12px; margin-left: auto; }
-  #clock { color: var(--text); font-size: 12px; margin-left: 8px; }
+  #clock {
+    color: var(--text); font-size: 12px; margin-left: 8px;
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 2px 8px; background: var(--panel);
+  }
   .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin-bottom: 28px; }
   .card {
     background: var(--panel); border: 1px solid var(--border);
@@ -178,6 +182,8 @@ function toggleSettings() {
   localStorage.setItem("ws_settings_open", settingsOpen ? "1" : "0");
   applySettingsVisibility();
 }
+
+let lastRefresh = null;
 
 let showIgnored = true;
 
@@ -381,7 +387,7 @@ async function saveSettings() {
 async function load() {
   try {
     await Promise.all([loadSummary(), loadPositions(), loadSignals(), loadTrades(), loadSettings(), loadGitStatus()]);
-    document.getElementById("updated").textContent = "refreshed " + new Date().toLocaleTimeString();
+    lastRefresh = Date.now();
   } catch (e) { /* handled in api() */ }
 }
 
@@ -389,7 +395,13 @@ applySettingsVisibility();
 load();
 setInterval(load, 5000);
 function tickClock() {
-  document.getElementById("clock").textContent = "now " + new Date().toLocaleTimeString();
+  document.getElementById("clock").textContent =
+    "now " + new Date().toLocaleTimeString();
+  if (lastRefresh) {
+    const secs = Math.max(0, Math.round((Date.now() - lastRefresh) / 1000));
+    document.getElementById("updated").textContent =
+      "data refreshed " + fmtAge(secs);
+  }
 }
 tickClock();
 setInterval(tickClock, 1000);
