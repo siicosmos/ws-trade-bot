@@ -1324,7 +1324,7 @@ def test_stock_holdings_mapping(monkeypatch):
                     "bookValue": {"amount": "2000.00", "currency": "CAD"},
                     "marketBookValue": {"amount": "1500.00",
                                          "currency": "USD"},
-                    "marketAveragePrice": {"amount": "150.00"},
+                    "marketAveragePrice": {"amount": "999.00"},
                     "security": {
                         "securityType": "STOCK",
                         "stock": {"symbol": "AAPL", "name": "Apple"},
@@ -1337,7 +1337,7 @@ def test_stock_holdings_mapping(monkeypatch):
                     "bookValue": {"amount": "3100.00", "currency": "CAD"},
                     "marketBookValue": {"amount": "3500.00",
                                          "currency": "CAD"},
-                    "marketAveragePrice": {"amount": "35.00"},
+                    "marketAveragePrice": {"amount": "99.00"},
                     "security": {
                         "securityType": "STOCK",
                         "stock": {"symbol": "RY", "name": "RBC"},

@@ -294,9 +294,7 @@ async function loadPositions() {
     const ret = p.pct_return ?? null;
     const retColor = ret === null ? "var(--muted)" : ret >= 0 ? "var(--green)" : "var(--red)";
     const isStock = p.kind === "stock";
-    const cur = isStock
-      ? (p.currency === "USD" ? " usd" : p.currency === "CAD" ? " cad" : "")
-      : "";
+    const cur = isStock && p.currency === "USD" ? " usd" : "";
     const mult = isStock ? 1 : 100;
     const avgTotal = (p.qty || 0) * (p.avg_premium || 0) * mult;
     const mv = p.market_value;

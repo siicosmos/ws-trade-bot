@@ -268,6 +268,6 @@ def test_stock_currency_display():
     js = re.findall(r"<script>(.*?)</script>",
                     dash.DASHBOARD_HTML, re.S)[0]
     # stocks use multiplier 1 (not the 100x option multiplier) and
-    # label amounts with the quote currency
+    # label usd amounts only - cad tickers need no suffix
     assert "isStock ? 1 : 100" in js
-    assert 'p.currency === "CAD" ? " cad"' in js
+    assert 'isStock && p.currency === "USD" ? " usd"' in js

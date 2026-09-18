@@ -312,8 +312,9 @@ class WealthsimpleAccount:
                 currency = str(
                     (sec.get("quoteV2") or {}).get("currency") or ""
                 ).upper() or None
-                avg = _amount(p.get("marketAveragePrice"))
-                per_unit = avg if avg else (
+                # marketAveragePrice is unreliable for stocks - derive
+                # the per-unit cost from the total book value
+                per_unit = (
                     cost_usd / qty if cost_usd else None
                 )
                 market_value = qty * quote if quote else None
