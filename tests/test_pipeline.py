@@ -1403,3 +1403,26 @@ def test_positions_include_stocks(monkeypatch):
     stocks = [r for r in rows if r.get("kind") == "stock"]
     assert stocks and stocks[0]["underlying"] == "AAPL"
     assert stocks[0]["source"] == "ws"
+
+
+def test_positions_via_real_init(monkeypatch):
+    """Regression: _positions_raw attrs must exist on __init__, else
+    live fetching dies with AttributeError and the tab goes empty."""
+    from trader.account import WealthsimpleAccount
+
+    class FakeCfg:
+        class wealthsimple:
+            positions_refresh_seconds = 30
+            values_refresh_seconds = 60
+
+    class FakeWS:
+        def get_positions(self, account_ids=None, **kw):
+            return []
+
+    acct = WealthsimpleAccount(FakeCfg())
+    acct._ws = FakeWS()
+    monkeypatch.setattr(acct, "_resolve", lambda: [("T", "a")])
+    assert acct.open_option_positions() == {
+        "T": {"positions": [], "fx": None, "usd_cash": None}
+    }
+    assert acct.stock_holdings() == {"T": []}

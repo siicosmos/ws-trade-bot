@@ -87,6 +87,8 @@ class WealthsimpleAccount:
         self._stale = {}
         self._pos_cache = None
         self._pos_cache_ts = 0.0
+        self._raw_cache = None
+        self._raw_ts = 0.0
         self._fx_quote = None
         self._fx_quote_ts = 0.0
         self._usd_cache = None
@@ -243,11 +245,10 @@ class WealthsimpleAccount:
                 self.cfg.wealthsimple, "positions_refresh_seconds", 30
             )
         now = time.time()
-        if (
-            self._raw_cache is not None
-            and now - self._raw_ts < max_age_seconds
-        ):
-            return self._raw_cache
+        raw_cache = getattr(self, "_raw_cache", None)
+        raw_ts = getattr(self, "_raw_ts", 0.0)
+        if raw_cache is not None and now - raw_ts < max_age_seconds:
+            return raw_cache
         try:
             ws = self._client()
         except Exception:
