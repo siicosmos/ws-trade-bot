@@ -91,3 +91,16 @@ def test_open_risk_percentage_colored_by_cap():
     assert "open risk ' + fmtMoney(a.open_risk)" in js
     assert "color:' + color" in js
     assert "font-weight:700" in js
+
+
+def test_positions_table_shows_price_and_return():
+    import trader.dashboard as dash
+
+    js = re.findall(r"<script>(.*?)</script>",
+                    dash.DASHBOARD_HTML, re.S)[0]
+    assert "<th class=num>Price</th>" in js
+    assert "<th class=num>Return</th>" in js
+    assert "p.current_price" in js
+    assert "p.pct_return" in js
+    assert "set-ws-positions" in js
+    assert "set-ws-values" in js

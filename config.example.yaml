@@ -111,6 +111,10 @@ wealthsimple:
       max_contracts_per_trade: 5
       paper_value: 2000.0
   exchange_hint: ""           # e.g. "SPX" to force an exchange on order placement
+  positions_refresh_seconds: 30   # dashboard: how often live option
+                                 # positions (price + return) refresh
+  values_refresh_seconds: 60     # dashboard: how often account values
+                                 # (net-liquidation) refresh
 
 # ---------------------------------------------------------------------------
 # parser - extra regex patterns for alert formats the built-in parser misses

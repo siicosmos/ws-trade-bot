@@ -54,10 +54,12 @@ class PaperAccount:
 
 
 class WealthsimpleAccount:
-    def __init__(self, cfg, store=None, cache_seconds=900):
+    def __init__(self, cfg, store=None, cache_seconds=None):
         self.cfg = cfg
         self.store = store
-        self.cache_seconds = cache_seconds
+        self.cache_seconds = cache_seconds or getattr(
+            cfg.wealthsimple, "values_refresh_seconds", 60
+        )
         self._cache = None
         self._cache_ts = 0.0
         self._ws = None
@@ -88,13 +90,17 @@ class WealthsimpleAccount:
             self._resolved = out
         return self._resolved
 
-    def open_option_positions(self, max_age_seconds=300):
+    def open_option_positions(self, max_age_seconds=None):
         """Real open option positions per account label.
 
         Returns {label: [position-dicts]} or {label: None} for accounts
         that could not be fetched, so callers can fall back to tracked
         positions. Cached for a few minutes.
         """
+        if max_age_seconds is None:
+            max_age_seconds = getattr(
+                self.cfg.wealthsimple, "positions_refresh_seconds", 30
+            )
         now = time.time()
         if (
             self._pos_cache is not None
@@ -161,6 +167,12 @@ class WealthsimpleAccount:
                     )
                 except (TypeError, ValueError):
                     quote = 0
+                market_value = qty * quote * multiplier if quote else None
+                pct_return = None
+                if market_value and book:
+                    pct_return = round(
+                        (market_value / book - 1) * 100, 1
+                    )
                 rows.append(
                     {
                         "contract_key": (
@@ -174,8 +186,12 @@ class WealthsimpleAccount:
                         "qty": qty,
                         "avg_premium": round(per_unit, 4),
                         "cost": book,
-                        "market_value": round(qty * quote * multiplier, 2)
-                        if quote else None,
+                        "current_price": quote or None,
+                        "market_value": (
+                            round(market_value, 2)
+                            if market_value else None
+                        ),
+                        "pct_return": pct_return,
                     }
                 )
             out[label] = rows

@@ -82,6 +82,8 @@ class TradingConfig:
 class WealthsimpleConfig:
     accounts: List[WSAccountConfig] = field(default_factory=list)
     exchange_hint: str = ""
+    positions_refresh_seconds: int = 30
+    values_refresh_seconds: int = 60
 
 
 @dataclass
@@ -247,6 +249,12 @@ def load_config(path: str) -> Config:
         wealthsimple=WealthsimpleConfig(
             accounts=_load_accounts(ws_raw),
             exchange_hint=str(_get(ws_raw, "exchange_hint", "")),
+            positions_refresh_seconds=int(
+                _get(ws_raw, "positions_refresh_seconds", 30)
+            ),
+            values_refresh_seconds=int(
+                _get(ws_raw, "values_refresh_seconds", 60)
+            ),
         ),
         parser=ParserConfig(
             custom_patterns=list(_get(parser_raw, "custom_patterns", [])),

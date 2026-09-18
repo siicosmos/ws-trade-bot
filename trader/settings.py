@@ -61,6 +61,14 @@ def get_settings(cfg) -> dict:
             "enabled": cfg.quotes.enabled,
             "provider": cfg.quotes.provider,
         },
+        "wealthsimple": {
+            "positions_refresh_seconds": (
+                cfg.wealthsimple.positions_refresh_seconds
+            ),
+            "values_refresh_seconds": (
+                cfg.wealthsimple.values_refresh_seconds
+            ),
+        },
     }
 
 
@@ -226,6 +234,21 @@ def apply_settings(cfg, payload: dict, config_path=None) -> tuple:
             cfg.quotes.provider = provider
             applied["quotes.provider"] = provider
 
+    ws_payload = payload.get("wealthsimple") or {}
+    for field in ("positions_refresh_seconds", "values_refresh_seconds"):
+        if field in ws_payload:
+            try:
+                value = int(ws_payload[field])
+            except (TypeError, ValueError):
+                value = -1
+            if not (10 <= value <= 86400):
+                errors.append(
+                    f"wealthsimple.{field}: must be 10-86400"
+                )
+            else:
+                setattr(cfg.wealthsimple, field, value)
+                applied[f"wealthsimple.{field}"] = value
+
     au = payload.get("auto_update") or {}
     if "enabled" in au:
         cfg.auto_update.enabled = bool(au["enabled"])
@@ -260,6 +283,10 @@ def _persist(cfg, config_path):
     for key in EDITABLE_LISTS:
         trading[key] = getattr(cfg.trading, key)
     trading["size_tiers"] = cfg.trading.size_tiers
+
+    ws = raw.setdefault("wealthsimple", {})
+    for field in ("positions_refresh_seconds", "values_refresh_seconds"):
+        ws[field] = getattr(cfg.wealthsimple, field)
 
     au = raw.setdefault("auto_update", {})
     au["enabled"] = cfg.auto_update.enabled

@@ -881,7 +881,13 @@ def test_open_option_positions_filters_and_maps(monkeypatch, tmp_path):
     from trader.account import WealthsimpleAccount
     from tests.test_pipeline import _ws_position_fixture  # noqa
 
+    class FakeCfg:
+        class wealthsimple:
+            positions_refresh_seconds = 30
+            values_refresh_seconds = 60
+
     acct = WealthsimpleAccount.__new__(WealthsimpleAccount)
+    acct.cfg = FakeCfg()
     acct._ws = FakeWS(_ws_position_fixture())
     acct._resolved = None
     acct._stale = {}
@@ -902,6 +908,9 @@ def test_open_option_positions_filters_and_maps(monkeypatch, tmp_path):
     assert arm["cost"] == 330.0
     assert arm["right"] == "C"
     assert arm["contract_key"] == "ARM 2026-09-25 300C"
+    assert arm["current_price"] == 2.10
+    assert arm["market_value"] == 420.0
+    assert arm["pct_return"] == 27.3
 
     # cached: second call does not hit the api even if it now fails
     acct._ws = FakeWS(fail=True)

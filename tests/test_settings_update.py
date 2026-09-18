@@ -656,3 +656,39 @@ def test_size_tiers_merge_with_defaults(tmp_path):
     for name in ("micro", "big", "full"):
         assert f"\n    {name}:" in text, name
     assert "risk_pct_max: 4" in text
+
+
+def test_ws_refresh_settings_editable(tmp_path):
+    from trader.config import load_config
+    from trader.settings import apply_settings, get_settings
+
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(
+        "trading:\n  mode: notify\n"
+        "wealthsimple:\n  positions_refresh_seconds: 30\n"
+        "  values_refresh_seconds: 60\n",
+        encoding="utf-8",
+    )
+    cfg = load_config(str(cfg_path))
+
+    s = get_settings(cfg)
+    assert s["wealthsimple"]["positions_refresh_seconds"] == 30
+    assert s["wealthsimple"]["values_refresh_seconds"] == 60
+
+    applied, errors = apply_settings(
+        cfg,
+        {"wealthsimple": {"positions_refresh_seconds": 45,
+                          "values_refresh_seconds": 90}},
+        str(cfg_path),
+    )
+    assert not errors, errors
+    assert applied["wealthsimple.positions_refresh_seconds"] == 45
+    text = cfg_path.read_text(encoding="utf-8")
+    assert "positions_refresh_seconds: 45" in text
+    assert "values_refresh_seconds: 90" in text
+
+    bad, errors2 = apply_settings(
+        cfg, {"wealthsimple": {"positions_refresh_seconds": 1}},
+        str(cfg_path),
+    )
+    assert errors2 and "10-86400" in errors2[0]
