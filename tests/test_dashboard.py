@@ -184,3 +184,18 @@ def test_currency_toggle():
     assert "cur-toggle" in dash.DASHBOARD_HTML
     # usd mode converts open risk with the derived fx rate
     assert "a.open_risk * fx" in js
+
+
+def test_dte_badge_colors():
+    import trader.dashboard as dash
+
+    js = re.findall(r"<script>(.*?)</script>",
+                    dash.DASHBOARD_HTML, re.S)[0]
+    assert "function dteBadge(" in js
+    assert '"#f85149"' in js      # 0dte red
+    assert '"#db6d28"' in js      # 1dte orange
+    assert '"#d29922"' in js      # 2-7dte yellow
+    assert '"#3fb950"' in js      # 8+ dte green
+    assert '"dte</span>"' in js
+    # expiry sub-line carries the badge
+    assert "dteBadge(p.expiry)" in js

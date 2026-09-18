@@ -142,6 +142,24 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   <button id="settings-save">Save</button>
 </div>
 <script>
+function dteBadge(expiry) {
+  if (!expiry) return "";
+  const parts = String(expiry).slice(0, 10).split("-");
+  if (parts.length !== 3) return "";
+  const eMs = Date.UTC(+parts[0], +parts[1] - 1, +parts[2]);
+  const t = new Date();
+  const nMs = Date.UTC(t.getFullYear(), t.getMonth(), t.getDate());
+  const dte = Math.round((eMs - nMs) / 86400000);
+  const days = Math.max(0, dte);
+  let color;
+  if (days <= 0) color = "#f85149";
+  else if (days === 1) color = "#db6d28";
+  else if (days <= 7) color = "#d29922";
+  else color = "#3fb950";
+  return '<span style="padding:1px 8px;border-radius:999px;font-size:11px;font-weight:700;background:' +
+    color + "22;color:" + color + '">' + days + "dte</span>";
+}
+
 function autoGrow(el) {
   el.style.height = "auto";
   el.style.height = (el.scrollHeight + 2) + "px";
@@ -252,9 +270,9 @@ async function loadPositions() {
         ? ' <span class="tag ignored" title="live from Wealthsimple">ws</span>'
         : ""
     ) + "</td><td><span style=\"font-weight:600\">" +
-      esc((p.underlying || "") + " ") + esc(p.strike || "") + esc(p.right || "") +
+      esc(p.underlying || "") + " " + esc(p.strike || "") + esc(p.right || "") +
       '</span><br><span style="font-size:11px;color:var(--muted)">' +
-      esc(p.expiry || "") + "</span></td>" +
+      esc(p.expiry || "") + "</span> " + dteBadge(p.expiry) + "</td>" +
       '<td class=num>' + (p.short ? "-" + p.qty : p.qty) + (p.short ? ' <span class="tag skip" title="short position">short</span>' : "") + "</td>" +
       '<td class=num>' + (p.avg_premium != null
         ? "$" + avgTotal.toLocaleString("en-CA", { maximumFractionDigits: 2 }) +
