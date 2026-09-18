@@ -244,7 +244,7 @@ async function loadPositions() {
         ? ' <span class="tag ignored" title="live from Wealthsimple">ws</span>'
         : ""
     ) + "</td><td>" + esc(p.contract_key) + "</td>" +
-      '<td class=num>' + p.qty + "</td>" +
+      '<td class=num>' + (p.short ? "-" + p.qty : p.qty) + (p.short ? ' <span class="tag skip" title="short position">short</span>' : "") + "</td>" +
       '<td class=num>' + (p.avg_premium ?? "—") + "</td>" +
       '<td class=num>' + (p.current_price != null ? "$" + p.current_price : "—") + "</td>" +
       '<td class=num style="color:' + retColor + '">' + retText + "</td>" +

@@ -224,6 +224,7 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                 open_risk = sum(
                     r.get("cost_cad") or r.get("cost") or 0
                     for r in live["positions"]
+                    if not r.get("short")
                 )
                 if live.get("fx"):
                     fx = live["fx"]

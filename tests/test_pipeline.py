@@ -1012,3 +1012,64 @@ def test_summary_prefers_ws_usd_value(monkeypatch):
     summary = client.get("/api/summary").get_json()
     rrsp = next(a for a in summary["accounts"] if a["label"] == "RRSP")
     assert rrsp["usd_value"] == 16000.5
+
+
+def test_short_option_position_displayed(monkeypatch):
+    from trader.account import WealthsimpleAccount
+
+    class FakeWS:
+        def get_positions(self, account_ids=None, **kw):
+            return [
+                {
+                    "quantity": "-1",
+                    "positionDirection": "SHORT",
+                    "bookValue": {"amount": "-165.00", "currency": "CAD"},
+                    "marketBookValue": {"amount": "-120.00",
+                                         "currency": "USD"},
+                    "security": {
+                        "securityType": "OPTION",
+                        "stock": {"symbol": "SPY"},
+                        "optionDetails": {
+                            "strikePrice": "753",
+                            "optionType": "PUT",
+                            "expiryDate": "2026-09-18",
+                            "multiplier": "100",
+                            "underlyingSecurity": {
+                                "stock": {"symbol": "SPY"}
+                            },
+                        },
+                        "quoteV2": {"price": "1.20"},
+                    },
+                },
+            ]
+
+    class FakeCfg:
+        class wealthsimple:
+            positions_refresh_seconds = 30
+            values_refresh_seconds = 60
+
+    acct = WealthsimpleAccount.__new__(WealthsimpleAccount)
+    acct.cfg = FakeCfg()
+    acct._ws = FakeWS()
+    acct._resolved = None
+    acct._stale = {}
+    acct._pos_cache = None
+    acct._pos_cache_ts = 0.0
+    acct._fx_quote = None
+    acct._fx_quote_ts = 0.0
+    acct._usd_cache = None
+    acct._usd_cache_ts = 0.0
+    acct._cache = None
+    acct._cache_ts = 0.0
+    monkeypatch.setattr(acct, "_resolve", lambda: [("RRSP", "a1")])
+
+    rows = acct.open_option_positions()["RRSP"]["positions"]
+    assert len(rows) == 1
+    short = rows[0]
+    assert short["short"] is True
+    assert short["qty"] == 1
+    assert short["cost_usd"] == 120.0
+    assert short["cost_cad"] == 165.0
+    assert short["current_price"] == 1.20
+    # credit 120 vs buyback 120 -> 0%
+    assert short["pct_return"] == 0.0

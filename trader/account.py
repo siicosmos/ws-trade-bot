@@ -253,6 +253,9 @@ class WealthsimpleAccount:
                     qty = float(p.get("quantity") or 0)
                 except (TypeError, ValueError):
                     qty = 0
+                direction = str(p.get("positionDirection") or "").upper()
+                is_short = direction == "SHORT" or qty < 0
+                qty = abs(qty)
                 if qty <= 0:
                     continue
                 underlying = (
@@ -262,8 +265,9 @@ class WealthsimpleAccount:
                     or ""
                 )
                 multiplier = float(od.get("multiplier") or 100) or 100
-                cost_cad = book
-                cost_usd = market_book
+                # shorts carry negative/credit book values; use magnitudes
+                cost_cad = abs(book)
+                cost_usd = abs(market_book)
                 if cost_usd and cost_cad:
                     fx = cost_cad / cost_usd
                 quote = _quote_price(sec.get("quoteV2"))  # USD for US options
@@ -283,9 +287,18 @@ class WealthsimpleAccount:
                 market_value = qty * quote * multiplier if quote else None
                 pct_return = None
                 if market_value and cost_usd:
-                    pct_return = round(
-                        (market_value / cost_usd - 1) * 100, 1
-                    )
+                    if is_short:
+                        # short: credit received minus buyback cost,
+                        # relative to the credit
+                        pct_return = round(
+                            (cost_usd - market_value)
+                            / cost_usd * 100,
+                            1,
+                        )
+                    else:
+                        pct_return = round(
+                            (market_value / cost_usd - 1) * 100, 1
+                        )
                 rows.append(
                     {
                         "contract_key": (
@@ -297,6 +310,7 @@ class WealthsimpleAccount:
                         "strike": od.get("strikePrice"),
                         "right": right,
                         "qty": qty,
+                        "short": is_short,
                         "avg_premium": round(per_unit_usd, 4)
                         if per_unit_usd is not None else None,
                         "cost": cost_usd if cost_usd is not None else book,
