@@ -1219,3 +1219,26 @@ def test_notify_call_put_field_lowercase(monkeypatch):
     # the emoji lives in the title only, not the type field
     assert "🟢" not in fields["type"]
     assert embed["title"].startswith("🟢")
+
+
+def test_notify_mode_records_trade_log(monkeypatch):
+    # notify mode is the dry-run ledger: every processed alert lands
+    # in the trade log with the per-account sizing decision
+    app, store, account = _make_app(mode="notify")
+    store._conn.execute("DELETE FROM trades")
+    store._conn.commit()
+    client = app.test_client()
+    monkeypatch.setattr(
+        "trader.notify.requests.post",
+        lambda *a, **k: type("R", (), {"status_code": 200})(),
+    )
+    resp = client.post(
+        "/alert",
+        json={"text": "BOUGHT 09/25 ARM 300c @ 1.65 small size"},
+        headers={"X-Auth-Token": "s3cret"},
+    )
+    assert resp.status_code == 200
+    trades = store.recent_trades()
+    assert trades and trades[0]["status"] == "notified"
+    assert trades[0]["mode"] == "notify"
+    assert "buy" in trades[0]["detail"] or "skip" in trades[0]["detail"]

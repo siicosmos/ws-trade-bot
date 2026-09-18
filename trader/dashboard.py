@@ -109,6 +109,7 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   .tag.skip { color: var(--yellow); background: #d2992222; }
   .tag.ignored { color: var(--muted); background: #8b949e22; }
   .tag.error { color: var(--red); background: #f8514922; }
+  .tag.info { color: var(--blue); background: #1f6feb22; }
   .msg { max-width: 420px; white-space: normal; word-break: break-word; color: var(--text); }
   .detail { max-width: 360px; white-space: normal; word-break: break-word; color: var(--muted); font-size: 12px; }
   .empty { color: var(--muted); font-size: 13px; padding: 14px; text-align: center; background: var(--panel); border-radius: 8px; }
@@ -429,6 +430,7 @@ async function loadTrades() {
     if (t.status === "executed") statusTag = "ok";
     else if (t.status === "skipped") statusTag = "skip";
     else if (t.status === "error") statusTag = "error";
+    else if (t.status === "notified") statusTag = "info";
     html += "<tr><td>" + fmtTime(t.ts) + "</td><td>" + esc(t.mode) + "</td>" +
       '<td><span class="tag ' + actionTag + '">' + esc(t.action) + "</span></td>" +
       '<td class=num>' + t.qty + "</td><td>" + esc(t.ticker) + "</td>" +

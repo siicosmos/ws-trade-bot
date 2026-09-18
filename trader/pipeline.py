@@ -48,6 +48,31 @@ def process_alert(
         )
         notify_alert(cfg.discord.webhook_url, alert, sizing,
                      correction=correction)
+        # notify mode is the dry-run ledger: record what would have
+        # been traded so the trade log stays meaningful
+        parts = []
+        for row in sizing or []:
+            label = row.get("label", "?")
+            contracts = row.get("contracts") or 0
+            if contracts:
+                parts.append(
+                    f"{label}: buy {contracts} @ {alert.premium:g}"
+                )
+            else:
+                warnings = row.get("warnings") or []
+                parts.append(
+                    f"{label}: skip "
+                    f"({'; '.join(warnings) if warnings else 'no budget'})"
+                )
+        detail = "notify mode - " + (
+            "; ".join(parts) if parts else "advisory only"
+        )
+        if correction:
+            detail = "correction - " + detail
+        store.record_trade(
+            "notify", alert.action, alert.ticker, 0, alert.premium,
+            alert, "notified", detail, key,
+        )
         return {
             "status": "notified",
             "alert": alert.to_dict(),
