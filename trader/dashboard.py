@@ -194,7 +194,11 @@ async function loadPositions() {
   if (!rows.length) { el.innerHTML = '<div class="empty">no open positions</div>'; return; }
   let html = "<table><tr><th>Account</th><th>Contract</th><th class=num>Qty</th><th class=num>Avg Premium</th><th class=num>Cost</th></tr>";
   for (const p of rows) {
-    html += "<tr><td>" + esc(p.account) + "</td><td>" + esc(p.contract_key) + "</td>" +
+    html += "<tr><td>" + esc(p.account) + (
+      p.source === "ws"
+        ? ' <span class="tag ignored" title="live from Wealthsimple">ws</span>'
+        : ""
+    ) + "</td><td>" + esc(p.contract_key) + "</td>" +
       '<td class=num>' + p.qty + "</td>" +
       '<td class=num>' + (p.avg_premium ?? "—") + "</td>" +
       '<td class=num>' + fmtMoney((p.qty || 0) * (p.avg_premium || 0) * 100) + "</td></tr>";

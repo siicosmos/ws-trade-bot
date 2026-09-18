@@ -831,3 +831,112 @@ def test_notify_buy_fields_bold(monkeypatch):
     assert fields["premium"] == "**$1.65**"
     assert fields["size"] == "**small**"
     assert "sold" not in fields and "scaling" not in fields
+
+
+def _ws_position_fixture():
+    return [
+        {
+            "quantity": "2",
+            "bookValue": {"amount": "330.00", "currency": "CAD"},
+            "averagePrice": {"amount": "1.65", "currency": "CAD"},
+            "security": {
+                "securityType": "OPTION",
+                "stock": {"symbol": "ARM"},
+                "optionDetails": {
+                    "strikePrice": "300",
+                    "optionType": "CALL",
+                    "expiryDate": "2026-09-25",
+                    "multiplier": "100",
+                    "underlyingSecurity": {
+                        "stock": {"symbol": "ARM"}
+                    },
+                },
+                "quoteV2": {"price": "2.10"},
+            },
+        },
+        {   # stock position - filtered out
+            "quantity": "10",
+            "bookValue": {"amount": "1500.00"},
+            "security": {
+                "securityType": "STOCK",
+                "stock": {"symbol": "AAPL"},
+                "optionDetails": None,
+            },
+        },
+    ]
+
+
+class FakeWS:
+    def __init__(self, positions=None, fail=False):
+        self.positions = positions or []
+        self.fail = fail
+
+    def get_positions(self, account_ids=None, **kw):
+        if self.fail:
+            raise RuntimeError("api down")
+        return self.positions
+
+
+def test_open_option_positions_filters_and_maps(monkeypatch, tmp_path):
+    from trader.account import WealthsimpleAccount
+    from tests.test_pipeline import _ws_position_fixture  # noqa
+
+    acct = WealthsimpleAccount.__new__(WealthsimpleAccount)
+    acct._ws = FakeWS(_ws_position_fixture())
+    acct._resolved = None
+    acct._stale = {}
+    acct._pos_cache = None
+    acct._pos_cache_ts = 0.0
+    acct._cache = None
+    acct._cache_ts = 0.0
+    monkeypatch.setattr(
+        acct, "_resolve", lambda: [("RRSP", "acct-1")]
+    )
+
+    rows = acct.open_option_positions()
+    assert set(rows) == {"RRSP"}
+    arm = rows["RRSP"][0]
+    assert arm["underlying"] == "ARM"
+    assert arm["qty"] == 2
+    assert arm["avg_premium"] == 1.65
+    assert arm["cost"] == 330.0
+    assert arm["right"] == "C"
+    assert arm["contract_key"] == "ARM 2026-09-25 300C"
+
+    # cached: second call does not hit the api even if it now fails
+    acct._ws = FakeWS(fail=True)
+    assert acct.open_option_positions() == rows
+
+
+def test_positions_endpoint_merges_live(monkeypatch):
+    app, store, account = _make_app(mode="paper")
+    client = app.test_client()
+    account.open_option_positions = lambda: {
+        "RRSP": [
+            {
+                "contract_key": "ARM 2026-09-25 300C",
+                "underlying": "ARM",
+                "expiry": "2026-09-25",
+                "strike": "300",
+                "right": "C",
+                "qty": 2,
+                "avg_premium": 1.65,
+                "cost": 330.0,
+                "market_value": 420.0,
+            }
+        ],
+        "Personal": [],
+    }
+    from trader.parser import parse_alert
+
+    old_alert = parse_alert("BOUGHT 01/01 OLD 100c @ 1.0")
+    store.apply_position("paper", old_alert, 1, account="RRSP")
+    resp = client.get("/api/positions")
+    rows = resp.get_json()
+    by_account = {}
+    for r in rows:
+        by_account.setdefault(r["account"], []).append(r)
+    assert by_account["RRSP"][0]["contract_key"].startswith("ARM")
+    assert by_account["RRSP"][0]["source"] == "ws"
+    # Personal has live (empty) data: tracked rows for it are dropped
+    assert by_account.get("Personal", []) == []

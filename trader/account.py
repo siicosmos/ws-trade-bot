@@ -63,6 +63,8 @@ class WealthsimpleAccount:
         self._ws = None
         self._resolved = None
         self._stale = {}
+        self._pos_cache = None
+        self._pos_cache_ts = 0.0
 
     def _client(self):
         if self._ws is None:
@@ -85,6 +87,101 @@ class WealthsimpleAccount:
                     out = [("default", None)]
             self._resolved = out
         return self._resolved
+
+    def open_option_positions(self, max_age_seconds=300):
+        """Real open option positions per account label.
+
+        Returns {label: [position-dicts]} or {label: None} for accounts
+        that could not be fetched, so callers can fall back to tracked
+        positions. Cached for a few minutes.
+        """
+        now = time.time()
+        if (
+            self._pos_cache is not None
+            and now - self._pos_cache_ts < max_age_seconds
+        ):
+            return self._pos_cache
+        try:
+            ws = self._client()
+        except Exception:
+            return None
+        out = {}
+        for label, account_id in self._resolve():
+            if not account_id:
+                out[label] = None
+                continue
+            try:
+                positions = ws.get_positions(account_ids=[account_id])
+            except Exception:
+                out[label] = None
+                continue
+            rows = []
+            for p in positions or []:
+                sec = p.get("security") or {}
+                od = sec.get("optionDetails")
+                if not od:
+                    continue
+                try:
+                    qty = float(p.get("quantity") or 0)
+                except (TypeError, ValueError):
+                    qty = 0
+                if qty <= 0:
+                    continue
+                underlying = (
+                    ((od.get("underlyingSecurity") or {})
+                     .get("stock") or {}).get("symbol")
+                    or (sec.get("stock") or {}).get("symbol")
+                    or ""
+                )
+                book = float(
+                    (p.get("bookValue") or {}).get("amount") or 0
+                )
+                multiplier = float(od.get("multiplier") or 100) or 100
+                try:
+                    avg = float(
+                        (p.get("averagePrice") or {}).get("amount") or 0
+                    )
+                except (TypeError, ValueError):
+                    avg = 0
+                per_unit = (
+                    book / (qty * multiplier)
+                    if book and qty else avg / multiplier
+                )
+                right = (
+                    "C"
+                    if str(od.get("optionType") or "").upper().startswith(
+                        "CALL"
+                    )
+                    else "P"
+                )
+                quote = 0
+                try:
+                    quote = float(
+                        (sec.get("quoteV2") or {}).get("price") or 0
+                    )
+                except (TypeError, ValueError):
+                    quote = 0
+                rows.append(
+                    {
+                        "contract_key": (
+                            f"{underlying} {od.get('expiryDate', '')} "
+                            f"{od.get('strikePrice')}{right}"
+                        ),
+                        "underlying": underlying,
+                        "expiry": od.get("expiryDate"),
+                        "strike": od.get("strikePrice"),
+                        "right": right,
+                        "qty": qty,
+                        "avg_premium": round(per_unit, 4),
+                        "cost": book,
+                        "market_value": round(qty * quote * multiplier, 2)
+                        if quote else None,
+                    }
+                )
+            out[label] = rows
+        self._pos_cache = out
+        self._pos_cache_ts = now
+        return out
 
     def _try_fetch(self):
         try:
