@@ -36,6 +36,12 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
     margin-left: auto; display: flex; align-items: center;
     white-space: nowrap; flex-shrink: 0;
   }
+  #logout {
+    color: var(--muted); font-size: 12px; text-decoration: none;
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 4px 10px; flex-shrink: 0;
+  }
+  #logout:hover { color: var(--text); border-color: var(--muted); }
   #updated {
     color: var(--muted); font-size: 12px;
     font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
@@ -83,6 +89,7 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
     <h1 style="margin:0">WS Trade Bot</h1>
     <span id="mode" class="badge notify">notify</span>
     <span id="timebox"><span id="updated"></span><span id="clock"></span></span>
+    <a href="/logout" id="logout">log out</a>
   </div>
   <div style="display:flex;flex-basis:100%;gap:18px;flex-wrap:wrap;color:var(--muted);font-size:12px">
     <span id="reader"></span>
@@ -106,18 +113,9 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 <div id="settings" class="card"></div>
 
 <script>
-let token = localStorage.getItem("ws_token") || "";
-
-function headers() { return token ? { "X-Auth-Token": token } : {}; }
-
-function askToken() {
-  const t = prompt("Access token:");
-  if (t) { token = t; localStorage.setItem("ws_token", t); load(); }
-}
-
 async function api(path) {
-  const res = await fetch(path, { headers: headers() });
-  if (res.status === 401) { askToken(); throw new Error("unauthorized"); }
+  const res = await fetch(path);
+  if (res.status === 401) { location.href = "/login"; throw new Error("unauthorized"); }
   return res.json();
 }
 
@@ -387,7 +385,7 @@ async function saveSettings() {
     auto_update: { enabled: document.getElementById("set-au-enabled").checked, interval_seconds: parseInt(val("set-au-interval")) },
     quotes: { enabled: document.getElementById("set-quotes-enabled").checked },
   };
-  const res = await fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json", ...headers() }, body: JSON.stringify(payload) });
+  const res = await fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
   const data = await res.json();
   if (res.status !== 200) {
     alert("save failed:\n" + (data.errors || []).join("\n"));
@@ -424,3 +422,55 @@ setInterval(tickClock, 1000);
 </body>
 </html>
 """
+
+
+def LOGIN_HTML(error=None):
+    message = (
+        f'<p style="color:#f85149;margin:0 0 14px">{error}</p>'
+        if error else ""
+    )
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WS Trade Bot - log in</title>
+<style>
+  body {{
+    margin: 0; min-height: 100vh; display: flex; align-items: center;
+    justify-content: center; background: #0d1117;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    color: #e6edf3;
+  }}
+  .card {{
+    background: #161b22; border: 1px solid #30363d; border-radius: 10px;
+    padding: 32px; width: 320px;
+  }}
+  h1 {{ font-size: 18px; margin: 0 0 4px; }}
+  p {{ color: #8b949e; font-size: 12px; margin: 0 0 20px; }}
+  input {{
+    width: 100%; box-sizing: border-box; background: #0d1117;
+    color: #e6edf3; border: 1px solid #30363d; border-radius: 6px;
+    padding: 8px 10px; font-size: 14px; margin-bottom: 12px;
+  }}
+  input:focus {{ outline: none; border-color: #58a6ff; }}
+  button {{
+    width: 100%; background: #238636; color: #fff; border: 1px solid #2ea043;
+    border-radius: 6px; padding: 8px 10px; font-size: 14px; font-weight: 600;
+    cursor: pointer;
+  }}
+  button:hover {{ background: #2ea043; }}
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>WS Trade Bot</h1>
+  <p>enter your access token to continue</p>
+  {message}
+  <form method="post" action="/login">
+    <input type="password" name="password" placeholder="access token" autofocus>
+    <button type="submit">Log in</button>
+  </form>
+</div>
+</body>
+</html>"""

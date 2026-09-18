@@ -1,9 +1,12 @@
 import logging
+import os
+import secrets
 import time
+from datetime import timedelta
 
-from flask import Flask, Response, jsonify, request
+from flask import Flask, Response, jsonify, redirect, request, session
 
-from .dashboard import DASHBOARD_HTML
+from .dashboard import DASHBOARD_HTML, LOGIN_HTML
 from .pipeline import process_alert
 from .store import Store
 
@@ -56,10 +59,34 @@ def install_quiet_filter():
         werkzeug.addFilter(QuietPathsFilter())
 
 
+def _load_secret_key(config_path):
+    if not config_path:
+        return secrets.token_hex(32)
+    key_file = os.path.join(
+        os.path.dirname(os.path.abspath(config_path)), ".session_key"
+    )
+    try:
+        with open(key_file) as f:
+            key = f.read().strip()
+        if key:
+            return key
+    except OSError:
+        pass
+    key = secrets.token_hex(32)
+    try:
+        with open(key_file, "w") as f:
+            f.write(key)
+    except OSError:
+        pass
+    return key
+
+
 def create_app(cfg, store: Store, risk, executor, account=None,
                  config_path=None) -> Flask:
     app = Flask(__name__)
     install_quiet_filter()
+    app.secret_key = _load_secret_key(config_path)
+    app.permanent_session_lifetime = timedelta(days=30)
     mode = cfg.trading.mode
     app.reader_state = {
         "channel": None,
@@ -70,17 +97,41 @@ def create_app(cfg, store: Store, risk, executor, account=None,
     @app.before_request
     def auth_guard():
         token = cfg.pipeline.auth_token
-        if not token or request.path in ("/health", "/favicon.ico"):
+        if not token or request.path in ("/health", "/favicon.ico", "/login"):
+            return None
+        if session.get("auth"):
             return None
         if request.headers.get("X-Auth-Token") == token:
             return None
         auth = request.authorization
         if auth and auth.password == token:
             return None
+        if request.path.startswith("/api/") or request.path == "/alert":
+            return jsonify({"error": "unauthorized"}), 401
+        return redirect("/login")
+
+    @app.route("/login", methods=["GET", "POST"])
+    def login():
+        token = cfg.pipeline.auth_token
+        if not token:
+            return redirect("/")
+        error = None
+        if request.method == "POST":
+            if request.form.get("password", "") == token:
+                session.permanent = True
+                session["auth"] = True
+                return redirect("/")
+            error = "wrong access token"
+            time.sleep(1)
         return Response(
-            "unauthorized", 401,
-            {"WWW-Authenticate": 'Basic realm="ws-trade-bot"'},
+            LOGIN_HTML(error), mimetype="text/html",
+            headers={"Cache-Control": "no-store"},
         )
+
+    @app.route("/logout")
+    def logout():
+        session.clear()
+        return redirect("/login")
 
     @app.get("/")
     def dashboard_page():

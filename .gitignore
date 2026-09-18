@@ -9,3 +9,4 @@ reader/discord_tree.txt
 ws_tokens.env
 certs/
 .last_update.json
+.session_key

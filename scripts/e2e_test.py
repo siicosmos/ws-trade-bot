@@ -297,7 +297,33 @@ def run_auth_phase():
     write_config(cfg_path, "notify", auth_token="e2e-secret")
     proc, _ = start_pipeline(cfg_path, db_path)
     try:
-        check("dashboard blocked without token", requests.get(f"{_current_base()}/", timeout=5).status_code == 401)
+        resp = requests.get(f"{_current_base()}/", timeout=5, allow_redirects=False)
+        check(
+            "dashboard redirects to login without session",
+            resp.status_code == 302 and resp.headers["Location"].endswith("/login"),
+        )
+        browser = requests.Session()
+        login_page = browser.get(f"{_current_base()}/login", timeout=5, verify=False)
+        check("login page served", login_page.status_code == 200 and "access token" in login_page.text)
+        bad_login = browser.post(
+            f"{_current_base()}/login", data={"password": "wrong"}, timeout=5, verify=False
+        )
+        check("wrong password rejected", "wrong access token" in bad_login.text)
+        browser.post(
+            f"{_current_base()}/login", data={"password": "e2e-secret"},
+            timeout=5, verify=False, allow_redirects=False,
+        )
+        check(
+            "session cookie grants dashboard access",
+            browser.get(f"{_current_base()}/", timeout=5, verify=False).status_code == 200,
+        )
+        browser.get(f"{_current_base()}/logout", timeout=5, verify=False)
+        check(
+            "logout ends the session",
+            requests.get(
+                f"{_current_base()}/", timeout=5, verify=False, allow_redirects=False,
+            ).status_code == 302,
+        )
         check("api blocked without token", requests.get(f"{_current_base()}/api/summary", timeout=5).status_code == 401)
         check("health open without token", requests.get(f"{_current_base()}/health", timeout=5).status_code == 200)
         check(

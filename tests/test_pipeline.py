@@ -402,7 +402,9 @@ def test_auth_guard():
     app, store, account = _make_app(auth_token="s3cret")
     client = app.test_client()
 
-    assert client.get("/").status_code == 401
+    redirected = client.get("/")
+    assert redirected.status_code == 302
+    assert redirected.headers["Location"].endswith("/login")
     assert client.get("/api/summary").status_code == 401
     assert client.get("/health").status_code == 200
 
@@ -689,3 +691,26 @@ def test_signal_channel_defaults_empty():
     )
     signals = store.recent_signals(10)
     assert signals[0]["channel"] == ""
+
+
+def test_login_logout_flow():
+    app, store, account = _make_app(auth_token="s3cret")
+    client = app.test_client()
+
+    # wrong password stays on the login page
+    bad = client.post("/login", data={"password": "nope"})
+    assert bad.status_code == 200
+    assert "wrong access token" in bad.get_data(as_text=True)
+
+    # correct password logs in and sets the session
+    ok = client.post("/login", data={"password": "s3cret"})
+    assert ok.status_code == 302
+    assert client.get("/").status_code == 200
+    assert client.get("/api/summary").status_code == 200
+
+    # logout clears the session
+    out = client.get("/logout")
+    assert out.status_code == 302
+    redirected = client.get("/")
+    assert redirected.status_code == 302
+    assert redirected.headers["Location"].endswith("/login")
