@@ -39,7 +39,7 @@ wealthsimple:
       paper_value: 50000
     - account_id: "YOUR_PERSONAL_ACCOUNT_ID"
       label: "Personal"
-      risk_per_trade_pct: 10
+      risk_per_trade_pct: 5
       paper_value: 2000
   exchange_hint: ""
 
