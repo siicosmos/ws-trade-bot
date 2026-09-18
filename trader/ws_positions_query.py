@@ -1,16 +1,17 @@
 """The Wealthsimple app's own FetchIdentityPositions document.
 
 Extracted from the app's public JS bundle (compiled AST) and
-re-printed to source. The gateway rejects modified or free-form
-queries, but accepts this document verbatim with a user token -
-and unlike the library's minimal variant it returns
+re-printed to source, minus Relay client-only directives
+(@nonreactive) that never reach the wire. The gateway rejects
+modified or free-form queries but accepts this document with a
+user token - and unlike the library's minimal variant it returns
 marginRequirement, strategyType, and legs per position.
 
 Keep byte-stable: the document is matched by content.
 """
 
 FETCH_IDENTITY_POSITIONS = '''
-query FetchIdentityPositions($identityId: ID!, $currency: Currency!, $first: Int, $cursor: String, $accountIds: [ID!], $aggregated: Boolean, $currencyOverride: CurrencyOverride, $sort: PositionSort, $sortDirection: PositionSortDirection, $filter: PositionFilter, $since: PointInTime, $includeSecurity: Boolean, $includeFundamentals: Boolean, $includeAccountData: Boolean, $includeOneDayReturnsBaseline: Boolean, $includeSleeveAllocations: Boolean, $accountScope: AccountScope) {
+query FetchIdentityPositions($identityId: ID!, $currency: Currency!, $first: Int, $cursor: String, $accountIds: [ID!], $aggregated: Boolean, $currencyOverride: CurrencyOverride, $sort: PositionSort, $sortDirection: PositionSortDirection, $filter: PositionFilter, $since: PointInTime, $includeSecurity: Boolean = false, $includeFundamentals: Boolean = false, $includeAccountData: Boolean = false, $includeOneDayReturnsBaseline: Boolean = false, $includeSleeveAllocations: Boolean = false, $accountScope: AccountScope) {
   identity(id: $identityId) {
     id
     financials(accountScope: $accountScope, filter: {accounts: $accountIds}) {
@@ -80,7 +81,7 @@ fragment PositionV2 on PositionV2 {
   }
   security {
     id
-    ...SecuritySummaryWithoutMarketMetadata @include(if: $includeSecurity) @nonreactive
+    ...SecuritySummaryWithoutMarketMetadata @include(if: $includeSecurity)
     fundamentals(currency: null) @include(if: $includeFundamentals) {
       currency
       high52Week
@@ -129,7 +130,7 @@ fragment SecuritySummaryWithoutMarketMetadata on Security {
   stock {
     ...StockSummary
   }
-  quoteV2(currency: null) @nonreactive {
+  quoteV2(currency: null) {
     ...SecurityQuoteV2
   }
   optionDetails {
@@ -286,7 +287,7 @@ fragment FuturesSummary on FuturesDetails {
 fragment PositionLeg on PositionLeg {
   security {
     id
-    ...SecuritySummaryWithoutMarketMetadata @include(if: $includeSecurity) @nonreactive
+    ...SecuritySummaryWithoutMarketMetadata @include(if: $includeSecurity)
     fundamentals(currency: null) @include(if: $includeFundamentals) {
       currency
       high52Week

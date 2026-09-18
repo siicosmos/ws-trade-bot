@@ -181,7 +181,7 @@ def probe_schema(account):
             variables,
         )
     except Exception as e:
-        return (f"schema probe: app document rejected - {str(e)[:200]}")
+        return f"schema probe: app document rejected - {str(e)[:1500]}"
     try:
         positions = (
             ((result.get("data") or {}).get("identity") or {})

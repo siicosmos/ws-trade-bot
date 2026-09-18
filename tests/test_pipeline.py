@@ -1657,3 +1657,56 @@ def test_summary_margin_requirement():
     row = next(a for a in summary["accounts"] if a["label"] == "Personal")
     # 55 * 1.25 + 400 * 1.25
     assert row["margin_requirement"] == 568.75
+
+
+def test_registered_account_no_margin(monkeypatch):
+    app, store, account = _make_app()
+    client = app.test_client()
+    account.open_option_positions = lambda: {
+        "Personal": {
+            "positions": [
+                {"market_value": 100.0, "risk_cad": 120.0,
+                 "cost_cad": 130.0, "short": False,
+                 "margin_req_amount": 55.0,
+                 "margin_req_currency": "USD"},
+            ],
+            "fx": 1.25,
+        },
+    }
+    account.stock_holdings = lambda: {"Personal": []}
+    account._resolve = lambda: [("Personal", "pers")]
+    account.account_type_map = lambda: {"pers": "RRSP"}
+
+    summary = client.get("/api/summary").get_json()
+    row = next(a for a in summary["accounts"] if a["label"] == "Personal")
+    assert row["margin_requirement"] is None
+
+    account.account_type_map = lambda: {"pers": "PERSONAL"}
+    summary = client.get("/api/summary").get_json()
+    row = next(a for a in summary["accounts"] if a["label"] == "Personal")
+    assert row["margin_requirement"] == 68.75
+
+
+def test_account_type_map_cached():
+    from trader.account import WealthsimpleAccount
+
+    calls = []
+
+    class FakeWS:
+        def get_accounts(self):
+            calls.append(1)
+            return [
+                {"id": "a1", "unifiedAccountType": "rrsp"},
+                {"id": "a2", "unifiedAccountType": "PERSONAL"},
+            ]
+
+    class FakeCfg:
+        class wealthsimple:
+            positions_refresh_seconds = 30
+            values_refresh_seconds = 60
+
+    acct = WealthsimpleAccount(FakeCfg())
+    acct._ws = FakeWS()
+    assert acct.account_type_map() == {"a1": "RRSP", "a2": "PERSONAL"}
+    assert acct.account_type_map() == {"a1": "RRSP", "a2": "PERSONAL"}
+    assert len(calls) == 1

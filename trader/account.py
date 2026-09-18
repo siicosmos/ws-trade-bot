@@ -95,6 +95,7 @@ class WealthsimpleAccount:
         self._usd_cache_ts = 0.0
         self._funding_cache = None
         self._funding_ts = 0.0
+        self._type_map = None
 
     def _client(self):
         if self._ws is None:
@@ -102,6 +103,28 @@ class WealthsimpleAccount:
 
             self._ws = WealthsimpleV2()
         return self._ws
+
+    def account_type_map(self):
+        """{account_id: unifiedAccountType}, cached (types are static).
+
+        Registered plans (RRSP/TFSA/...) report a "margin
+        requirement" that is really cash collateral - callers use
+        this to suppress it there.
+        """
+        if self._type_map is not None:
+            return self._type_map
+        out = {}
+        try:
+            ws = self._client()
+            for a in ws.get_accounts() or []:
+                if a.get("id"):
+                    out[a["id"]] = str(
+                        a.get("unifiedAccountType") or ""
+                    ).upper()
+        except Exception:
+            pass
+        self._type_map = out
+        return out
 
     def _resolve(self):
         if self._resolved is None:

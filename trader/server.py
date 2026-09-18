@@ -7,6 +7,7 @@ from datetime import timedelta
 
 from flask import Flask, Response, jsonify, redirect, request, session
 
+from .account_types import REGISTERED_ACCOUNT_TYPES
 from .dashboard import DASHBOARD_HTML, LOGIN_HTML
 from .pipeline import process_alert
 from .store import Store
@@ -298,6 +299,24 @@ def create_app(cfg, store: Store, risk, executor, account=None,
             margin_req = _margin_total(
                 (live["positions"] if live is not None else []) + (sk or [])
             )
+            if margin_req is not None:
+                # registered plans have no margin: the reported
+                # figure is cash collateral
+                type_map_fn = getattr(account, "account_type_map", None)
+                resolve_fn = getattr(account, "_resolve", None)
+                if callable(type_map_fn) and callable(resolve_fn):
+                    try:
+                        type_map = type_map_fn() or {}
+                        ids = {
+                            lbl: aid for lbl, aid in resolve_fn()
+                        }
+                        acct_type = str(
+                            type_map.get(ids.get(label) or "") or ""
+                        ).upper()
+                        if acct_type in REGISTERED_ACCOUNT_TYPES:
+                            margin_req = None
+                    except Exception:
+                        pass
             out.append(
                 {
                     "label": label,
