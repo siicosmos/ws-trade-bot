@@ -15,7 +15,7 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   body {
     background: var(--bg); color: var(--text);
     font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    padding: 20px; max-width: 1200px; margin: 0 auto;
+    padding: 20px; max-width: 1400px; margin: 0 auto;
   }
   header {
     display: flex; align-items: center; gap: 14px;
@@ -92,6 +92,15 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   .card .sub { color: var(--muted); font-size: 12px; margin-top: 8px; display: flex; justify-content: space-between; }
   h2 { font-size: 14px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin: 26px 0 10px; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .pos { table-layout: fixed; font-size: 12px; }
+  .pos th, .pos td { padding: 6px 5px; word-break: break-word; }
+  .pos th:nth-child(1), .pos td:nth-child(1) { width: 12%; }
+  .pos th:nth-child(2), .pos td:nth-child(2) { width: 24%; }
+  .pos th:nth-child(3), .pos td:nth-child(3) { width: 9%; }
+  .pos th:nth-child(4), .pos td:nth-child(4) { width: 13%; }
+  .pos th:nth-child(5), .pos td:nth-child(5) { width: 13%; }
+  .pos th:nth-child(6), .pos td:nth-child(6) { width: 14%; }
+  .pos th:nth-child(7), .pos td:nth-child(7) { width: 15%; }
   th { text-align: left; color: var(--muted); font-weight: 600; padding: 8px 10px; border-bottom: 1px solid var(--border); font-size: 11px; text-transform: uppercase; }
   td { padding: 8px 10px; border-bottom: 1px solid #21262d; font-variant-numeric: tabular-nums; }
   tr:hover td { background: #1c2129; }
@@ -253,7 +262,7 @@ async function loadPositions() {
   const rows = await api("/api/positions");
   const el = document.getElementById("positions");
   if (!rows.length) { el.innerHTML = '<div class="empty">no open positions</div>'; return; }
-  let html = "<table><tr><th>Account</th><th>Contract</th><th class=num>Qty</th><th class=num>Avg $</th><th class=num>Price $</th><th class=num>Return</th><th class=num>Total Cost $</th></tr>";
+  let html = '<table class="pos"><tr><th>Account</th><th>Contract</th><th class=num>Qty</th><th class=num>Avg $</th><th class=num>Price $</th><th class=num>Return</th><th class=num>Total Cost $</th></tr>';
   for (const p of rows) {
     const ret = p.pct_return ?? null;
     const retColor = ret === null ? "var(--muted)" : ret >= 0 ? "var(--green)" : "var(--red)";

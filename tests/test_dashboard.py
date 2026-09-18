@@ -201,3 +201,14 @@ def test_dte_badge_colors():
     assert '"dte</span>"' in js
     # expiry sub-line carries the badge
     assert "dteBadge(p.expiry)" in js
+
+
+def test_positions_table_always_fits_panel():
+    import trader.dashboard as dash
+
+    html = dash.DASHBOARD_HTML
+    # fixed layout makes the table mathematically unable to exceed
+    # its container, and the panels got wider
+    assert "table-layout: fixed" in html
+    assert 'class="pos"' in html
+    assert "max-width: 1400px" in html
