@@ -11,11 +11,19 @@ class ExecutionResult:
     order_id: Optional[str] = None
 
 
-def contracts_for(alert, cfg) -> int:
-    sizes = cfg.trading.contracts_by_size or {}
-    if alert.size and alert.size in sizes:
-        return int(sizes[alert.size])
-    return int(cfg.trading.default_contracts)
+def contracts_for(alert, cfg, account_value: float, price) -> int:
+    if not price or price <= 0 or account_value <= 0:
+        return 0
+    multiplier = 1.0
+    if alert.size:
+        multiplier = (cfg.trading.size_risk_multiplier or {}).get(alert.size, 1.0)
+    budget = account_value * (cfg.trading.risk_per_trade_pct / 100.0) * multiplier
+    cost_per_contract = float(price) * 100
+    qty = int(budget // cost_per_contract)
+    cap = cfg.trading.max_contracts_per_trade
+    if cap and cap > 0:
+        qty = min(qty, cap)
+    return max(0, qty)
 
 
 def sell_quantity(held: int, scale: Optional[float]) -> int:
@@ -30,53 +38,80 @@ def sell_quantity(held: int, scale: Optional[float]) -> int:
 class PaperExecutor:
     mode = "paper"
 
+    def __init__(self, cfg, store, account):
+        self.cfg = cfg
+        self.store = store
+        self.account = account
+
     def execute(self, alert, cfg, store) -> ExecutionResult:
         if alert.kind == "option":
-            key = alert.contract_key()
-            if alert.action == "BUY":
-                qty = contracts_for(alert, cfg)
-                store.apply_position(self.mode, alert, qty)
-                price = alert.premium
-                return ExecutionResult(
-                    True,
-                    f"[PAPER] BUY {qty}x {key} @ {price}",
-                    qty=qty,
-                    price=price,
-                )
-            held = store.get_position(self.mode, key)
-            qty = sell_quantity(held, alert.scale)
-            if held < 1:
-                return ExecutionResult(
-                    False, f"[PAPER] no {key} position to sell"
-                )
-            store.apply_position(self.mode, alert, -qty)
-            return ExecutionResult(
-                True,
-                f"[PAPER] SELL {qty}/{held}x {key} @ {alert.premium}",
-                qty=qty,
-                price=alert.premium,
-            )
+            return self._option(alert, cfg, store)
+        return self._stock(alert, cfg, store)
 
+    def _option(self, alert, cfg, store) -> ExecutionResult:
+        key = alert.contract_key()
+        if alert.action == "BUY":
+            price = alert.premium
+            if not price:
+                return ExecutionResult(
+                    False, f"[PAPER] {key} alert has no premium to size against"
+                )
+            qty = contracts_for(alert, cfg, self.account.value(), price)
+            if qty < 1:
+                budget = self.account.value() * (
+                    cfg.trading.risk_per_trade_pct / 100.0
+                )
+                return ExecutionResult(
+                    False,
+                    f"[PAPER] risk budget {budget:.0f} too small for {key} "
+                    f"@ {price} (cost {price * 100:.0f}/contract)",
+                )
+            store.apply_position(self.mode, alert, qty, premium=price)
+            store.adjust_paper_equity(-qty * price * 100)
+            return ExecutionResult(
+                True, f"[PAPER] BUY {qty}x {key} @ {price}", qty=qty, price=price
+            )
+        held = store.get_position(self.mode, key)
+        if held < 1:
+            return ExecutionResult(False, f"[PAPER] no {key} position to sell")
+        qty = sell_quantity(held, alert.scale)
+        store.apply_position(self.mode, alert, -qty)
+        if alert.premium:
+            store.adjust_paper_equity(qty * alert.premium * 100)
+        return ExecutionResult(
+            True,
+            f"[PAPER] SELL {qty}/{held}x {key} @ {alert.premium}",
+            qty=qty,
+            price=alert.premium,
+        )
+
+    def _stock(self, alert, cfg, store) -> ExecutionResult:
         key = alert.ticker
         if alert.action == "BUY":
             price = alert.entry
-            qty = 0
-            if price:
-                qty = max(0, int(cfg.trading.position_size_cad / price))
-                store.apply_position(self.mode, alert, qty)
+            if not price:
+                return ExecutionResult(
+                    False, f"[PAPER] {key} alert has no price to size against"
+                )
+            qty = max(0, int(cfg.trading.position_size_cad / price))
+            if qty < 1:
+                return ExecutionResult(
+                    False,
+                    f"[PAPER] position size {cfg.trading.position_size_cad} "
+                    f"too small for {key} @ {price}",
+                )
+            store.apply_position(self.mode, alert, qty, premium=price)
+            store.adjust_paper_equity(-qty * price)
             return ExecutionResult(
-                True,
-                f"[PAPER] BUY {qty} {key} @ {price}",
-                qty=qty,
-                price=price,
+                True, f"[PAPER] BUY {qty} {key} @ {price}", qty=qty, price=price
             )
         held = store.get_position(self.mode, key)
-        qty = sell_quantity(held, alert.scale)
         if held < 1:
-            return ExecutionResult(
-                False, f"[PAPER] no {key} position to sell"
-            )
+            return ExecutionResult(False, f"[PAPER] no {key} position to sell")
+        qty = sell_quantity(held, alert.scale)
         store.apply_position(self.mode, alert, -qty)
+        if alert.entry:
+            store.adjust_paper_equity(qty * alert.entry)
         return ExecutionResult(
             True,
             f"[PAPER] SELL {qty}/{held} {key} @ {alert.entry}",
@@ -88,8 +123,9 @@ class PaperExecutor:
 class WealthsimpleExecutor:
     mode = "live"
 
-    def __init__(self, cfg):
+    def __init__(self, cfg, account):
         self.cfg = cfg
+        self.account = account
         self._ws = None
 
     def _client(self):
@@ -100,12 +136,9 @@ class WealthsimpleExecutor:
         return self._ws
 
     def _account_id(self, ws):
-        if self.cfg.wealthsimple.account_id:
-            return self.cfg.wealthsimple.account_id
-        accounts = ws.get_accounts()
-        active = [a for a in accounts if a.get("status") == "ACTIVE"]
-        pool = active or accounts
-        return pool[0]["id"]
+        from .account import resolve_account_id
+
+        return resolve_account_id(ws, self.cfg)
 
     def _resolve_security(self, ws, ticker):
         hint = self.cfg.wealthsimple.exchange_hint or None
@@ -184,12 +217,21 @@ class WealthsimpleExecutor:
         key = alert.contract_key()
 
         if alert.action == "BUY":
-            qty = contracts_for(alert, cfg)
             limit = quote.get("ask") or alert.premium
             if not limit:
                 return ExecutionResult(False, "no ask/premium to price order")
+            qty = contracts_for(alert, cfg, self.account.value(), limit)
+            if qty < 1:
+                budget = self.account.value() * (
+                    cfg.trading.risk_per_trade_pct / 100.0
+                )
+                return ExecutionResult(
+                    False,
+                    f"risk budget {budget:.0f} too small for {key} "
+                    f"@ {limit} (cost {float(limit) * 100:.0f}/contract)",
+                )
             order = ws.buy_option(account_id, opt["id"], qty, float(limit))
-            store.apply_position(self.mode, alert, qty)
+            store.apply_position(self.mode, alert, qty, premium=float(limit))
             return ExecutionResult(
                 True,
                 f"BUY {qty}x {key} @ {limit}",

@@ -7,17 +7,20 @@ discord:
 
 trading:
   dry_run: true
-  order_type: market
+  order_type: limit
   limit_offset_pct: 0.5
   position_size_cad: 100
-  default_contracts: 2
-  contracts_by_size:
-    lotto: 1
-    tiny: 1
-    small: 2
-    medium: 3
-    big: 5
-    full: 5
+  risk_per_trade_pct: 5
+  max_contracts_per_trade: 10
+  max_open_risk_pct: 30
+  size_risk_multiplier:
+    lotto: 0.5
+    tiny: 0.5
+    small: 0.75
+    medium: 1.0
+    big: 1.0
+    full: 1.0
+  paper_account_value: 10000
   skip_underlyings:
     - SPX
   max_trades_per_day: 5

@@ -1,5 +1,6 @@
 import argparse
 
+from trader.account import PaperAccount, WealthsimpleAccount
 from trader.config import load_config
 from trader.executor import PaperExecutor, WealthsimpleExecutor
 from trader.risk import RiskEngine
@@ -15,16 +16,19 @@ def main():
 
     cfg = load_config(args.config)
     store = Store(args.db)
-    risk = RiskEngine(cfg, store)
 
     if cfg.trading.dry_run:
-        executor = PaperExecutor()
+        account = PaperAccount(cfg, store)
+        executor = PaperExecutor(cfg, store, account)
         mode = "PAPER"
     else:
-        executor = WealthsimpleExecutor(cfg)
+        account = WealthsimpleAccount(cfg)
+        executor = WealthsimpleExecutor(cfg, account)
         mode = "LIVE"
 
-    app = create_app(cfg, store, risk, executor)
+    risk = RiskEngine(cfg, store, account)
+
+    app = create_app(cfg, store, risk, executor, account)
     print(f"pipeline running in {mode} mode on {cfg.pipeline.host}:{cfg.pipeline.port}")
     app.run(host=cfg.pipeline.host, port=cfg.pipeline.port, threaded=True)
 

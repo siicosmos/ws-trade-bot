@@ -19,11 +19,14 @@ class DiscordConfig:
 @dataclass
 class TradingConfig:
     dry_run: bool = True
-    order_type: str = "market"
+    order_type: str = "limit"
     limit_offset_pct: float = 0.5
     position_size_cad: float = 100.0
-    default_contracts: int = 2
-    contracts_by_size: dict = field(default_factory=dict)
+    risk_per_trade_pct: float = 5.0
+    max_contracts_per_trade: int = 10
+    max_open_risk_pct: float = 30.0
+    size_risk_multiplier: dict = field(default_factory=dict)
+    paper_account_value: float = 10000.0
     skip_underlyings: List[str] = field(default_factory=list)
     max_trades_per_day: int = 5
     cooldown_seconds: int = 60
@@ -73,11 +76,18 @@ def load_config(path: str) -> Config:
 
     trading = TradingConfig(
         dry_run=bool(_get(trading_raw, "dry_run", True)),
-        order_type=str(_get(trading_raw, "order_type", "market")).lower(),
+        order_type=str(_get(trading_raw, "order_type", "limit")).lower(),
         limit_offset_pct=float(_get(trading_raw, "limit_offset_pct", 0.5)),
         position_size_cad=float(_get(trading_raw, "position_size_cad", 100.0)),
-        default_contracts=int(_get(trading_raw, "default_contracts", 2)),
-        contracts_by_size=dict(_get(trading_raw, "contracts_by_size", {})),
+        risk_per_trade_pct=float(_get(trading_raw, "risk_per_trade_pct", 5.0)),
+        max_contracts_per_trade=int(
+            _get(trading_raw, "max_contracts_per_trade", 10)
+        ),
+        max_open_risk_pct=float(_get(trading_raw, "max_open_risk_pct", 30.0)),
+        size_risk_multiplier=dict(_get(trading_raw, "size_risk_multiplier", {})),
+        paper_account_value=float(
+            _get(trading_raw, "paper_account_value", 10000.0)
+        ),
         skip_underlyings=[
             t.upper() for t in _get(trading_raw, "skip_underlyings", [])
         ],
