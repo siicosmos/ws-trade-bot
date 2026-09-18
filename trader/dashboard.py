@@ -79,12 +79,16 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 </head>
 <body>
 <header>
-  <h1>WS Trade Bot</h1>
-  <span id="mode" class="badge notify">notify</span>
-  <span id="reader" style="color:var(--muted);font-size:12px"></span>
-  <span id="git" style="color:var(--muted);font-size:12px"></span>
-  <span id="timebox"><span id="updated"></span><span id="clock"></span></span>
-  <span id="stops" style="color:var(--muted);font-size:12px;flex-basis:100%;margin-top:-4px"></span>
+  <div style="display:flex;align-items:center;flex-basis:100%;gap:10px">
+    <h1 style="margin:0">WS Trade Bot</h1>
+    <span id="mode" class="badge notify">notify</span>
+    <span id="timebox"><span id="updated"></span><span id="clock"></span></span>
+  </div>
+  <div style="display:flex;flex-basis:100%;gap:18px;flex-wrap:wrap;color:var(--muted);font-size:12px">
+    <span id="reader"></span>
+    <span id="git"></span>
+    <span id="stops"></span>
+  </div>
 </header>
 
 <div class="cards" id="accounts"></div>
