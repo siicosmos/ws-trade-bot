@@ -106,6 +106,7 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   .detail { max-width: 360px; white-space: normal; word-break: break-word; color: var(--muted); font-size: 12px; }
   .empty { color: var(--muted); font-size: 13px; padding: 14px; text-align: center; background: var(--panel); border-radius: 8px; }
   .num { text-align: right; }
+  .subv { display: block; font-size: 11px; color: var(--muted); }
 </style>
 </head>
 <body>
@@ -262,9 +263,10 @@ async function loadPositions() {
     if (mv != null && p.cost_usd != null) {
       pl = p.short ? p.cost_usd - mv : mv - p.cost_usd;
     }
-    const plText = pl === null ? "" : " (" + (pl > 0 ? "+$" : pl < 0 ? "-$" : "$") +
-      Math.abs(pl).toLocaleString("en-CA", { maximumFractionDigits: 2 }) + ")";
-    const retText = ret === null ? "—" + plText : (ret > 0 ? "+" : "") + ret + "%" + plText;
+    const retMain = ret === null ? "—" : (ret > 0 ? "+" : "") + ret + "%";
+    const plSpan = pl === null ? "" :
+      '<span class="subv">(' + (pl > 0 ? "+$" : pl < 0 ? "-$" : "$") +
+      Math.abs(pl).toLocaleString("en-CA", { maximumFractionDigits: 2 }) + ")</span>";
     html += "<tr><td>" + esc(p.account) + (
       p.source === "ws"
         ? ' <span class="tag ignored" title="live from Wealthsimple">ws</span>'
@@ -276,16 +278,16 @@ async function loadPositions() {
       '<td class=num>' + (p.short ? "-" + p.qty : p.qty) + (p.short ? ' <span class="tag skip" title="short position">short</span>' : "") + "</td>" +
       '<td class=num>' + (p.avg_premium != null
         ? "$" + avgTotal.toLocaleString("en-CA", { maximumFractionDigits: 2 }) +
-          ' <span style="font-size:11px;color:var(--muted)">($' + p.avg_premium + ")</span>"
+          '<span class="subv">($' + p.avg_premium + ")</span>"
         : "—") + "</td>" +
       '<td class=num>' + (p.current_price != null
         ? "$" + p.current_price + (mv != null
-          ? ' <span style="font-size:11px;color:var(--muted)">(' + (p.short ? "-$" : "$") +
+          ? '<span class="subv">(' + (p.short ? "-$" : "$") +
             mv.toLocaleString("en-CA", { maximumFractionDigits: 2 }) + ")</span>"
           : "")
         : "—") + "</td>" +
-      '<td class=num style="color:' + retColor + '">' + retText + "</td>" +
-      '<td class=num>' + (p.cost_usd != null ? fmtMoney(p.cost_usd) + (p.cost_cad ? ' <span style="font-size:11px;color:var(--muted)">(' + fmtMoney(p.cost_cad) + ')</span>' : "") : fmtMoney(avgTotal)) + "</td></tr>";
+      '<td class=num style="color:' + retColor + '">' + retMain + plSpan + "</td>" +
+      '<td class=num>' + (p.cost_usd != null ? fmtMoney(p.cost_usd) + (p.cost_cad ? '<span class="subv">(' + fmtMoney(p.cost_cad) + ')</span>' : "") : '<span class="subv">(' + fmtMoney(avgTotal) + ")</span>") + "</td></tr>";
   }
   el.innerHTML = html + "</table>";
 }

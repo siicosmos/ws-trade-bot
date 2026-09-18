@@ -108,8 +108,10 @@ def test_positions_table_shows_price_and_return():
     assert "avgTotal" in js
     # price shows the quote with the signed market value
     assert "p.current_price" in js and "p.market_value" in js
-    # return shows the dollar P&L next to the percentage
-    assert "p.cost_usd - mv" in js and "plText" in js
+    # return shows the dollar P&L stacked under the percentage
+    assert "p.cost_usd - mv" in js and "plSpan" in js
+    # details stack in a sub-line instead of widening the rows
+    assert '.subv { display: block;' in dash.DASHBOARD_HTML
     assert "set-ws-positions" in js
     assert "set-ws-values" in js
 
