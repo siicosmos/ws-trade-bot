@@ -200,10 +200,17 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                 return None, str(e)
         t = cfg.trading
         real = _real_positions() or {}
+        shared_fx = None
+        for live in real.values():
+            if live and live.get("fx"):
+                shared_fx = live["fx"]
+                break
+        if shared_fx is None:
+            shared_fx = getattr(account, "_fx_hint", None)
         out = []
         for label, value in values.items():
             open_risk = store.open_risk(mode, label)
-            fx = None
+            fx = shared_fx
             usd_cash = None
             live = real.get(label)
             if live is not None:
@@ -211,7 +218,8 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                     r.get("cost_cad") or r.get("cost") or 0
                     for r in live["positions"]
                 )
-                fx = live.get("fx")
+                if live.get("fx"):
+                    fx = live["fx"]
                 usd_cash = live.get("usd_cash")
             usd_value = round(value / fx, 2) if (fx and value) else None
             stale_fn = getattr(account, "stale_age", None)
@@ -365,6 +373,9 @@ def create_app(cfg, store: Store, risk, executor, account=None,
         return jsonify(
             {
                 "status": "active",
+                "interval_seconds": (
+                    getattr(updater.cfg.auto_update, "interval_seconds", 600)
+                ),
                 "last_check": updater.last_check,
                 "result": updater.last_result,
                 "errors": updater.errors,

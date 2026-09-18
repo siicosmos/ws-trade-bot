@@ -131,6 +131,12 @@ class AutoUpdater:
             interval = max(30, int(self.cfg.auto_update.interval_seconds))
             deadline = time.time() + interval
             while True:
+                # a shorter interval saved mid-cycle takes effect now
+                # instead of after the old deadline
+                interval = max(
+                    30, int(self.cfg.auto_update.interval_seconds)
+                )
+                deadline = min(deadline, time.time() + interval)
                 remain = deadline - time.time()
                 if remain <= 0:
                     break
@@ -198,7 +204,7 @@ class AutoUpdater:
             self.webhook_url,
             "Pipeline restarting",
             {
-                "reason": f"auto-updated to {new[:8]}",
+                "reason": f"code updated to {new[:8]}",
                 "commits": commits[:1000] or "-",
             },
             ok=True,

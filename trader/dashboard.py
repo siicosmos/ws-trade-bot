@@ -67,6 +67,17 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
     background: var(--panel); border: 1px solid var(--border);
     border-radius: 10px; padding: 18px;
   }
+  #settings-float {
+    position: fixed; bottom: 24px; right: 24px; display: none;
+    gap: 10px; z-index: 60;
+  }
+  #settings-float button {
+    border: 0; border-radius: 8px; padding: 10px 22px;
+    font-size: 13px; font-weight: 600; cursor: pointer;
+  }
+  #settings-save { background: #238636; color: #fff; }
+  #settings-save:hover { background: #2ea043; }
+  #settings-revert { background: #21262d; color: var(--text); border: 1px solid var(--border); }
   .cur-toggle {
     color: var(--muted); font-size: 11px; font-weight: 700;
     background: var(--panel); border: 1px solid var(--border);
@@ -123,9 +134,13 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 <h2>Trade Log</h2>
 <div id="trades"></div>
 
-<h2>Settings <button id="settings-toggle" onclick="toggleSettings()" style="background:#21262d;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 14px;font-size:12px;cursor:pointer">Show</button> <button id="settings-save" onclick="saveSettings()" style="float:right;background:#238636;color:#fff;border:0;border-radius:6px;padding:4px 14px;font-weight:600;cursor:pointer">Save</button></h2>
+<h2>Settings <button id="settings-toggle" onclick="toggleSettings()" style="background:#21262d;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 14px;font-size:12px;cursor:pointer">Show</button></h2>
 <div id="settings" class="card"></div>
 
+<div id="settings-float">
+  <button id="settings-revert">Revert</button>
+  <button id="settings-save">Save</button>
+</div>
 <script>
 function autoGrow(el) {
   el.style.height = "auto";
@@ -301,6 +316,7 @@ async function loadGitStatus() {
   let text = "git: " + result;
   if (s.head) text += " @ " + s.head;
   text += " (" + checked;
+  if (s.interval_seconds) text += " · every " + s.interval_seconds + "s";
   if (s.last_pull && s.last_pull.ts) {
     const how =
       s.last_pull.how === "auto" || s.last_pull.how === "manual"
@@ -339,6 +355,19 @@ async function loadTrades() {
 let lastSettings = null;
 
 let settingsDirty = false;
+
+function setSettingsDirty(v) {
+  settingsDirty = v;
+  document.getElementById("settings-float").style.display = v ? "flex" : "none";
+}
+
+function revertSettings() {
+  setSettingsDirty(false);
+  loadSettings();
+}
+
+document.getElementById("settings-save").onclick = saveSettings;
+document.getElementById("settings-revert").onclick = revertSettings;
 
 async function loadSettings() {
   const s = await api("/api/settings");
@@ -425,8 +454,8 @@ async function loadSettings() {
     t.addEventListener("input", function() { autoGrow(t); });
   });
   el.querySelectorAll("input,select,textarea").forEach(function(i) {
-    i.addEventListener("input", function() { settingsDirty = true; });
-    i.addEventListener("change", function() { settingsDirty = true; });
+    i.addEventListener("input", function() { setSettingsDirty(true); });
+    i.addEventListener("change", function() { setSettingsDirty(true); });
   });
 }
 
@@ -483,7 +512,7 @@ async function saveSettings() {
   } else {
     document.getElementById("settings-save").textContent = "Saved";
     setTimeout(() => document.getElementById("settings-save").textContent = "Save", 1500);
-    settingsDirty = false;
+    setSettingsDirty(false);
     await loadSettings();
     load();
   }

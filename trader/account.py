@@ -230,7 +230,13 @@ class WealthsimpleAccount:
                         "pct_return": pct_return,
                     }
                 )
-            out[label] = {"positions": rows, "fx": fx, "usd_cash": usd_cash}
+            if fx:
+                self._fx_hint = fx
+            out[label] = {
+                "positions": rows,
+                "fx": fx,
+                "usd_cash": usd_cash,
+            }
         self._pos_cache = out
         self._pos_cache_ts = now
         return out
