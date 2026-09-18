@@ -164,18 +164,23 @@ def test_current_messages_filters_chrome(monkeypatch):
 
 
 def test_current_messages_falls_back_to_item_name(monkeypatch):
+    from datetime import datetime
+
+    monkeypatch.setattr(
+        dr, "true_now", lambda: datetime(2026, 9, 18, 14, 3)
+    )
     container = _fake_ctrl(
         name="test-message",
         children=[
-            _item(name="DoubleL, 今天 00:13"),
-            _item(name="Liam, 今天 00:14"),
+            _item(name="DoubleL, 今天 14:01"),
+            _item(name="Liam, 今天 14:02"),
         ],
     )
     monkeypatch.setattr(dr, "item_text", lambda it: it.text)
     msgs = dr.current_messages(container)
     assert [t for t, _ in msgs] == [
-        "DoubleL, 今天 00:13",
-        "Liam, 今天 00:14",
+        "DoubleL, 今天 14:01",
+        "Liam, 今天 14:02",
     ]
 
 
@@ -605,3 +610,155 @@ def test_heartbeat_fires_while_channel_quiet(monkeypatch):
         if ch and "player-alerts" in ch and ok
     ]
     assert good, f"no heartbeats while quiet: {heartbeats!r}"
+
+
+def test_boot_floor_delivers_late_but_not_history(monkeypatch):
+    from datetime import datetime, timedelta
+
+    import discord_reader as dr
+
+    fake_now = datetime(2026, 9, 18, 9, 26)
+    monkeypatch.setattr(dr, "true_now", lambda: fake_now)
+    boot = fake_now - timedelta(hours=6)
+
+    # the incident: alert arrived 3h ago during a UIA blind period
+    late = "APP — 06:39\nBOUGHT 09/25 ARM 300c @ 1.65 small size"
+    assert dr.is_recent_message(late, floor=boot)
+
+    # a bare late-evening time parses as later-today: future, rejected
+    evening = "APP — 23:10\nBOUGHT 09/18 SPY 753c @ 6.22 full size"
+    assert not dr.is_recent_message(evening, floor=boot)
+
+    # no floor given: legacy 10-minute window behaviour
+    assert not dr.is_recent_message(late)
+    fresh = "APP — 09:24\nBOUGHT SPX 6000c tiny size"
+    assert dr.is_recent_message(fresh)
+
+
+def test_current_messages_passes_floor(monkeypatch):
+    from datetime import datetime, timedelta
+
+    import discord_reader as dr
+
+    fake_now = datetime(2026, 9, 18, 9, 26)
+    monkeypatch.setattr(dr, "true_now", lambda: fake_now)
+    boot = fake_now - timedelta(hours=6)
+
+    class Item:
+        Name = "APP — 06:39 BOUGHT 09/25 ARM 300c @ 1.65 small size"
+
+    monkeypatch.setattr(dr, "message_items", lambda c: [Item()])
+    monkeypatch.setattr(dr, "item_text", lambda i: i.Name)
+
+    msgs = dr.current_messages(None, 40, boot)
+    assert msgs and "ARM 300c" in msgs[0][0]
+
+    # without a floor the same (now stale) message is filtered
+    assert dr.current_messages(None, 40) == []
+
+
+def test_embed_meta_times_parse(monkeypatch):
+    from datetime import datetime
+
+    import discord_reader as dr
+
+    monkeypatch.setattr(
+        dr, "true_now", lambda: datetime(2026, 9, 18, 9, 26)
+    )
+    for text in (
+        "📢 SPX Plays • Option Alert\nAPP\n今天 06:39\nBOUGHT ARM 300c",
+        "APP — 06:39\nBOUGHT ARM 300c",
+        "APP Today at 6:39 AM\nBOUGHT ARM 300c",
+    ):
+        assert dr.meta_time(text) == datetime(2026, 9, 18, 6, 39), text
+
+
+def test_post_message_reports_success(monkeypatch):
+    import discord_reader as dr
+
+    class FakeResp:
+        def __init__(self, code):
+            self.status_code = code
+
+    monkeypatch.setattr(
+        dr.requests, "post", lambda *a, **k: FakeResp(200)
+    )
+    assert dr.post_message("http://x", "text")
+    monkeypatch.setattr(
+        dr.requests, "post", lambda *a, **k: FakeResp(401)
+    )
+    assert not dr.post_message("http://x", "text")
+
+    def boom(*a, **k):
+        raise dr.requests.RequestException("pipeline down")
+
+    monkeypatch.setattr(dr.requests, "post", boom)
+    assert not dr.post_message("http://x", "text")
+
+
+def test_unsent_messages_are_retried(monkeypatch):
+    # regression: a post that failed while the pipeline was restarting
+    # used to be marked seen anyway, silently swallowing the alert
+    import discord_reader as dr
+
+    cfg = {
+        "reader": {
+            "pipeline_url": "http://localhost:8080/alert",
+            "poll_interval": 0.01,
+            "channels": ["player-alerts"],
+        },
+        "discord": {"webhook_url": ""},
+    }
+
+    class FakeWindow:
+        Name = "🚨│player-alerts | #general - Discord"
+
+    class FakeContainer:
+        Name = "🚨│player-alerts 中的消息"
+
+    msg = "BOUGHT 09/25 ARM 300c @ 1.65 small size"
+    attempts = {"n": 0}
+
+    def fake_post(url, text, token="", ts=None, verify=True, channel=""):
+        attempts["n"] += 1
+        return attempts["n"] > 3   # pipeline down for the first 3 tries
+
+    monkeypatch.setattr(dr, "load_config", lambda: cfg)
+    monkeypatch.setattr(dr, "sync_clock", lambda: None)
+    monkeypatch.setattr(dr, "git_head", lambda root: "abc123")
+    monkeypatch.setattr(dr, "repo_root", lambda: ".")
+    monkeypatch.setattr(dr, "find_discord_window", lambda: FakeWindow())
+    monkeypatch.setattr(
+        dr, "find_message_container", lambda *a, **k: FakeContainer()
+    )
+    polls = {"n": 0}
+
+    def fake_current(container, max_items=40, floor=None):
+        polls["n"] += 1
+        anchor = [("earlier message in channel", None)]
+        if polls["n"] <= 3:
+            return anchor
+        return anchor + [(msg, None)]   # the alert arrives on poll 4
+
+    monkeypatch.setattr(dr, "current_messages", fake_current)
+    monkeypatch.setattr(dr, "WebhookLog", lambda url: None)
+    monkeypatch.setattr(dr, "sync_with_server",
+                        lambda *a, **k: None)
+    monkeypatch.setattr(dr, "post_message", fake_post)
+
+    sleeps = {"n": 0}
+
+    def fake_sleep(secs):
+        sleeps["n"] += 1
+        if sleeps["n"] > 60:
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(dr.time, "sleep", fake_sleep)
+
+    try:
+        dr.main()
+    except KeyboardInterrupt:
+        pass
+
+    # failed 3 times, then succeeded (delivered on the 4th attempt)
+    assert attempts["n"] >= 4, attempts

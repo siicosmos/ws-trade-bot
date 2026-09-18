@@ -84,7 +84,7 @@ MONTHS = {
     "november": 11, "december": 12,
 }
 
-TIME_RE = re.compile(r"\b(\d{1,2}):(\d{2})\s*(AM|PM)\b", re.I)
+TIME_RE = re.compile(r"\b(\d{1,2}):(\d{2})(?:\s*(AM|PM))?\b", re.I)
 DATE_RE = re.compile(
     r"(January|February|March|April|May|June|July|August|September"
     r"|October|November|December)\s+(\d{1,2}),?\s+(\d{4})",
@@ -111,6 +111,13 @@ LOG_PASTE_RE = re.compile(
 
 META_LEAD_RE = re.compile(
     r"^(?:\S{1,24}\s+)?\d{1,2}:\d{2}\s*(?:AM|PM)\b", re.I
+)
+
+# Discord embed author line: "APP 今天 06:39", "APP — 06:39", "Today at 6:39 AM"
+EMBED_META_RE = re.compile(
+    r"(?:今天|yesterday|today(?:\s+at)?)\s*\d{1,2}:\d{2}"
+    r"|\S{0,24}\s*[-–—]\s*\d{1,2}:\d{2}",
+    re.I,
 )
 
 
@@ -181,10 +188,11 @@ def parse_message_time(text):
         return None
     hour, minute, ampm = times[-1]
     hour, minute = int(hour), int(minute)
-    if ampm.upper() == "PM" and hour != 12:
-        hour += 12
-    elif ampm.upper() == "AM" and hour == 12:
-        hour = 0
+    if ampm is not None:
+        if ampm.upper() == "PM" and hour != 12:
+            hour += 12
+        elif ampm.upper() == "AM" and hour == 12:
+            hour = 0
     now = true_now()
     d = DATE_RE.search(text)
     if d:
@@ -212,13 +220,25 @@ def meta_time(text):
     m = MID_META_RE.search(text)
     if m:
         return parse_message_time(m.group(0))
+    m = EMBED_META_RE.search(text)
+    if m:
+        return parse_message_time(m.group(0))
     return None
 
 
-def is_recent_message(text, max_age_minutes=10):
+def is_recent_message(text, max_age_minutes=10, floor=None):
     ts = meta_time(text)
     if ts is None:
         return True
+    if floor is not None:
+        # floor = reader boot time: accept anything newer, so messages
+        # that arrived during a UIA blind period (window stale overnight)
+        # still get delivered late instead of being dropped as "old".
+        # Pre-boot history stays excluded, so restarts replay nothing.
+        return (
+            ts >= floor - timedelta(minutes=2)
+            and ts <= true_now() + timedelta(minutes=5)
+        )
     age = (true_now() - ts).total_seconds() / 60
     return -5 <= age <= max_age_minutes
 
@@ -504,7 +524,7 @@ def item_text(item):
     return " ".join(parts).strip()
 
 
-def current_messages(container, max_items=40):
+def current_messages(container, max_items=40, floor=None):
     texts = []
     for item in message_items(container)[-max_items:]:
         text = item_text(item)
@@ -515,7 +535,7 @@ def current_messages(container, max_items=40):
                 text = ""
         if not text or not looks_like_message(text):
             continue
-        if not is_recent_message(text):
+        if not is_recent_message(text, floor=floor):
             continue
         texts.append((strip_ui_noise(text), meta_time(text)))
     return texts
@@ -549,8 +569,10 @@ def post_message(url, text, token="", ts=None, verify=True, channel=""):
         )
         prefix = f"[sent {sent}] " if sent else ""
         log(f"-> {resp.status_code} {prefix}{text[:80]}")
+        return 200 <= resp.status_code < 300
     except requests.RequestException as e:
         log(f"post failed: {e}")
+        return False
 
 
 def heartbeat_status(allowed, title_channel):
@@ -680,10 +702,17 @@ def main():
     sync_clock()
     last_clock_check = time.time()
 
+    # messages newer than this are always deliverable, even hours late -
+    # they arrived while this reader was running (possibly during a UIA
+    # blind period) and must not be dropped by the staleness gate
+    boot_floor = true_now()
+
     start_head = git_head(repo_root())
     last_head_check = time.time()
 
     tail = []
+    pending = []   # (text, ts, channel) awaiting successful delivery
+    last_read_summary = None
     log("looking for Discord window...")
     window = None
     while window is None:
@@ -863,7 +892,14 @@ def main():
                 poll_interval = new_poll
                 max_items = new_max
 
-            msgs = current_messages(container, max_items)
+            msgs = current_messages(container, max_items, boot_floor)
+            summary = (
+                f"{len(msgs)} message(s) read"
+                + (f", newest: {msgs[-1][0][:70]!r}" if msgs else "")
+            )
+            if summary != last_read_summary:
+                log(f"pane: {summary}")
+                last_read_summary = summary
             if not msgs:
                 empty_polls += 1
                 if empty_polls >= 10:
@@ -873,9 +909,27 @@ def main():
                 continue
             empty_polls = 0
 
+            # deliver retries first: a message only counts as seen once
+            # the pipeline accepted it, otherwise a pipeline restart
+            # would silently swallow alerts
+            if pending:
+                retry = []
+                for text, ts, chan in pending:
+                    if post_message(
+                        pipeline_url, text, auth_token, ts, verify_tls, chan
+                    ):
+                        seen.add(text)
+                        if len(seen) > 5000:
+                            seen.clear()
+                    else:
+                        retry.append((text, ts, chan))
+                pending = retry
+
             if resync:
                 fresh = [
-                    (t, ts) for t, ts in msgs[-5:] if t not in seen
+                    (t, ts) for t, ts in msgs[-5:]
+                    if t not in seen
+                    and all(t != p[0] for p in pending)
                 ]
                 resync = False
             else:
@@ -885,13 +939,15 @@ def main():
                 for text, ts in fresh:
                     if text in seen:
                         continue
-                    seen.add(text)
-                    if len(seen) > 5000:
-                        seen.clear()
-                    post_message(
+                    if post_message(
                         pipeline_url, text, auth_token, ts, verify_tls,
                         current_channel or "",
-                    )
+                    ):
+                        seen.add(text)
+                        if len(seen) > 5000:
+                            seen.clear()
+                    else:
+                        pending.append((text, ts, current_channel or ""))
             elif msgs != tail:
                 tail = msgs
         except UIAError as e:
