@@ -172,12 +172,23 @@ def main():
     current_channel = None
     sync_counter = 99
 
+    container = None
+    current_channel = None
+    announced_channel = None
+    announced_wait = False
+    sync_counter = 99
+
     while True:
         try:
             if container is None:
                 container = find_message_container(window, marker)
                 if container is None:
-                    sync_counter = 99
+                    if not announced_wait:
+                        print(
+                            f"waiting for a channel matching {marker!r} - "
+                            f"open it in Discord or clear the marker"
+                        )
+                        announced_wait = True
                     resp = sync_with_server(
                         base_url, auth_token, None, False
                     )
@@ -186,26 +197,23 @@ def main():
                     )
                     if changed:
                         print(f"channel marker -> {marker!r}")
-                    print(
-                        f"waiting for a channel matching {marker!r} - "
-                        f"open it in Discord or clear the marker"
-                    )
                     time.sleep(5)
                     continue
-                try:
-                    current_channel = (container.Name or "")[:80]
-                except auto.COMError:
-                    current_channel = None
-                print(f"monitoring channel: {current_channel!r}")
+                announced_wait = False
 
             try:
                 name = (container.Name or "")[:80]
-                if name and name != current_channel:
-                    current_channel = name
-                    print(f"channel switched: {current_channel!r}")
-                    tail = []
             except auto.COMError:
-                pass
+                name = ""
+            if name:
+                current_channel = name
+                if name != announced_channel:
+                    tail = []
+                    if announced_channel is None:
+                        print(f"watching channel: {current_channel!r}")
+                    else:
+                        print(f"channel switched: {current_channel!r}")
+                    announced_channel = name
 
             msgs = current_messages(container, max_items)
             if not msgs:
