@@ -553,6 +553,18 @@ def post_message(url, text, token="", ts=None, verify=True, channel=""):
         log(f"post failed: {e}")
 
 
+def heartbeat_status(allowed, title_channel):
+    """What to tell the server while no message pane is attached.
+
+    On a quiet allowed channel the recency window empties the pane and
+    the container is torn down, but the window title still proves which
+    channel we are on - report it instead of "waiting".
+    """
+    if allowed and title_channel:
+        return title_channel, True
+    return None, False
+
+
 def sync_with_server(base_url, auth_token, channel, ok, verify=True):
     headers = {"X-Auth-Token": auth_token} if auth_token else {}
     try:
@@ -785,7 +797,8 @@ def main():
                         if not notable:
                             log("  (no named candidates)")
                     resp = sync_with_server(
-                        base_url, auth_token, None, False,
+                        base_url, auth_token,
+                        *heartbeat_status(allowed, title_channel),
                         verify_tls,
                     )
                     marker, poll_interval, max_items, channels, changed = (

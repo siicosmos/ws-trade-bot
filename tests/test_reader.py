@@ -528,3 +528,16 @@ def test_item_text_survives_stale_element(monkeypatch):
 
     monkeypatch.setattr(dr.auto, "WalkControl", boom_walk)
     assert dr.item_text(object()) == ""
+
+
+def test_heartbeat_status_reports_quiet_allowed_channel():
+    from discord_reader import heartbeat_status
+
+    # quiet allowed channel: report the channel, reader is healthy
+    assert heartbeat_status(True, "🚨│player-alerts") == (
+        "🚨│player-alerts", True
+    )
+    # disallowed channel: keep waiting semantics
+    assert heartbeat_status(False, "#pipeline-log") == (None, False)
+    # allowed but no title: nothing to report
+    assert heartbeat_status(True, "") == (None, False)
