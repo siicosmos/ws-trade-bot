@@ -1,0 +1,97 @@
+import os
+import subprocess
+import threading
+import time
+
+
+def _git(root, *args):
+    return subprocess.run(
+        ["git", *args], cwd=root, capture_output=True, text=True, timeout=120
+    )
+
+
+class AutoUpdater:
+    def __init__(self, cfg, root, webhook_url="", restart=None):
+        self.cfg = cfg
+        self.root = root
+        self.webhook_url = webhook_url
+        self._restart = restart or (lambda: os._exit(77))
+        self._thread = None
+        self.last_check = None
+        self.last_result = "not checked yet"
+        self.errors = 0
+
+    def start(self):
+        if self._thread is None:
+            self._thread = threading.Thread(target=self._run, daemon=True)
+            self._thread.start()
+
+    def _run(self):
+        while True:
+            time.sleep(max(30, int(self.cfg.auto_update.interval_seconds)))
+            try:
+                self.check_once()
+            except Exception as e:
+                self.errors += 1
+                self.last_result = f"error: {e}"
+                print(f"auto-update error: {e}")
+
+    def check_once(self) -> bool:
+        self.last_check = time.time()
+        if not self.cfg.auto_update.enabled:
+            self.last_result = "disabled"
+            return False
+
+        r = _git(self.root, "rev-parse", "--is-inside-work-tree")
+        if r.returncode != 0:
+            self.last_result = "not a git repo"
+            return False
+
+        status = _git(self.root, "status", "--porcelain")
+        if status.stdout.strip():
+            self.last_result = "skipped: working tree dirty"
+            print("auto-update: working tree dirty, skipping pull")
+            return False
+
+        branch = _git(
+            self.root, "rev-parse", "--abbrev-ref", "HEAD"
+        ).stdout.strip()
+        ref = f"origin/{branch}" if branch and branch != "HEAD" else "origin/main"
+
+        _git(self.root, "fetch", "origin")
+
+        local = _git(self.root, "rev-parse", "HEAD").stdout.strip()
+        remote = _git(self.root, "rev-parse", ref).stdout.strip()
+        if not remote or local == remote:
+            self.last_result = "up to date"
+            return False
+
+        pull = _git(self.root, "pull", "--ff-only", ref)
+        if pull.returncode != 0:
+            self.last_result = f"pull failed: {pull.stderr.strip()[:120]}"
+            print(f"auto-update: pull failed: {pull.stderr.strip()}")
+            return False
+
+        new = _git(self.root, "rev-parse", "HEAD").stdout.strip()
+        log = _git(self.root, "log", "--oneline", f"{local}..{new}")
+        commits = log.stdout.strip()
+
+        print(f"auto-update: updated to {new[:8]}:\n{commits}")
+        self.last_result = f"updated to {new[:8]}"
+
+        from .notify import notify_discord
+
+        notify_discord(
+            self.webhook_url,
+            "Bot auto-updated",
+            {
+                "version": new[:8],
+                "commits": commits[:1000] or "-",
+                "action": "restarting pipeline",
+            },
+            ok=True,
+        )
+
+        print("auto-update: restarting pipeline...")
+        self._restart()
+        return True

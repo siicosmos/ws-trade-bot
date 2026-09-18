@@ -5,7 +5,8 @@ from .pipeline import process_alert
 from .store import Store
 
 
-def create_app(cfg, store: Store, risk, executor, account=None) -> Flask:
+def create_app(cfg, store: Store, risk, executor, account=None,
+                 config_path=None) -> Flask:
     app = Flask(__name__)
     mode = cfg.trading.mode
 
@@ -112,6 +113,42 @@ def create_app(cfg, store: Store, risk, executor, account=None) -> Flask:
     def api_trades():
         limit = request.args.get("limit", default=50, type=int)
         return jsonify(store.recent_trades(limit))
+
+    @app.get("/api/settings")
+    def api_settings_get():
+        from .settings import get_settings
+
+        return jsonify(get_settings(cfg))
+
+    @app.post("/api/settings")
+    def api_settings_post():
+        from .settings import apply_settings
+
+        payload = request.get_json(silent=True) or {}
+        applied, errors = apply_settings(cfg, payload, config_path)
+        if errors:
+            return jsonify({"status": "error", "errors": errors}), 400
+        return jsonify(
+            {
+                "status": "ok",
+                "applied": applied,
+                "restart_required": False,
+            }
+        )
+
+    @app.get("/api/update_status")
+    def api_update_status():
+        updater = getattr(app, "ws_updater", None)
+        if updater is None:
+            return jsonify({"status": "disabled"})
+        return jsonify(
+            {
+                "status": "active",
+                "last_check": updater.last_check,
+                "result": updater.last_result,
+                "errors": updater.errors,
+            }
+        )
 
     @app.post("/alert")
     def alert():

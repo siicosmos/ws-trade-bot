@@ -74,6 +74,9 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 <h2>Open Positions</h2>
 <div id="positions"></div>
 
+<h2>Settings <button id="settings-save" onclick="saveSettings()" style="float:right;background:#238636;color:#fff;border:0;border-radius:6px;padding:4px 14px;font-weight:600;cursor:pointer">Save</button></h2>
+<div id="settings" class="card"></div>
+
 <h2>Recent Alerts</h2>
 <div id="signals"></div>
 
@@ -183,9 +186,76 @@ async function loadTrades() {
   el.innerHTML = html + "</table>";
 }
 
+async function loadSettings() {
+  const s = await api("/api/settings");
+  const el = document.getElementById("settings");
+  let html = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px">';
+  const t = s.trading;
+  const labels = {
+    risk_per_trade_pct: "default risk %", max_contracts_per_trade: "max contracts",
+    max_open_risk_pct: "open risk cap %", stop_loss_pct: "stop loss %",
+    trailing_stop_pct: "trailing stop %", stop_check_seconds: "stop check (s)",
+    max_consecutive_losses: "max losses in row", min_dte_days: "min DTE",
+    max_trades_per_day: "max trades/day", cooldown_seconds: "cooldown (s)",
+    dedupe_window_minutes: "dedupe (min)",
+  };
+  for (const [k, label] of Object.entries(labels)) {
+    html += '<div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">' + label + '</label>' +
+      '<input id="set-' + k + '" type="number" step="any" value="' + t[k] + '" style="width:100%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px"></div>';
+  }
+  for (const k of ["ticker_whitelist", "skip_underlyings"]) {
+    html += '<div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">' + k.replace('_', ' ') + '</label>' +
+      '<input id="set-' + k + '" type="text" value="' + (t[k] || []).join(', ') + '" placeholder="empty = off" style="width:100%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px"></div>';
+  }
+  html += "</div>";
+  html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-top:14px">';
+  html += '<div style="color:var(--muted);font-size:12px;grid-column:1/-1">size tiers (risk % cap / min / max contracts)</div>';
+  for (const [name, tier] of Object.entries(t.size_tiers)) {
+    html += '<div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">' + name + '</label>' +
+      '<input id="tier-' + name + '-risk" type="number" step="any" value="' + tier.risk_pct_max + '" title="risk % cap" style="width:100%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px">' +
+      '<div style="display:flex;gap:6px;margin-top:4px"><input id="tier-' + name + '-min" type="number" value="' + tier.contracts_min + '" title="min contracts" style="width:50%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px">' +
+      '<input id="tier-' + name + '-max" type="number" value="' + tier.contracts_max + '" title="max contracts" style="width:50%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px"></div></div>';
+  }
+  html += "</div>";
+  html += '<div style="display:flex;gap:10px;margin-top:14px;align-items:center;flex-wrap:wrap">' +
+    '<label style="color:var(--muted);font-size:12px"><input id="set-au-enabled" type="checkbox"' + (s.auto_update.enabled ? " checked" : "") + '> auto-update</label>' +
+    '<label style="color:var(--muted);font-size:12px">every <input id="set-au-interval" type="number" value="' + s.auto_update.interval_seconds + '" style="width:80px;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:13px">s</label>' +
+    '<span style="color:var(--muted);font-size:12px">quotes: ' + s.quotes.provider + '</span></div>';
+  el.innerHTML = html;
+}
+
+async function saveSettings() {
+  const val = (id) => document.getElementById(id).value;
+  const num = (id) => parseFloat(val(id));
+  const trading = {};
+  for (const k of ["risk_per_trade_pct","max_contracts_per_trade","max_open_risk_pct","stop_loss_pct","trailing_stop_pct","stop_check_seconds","max_consecutive_losses","min_dte_days","max_trades_per_day","cooldown_seconds","dedupe_window_minutes"]) {
+    trading[k] = num("set-" + k);
+  }
+  trading.ticker_whitelist = val("set-ticker_whitelist");
+  trading.skip_underlyings = val("set-skip_underlyings");
+  const tiers = {};
+  document.querySelectorAll("[id^=tier-]").forEach(() => {});
+  const names = new Set();
+  document.querySelectorAll("[id^=tier-]").forEach(el => names.add(el.id.split("-")[1]));
+  for (const name of names) {
+    tiers[name] = { risk_pct_max: num("tier-" + name + "-risk"), contracts_min: parseInt(val("tier-" + name + "-min")), contracts_max: parseInt(val("tier-" + name + "-max")) };
+  }
+  trading.size_tiers = tiers;
+  const payload = { trading, auto_update: { enabled: document.getElementById("set-au-enabled").checked, interval_seconds: parseInt(val("set-au-interval")) } };
+  const res = await fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json", ...headers() }, body: JSON.stringify(payload) });
+  const data = await res.json();
+  if (res.status !== 200) {
+    alert("save failed:\n" + (data.errors || []).join("\n"));
+  } else {
+    document.getElementById("settings-save").textContent = "Saved";
+    setTimeout(() => document.getElementById("settings-save").textContent = "Save", 1500);
+    load();
+  }
+}
+
 async function load() {
   try {
-    await Promise.all([loadSummary(), loadPositions(), loadSignals(), loadTrades()]);
+    await Promise.all([loadSummary(), loadPositions(), loadSignals(), loadTrades(), loadSettings()]);
     document.getElementById("updated").textContent = "updated " + new Date().toLocaleTimeString();
   } catch (e) { /* handled in api() */ }
 }

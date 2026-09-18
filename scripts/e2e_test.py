@@ -45,6 +45,8 @@ def write_config(path, mode, auth_token="", **trading):
         },
         "reader": {},
         "discord": {"webhook_url": ""},
+        "auto_update": {"enabled": False},
+        "quotes": {"provider": "ws"},
         "trading": {"mode": mode, **trading},
         "wealthsimple": {
             "accounts": [
@@ -293,11 +295,62 @@ def run_auth_phase():
         stop(proc)
 
 
+def run_settings_phase():
+    print("\n=== PHASE E: live settings via portal ===")
+    cfg_path = os.path.join(tempfile.mkdtemp(), "config.yaml")
+    db_path = os.path.join(tempfile.mkdtemp(), "trades.db")
+    write_config(cfg_path, "notify")
+    proc, health = start_pipeline(cfg_path, db_path)
+    try:
+        base = _current_base()
+        settings = requests.get(f"{base}/api/settings", timeout=5).json()
+        check("settings readable", settings["trading"]["stop_loss_pct"] == 25)
+
+        code, resp = post_alert("BOUGHT 0DTE SPY 759c @ 1.5 @everyone medium size")
+        rrsp = sizing_of(resp, "RRSP")
+        check("baseline medium tier caps at 5", rrsp.get("contracts") == 5 and rrsp.get("risk_pct") == 5.0, str(rrsp))
+
+        r = requests.post(
+            f"{base}/api/settings",
+            json={"trading": {"size_tiers": {
+                "medium": {"risk_pct_max": 3, "contracts_min": 1,
+                           "contracts_max": 3}
+            }}},
+            timeout=5,
+        )
+        check("settings update accepted", r.status_code == 200, r.text[:200])
+
+        code, resp = post_alert("BOUGHT 0DTE SPY 760c @ 1.5 @everyone medium size")
+        rrsp = sizing_of(resp, "RRSP")
+        check(
+            "new tier takes effect immediately",
+            rrsp.get("contracts") == 3 and rrsp.get("risk_pct") == 3.0,
+            str(rrsp),
+        )
+
+        with open(cfg_path) as f:
+            content = f.read()
+        check("settings persisted to config.yaml", "risk_pct_max: 3" in content)
+
+        r = requests.post(
+            f"{base}/api/settings",
+            json={"trading": {"stop_loss_pct": 999}},
+            timeout=5,
+        )
+        check("invalid settings rejected", r.status_code == 400)
+
+        update = requests.get(f"{base}/api/update_status", timeout=5).json()
+        check("update status endpoint", "status" in update, str(update))
+    finally:
+        stop(proc)
+
+
 def main():
     run_notify_phase()
     run_paper_cycle_phase()
     run_risk_gate_phase()
     run_auth_phase()
+    run_settings_phase()
 
     print(f"\n{'=' * 50}")
     print(f"RESULT: {PASS} passed, {FAIL} failed")

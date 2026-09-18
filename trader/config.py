@@ -86,12 +86,27 @@ class ParserConfig:
 
 
 @dataclass
+class AutoUpdateConfig:
+    enabled: bool = True
+    interval_seconds: int = 600
+
+
+@dataclass
+class QuotesConfig:
+    provider: str = "ws"
+    moomoo_host: str = "127.0.0.1"
+    moomoo_port: int = 11111
+
+
+@dataclass
 class Config:
     pipeline: PipelineConfig
     discord: DiscordConfig
     trading: TradingConfig
     wealthsimple: WealthsimpleConfig
     parser: ParserConfig
+    auto_update: AutoUpdateConfig
+    quotes: QuotesConfig
 
 
 def _get(d, key, default):
@@ -210,5 +225,22 @@ def load_config(path: str) -> Config:
         ),
         parser=ParserConfig(
             custom_patterns=list(_get(parser_raw, "custom_patterns", [])),
+        ),
+        auto_update=AutoUpdateConfig(
+            enabled=bool(_get(raw.get("auto_update") or {}, "enabled", True)),
+            interval_seconds=int(
+                _get(raw.get("auto_update") or {}, "interval_seconds", 600)
+            ),
+        ),
+        quotes=QuotesConfig(
+            provider=str(
+                _get(raw.get("quotes") or {}, "provider", "ws")
+            ).lower(),
+            moomoo_host=str(
+                _get(raw.get("quotes") or {}, "moomoo_host", "127.0.0.1")
+            ),
+            moomoo_port=int(
+                _get(raw.get("quotes") or {}, "moomoo_port", 11111)
+            ),
         ),
     )

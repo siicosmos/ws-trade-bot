@@ -1,11 +1,16 @@
 import argparse
+import os
 
 from trader.account import PaperAccount, WealthsimpleAccount
 from trader.config import load_config
 from trader.executor import PaperExecutor, WealthsimpleExecutor
+from trader.quotes import make_quote_provider
 from trader.risk import RiskEngine
 from trader.server import create_app
 from trader.store import Store
+from trader.updater import AutoUpdater
+
+ROOT = os.path.dirname(os.path.abspath(__file__))
 
 
 def main():
@@ -62,9 +67,9 @@ def main():
     risk = RiskEngine(cfg, store, account)
 
     if mode in ("paper", "live") and cfg.trading.stop_loss_pct > 0:
-        from trader.stops import StopMonitor, make_quote_resolver
+        from trader.stops import StopMonitor
 
-        quote_fn = make_quote_resolver(cfg, account)
+        quote_fn = make_quote_provider(cfg, account)
         if quote_fn is not None:
             monitor = StopMonitor(
                 cfg, store, executor, quote_fn, cfg.discord.webhook_url
@@ -80,7 +85,20 @@ def main():
                 f"checked every {cfg.trading.stop_check_seconds}s"
             )
 
-    app = create_app(cfg, store, risk, executor, account)
+    updater = AutoUpdater(cfg, ROOT, cfg.discord.webhook_url)
+    updater.start()
+    if cfg.auto_update.enabled:
+        print(
+            f"auto-update enabled (checking github every "
+            f"{cfg.auto_update.interval_seconds}s)"
+        )
+
+    app = create_app(
+        cfg, store, risk, executor, account, config_path=os.path.abspath(
+            args.config
+        )
+    )
+    app.ws_updater = updater
     print(f"pipeline running in {mode.upper()} mode on {cfg.pipeline.host}:{cfg.pipeline.port}")
     print(f"dashboard: http://127.0.0.1:{cfg.pipeline.port}/")
     app.run(host=cfg.pipeline.host, port=cfg.pipeline.port, threaded=True)

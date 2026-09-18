@@ -3,6 +3,15 @@ pipeline:
   port: 8080
   auth_token: ""
 
+auto_update:
+  enabled: true
+  interval_seconds: 600
+
+quotes:
+  provider: ws
+  moomoo_host: "127.0.0.1"
+  moomoo_port: 11111
+
 reader:
   pipeline_url: "http://localhost:8080/alert"
   poll_interval: 0.5

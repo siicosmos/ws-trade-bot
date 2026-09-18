@@ -28,4 +28,11 @@ if [ -f ws_tokens.env ]; then
   echo "loaded Wealthsimple tokens from ws_tokens.env"
 fi
 
-exec .venv/bin/python run.py -c config.yaml
+while true; do
+  .venv/bin/python run.py -c config.yaml
+  code=$?
+  if [ "$code" -ne 77 ]; then
+    break
+  fi
+  echo "restarting pipeline after update..."
+done

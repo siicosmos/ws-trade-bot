@@ -22,9 +22,8 @@ class StopMonitor:
             self._thread.start()
 
     def _run(self):
-        interval = max(5, int(self.cfg.trading.stop_check_seconds))
         while True:
-            time.sleep(interval)
+            time.sleep(max(5, int(self.cfg.trading.stop_check_seconds)))
             try:
                 self.check_once()
             except Exception as e:
@@ -112,38 +111,3 @@ class StopMonitor:
             },
             ok=False,
         )
-
-
-def make_quote_resolver(cfg, account):
-    try:
-        from .executor import WealthsimpleExecutor
-
-        resolver = WealthsimpleExecutor(cfg, account)
-        ws = resolver._client()
-        ws.get_accounts()
-
-        def quote(pos):
-            sec_id = resolver._resolve_security(ws, pos["underlying"])
-            if not sec_id:
-                return None
-            alert = Alert(
-                action="SELL",
-                ticker=pos["underlying"],
-                kind="option",
-                underlying=pos["underlying"],
-                expiry=pos["expiry"],
-                strike=pos["strike"],
-                right=pos["right"],
-            )
-            opt, _ = resolver._resolve_option(ws, sec_id, alert)
-            if not opt:
-                return None
-            return (opt.get("quote") or {}).get("bid")
-
-        return quote
-    except Exception as e:
-        print(
-            f"stop monitor disabled (Wealthsimple quotes unavailable: {e}) - "
-            "run scripts/ws_login.py to enable auto stop-losses"
-        )
-        return None

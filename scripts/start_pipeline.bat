@@ -22,4 +22,9 @@ if not exist config.yaml (
   echo created config.yaml - edit it before going live
 )
 
+:start
 .venv\Scripts\python.exe run.py -c config.yaml
+if errorlevel 77 (
+  echo restarting pipeline after update...
+  goto start
+)
