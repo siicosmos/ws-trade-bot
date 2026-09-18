@@ -75,6 +75,12 @@ class Store:
                 )
             except sqlite3.OperationalError:
                 pass
+            try:
+                self._conn.execute(
+                    "ALTER TABLE signals ADD COLUMN received_ts TEXT"
+                )
+            except sqlite3.OperationalError:
+                pass
             for col in ("realized", "peak_bid"):
                 try:
                     self._conn.execute(
@@ -129,16 +135,6 @@ class Store:
     def record_signal(self, message_key: str, author: str, text: str, parsed: bool,
                       correction: bool = False, channel: str = "",
                       ts_epoch=None, parsed_epoch=None):
-        with self._lock, self._conn:
-            cols = {
-                r[1] for r in self._conn.execute(
-                    "PRAGMA table_info(signals)"
-                )
-            }
-            if "received_ts" not in cols:
-                self._conn.execute(
-                    "ALTER TABLE signals ADD COLUMN received_ts TEXT"
-                )
         # both stored in UTC: the alert's own (Discord-displayed) time
         # and the moment the reader parsed and passed it down
         ts = (
