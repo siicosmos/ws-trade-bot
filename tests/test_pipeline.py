@@ -413,10 +413,10 @@ def test_auth_guard():
 
     import base64
     basic = base64.b64encode(b"user:s3cret").decode()
-    ok = client.get(
+    basic_resp = client.get(
         "/api/summary", headers={"Authorization": f"Basic {basic}"}
     )
-    assert ok.status_code == 200
+    assert basic_resp.status_code == 401
 
     bad = client.get("/api/summary", headers={"X-Auth-Token": "wrong"})
     assert bad.status_code == 401

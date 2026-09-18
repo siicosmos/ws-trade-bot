@@ -332,8 +332,8 @@ def run_auth_phase():
         )
         basic = base64.b64encode(b"user:e2e-secret").decode()
         check(
-            "basic auth grants access",
-            requests.get(f"{_current_base()}/api/summary", headers={"Authorization": f"Basic {basic}"}, timeout=5).status_code == 200,
+            "basic auth no longer grants access (logout works)",
+            requests.get(f"{_current_base()}/api/summary", headers={"Authorization": f"Basic {basic}"}, timeout=5).status_code == 401,
         )
         check(
             "wrong token rejected",

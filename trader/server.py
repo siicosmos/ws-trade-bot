@@ -103,9 +103,6 @@ def create_app(cfg, store: Store, risk, executor, account=None,
             return None
         if request.headers.get("X-Auth-Token") == token:
             return None
-        auth = request.authorization
-        if auth and auth.password == token:
-            return None
         if request.path.startswith("/api/") or request.path == "/alert":
             return jsonify({"error": "unauthorized"}), 401
         return redirect("/login")
