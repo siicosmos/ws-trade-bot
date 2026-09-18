@@ -43,8 +43,13 @@ class AutoUpdater:
 
         notify_discord(
             self.webhook_url,
-            "Bot code changed on disk",
-            {"action": "restarting pipeline (git pull detected)"},
+            "Pipeline restarting",
+            {
+                "reason": (
+                    f"code updated to {new[:8] if new else '?'} "
+                    f"(git pull detected)"
+                )
+            },
             ok=True,
         )
         print("auto-update: local code changed - restarting pipeline...")
@@ -120,11 +125,10 @@ class AutoUpdater:
 
         notify_discord(
             self.webhook_url,
-            "Bot auto-updated",
+            "Pipeline restarting",
             {
-                "version": new[:8],
+                "reason": f"auto-updated to {new[:8]}",
                 "commits": commits[:1000] or "-",
-                "action": "restarting pipeline",
             },
             ok=True,
         )
