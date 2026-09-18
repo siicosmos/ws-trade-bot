@@ -1,5 +1,7 @@
 import requests
 
+from .parser import format_scale
+
 
 def notify_discord(webhook_url: str, title: str, fields: dict, ok: bool = True,
                   color=None):
@@ -49,7 +51,7 @@ def notify_alert(webhook_url: str, alert, sizing=None, correction=False):
             "right": "CALL" if alert.right == "C" else "PUT",
             "expiry": alert.expiry,
             "premium": alert.premium,
-            "scale": alert.scale,
+            "scale": format_scale(alert.scale),
             "size": alert.size,
         }
     else:

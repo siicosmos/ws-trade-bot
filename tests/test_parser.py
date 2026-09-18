@@ -188,3 +188,15 @@ def test_is_correction_negative():
 def test_lotto_word_wins_over_tiny_size():
     a = parse_alert("BOUGHT 0DTE SPX 7645c @ .65 ROLL UP LOTTO tiny size")
     assert a.size == "lotto"
+
+
+def test_format_scale():
+    from trader.parser import format_scale
+    assert format_scale(None) is None
+    assert format_scale(2 / 3) == "2/3"
+    assert format_scale(1 / 3) == "1/3"
+    assert format_scale(0.25) == "1/4"
+    assert format_scale(0.5) == "1/2"
+    assert format_scale(0.75) == "3/4"
+    assert format_scale(1.0) == "all"
+    assert format_scale(0.4) == 0.4

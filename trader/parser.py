@@ -155,6 +155,26 @@ def _resolve_expiry(raw_expiry: Optional[str]) -> Optional[str]:
     return exp.isoformat()
 
 
+SCALE_LABELS = [
+    (1.0, "all"),
+    (0.75, "3/4"),
+    (5 / 6, "5/6"),
+    (2 / 3, "2/3"),
+    (0.5, "1/2"),
+    (1 / 3, "1/3"),
+    (0.25, "1/4"),
+]
+
+
+def format_scale(scale):
+    if scale is None:
+        return None
+    for value, label in SCALE_LABELS:
+        if abs(scale - value) < 0.02:
+            return label
+    return round(scale, 2)
+
+
 def _scale_from_verb(verb: str, frac: Optional[str]) -> Optional[float]:
     if verb.startswith("ALL"):
         return 1.0
