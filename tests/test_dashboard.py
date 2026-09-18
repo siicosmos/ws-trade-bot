@@ -53,10 +53,8 @@ def test_header_rows_and_mobile_wrap():
     assert 'id="logout" style="margin-left:auto"' in html
     assert 'id="logout"' in html
     # refresh label renders before the first data cycle
-    # phones: timebox keeps the right corner instead of wrapping mid-pair
-    media = re.search(r"@media \(max-width: 620px\) \{(.*?)\}", html, re.S)
-    assert media
-    assert "justify-content: flex-end" in media.group(1)
+    # the clock never drops to its own line - top-right on all screens
+    assert "#timebox { order: 10" not in html
 
 
 def test_pageshow_rechecks_auth_after_back_button():

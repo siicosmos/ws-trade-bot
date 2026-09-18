@@ -45,9 +45,6 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
     border: 1px solid var(--border); border-radius: 6px;
     padding: 4px 10px; flex-shrink: 0;
   }
-  @media (max-width: 620px) {
-    #timebox { order: 10; flex-basis: 100%; margin-left: auto; justify-content: flex-end; }
-  }
   #logout:hover { color: var(--text); border-color: var(--muted); }
   #updated {
     color: var(--muted); font-size: 12px;
