@@ -485,6 +485,13 @@ def main():
     sync_counter = 99
 
     while True:
+        if time.time() - last_head_check > 10:
+            last_head_check = time.time()
+            head = git_head(repo_root())
+            if head and start_head and head != start_head:
+                print("repo updated on disk - restarting reader for new code")
+                os._exit(77)
+
         try:
             try:
                 title_channel = channel_from_title(window.Name)
@@ -651,13 +658,6 @@ def main():
                 )
             poll_interval = new_poll
             max_items = new_max
-
-        if time.time() - last_head_check > 30:
-            last_head_check = time.time()
-            head = git_head(repo_root())
-            if head and start_head and head != start_head:
-                print("repo updated on disk - restarting reader for new code")
-                os._exit(77)
 
         time.sleep(poll_interval)
 
