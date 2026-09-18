@@ -93,7 +93,8 @@ class AutoUpdater:
         branch = _git(
             self.root, "rev-parse", "--abbrev-ref", "HEAD"
         ).stdout.strip()
-        ref = f"origin/{branch}" if branch and branch != "HEAD" else "origin/main"
+        short = branch if branch and branch != "HEAD" else "main"
+        ref = f"origin/{short}"
 
         _git(self.root, "fetch", "origin")
 
@@ -103,7 +104,7 @@ class AutoUpdater:
             self.last_result = "up to date"
             return False
 
-        pull = _git(self.root, "pull", "--ff-only", ref)
+        pull = _git(self.root, "pull", "--ff-only", "origin", short)
         if pull.returncode != 0:
             self.last_result = f"pull failed: {pull.stderr.strip()[:120]}"
             print(f"auto-update: pull failed: {pull.stderr.strip()}")
