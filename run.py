@@ -63,6 +63,7 @@ def main():
 
     app = create_app(cfg, store, risk, executor, account)
     print(f"pipeline running in {mode.upper()} mode on {cfg.pipeline.host}:{cfg.pipeline.port}")
+    print(f"dashboard: http://127.0.0.1:{cfg.pipeline.port}/")
     app.run(host=cfg.pipeline.host, port=cfg.pipeline.port, threaded=True)
 
 
