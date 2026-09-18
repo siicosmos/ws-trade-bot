@@ -36,10 +36,17 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
     margin-left: auto; display: flex; align-items: center;
     white-space: nowrap; flex-shrink: 0;
   }
+  .headrow {
+    display: flex; align-items: center; flex-basis: 100%;
+    gap: 10px; flex-wrap: wrap;
+  }
   #logout {
     color: var(--muted); font-size: 12px; text-decoration: none;
     border: 1px solid var(--border); border-radius: 6px;
     padding: 4px 10px; flex-shrink: 0;
+  }
+  @media (max-width: 620px) {
+    #timebox { order: 10; flex-basis: 100%; margin-left: 0; }
   }
   #logout:hover { color: var(--text); border-color: var(--muted); }
   #updated {
@@ -85,7 +92,7 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 </head>
 <body>
 <header>
-  <div style="display:flex;align-items:center;flex-basis:100%;gap:10px">
+  <div class="headrow">
     <h1 style="margin:0">WS Trade Bot</h1>
     <span id="mode" class="badge notify">notify</span>
     <span id="timebox"><span id="updated"></span><span id="clock"></span></span>
