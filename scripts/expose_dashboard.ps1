@@ -5,11 +5,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
   exit 1
 }
 
-$wslIp = (wsl hostname -I).Trim().Split(" ")[0]
-Write-Host "WSL IP: $wslIp"
-
 netsh interface portproxy delete v4tov4 listenport=8080 listenaddress=0.0.0.0 2>$null | Out-Null
-netsh interface portproxy add v4tov4 listenport=8080 listenaddress=0.0.0.0 connectport=8080 connectaddress=$wslIp
 
 $rule = Get-NetFirewallRule -DisplayName "WS Trade Bot" 2>$null
 if (-not $rule) {
@@ -18,4 +14,4 @@ if (-not $rule) {
 
 $lanIp = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.InterfaceAlias -notmatch "Loopback|vEthernet" } | Select-Object -First 1).IPAddress
 Write-Host "dashboard reachable on your network at: http://${lanIp}:8080" -ForegroundColor Green
-Write-Host "re-run this script after each WSL/PC reboot (WSL IP changes)"
+Write-Host "browser login: any username, password = your pipeline.auth_token"
