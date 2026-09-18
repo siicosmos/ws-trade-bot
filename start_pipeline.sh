@@ -2,9 +2,17 @@
 set -e
 
 if [ ! -d .venv ]; then
-  echo "creating venv and installing dependencies..."
+  echo "creating venv..."
   python3 -m venv .venv
-  .venv/bin/pip install --quiet -r requirements.txt
+fi
+
+echo "checking dependencies..."
+if ! .venv/bin/pip install --quiet -r requirements.txt; then
+  echo "warning: pip install failed - verifying existing dependencies"
+  .venv/bin/python -c "import flask, yaml, requests" || {
+    echo "dependencies missing - check network and rerun"
+    exit 1
+  }
 fi
 
 if [ ! -f config.yaml ]; then

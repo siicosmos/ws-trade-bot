@@ -2,9 +2,20 @@
 cd /d %~dp0
 
 if not exist .venv (
-  echo creating venv and installing dependencies...
+  echo creating venv...
   python -m venv .venv
-  .venv\Scripts\pip install -q -r requirements-windows.txt
+)
+
+echo checking dependencies...
+.venv\Scripts\pip.exe install -q -r requirements-windows.txt
+if errorlevel 1 (
+  echo warning: pip install failed - verifying existing dependencies
+  .venv\Scripts\python.exe -c "import uiautomation, psutil, requests"
+  if errorlevel 1 (
+    echo dependencies missing - check network and rerun
+    pause
+    exit /b 1
+  )
 )
 
 if not exist reader_config.json (
