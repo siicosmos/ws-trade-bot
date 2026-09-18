@@ -1,105 +1,119 @@
+# ---------------------------------------------------------------------------
+# pipeline - the web server that runs the dashboard and receives alerts
+# ---------------------------------------------------------------------------
 pipeline:
-  host: "0.0.0.0"
+  host: "0.0.0.0"            # what to bind to; 127.0.0.1 = this PC only
   port: 8080
-  auth_token: ""
-  tls_cert: ""
-  tls_key: ""
+  auth_token: ""             # dashboard + alert password. REQUIRED if host is
+                             # not localhost (server refuses to start otherwise).
+                             # generate: python -c "import secrets; print(secrets.token_urlsafe(24))"
+  tls_cert: ""               # HTTPS: paths from scripts/gen_cert.py, e.g.
+  tls_key: ""                # "certs/dashboard.crt" / "certs/dashboard.key".
+                             # empty = plain HTTP
 
+# ---------------------------------------------------------------------------
+# auto_update - pull code changes from GitHub and restart automatically
+# ---------------------------------------------------------------------------
 auto_update:
   enabled: true
-  interval_seconds: 600
+  interval_seconds: 600      # how often to check GitHub for updates
 
+# ---------------------------------------------------------------------------
+# quotes - live option prices (used by the stop-loss monitor)
+# ---------------------------------------------------------------------------
 quotes:
-  enabled: false
-  provider: ws
+  enabled: false             # false = stop monitor stays off until you turn
+                             # this on (portal settings toggle does it live)
+  provider: ws               # ws = Wealthsimple, moomoo = local moomoo terminal
   moomoo_host: "127.0.0.1"
   moomoo_port: 11111
 
+# ---------------------------------------------------------------------------
+# reader - the Windows app that watches the official Discord client
+# ---------------------------------------------------------------------------
 reader:
-  pipeline_url: "http://localhost:8080/alert"
-  poll_interval: 0.5
-  channel_marker: ""
-  max_items: 40
-  auth_token: ""
-  channels:
-    - test-alerts
-    - player-alerts
+  pipeline_url: "http://localhost:8080/alert"   # use https:// if TLS is on
+  poll_interval: 0.5         # seconds between message checks
+  channel_marker: ""         # pin to one channel by name; empty = follow
+                             # whatever channel is open in Discord
+  max_items: 40              # how many on-screen messages to read per pass
+  auth_token: ""             # MUST match pipeline.auth_token
+  channels:                  # allowlist: only these channels are read
+    - test-alerts            # (substring match, empty list = any channel)
+    - player-alerts          # NEVER include your webhook output channel
 
+# ---------------------------------------------------------------------------
+# discord - webhooks that send notifications to your private server
+# ---------------------------------------------------------------------------
 discord:
-  webhook_url: "YOUR_PRIVATE_SERVER_WEBHOOK_URL"
-  reader_log_webhook_url: ""
-  pipeline_log_webhook_url: ""
+  webhook_url: "YOUR_PRIVATE_SERVER_WEBHOOK_URL"  # trade alerts to your phone
+  reader_log_webhook_url: ""    # reader log lines (optional)
+  pipeline_log_webhook_url: ""  # pipeline log lines (optional)
 
+# ---------------------------------------------------------------------------
+# trading - how alerts are sized, executed, and risk-managed
+# ---------------------------------------------------------------------------
 trading:
-  mode: notify
-  order_type: limit
-  limit_offset_pct: 0.5
-  position_size_cad: 100
-  risk_per_trade_pct: 5
-  size_tiers:
-    lotto:
-      risk_pct_max: 0.5
-      contracts_min: 1
-      contracts_max: 1
-    micro:
-      risk_pct_max: 0.5
-      contracts_min: 1
-      contracts_max: 1
-    tiny:
-      risk_pct_max: 1.0
-      contracts_min: 1
-      contracts_max: 1
-    small:
-      risk_pct_max: 2.0
-      contracts_min: 1
-      contracts_max: 2
-    medium:
-      risk_pct_max: 5.0
-      contracts_min: 1
-      contracts_max: 5
-    large:
-      risk_pct_max: 10.0
-      contracts_min: 1
-      contracts_max: 10
-    big:
-      risk_pct_max: 10.0
-      contracts_min: 1
-      contracts_max: 10
-    full:
-      risk_pct_max: 10.0
-      contracts_min: 1
-      contracts_max: 10
-  max_contracts_per_trade: 10
-  max_open_risk_pct: 30
-  stop_loss_pct: 25
-  trailing_stop_pct: 0
-  stop_check_seconds: 30
-  max_consecutive_losses: 2
-  min_dte_days: 0
-  paper_account_value: 10000
-  skip_underlyings: []
-  max_trades_per_day: 5
-  cooldown_seconds: 60
-  dedupe_window_minutes: 10
-  ticker_whitelist: []
-  sell_only_if_held: true
-  place_stop_loss: false
+  mode: notify               # notify = phone alerts only, paper = simulated
+                             # fills, live = real Wealthsimple orders
+  order_type: limit          # limit or market
+  limit_offset_pct: 0.5      # limit orders: pay up to this % above ask
+  position_size_cad: 100     # flat per-trade dollars; used when no size tier
+                             # matches the alert
+  risk_per_trade_pct: 5     # fallback % of account value per trade when the
+                             # alert names no size tier
 
+  # size tiers - risk caps by the size word in the alert
+  # (any tiers you omit inherit these defaults; you can add custom names)
+  size_tiers:
+    lotto:  { risk_pct_max: 0.5,  contracts_min: 1, contracts_max: 1 }
+    micro:  { risk_pct_max: 0.5,  contracts_min: 1, contracts_max: 1 }
+    tiny:   { risk_pct_max: 1.0,  contracts_min: 1, contracts_max: 1 }
+    small:  { risk_pct_max: 2.0,  contracts_min: 1, contracts_max: 2 }
+    medium: { risk_pct_max: 5.0,  contracts_min: 1, contracts_max: 5 }
+    large:  { risk_pct_max: 10.0, contracts_min: 1, contracts_max: 10 }
+    big:    { risk_pct_max: 10.0, contracts_min: 1, contracts_max: 10 }
+    full:   { risk_pct_max: 10.0, contracts_min: 1, contracts_max: 10 }
+
+  max_contracts_per_trade: 10   # global cap regardless of tier
+  max_open_risk_pct: 30          # per account: max % of account value in open
+                                 # positions at once; new buys skip at the cap
+  stop_loss_pct: 25          # % drop from entry premium that triggers a sell
+                             # (paper/live only, needs quotes enabled)
+  trailing_stop_pct: 0       # % off the peak premium; 0 = off
+  stop_check_seconds: 30     # how often positions are checked
+  max_consecutive_losses: 2  # stop trading for the day after N losses in a row
+  min_dte_days: 0            # skip options expiring sooner than this
+  paper_account_value: 10000 # starting value for paper mode
+  skip_underlyings: []       # never trade these tickers, e.g. [SPX]
+  max_trades_per_day: 5      # per account, resets at midnight
+  cooldown_seconds: 60       # min seconds between trades on the same contract
+  dedupe_window_minutes: 10  # same alert text inside this window is ignored
+  ticker_whitelist: []       # only trade these tickers; empty = allow all
+  sell_only_if_held: true    # only sell contracts the account actually holds
+  place_stop_loss: false     # also place a broker-side stop order on entry
+
+# ---------------------------------------------------------------------------
+# wealthsimple - your accounts (get IDs from scripts/ws_login.py)
+# ---------------------------------------------------------------------------
 wealthsimple:
   accounts:
     - account_id: "YOUR_RRSP_ACCOUNT_ID"
-      label: "RRSP"
-      enabled: true
-      risk_per_trade_pct: null
-      max_contracts_per_trade: 20
-      paper_value: 50000.0
+      label: "RRSP"                    # name shown in the dashboard
+      enabled: true                    # include this account in trading
+      risk_per_trade_pct: null         # null = use the global 5
+      max_contracts_per_trade: 20      # override for this account
+      paper_value: 50000.0             # sizing value in paper mode
     - account_id: "YOUR_PERSONAL_ACCOUNT_ID"
       label: "Personal"
       enabled: true
       risk_per_trade_pct: null
       max_contracts_per_trade: 5
       paper_value: 2000.0
-  exchange_hint: ""
+  exchange_hint: ""           # e.g. "SPX" to force an exchange on order placement
 
+# ---------------------------------------------------------------------------
+# parser - extra regex patterns for alert formats the built-in parser misses
+# ---------------------------------------------------------------------------
 parser:
   custom_patterns: []
