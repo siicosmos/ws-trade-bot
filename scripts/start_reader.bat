@@ -1,5 +1,5 @@
 @echo off
-cd /d %~dp0
+cd /d %~dp0..\reader
 
 if not exist .venv (
   echo creating venv...
