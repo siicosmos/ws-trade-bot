@@ -151,7 +151,7 @@ def run_notify_phase():
         check("small size -> notified", code == 200 and resp["status"] == "notified")
         check("RRSP small sizing 2 contracts", rrsp.get("contracts") == 2, str(rrsp))
         check("RRSP tier cap warning", any("tier max" in w for w in rrsp.get("warnings", [])), str(rrsp))
-        check("Personal small sizing 0 with warning", pers.get("contracts") == 0 and any("per-contract cost" in w for w in pers.get("warnings", [])), str(pers))
+        check("Personal small sizing 0 with warning", pers.get("contracts") == 0 and any("can't cover" in w for w in pers.get("warnings", [])), str(pers))
 
         code, resp = post_alert("BOUGHT 0DTE SPY 759c @ 1.5 @everyone medium size")
         rrsp = sizing_of(resp, "RRSP")
@@ -369,7 +369,7 @@ def run_settings_phase():
         rrsp = sizing_of(resp, "RRSP")
         check(
             "account cap change applies immediately",
-            rrsp.get("contracts") == 2 and "capped at account max 2" in str(rrsp.get("warnings")),
+            rrsp.get("contracts") == 2 and "capped at account max of 2" in str(rrsp.get("warnings")),
             str(rrsp),
         )
     finally:

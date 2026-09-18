@@ -203,3 +203,17 @@ def test_normalize_channel_name():
     assert dr.normalize_channel_name(
         "test-message", "#test-message"
     ) == "#test-message"
+
+
+def test_strip_ui_noise():
+    raw = (
+        "12:45 AM Friday, September 18, 2026 12:45 AM "
+        "BOUGHT 0DTE SPX 7645c @ .65 ROLL UP LOTTO tiny size "
+        ":thumbsup: 点击反应 :saluting_face: 点击反应 "
+        ":chart_with_upwards_trend: 点击反应 添加反应 编辑 转发 更多"
+    )
+    assert dr.strip_ui_noise(raw) == (
+        "BOUGHT 0DTE SPX 7645c @ .65 ROLL UP LOTTO tiny size"
+    )
+    assert dr.strip_ui_noise("plain message") == "plain message"
+    assert dr.strip_ui_noise("") == ""

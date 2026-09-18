@@ -218,6 +218,8 @@ def parse_alert(text: str, custom_patterns: Optional[List[str]] = None) -> Optio
 
     size_m = SIZE_RE.search(text)
     size = size_m.group("size").lower() if size_m else None
+    if re.search(r"\blotto\b", text, re.I):
+        size = "lotto"
 
     m = OPT_BUY_RE.search(text)
     if m:

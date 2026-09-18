@@ -71,6 +71,7 @@ def tier_plan(alert, cfg, account_value, price, acct=None) -> dict:
         "tier_max": tier_max,
         "cap": cap,
         "cost": cost,
+        "tier": alert.size,
     }
 
 
@@ -119,8 +120,8 @@ def account_sizing(alert, cfg, account, store=None) -> list:
                     )
                 else:
                     warnings.append(
-                        f"budget ${plan['budget']:,.0f} below "
-                        f"${plan['cost']:,.0f} per-contract cost"
+                        f"budget ${plan['budget']:,.0f} can't cover "
+                        f"1 contract at ${plan['cost']:,.0f}"
                     )
             elif plan["affordable"] > plan["qty"]:
                 if (
@@ -129,15 +130,17 @@ def account_sizing(alert, cfg, account, store=None) -> list:
                     and (plan["tier_max"] is None or plan["cap"] < plan["tier_max"])
                 ):
                     warnings.append(
-                        f"capped at account max {plan['cap']} "
+                        f"capped at account max of {plan['cap']} "
                         f"(budget could afford {plan['affordable']})"
                     )
                 elif (
                     plan["tier_max"] is not None
                     and plan["affordable"] > plan["tier_max"]
                 ):
+                    tier_name = plan.get("tier") or "size"
                     warnings.append(
-                        f"capped at tier max {plan['tier_max']} "
+                        f"capped at {tier_name} tier max of "
+                        f"{plan['tier_max']} "
                         f"(budget could afford {plan['affordable']})"
                     )
 

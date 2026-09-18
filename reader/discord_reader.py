@@ -34,6 +34,37 @@ CHROME_RE = re.compile(
 )
 
 
+TS_PREFIX_RE = re.compile(
+    r"^\s*\d{1,2}:\d{2}\s*(?:AM|PM)?\s*"
+    r"(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)?,?\s*"
+    r"(?:January|February|March|April|May|June|July|August|September"
+    r"|October|November|December)\s+\d{1,2},\s*\d{4}\s*"
+    r"(?:\d{1,2}:\d{2}\s*(?:AM|PM)?)?\s*",
+    re.I,
+)
+
+UI_NOISE_RE = re.compile(
+    "|".join(
+        [
+            r":[\w+-]+:\s*点击反应",
+            r"\b点击反应\b",
+            r"\b添加反应\b",
+            r"\b编辑\b",
+            r"\b转发\b",
+            r"\b更多\b",
+        ]
+    )
+)
+
+
+def strip_ui_noise(text):
+    if not text:
+        return text
+    text = UI_NOISE_RE.sub(" ", text)
+    text = TS_PREFIX_RE.sub("", text)
+    return re.sub(r"\s{2,}", " ", text).strip()
+
+
 def looks_like_message(text):
     if not text:
         return False
@@ -202,6 +233,7 @@ def current_messages(container, max_items=40):
                 text = (item.Name or "").strip()
             except UIAError:
                 text = ""
+        text = strip_ui_noise(text)
         if text and looks_like_message(text):
             texts.append(text)
     return texts

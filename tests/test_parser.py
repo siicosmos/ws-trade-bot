@@ -19,7 +19,7 @@ def test_option_buy_0dte():
     assert a.right == "C"
     assert a.premium == 0.65
     assert a.expiry == date.today().isoformat()
-    assert a.size == "tiny"
+    assert a.size == "lotto"
 
 
 def test_option_sell_quarter():
@@ -183,3 +183,8 @@ def test_is_correction_negative():
     ]
     for s in samples:
         assert not is_correction(s), s
+
+
+def test_lotto_word_wins_over_tiny_size():
+    a = parse_alert("BOUGHT 0DTE SPX 7645c @ .65 ROLL UP LOTTO tiny size")
+    assert a.size == "lotto"
