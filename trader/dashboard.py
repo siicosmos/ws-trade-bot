@@ -34,7 +34,7 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   @keyframes pulse { 50% { opacity: .3; } }
   #updated { color: var(--muted); font-size: 12px; margin-left: auto; }
   #clock {
-    color: var(--text); font-size: 12px; margin-left: 8px;
+    color: #fff; font-size: 12px; font-weight: 700; margin-left: 8px;
     border: 1px solid var(--border); border-radius: 6px;
     padding: 2px 8px; background: var(--panel);
   }
