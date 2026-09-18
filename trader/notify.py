@@ -64,10 +64,10 @@ def notify_alert(webhook_url: str, alert, sizing=None, correction=False):
         if alert.gain_pct is not None:
             title += f" {alert.gain_pct:+g}%"
         fields = {
-            "type": f"{emoji} **{alert.action}**",
+            "type": f"**{alert.action}**",
             "underlying": f"**{alert.underlying}**",
             "strike": alert.strike,
-            "right": "CALL" if alert.right == "C" else "PUT",
+            "call/put": "call" if alert.right == "C" else "put",
             "expiry": alert.expiry,
             "premium": f"**${alert.premium:g}**",
         }
@@ -88,7 +88,7 @@ def notify_alert(webhook_url: str, alert, sizing=None, correction=False):
         if alert.gain_pct is not None:
             title += f" {alert.gain_pct:+g}%"
         fields = {
-            "type": f"{emoji} **{alert.action}**",
+            "type": f"**{alert.action}**",
             "ticker": f"**{alert.ticker}**",
             "price": alert.entry or alert.premium,
         }

@@ -1199,3 +1199,23 @@ def test_credit_spread_risk_uses_width(monkeypatch):
     assert spread["cost_usd"] == -35.0       # net credit
     # max loss = width 500 - credit 35
     assert spread["risk_cad"] == round(465 * 1.4, 2)
+
+
+def test_notify_call_put_field_lowercase(monkeypatch):
+    import trader.notify as notify
+    from trader.parser import parse_alert
+
+    posts = []
+    monkeypatch.setattr(
+        notify.requests, "post",
+        lambda url, json=None, timeout=None: posts.append(json),
+    )
+
+    alert = parse_alert("BOUGHT 09/25 ARM 300c @ 1.65 small size")
+    notify.notify_alert("http://hook", alert)
+    embed = posts[0]["embeds"][0]
+    fields = {f["name"]: f["value"] for f in embed["fields"]}
+    assert fields["call/put"] == "call"
+    # the emoji lives in the title only, not the type field
+    assert "🟢" not in fields["type"]
+    assert embed["title"].startswith("🟢")
