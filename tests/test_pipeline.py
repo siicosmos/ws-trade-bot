@@ -1479,3 +1479,43 @@ def test_summary_allocation_values():
     assert row["stock_value"] == 1500.0
     # option mv 100 * 1.25
     assert row["option_value"] == 125.0
+
+
+def test_schema_probe_report_and_chunking():
+    from trader.schema_probe import probe_schema, _post, MAX_MESSAGE
+
+    class FakeWS:
+        def graphql_query(self, op, query, variables):
+            name = variables["name"]
+            if name == "Position":
+                return {"data": {"__type": {
+                    "name": "Position",
+                    "fields": [{"name": "id"}, {"name": "quantity"},
+                               {"name": "strategy"}],
+                }}}
+            return {"data": {"__type": None}}
+
+    class FakeAccount:
+        def _client(self):
+            return FakeWS()
+
+    report = probe_schema(FakeAccount())
+    assert "Position: id, quantity, strategy" in report
+    assert "Account: not found" in report
+
+    sent = []
+    from trader import schema_probe
+
+    def fake_plain(url, text):
+        sent.append(text)
+
+    monkey = None
+    import trader.notify as notify_mod
+    orig = notify_mod.notify_plain
+    notify_mod.notify_plain = fake_plain
+    try:
+        _post("http://hook", "x" * (MAX_MESSAGE + 100))
+    finally:
+        notify_mod.notify_plain = orig
+    assert len(sent) == 2
+    assert all(t.startswith("WS schema probe (") for t in sent)

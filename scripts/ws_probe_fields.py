@@ -26,6 +26,9 @@ query IntrospectType($name: String!) {
 """
 
 CANDIDATE_TYPES = [
+    "Position",
+    "Security",
+    "OptionDetails",
     "CustodianAccountCurrentFinancialValues",
     "AccountCurrentFinancials",
     "AccountFundingBalance",
