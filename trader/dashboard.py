@@ -66,11 +66,11 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 <header>
   <h1>WS Trade Bot</h1>
   <span id="mode" class="badge notify">notify</span>
-  <span id="stops" style="color:var(--muted);font-size:12px"></span>
   <span id="reader" style="color:var(--muted);font-size:12px"></span>
   <span id="git" style="color:var(--muted);font-size:12px"></span>
   <span id="updated"></span>
   <span id="clock" style="color:var(--muted);font-size:12px"></span>
+  <span id="stops" style="color:var(--muted);font-size:12px;flex-basis:100%;margin-top:-4px"></span>
 </header>
 
 <div class="cards" id="accounts"></div>
@@ -122,8 +122,8 @@ async function loadSummary() {
     const s = data.stops;
     const streak = s.consecutive_losses + "/" + s.max_consecutive_losses;
     document.getElementById("stops").textContent =
-      "stops " + s.stop_loss_pct + "% · loss streak " + streak +
-      (s.trailing_stop_pct > 0 ? " · trail " + s.trailing_stop_pct + "%" : "");
+      "stop-loss " + s.stop_loss_pct + "% · loss streak " + streak +
+      (s.trailing_stop_pct > 0 ? " · trailing " + s.trailing_stop_pct + "%" : "");
   }
   if (data.reader) {
     const r = data.reader;
