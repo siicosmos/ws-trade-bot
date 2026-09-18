@@ -585,3 +585,40 @@ def test_quotes_disabled_by_default(tmp_path):
     assert not errors, errors
     assert cfg.quotes.enabled is True
     assert applied["quotes.enabled"] is True
+
+
+def test_persist_preserves_blank_lines_and_order(tmp_path):
+    from trader.config import load_config
+    from trader.settings import apply_settings
+
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(
+        "pipeline:\n"
+        "  port: 8080\n"
+        "\n"
+        "trading:\n"
+        "  mode: notify\n"
+        "  cooldown_seconds: 60\n"
+        "\n"
+        "quotes:\n"
+        "  provider: ws\n"
+        "\n"
+        "reader:\n"
+        "  channels:\n"
+        "    - 频道-one\n"
+        "    - test-alerts\n",
+        encoding="utf-8",
+    )
+    cfg = load_config(str(cfg_path))
+    applied, errors = apply_settings(
+        cfg, {"trading": {"cooldown_seconds": 99}}, str(cfg_path)
+    )
+    assert not errors, errors
+    text = cfg_path.read_text(encoding="utf-8")
+
+    assert text.index("pipeline:") < text.index("trading:") < (
+        text.index("quotes:")
+    ) < text.index("reader:"), text
+    assert "cooldown_seconds: 99" in text
+    assert "\n\n" in text, text
+    assert "频道-one" in text

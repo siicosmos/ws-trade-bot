@@ -291,5 +291,21 @@ def _persist(cfg, config_path):
     directory = os.path.dirname(os.path.abspath(config_path))
     fd, tmp = tempfile.mkstemp(dir=directory, suffix=".yaml.tmp")
     with os.fdopen(fd, "w") as f:
-        yaml.safe_dump(raw, f, default_flow_style=False)
+        text = yaml.safe_dump(
+            raw, default_flow_style=False, sort_keys=False,
+            allow_unicode=True, width=4096,
+        )
+        out = []
+        for line in text.split("\n"):
+            if (
+                out
+                and line
+                and not line[0].isspace()
+                and not line.startswith("- ")
+                and line not in ("---", "...")
+                and out[-1] != ""
+            ):
+                out.append("")
+            out.append(line)
+        f.write("\n".join(out))
     os.replace(tmp, config_path)
