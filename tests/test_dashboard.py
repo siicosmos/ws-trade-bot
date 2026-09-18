@@ -294,3 +294,16 @@ def test_stock_holdings_hidden_by_default():
     # holdings section is collapsed until the user opts in
     assert 'localStorage.getItem("ws_show_stocks") === "1"' in js
     assert "toggle-stocks" in dash.DASHBOARD_HTML
+
+
+def test_hide_value_eye_toggle():
+    import trader.dashboard as dash
+
+    js = re.findall(r"<script>(.*?)</script>",
+                    dash.DASHBOARD_HTML, re.S)[0]
+    # eye toggle hides the account value, persisted
+    assert 'localStorage.getItem("ws_hide_value") === "1"' in js
+    assert "EYE_SVG" in js and "EYE_OFF_SVG" in js
+    assert '"••••••"' in js
+    # approx symbol removed from value lines
+    assert "≈" not in js

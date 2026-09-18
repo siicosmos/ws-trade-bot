@@ -253,6 +253,12 @@ async function loadSummary() {
   toggle.textContent = valueCurrency.toUpperCase() + " ⇄";
   toggle.onclick = toggleValueCurrency;
   el.appendChild(toggle);
+  const eye = document.createElement("button");
+  eye.className = "cur-toggle";
+  eye.title = hideValue ? "show account value" : "hide account value";
+  eye.innerHTML = hideValue ? EYE_OFF_SVG : EYE_SVG;
+  eye.onclick = toggleHideValue;
+  el.appendChild(eye);
   for (const a of data.accounts) {
     const pct = Math.min(100, Math.round((a.open_risk_pct || 0)));
     const color = pct >= (a.max_open_risk_pct || 30) ? "#f85149" : pct > (a.max_open_risk_pct || 30) * 0.6 ? "#d29922" : "#3fb950";
@@ -264,13 +270,14 @@ async function loadSummary() {
     card.className = "card";
     card.innerHTML =
       '<div class="label">' + esc(a.label) + '</div>' +
-      '<div class="value">' + (showUsd ? fmtMoney(a.usd_value) : fmtMoney(a.value)) +
-      (a.value_age ? ' <span style="font-size:12px;color:#d29922">(cached ' + a.value_age + ')</span>' : '') +
-      (showUsd
-        ? ' <span style="font-size:13px;color:var(--muted)">≈ ' + fmtMoney(a.value) + ' CAD</span>'
-        : (a.usd_value
-          ? ' <span style="font-size:13px;color:var(--muted)">≈ $' + a.usd_value.toLocaleString("en-CA", {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' USD</span>'
-          : (valueCurrency === "usd" ? ' <span style="font-size:12px;color:var(--yellow)">fx unavailable</span>' : ''))) + '</div>' +
+      '<div class="value">' + (hideValue ? "••••••" :
+        (showUsd ? fmtMoney(a.usd_value) : fmtMoney(a.value)) +
+        (a.value_age ? ' <span style="font-size:12px;color:#d29922">(cached ' + a.value_age + ')</span>' : '') +
+        (showUsd
+          ? ' <span style="font-size:13px;color:var(--muted)">' + fmtMoney(a.value) + ' CAD</span>'
+          : (a.usd_value
+            ? ' <span style="font-size:13px;color:var(--muted)">$' + a.usd_value.toLocaleString("en-CA", {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' USD</span>'
+            : (valueCurrency === "usd" ? ' <span style="font-size:12px;color:var(--yellow)">fx unavailable</span>' : '')))) + '</div>' +
       '<div class="riskbar"><div style="width:' + pct + '%;background:' + color + '"></div></div>' +
       '<div class="sub"><span style="color:' + color + (pct >= (a.max_open_risk_pct || 30) ? ';font-weight:700' : '') + '">open risk ' + fmtMoney(risk) + ' (' + (a.open_risk_pct ?? 0) + '%)</span>' +
       '<span>cap ' + (a.max_open_risk_pct) + '%</span></div>' +
@@ -390,6 +397,16 @@ let lastRefresh = null;
 let showIgnored = true;
 
 let valueCurrency = localStorage.getItem("ws_value_currency") || "cad";
+let hideValue = localStorage.getItem("ws_hide_value") === "1";
+
+const EYE_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>';
+const EYE_OFF_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+
+function toggleHideValue() {
+  hideValue = !hideValue;
+  localStorage.setItem("ws_hide_value", hideValue ? "1" : "0");
+  loadSummary();
+}
 
 function toggleValueCurrency() {
   valueCurrency = valueCurrency === "cad" ? "usd" : "cad";
