@@ -162,85 +162,53 @@ def _run(ws, doc, variables, path):
 
 
 def probe_schema(account):
-    """Return a text report of which candidate fields exist."""
+    """Verify the app document works and report what it exposes."""
     try:
         ws = account._client()
     except Exception as e:
         return f"schema probe: client unavailable ({e})"
-    identity_id = getattr(ws, "identity_id", None)
-    if not identity_id:
-        try:
-            ws._fetch_identity_id_from_token()
-        except Exception:
-            pass
-        identity_id = getattr(ws, "identity_id", None)
-    if not identity_id:
-        return "schema probe: no identity id available"
-
-    account_ids = None
-    resolve = getattr(account, "_resolve", None)
-    if callable(resolve):
-        try:
-            account_ids = [
-                aid for _, aid in resolve() if aid
-            ] or None
-        except Exception:
-            account_ids = None
-    variables = {
-        "identityId": identity_id,
-        "currency": "CAD",
-        "accountIds": account_ids,
-        "first": 500,
-        "cursor": None,
-        "aggregated": False,
-        "currencyOverride": "MARKET",
-        "filter": None,
-        "includeSecurity": False,
-    }
-
-    lines = []
-    edges = ["identity", "financials", "current", "positions", "edges"]
-    value, status = _run(ws, LIB_DOC, variables, edges)
-    if value is None:
-        return ("schema probe: control A (library document) failed - "
-                f"{status}")
-    lines.append(f"control A (library document): {len(value)} positions")
-
-    doc_b = LIB_DOC.replace(
-        CURRENT_ANCHOR, CURRENT_ANCHOR + "                totalValue\n"
+    from trader.ws_positions_query import (
+        FETCH_IDENTITY_POSITIONS, app_positions_variables,
     )
-    fin_path = ["identity", "financials", "current", "totalValue"]
-    value, status = _run(ws, doc_b, variables, fin_path)
-    if value is None:
-        return ("schema probe: control B (document + totalValue) failed - "
-                f"{status}\n" + "\n".join(lines) +
-                "\nmodified documents appear rejected")
-    lines.append(f"control B (document + totalValue): {_fmt(value)}")
 
-    lines.append("financials.current:")
-    for field in FINANCIAL_FIELDS:
-        doc = LIB_DOC.replace(
-            CURRENT_ANCHOR, CURRENT_ANCHOR + "                " + field + "\n"
+    variables = app_positions_variables(ws, None)
+    if not variables.get("identityId"):
+        return "schema probe: no identity id available"
+    try:
+        result = ws.graphql_query(
+            "FetchIdentityPositions",
+            FETCH_IDENTITY_POSITIONS,
+            variables,
         )
-        value, status = _run(
-            ws, doc, variables, fin_path[:-1] + [field]
+    except Exception as e:
+        return (f"schema probe: app document rejected - {str(e)[:200]}")
+    try:
+        positions = (
+            ((result.get("data") or {}).get("identity") or {})
+            .get("financials") or {}
+        ).get("current", {}).get("positions", {})
+        edges = positions.get("edges") or []
+    except Exception:
+        edges = []
+    lines = [f"app document: ok, {len(edges)} positions"]
+    for e in edges[:8]:
+        node = e.get("node") or {}
+        sec = node.get("security") or {}
+        od = sec.get("optionDetails") or {}
+        stock = (sec.get("stock") or {}).get("symbol")
+        label = (
+            f"{stock} {od.get('strikePrice', '')}"
+            f"{str(od.get('optionType') or '')[0:5]}"
+            if od else (stock or node.get("id", "?"))
         )
-        if value is not None:
-            lines.append(f"  {field} = {_fmt(value)}")
-        else:
-            lines.append(f"  {field}: {status}")
-
-    lines.append("position:")
-    node_path = edges + [0, "node"]
-    for field in POSITION_FIELDS:
-        doc = LIB_DOC.replace(
-            NODE_ANCHOR, NODE_ANCHOR + "                      " + field + "\n"
+        margin = node.get("marginRequirement") or {}
+        lines.append(
+            f"  {label}: qty={node.get('quantity')}, "
+            f"strategy={node.get('strategyType') or '-'}, "
+            f"legs={len(node.get('legs') or [])}, "
+            f"margin={margin.get('amount', '-')} "
+            f"{margin.get('currency', '')}".strip()
         )
-        value, status = _run(ws, doc, variables, node_path + [field])
-        if value is not None:
-            lines.append(f"  {field} = {_fmt(value)}")
-        else:
-            lines.append(f"  {field}: {status}")
     return "\n".join(lines)
 
 

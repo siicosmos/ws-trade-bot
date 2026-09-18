@@ -1482,81 +1482,39 @@ def test_summary_allocation_values():
 
 
 def test_schema_probe_report_and_chunking():
-    import re as _re
-    from trader.schema_probe import (
-        CURRENT_ANCHOR, FINANCIAL_FIELDS, LIB_DOC, NODE_ANCHOR,
-        POSITION_FIELDS, _post, MAX_MESSAGE, probe_schema,
-    )
-
-    # insertion anchors must exist in the library document
-    assert CURRENT_ANCHOR in LIB_DOC
-    assert NODE_ANCHOR in LIB_DOC
+    from trader.schema_probe import _post, MAX_MESSAGE, probe_schema
+    from trader.ws_positions_query import FETCH_IDENTITY_POSITIONS
 
     class FakeWS:
         identity_id = "id1"
 
         def graphql_query(self, op, query, variables):
             assert op == "FetchIdentityPositions"
-            if query == LIB_DOC:
-                return {"data": {"identity": {"financials": {
-                    "current": {"positions": {"edges": [
-                        {"node": {"id": "p1"}}]}}}}}}
-            field = None
-            for name in FINANCIAL_FIELDS:
-                if ("\n                " + name + "\n" in query
-                        and "\n                " + name + "\n"
-                        not in LIB_DOC):
-                    field = name
-                    break
-            if field is None:
-                for name in POSITION_FIELDS:
-                    if ("\n                      " + name + "\n"
-                            in query):
-                        field = name
-                        break
-            if field == "buyingPower":
-                raise Exception(
-                    'GraphQL errors: [{"message": "Cannot query field '
-                    "'buyingPower' on type 'X'. "
-                    "Did you mean 'totalValue'?\"}]"
-                )
-            if field == "marginAvailable":
-                raise Exception(
-                    'GraphQL errors: [{"message": "Cannot query field '
-                    "'marginAvailable' on type 'X'.\"}]"
-                )
-            if field == "legs":
-                raise Exception(
-                    "GraphQL errors: [{\"message\": \"Field 'legs' of "
-                    "type 'Legs' must have a selection set\"}]"
-                )
-            if field in ("strategy", "quantity"):
-                key = field
-                return {"data": {"identity": {"financials": {"current": {
-                    "positions": {"edges": [{"node": {
-                        key: "VERTICAL" if field == "strategy"
-                        else "3"}}]}}}}}}
-            if field == "totalValue":
-                return {"data": {"identity": {"financials": {"current": {
-                    "totalValue": {"amount": "62000.00",
-                                   "currency": "CAD"}}}}}}
-            raise Exception(
-                'GraphQL errors: [{"message": "Cannot query field"}]'
-            )
+            assert query == FETCH_IDENTITY_POSITIONS
+            return {"data": {"identity": {"financials": {"current": {
+                "positions": {"edges": [
+                    {"node": {
+                        "quantity": "3",
+                        "strategyType": "VERTICAL_SPREAD",
+                        "legs": [{"x": 1}, {"x": 2}],
+                        "security": {"stock": {"symbol": "SPX"},
+                                     "optionDetails": {
+                                         "strikePrice": "6000",
+                                         "optionType": "CALL"}},
+                        "marginRequirement": {"amount": "120.00",
+                                               "currency": "USD"}},
+                    },
+                ]}}}}}}
 
     class FakeAccount:
         def _client(self):
             return FakeWS()
 
     report = probe_schema(FakeAccount())
-    assert "control A (library document): 1 positions" in report
-    assert "control B (document + totalValue): 62000.00 CAD" in report
-    assert "totalValue = 62000.00 CAD" in report
-    assert "buyingPower: no (did you mean 'totalValue'?)" in report
-    assert "marginAvailable: no" in report
-    assert "quantity = 3" in report
-    assert "strategy = VERTICAL" in report
-    assert "legs: yes (object type)" in report
+    assert "app document: ok, 1 positions" in report
+    assert "strategy=VERTICAL_SPREAD" in report
+    assert "legs=2" in report
+    assert "margin=120.00 USD" in report
 
     sent = []
     import trader.notify as notify_mod
@@ -1568,3 +1526,134 @@ def test_schema_probe_report_and_chunking():
         notify_mod.notify_plain = orig
     assert len(sent) == 2
     assert all(t.startswith("WS schema probe (") for t in sent)
+
+
+def test_app_document_positions_and_margin():
+    from trader.account import WealthsimpleAccount
+    from trader.ws_positions_query import (
+        FETCH_IDENTITY_POSITIONS, app_positions_variables,
+    )
+
+    spread_node = {
+        "quantity": "-2",
+        "positionDirection": "SHORT",
+        "bookValue": {"amount": "-100.00", "currency": "CAD"},
+        "marketBookValue": {"amount": "-75.00", "currency": "USD"},
+        "totalValue": {"amount": "-50.00", "currency": "USD"},
+        "strategyType": "VERTICAL_SPREAD",
+        "marginRequirement": {"amount": "55.00", "currency": "USD"},
+        "legs": [
+            {"security": {"optionDetails": {
+                "strikePrice": "6000", "optionType": "CALL",
+                "expiryDate": "2026-09-18",
+                "underlyingSecurity": {"stock": {"symbol": "SPX"}},
+            }}},
+            {"security": {"optionDetails": {
+                "strikePrice": "6010", "optionType": "CALL",
+            }}},
+        ],
+        "security": {},
+    }
+    single_node = {
+        "quantity": "10",
+        "bookValue": {"amount": "2000.00", "currency": "CAD"},
+        "marketBookValue": {"amount": "1500.00", "currency": "USD"},
+        "averagePrice": {"amount": "150.00", "currency": "USD"},
+        "totalValue": {"amount": "1700.00", "currency": "USD"},
+        "marginRequirement": {"amount": "400.00", "currency": "USD"},
+        "security": {
+            "securityType": "STOCK",
+            "stock": {"symbol": "AAPL"},
+            "quoteV2": {"price": "170.00", "currency": "USD"},
+        },
+    }
+
+    class FakeWS:
+        identity_id = "id1"
+
+        def graphql_query(self, op, query, variables):
+            assert query == FETCH_IDENTITY_POSITIONS
+            assert variables["currencyOverride"] == "MARKET"
+            return {"data": {"identity": {"financials": {
+                "current": {"positions": {"edges": [
+                    {"node": dict(spread_node)},
+                    {"node": dict(single_node)},
+                ]}}}}}}
+
+    class FakeCfg:
+        class wealthsimple:
+            positions_refresh_seconds = 30
+            values_refresh_seconds = 60
+
+    acct = WealthsimpleAccount.__new__(WealthsimpleAccount)
+    acct.cfg = FakeCfg()
+    acct.cache_seconds = 900
+    acct._ws = FakeWS()
+    acct._resolved = None
+    acct._stale = {}
+    acct._raw_cache = None
+    acct._raw_ts = 0.0
+    acct._pos_cache = None
+    acct._pos_cache_ts = 0.0
+    acct._fx_quote = None
+    acct._fx_quote_ts = 0.0
+    acct._usd_cache = None
+    acct._usd_cache_ts = 0.0
+    acct._funding_cache = None
+    acct._funding_ts = 0.0
+    acct._cache = None
+    acct._cache_ts = 0.0
+    monkeypatch = None
+
+    import unittest.mock as mock
+    with mock.patch.object(acct, "_resolve",
+                           lambda: [("T", "a1")]):
+        raw = acct._positions_raw()
+    assert raw == {"T": [spread_node, single_node]}
+
+    opts = acct.open_option_positions()["T"]
+    assert len(opts["positions"]) == 1
+    sp = opts["positions"][0]
+    assert sp["strategy_type"] == "VERTICAL_SPREAD"
+    assert sp["spread"] is True
+    assert sp["qty"] == 2
+    assert sp["cost_usd"] == -75.0        # credit: signed net
+    assert sp["market_value"] == -50.0
+    assert sp["strike"] == "6000/6010"
+    assert sp["expiry"] == "2026-09-18"
+    assert sp["underlying"] == "SPX"
+    # risk from WS margin requirement converted at book ratio
+    assert sp["risk_cad"] == round(55.0 * (100.0 / 75.0), 2)
+    assert sp["margin_req_amount"] == 55.0
+    assert sp["margin_req_currency"] == "USD"
+
+    stocks = acct.stock_holdings()["T"]
+    assert len(stocks) == 1
+    assert stocks[0]["margin_req_amount"] == 400.0
+
+
+def test_summary_margin_requirement():
+    app, store, account = _make_app()
+    client = app.test_client()
+    account.open_option_positions = lambda: {
+        "Personal": {
+            "positions": [
+                {"market_value": 100.0, "risk_cad": 120.0,
+                 "cost_cad": 130.0, "short": False,
+                 "margin_req_amount": 55.0,
+                 "margin_req_currency": "USD"},
+            ],
+            "fx": 1.25,
+        },
+    }
+    account.stock_holdings = lambda: {
+        "Personal": [
+            {"market_value": 800.0, "currency": "USD",
+             "margin_req_amount": 400.0,
+             "margin_req_currency": "USD"},
+        ],
+    }
+    summary = client.get("/api/summary").get_json()
+    row = next(a for a in summary["accounts"] if a["label"] == "Personal")
+    # 55 * 1.25 + 400 * 1.25
+    assert row["margin_requirement"] == 568.75

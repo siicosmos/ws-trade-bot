@@ -313,3 +313,12 @@ def test_hide_value_eye_toggle():
     assert '(hidden ? "••••••" : (a.cash_cad != null' in js
     # approx symbol removed from value lines
     assert "≈" not in js
+
+
+def test_margin_requirement_line():
+    import trader.dashboard as dash
+
+    js = re.findall(r"<script>(.*?)</script>",
+                    dash.DASHBOARD_HTML, re.S)[0]
+    assert "margin requirement " in js
+    assert 'esc(p.strategy_type || "multi-leg spread")' in js

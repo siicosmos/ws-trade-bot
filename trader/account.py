@@ -258,10 +258,41 @@ class WealthsimpleAccount:
             if not account_id:
                 out[label] = None
                 continue
+            nodes = None
+            # the app's own document first: it exposes
+            # marginRequirement / strategyType / legs that the
+            # library's minimal variant does not
             try:
-                out[label] = ws.get_positions(account_ids=[account_id]) or []
+                from trader.ws_positions_query import (
+                    FETCH_IDENTITY_POSITIONS, app_positions_variables,
+                )
+
+                variables = app_positions_variables(ws, [account_id])
+                if variables.get("identityId"):
+                    result = ws.graphql_query(
+                        "FetchIdentityPositions",
+                        FETCH_IDENTITY_POSITIONS,
+                        variables,
+                    )
+                    edges = (
+                        ((result.get("data") or {})
+                         .get("identity") or {})
+                        .get("financials") or {}
+                    ).get("current", {}).get(
+                        "positions", {}
+                    ).get("edges", [])
+                    nodes = [e.get("node") for e in edges]
             except Exception:
-                out[label] = None
+                nodes = None
+            if nodes is None:
+                try:
+                    nodes = ws.get_positions(
+                        account_ids=[account_id]
+                    ) or []
+                except Exception:
+                    out[label] = None
+                    continue
+            out[label] = nodes
         self._raw_cache = out
         self._raw_ts = now
         return out
@@ -365,6 +396,12 @@ class WealthsimpleAccount:
                             if market_value else None
                         ),
                         "pct_return": pct_return,
+                        "margin_req_amount": _amount(
+                            p.get("marginRequirement")
+                        ),
+                        "margin_req_currency": (
+                            p.get("marginRequirement") or {}
+                        ).get("currency"),
                     }
                 )
             out[label] = rows
@@ -408,6 +445,129 @@ class WealthsimpleAccount:
                         quote = _quote_price(sec.get("quoteV2"))
                         if quote:
                             fx = quote
+                    continue
+
+                margin = p.get("marginRequirement") or {}
+                margin_amount = _amount(margin)
+                margin_currency = margin.get("currency")
+
+                legs_data = p.get("legs") or []
+                strategy_type = str(
+                    p.get("strategyType") or ""
+                ).strip()
+                if legs_data and strategy_type:
+                    # WS already combined a multi-leg order into one
+                    # node - build the spread row directly from the
+                    # node-level net values instead of re-grouping
+                    try:
+                        qty = abs(float(p.get("quantity") or 0))
+                    except (TypeError, ValueError):
+                        qty = 0
+                    # signed: credit spreads carry negative net books
+                    cost_cad = book
+                    cost_usd = market_book
+                    market_value = _amount(p.get("totalValue"))
+                    strikes = []
+                    expiry = None
+                    right = ""
+                    underlying = ""
+                    for leg in legs_data:
+                        lsec = leg.get("security") or {}
+                        lod = lsec.get("optionDetails") or {}
+                        if not lod:
+                            continue
+                        expiry = expiry or lod.get("expiryDate")
+                        if lod.get("strikePrice") is not None:
+                            try:
+                                strikes.append(
+                                    float(lod.get("strikePrice"))
+                                )
+                            except (TypeError, ValueError):
+                                pass
+                        if not right:
+                            rt = str(
+                                lod.get("optionType") or ""
+                            ).upper()
+                            if rt:
+                                right = (
+                                    "C" if rt.startswith("CALL")
+                                    else "P"
+                                )
+                        underlying = underlying or (
+                            ((lod.get("underlyingSecurity") or {})
+                             .get("stock") or {}).get("symbol")
+                        )
+                    strikes.sort()
+                    leg_fx = (
+                        cost_cad / cost_usd
+                        if cost_usd and cost_cad else None
+                    )
+                    risk_cad = None
+                    risk_m = margin_amount
+                    if risk_m is None and cost_usd is not None:
+                        # debit spread: the debit is the max loss
+                        if not market_value or market_value <= cost_usd:
+                            risk_m = abs(cost_usd)
+                    if risk_m is not None:
+                        risk_cad = round(
+                            risk_m * (
+                                leg_fx if (
+                                    margin_currency == "USD"
+                                    and leg_fx
+                                ) else 1
+                            ), 2,
+                        )
+                    market_pct = None
+                    if market_value is not None and cost_usd:
+                        profit = market_value - cost_usd
+                        if risk_m:
+                            market_pct = round(
+                                profit / risk_m * 100, 1
+                            )
+                        elif cost_usd:
+                            market_pct = round(
+                                profit / abs(cost_usd) * 100, 1
+                            )
+                    per_unit = (
+                        cost_usd / (qty * 100)
+                        if cost_usd and qty else None
+                    )
+                    rows.append(
+                        {
+                            "contract_key": (
+                                f"{underlying} {expiry or ''} "
+                                f"{strikes[0]:g}/{strikes[-1]:g}"
+                                f"{right}" if strikes else
+                                f"{underlying} {expiry or ''}{right}"
+                            ),
+                            "underlying": underlying,
+                            "expiry": expiry,
+                            "strike": (
+                                f"{strikes[0]:g}/{strikes[-1]:g}"
+                                if strikes else None
+                            ),
+                            "right": right or None,
+                            "qty": qty,
+                            "short": False,
+                            "spread": True,
+                            "strategy_type": strategy_type,
+                            "avg_premium": round(per_unit, 4)
+                            if per_unit is not None else None,
+                            "cost": cost_usd if cost_usd is not None
+                            else book,
+                            "cost_usd": cost_usd,
+                            "cost_cad": cost_cad,
+                            "risk_cad": risk_cad,
+                            "current_price": None,
+                            "market_value": (
+                                round(market_value, 2)
+                                if market_value else None
+                            ),
+                            "pct_return": market_pct,
+                            "margin_req_amount": margin_amount,
+                            "margin_req_currency": margin_currency,
+                        }
+                    )
                     continue
 
                 od = sec.get("optionDetails")
@@ -486,6 +646,8 @@ class WealthsimpleAccount:
                             if market_value else None
                         ),
                         "pct_return": pct_return,
+                        "margin_req_amount": margin_amount,
+                        "margin_req_currency": margin_currency,
                     }
                 )
             if fx:
@@ -495,9 +657,14 @@ class WealthsimpleAccount:
             # the defined-loss structure instead of raw leg sums
             groups = {}
             for r in rows:
+                if r.get("strategy_type"):
+                    # already combined by WS - keep node-level values
+                    continue
                 key = (r["underlying"], r["expiry"], r["right"])
                 groups.setdefault(key, []).append(r)
-            combined = []
+            combined = [
+                r for r in rows if r.get("strategy_type")
+            ]
             for key, legs in groups.items():
                 if len(legs) == 1:
                     leg = legs[0]

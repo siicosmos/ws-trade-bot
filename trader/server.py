@@ -280,6 +280,24 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                     abs(r.get("market_value") or 0) * conv_fx
                     for r in live["positions"]
                 ), 2)
+
+            def _margin_total(rows):
+                total = 0.0
+                found = False
+                for r in rows:
+                    amt = r.get("margin_req_amount")
+                    if amt is None:
+                        continue
+                    found = True
+                    if r.get("margin_req_currency") == "USD":
+                        total += amt * conv_fx
+                    else:
+                        total += amt
+                return round(total, 2) if found else None
+
+            margin_req = _margin_total(
+                (live["positions"] if live is not None else []) + (sk or [])
+            )
             out.append(
                 {
                     "label": label,
@@ -292,6 +310,7 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                     "open_risk": open_risk,
                     "stock_value": stock_value,
                     "option_value": option_value,
+                    "margin_requirement": margin_req,
                     "open_risk_pct": (
                         round(open_risk / value * 100, 2)
                         if value and value > 0

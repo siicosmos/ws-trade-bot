@@ -275,6 +275,9 @@ async function loadSummary() {
       '<div class="riskbar"><div style="width:' + pct + '%;background:' + color + '"></div></div>' +
       '<div class="sub"><span style="color:' + color + (pct >= (a.max_open_risk_pct || 30) ? ';font-weight:700' : '') + '">open risk ' + fmtMoney(risk) + ' (' + (a.open_risk_pct ?? 0) + '%)</span>' +
       '<span>cap ' + (a.max_open_risk_pct) + '%</span></div>' +
+      ((a.margin_requirement != null && !isNaN(a.margin_requirement))
+        ? '<div class="sub"><span>margin requirement ' + (hidden ? "••••••" : fmtMoney(a.margin_requirement)) + '</span><span>holdings</span></div>'
+        : '') +
       ((a.cash_cad != null || a.cash_usd != null)
         ? '<div class="sub"><span>cash ' + (hidden ? "••••••" : (a.cash_cad != null ? fmtMoney(a.cash_cad) : "—")) +
           (!hidden && a.cash_usd != null
@@ -340,7 +343,7 @@ function renderPositionsInto(elId, rows, emptyText) {
         '</span><br><span style="font-size:11px;color:var(--muted)">' +
         esc(String(p.expiry || "").slice(0, 10)) + "</span> " +
         dteBadge(p.expiry)) + "</td>" +
-      '<td class=num>' + (p.short ? "-" + p.qty : p.qty) + (p.short ? ' <span class="tag skip mini" title="short position">short</span>' : (p.spread ? ' <span class="tag ignored mini" title="multi-leg spread">spread</span>' : "")) + "</td>" +
+      '<td class=num>' + (p.short ? "-" + p.qty : p.qty) + (p.short ? ' <span class="tag skip mini" title="short position">short</span>' : (p.spread ? ' <span class="tag ignored mini" title="' + esc(p.strategy_type || "multi-leg spread") + '">spread</span>' : "")) + "</td>" +
       '<td class=num>' + (isStock
         ? (p.avg_premium != null
             ? "$" + p.avg_premium.toLocaleString("en-CA", { maximumFractionDigits: 2 }) + cur
