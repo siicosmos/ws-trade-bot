@@ -67,6 +67,13 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
     background: var(--panel); border: 1px solid var(--border);
     border-radius: 10px; padding: 18px;
   }
+  .cur-toggle {
+    color: var(--muted); font-size: 11px; font-weight: 700;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 6px; padding: 3px 10px; cursor: pointer;
+    margin-bottom: 8px; letter-spacing: .5px;
+  }
+  .cur-toggle:hover { color: var(--text); border-color: var(--muted); }
   .card .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .8px; margin-bottom: 6px; }
   .card .value { font-size: 30px; font-weight: 700; font-variant-numeric: tabular-nums; }
   .riskbar { height: 6px; background: #21262d; border-radius: 3px; margin-top: 12px; overflow: hidden; }
@@ -177,18 +184,30 @@ async function loadSummary() {
   }
   const el = document.getElementById("accounts");
   el.innerHTML = "";
+  const toggle = document.createElement("button");
+  toggle.className = "cur-toggle";
+  toggle.title = "flip account value currency";
+  toggle.textContent = valueCurrency.toUpperCase() + " ⇄";
+  toggle.onclick = toggleValueCurrency;
+  el.appendChild(toggle);
   for (const a of data.accounts) {
     const pct = Math.min(100, Math.round((a.open_risk_pct || 0)));
     const color = pct >= (a.max_open_risk_pct || 30) ? "#f85149" : pct > (a.max_open_risk_pct || 30) * 0.6 ? "#d29922" : "#3fb950";
+    const usd = a.usd_value && a.value;
+    const showUsd = valueCurrency === "usd" && usd;
+    const fx = usd ? a.usd_value / a.value : null;
+    const risk = showUsd ? a.open_risk * fx : a.open_risk;
     const card = document.createElement("div");
     card.className = "card";
     card.innerHTML =
       '<div class="label">' + esc(a.label) + '</div>' +
-      '<div class="value">' + fmtMoney(a.value) +
+      '<div class="value">' + (showUsd ? fmtMoney(a.usd_value) : fmtMoney(a.value)) +
       (a.value_age ? ' <span style="font-size:12px;color:#d29922">(cached ' + a.value_age + ')</span>' : '') +
-      (a.usd_value ? ' <span style="font-size:13px;color:var(--muted)">≈ $' + a.usd_value.toLocaleString("en-CA", {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' USD</span>' : '') + '</div>' +
+      (showUsd
+        ? ' <span style="font-size:13px;color:var(--muted)">≈ ' + fmtMoney(a.value) + ' CAD</span>'
+        : (a.usd_value ? ' <span style="font-size:13px;color:var(--muted)">≈ $' + a.usd_value.toLocaleString("en-CA", {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' USD</span>' : '')) + '</div>' +
       '<div class="riskbar"><div style="width:' + pct + '%;background:' + color + '"></div></div>' +
-      '<div class="sub"><span style="color:' + color + (pct >= (a.max_open_risk_pct || 30) ? ';font-weight:700' : '') + '">open risk ' + fmtMoney(a.open_risk) + ' (' + (a.open_risk_pct ?? 0) + '%)</span>' +
+      '<div class="sub"><span style="color:' + color + (pct >= (a.max_open_risk_pct || 30) ? ';font-weight:700' : '') + '">open risk ' + fmtMoney(risk) + ' (' + (a.open_risk_pct ?? 0) + '%)</span>' +
       '<span>' + (a.usd_cash != null ? 'usd cash $' + a.usd_cash.toLocaleString("en-CA", {minimumFractionDigits: 2, maximumFractionDigits: 2}) : 'cap ' + (a.max_open_risk_pct) + '%') + '</span></div>';
     el.appendChild(card);
   }
@@ -233,6 +252,14 @@ function toggleSettings() {
 let lastRefresh = null;
 
 let showIgnored = true;
+
+let valueCurrency = localStorage.getItem("ws_value_currency") || "cad";
+
+function toggleValueCurrency() {
+  valueCurrency = valueCurrency === "cad" ? "usd" : "cad";
+  localStorage.setItem("ws_value_currency", valueCurrency);
+  loadSummary();
+}
 
 function toggleIgnored() {
   showIgnored = !showIgnored;

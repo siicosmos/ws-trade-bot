@@ -88,7 +88,7 @@ def test_open_risk_percentage_colored_by_cap():
 
     js = re.findall(r"<script>(.*?)</script>",
                     dash.DASHBOARD_HTML, re.S)[0]
-    assert "open risk ' + fmtMoney(a.open_risk)" in js
+    assert "open risk ' + fmtMoney(risk)" in js
     assert "color:' + color" in js
     assert "font-weight:700" in js
 
@@ -160,3 +160,15 @@ def test_settings_form_not_clobbered_while_editing():
     # a successful save clears it and re-renders with persisted values
     assert "settingsDirty = false;" in js
     assert "await loadSettings();" in js
+
+
+def test_currency_toggle():
+    import trader.dashboard as dash
+
+    js = re.findall(r"<script>(.*?)</script>",
+                    dash.DASHBOARD_HTML, re.S)[0]
+    assert 'let valueCurrency = localStorage.getItem' in js
+    assert "function toggleValueCurrency()" in js
+    assert "cur-toggle" in dash.DASHBOARD_HTML
+    # usd mode converts open risk with the derived fx rate
+    assert "a.open_risk * fx" in js
