@@ -46,7 +46,7 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
     padding: 4px 10px; flex-shrink: 0;
   }
   @media (max-width: 620px) {
-    #timebox { order: 10; flex-basis: 100%; margin-left: 0; }
+    #timebox { order: 10; flex-basis: 100%; margin-left: auto; justify-content: flex-end; }
   }
   #logout:hover { color: var(--text); border-color: var(--muted); }
   #updated {
@@ -55,9 +55,9 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
     font-variant-numeric: tabular-nums;
   }
   #clock {
-    color: #7ee0ff; font-size: 20px; font-weight: 700; margin-left: 8px;
+    color: #7ee0ff; font-size: 16px; font-weight: 700; margin-left: 8px;
     border: 1px solid var(--border); border-radius: 6px;
-    padding: 4px 12px; background: var(--panel);
+    padding: 2px 9px; background: var(--panel);
     font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
     font-variant-numeric: tabular-nums;
     text-shadow: 0 0 10px rgba(88, 166, 255, 0.55);
@@ -124,13 +124,13 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   <div class="headrow">
     <h1 style="margin:0">WS Trade Bot</h1>
     <span id="mode" class="badge notify">notify</span>
-    <span id="timebox"><span id="updated"></span><span id="clock"></span></span>
-    <a href="/logout" id="logout">log out</a>
+    <span id="timebox"><span id="updated">data refreshed</span><span id="clock"></span></span>
   </div>
-  <div style="display:flex;flex-basis:100%;gap:18px;flex-wrap:wrap;color:var(--muted);font-size:12px">
+  <div style="display:flex;flex-basis:100%;gap:18px;flex-wrap:wrap;color:var(--muted);font-size:12px;align-items:center">
     <span id="reader"></span>
     <span id="git"></span>
     <span id="stops"></span>
+    <a href="/logout" id="logout" style="margin-left:auto">log out</a>
   </div>
 </header>
 
@@ -582,11 +582,14 @@ setInterval(load, 5000);
 function tickClock() {
   document.getElementById("clock").textContent =
     "now " + new Date().toLocaleTimeString();
+  const el = document.getElementById("updated");
   if (lastRefresh) {
     const secs = Math.max(0, Math.round((Date.now() - lastRefresh) / 1000));
-    const el = document.getElementById("updated");
     el.textContent = "data refreshed " + fmtAge(secs);
     el.style.color = secs <= 10 ? "#3fb950" : secs <= 30 ? "#d29922" : "#f85149";
+  } else {
+    el.textContent = "data refreshed …";
+    el.style.color = "var(--muted)";
   }
 }
 window.addEventListener("pageshow", (e) => {

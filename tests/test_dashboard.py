@@ -31,7 +31,7 @@ def test_clock_has_no_inline_style_override():
     css = re.search(r"#clock \{(.*?)\}", dash.DASHBOARD_HTML, re.S)
     assert css
     block = css.group(1)
-    assert "font-size: 20px" in block
+    assert "font-size: 16px" in block
     assert "#7ee0ff" in block
     assert "text-shadow" in block
 
@@ -40,17 +40,22 @@ def test_header_rows_and_mobile_wrap():
     import trader.dashboard as dash
 
     html = dash.DASHBOARD_HTML
-    # row 1: title, mode badge, timebox (age + clock), logout
+    # row 1: title, mode badge, timebox (age + clock) pinned right
     row = re.search(r'<div class="headrow">(.*?)</div>', html, re.S)
     assert row
     row_html = row.group(1)
     for needle in ("<h1", 'id="mode"', 'id="timebox"', 'id="updated"',
-                   'id="clock"', 'href="/logout"'):
+                   'id="clock"'):
         assert needle in row_html, needle
-    # phones: timebox drops below the title row instead of wrapping mid-pair
+    assert 'href="/logout"' not in row_html
+    # row 2: status lines with logout at the far right
+    assert 'id="logout" style="margin-left:auto"' in html
+    # refresh label renders before the first data cycle
+    assert '<span id="updated">data refreshed</span>' in html
+    # phones: timebox keeps the right corner instead of wrapping mid-pair
     media = re.search(r"@media \(max-width: 620px\) \{(.*?)\}", html, re.S)
     assert media
-    assert "#timebox" in media.group(1)
+    assert "justify-content: flex-end" in media.group(1)
 
 
 def test_pageshow_rechecks_auth_after_back_button():
