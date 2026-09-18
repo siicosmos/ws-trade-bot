@@ -1710,3 +1710,44 @@ def test_account_type_map_cached():
     assert acct.account_type_map() == {"a1": "RRSP", "a2": "PERSONAL"}
     assert acct.account_type_map() == {"a1": "RRSP", "a2": "PERSONAL"}
     assert len(calls) == 1
+
+
+def test_registered_label_suppresses_margin():
+    app, store, account = _make_app()
+    client = app.test_client()
+    # type lookup unavailable (get_accounts failed) but the label
+    # itself names a registered plan
+    account.open_option_positions = lambda: {
+        "Personal": {
+            "positions": [
+                {"market_value": 100.0, "risk_cad": 120.0,
+                 "cost_cad": 130.0, "short": False,
+                 "margin_req_amount": 55.0,
+                 "margin_req_currency": "USD"},
+            ],
+            "fx": 1.25,
+        },
+    }
+    account.stock_holdings = lambda: {"Personal": []}
+    account.account_type_map = lambda: {}
+    account._resolve = lambda: [("Personal", "pers")]
+    summary = client.get("/api/summary").get_json()
+    row = next(a for a in summary["accounts"] if a["label"] == "Personal")
+    assert row["margin_requirement"] == 68.75
+
+    # same margin rows under an RRSP label -> suppressed by the
+    # label alone even with no type information
+    account.open_option_positions = lambda: {
+        "RRSP": {
+            "positions": [
+                {"market_value": 100.0, "risk_cad": 120.0,
+                 "cost_cad": 130.0, "short": False,
+                 "margin_req_amount": 55.0,
+                 "margin_req_currency": "USD"},
+            ],
+            "fx": 1.25,
+        },
+    }
+    summary = client.get("/api/summary").get_json()
+    row = next(a for a in summary["accounts"] if a["label"] == "RRSP")
+    assert row["margin_requirement"] is None

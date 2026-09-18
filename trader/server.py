@@ -313,7 +313,11 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                         acct_type = str(
                             type_map.get(ids.get(label) or "") or ""
                         ).upper()
-                        if acct_type in REGISTERED_ACCOUNT_TYPES:
+                        label_upper = str(label or "").upper()
+                        if acct_type in REGISTERED_ACCOUNT_TYPES or any(
+                            t in label_upper
+                            for t in REGISTERED_ACCOUNT_TYPES
+                        ):
                             margin_req = None
                     except Exception:
                         pass
