@@ -273,7 +273,12 @@ async function loadSummary() {
       '<span>cap ' + (a.max_open_risk_pct) + '%</span></div>' +
       ((a.cash_cad != null || a.cash_usd != null)
         ? '<div class="sub"><span>cash ' + (a.cash_cad != null ? fmtMoney(a.cash_cad) : "—") +
-          (a.cash_usd != null ? ' · $' + a.cash_usd.toLocaleString("en-CA", {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' usd' : '') + '</span>' +
+          (a.cash_usd != null
+            ? (a.cash_usd >= 0
+              ? ' · $' + a.cash_usd.toLocaleString("en-CA", {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' usd'
+              : ' · <span style="color:var(--yellow)">usd margin used $' +
+                Math.abs(a.cash_usd).toLocaleString("en-CA", {minimumFractionDigits: 2, maximumFractionDigits: 2}) + '</span>')
+            : '') + '</span>' +
           '<span>buying power</span></div>'
         : '');
     el.appendChild(card);
