@@ -25,6 +25,8 @@ reader:
 
 discord:
   webhook_url: "YOUR_PRIVATE_SERVER_WEBHOOK_URL"
+  reader_log_webhook_url: ""
+  pipeline_log_webhook_url: ""
 
 trading:
   mode: notify

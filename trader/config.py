@@ -15,6 +15,8 @@ class PipelineConfig:
 @dataclass
 class DiscordConfig:
     webhook_url: str = ""
+    reader_log_webhook_url: str = ""
+    pipeline_log_webhook_url: str = ""
 
 
 def _default_size_tiers() -> dict:
@@ -170,8 +172,9 @@ def load_config(path: str) -> Config:
     ws_raw = raw.get("wealthsimple") or {}
     parser_raw = raw.get("parser") or {}
 
+    discord_raw = raw.get("discord") or {}
     webhook = os.environ.get("DISCORD_WEBHOOK_URL") or str(
-        _get(raw.get("discord") or {}, "webhook_url", "")
+        _get(discord_raw, "webhook_url", "")
     )
 
     mode = str(_get(trading_raw, "mode", "notify")).lower()
@@ -229,7 +232,15 @@ def load_config(path: str) -> Config:
             port=int(_get(pipeline_raw, "port", 8080)),
             auth_token=str(_get(pipeline_raw, "auth_token", "")),
         ),
-        discord=DiscordConfig(webhook_url=webhook),
+        discord=DiscordConfig(
+            webhook_url=webhook,
+            reader_log_webhook_url=str(
+                _get(discord_raw, "reader_log_webhook_url", "")
+            ),
+            pipeline_log_webhook_url=str(
+                _get(discord_raw, "pipeline_log_webhook_url", "")
+            ),
+        ),
         trading=trading,
         wealthsimple=WealthsimpleConfig(
             accounts=_load_accounts(ws_raw),

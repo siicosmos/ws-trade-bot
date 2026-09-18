@@ -23,6 +23,10 @@ def main():
     store = Store(args.db)
     mode = cfg.trading.mode
 
+    from trader.loghook import install_log_webhook
+
+    install_log_webhook(cfg.discord.pipeline_log_webhook_url)
+
     from trader.ws_tokens import load_env_tokens
 
     load_env_tokens()

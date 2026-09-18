@@ -2,6 +2,7 @@ import os
 import re
 import subprocess
 import sys
+import threading
 import time
 from datetime import datetime, timedelta
 
@@ -174,8 +175,58 @@ def looks_like_message(text):
     return True
 
 
+class WebhookLog:
+    def __init__(self, url):
+        self.url = url
+        self.lines = []
+        self.lock = threading.Lock()
+        if url:
+            threading.Thread(target=self._run, daemon=True).start()
+
+    def add(self, line):
+        if not self.url:
+            return
+        with self.lock:
+            self.lines.append(str(line)[:500])
+            if len(self.lines) > 200:
+                self.lines = self.lines[-200:]
+
+    def flush_now(self):
+        with self.lock:
+            batch, self.lines = self.lines, []
+        if not batch or not self.url:
+            return
+        text = ""
+        for line in batch:
+            if len(text) + len(line) + 1 > 1900:
+                self._post(text)
+                text = ""
+            text += line + "\n"
+        if text.strip():
+            self._post(text)
+
+    def _post(self, text):
+        try:
+            requests.post(
+                self.url, json={"content": text[:1900]}, timeout=10
+            )
+        except requests.RequestException:
+            pass
+
+    def _run(self):
+        while True:
+            time.sleep(3)
+            self.flush_now()
+
+
+_log_hook = None
+
+
 def log(msg):
-    print(f"{time.strftime('%H:%M:%S')} {msg}")
+    line = f"{time.strftime('%H:%M:%S')} {msg}"
+    print(line)
+    if _log_hook is not None:
+        _log_hook.add(line)
 
 
 def find_config_path():
@@ -511,9 +562,8 @@ def git_head(root):
 def main():
     raw_cfg = load_config()
     cfg = raw_cfg.get("reader") or {}
-    webhook_url = str(
-        (raw_cfg.get("discord") or {}).get("webhook_url") or ""
-    )
+    discord_cfg = raw_cfg.get("discord") or {}
+    webhook_url = str(discord_cfg.get("webhook_url") or "")
     pipeline_url = cfg.get("pipeline_url", "http://localhost:8080/alert")
     marker = str(cfg.get("channel_marker", ""))
     poll_interval = float(cfg.get("poll_interval", 0.5))
@@ -527,6 +577,11 @@ def main():
     )
     auth_token = cfg.get("auth_token", "")
     base_url = status_base_url(pipeline_url)
+
+    global _log_hook
+    _log_hook = WebhookLog(
+        str(discord_cfg.get("reader_log_webhook_url") or "")
+    )
 
     start_head = git_head(repo_root())
     last_head_check = time.time()
@@ -696,7 +751,7 @@ def main():
             elif msgs != tail:
                 tail = msgs
         except UIAError as e:
-            log(f"UIA error: {e}")
+            log(f"UIA stale element ({e}) - re-attaching")
             container = None
             current_channel = None
             try:
