@@ -38,7 +38,7 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
     font-variant-numeric: tabular-nums;
   }
   #clock {
-    color: #7ee0ff; font-size: 15px; font-weight: 700; margin-left: 8px;
+    color: #7ee0ff; font-size: 17px; font-weight: 700; margin-left: 8px;
     border: 1px solid var(--border); border-radius: 6px;
     padding: 3px 10px; background: var(--panel);
     font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
