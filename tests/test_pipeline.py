@@ -779,8 +779,8 @@ def test_dashboard_escapes_untrusted_text():
                    dash.DASHBOARD_HTML, re.S)[0]
     assert "function esc(" in js
     assert '.replace(/</g, "&lt;")' not in js
-    for field in ("s.text", "s.channel", "p.contract_key", "t.detail",
-                  "t.ticker", "a.label"):
+    for field in ("s.text", "s.channel", "p.underlying", "p.strike",
+                  "p.expiry", "t.detail", "t.ticker", "a.label"):
         assert f"esc({field}" in js
 
 
