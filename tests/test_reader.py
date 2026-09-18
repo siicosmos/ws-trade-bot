@@ -254,3 +254,38 @@ def test_find_message_container_title_match_beats_score(monkeypatch):
     )
     monkeypatch.setattr(dr, "item_text", lambda it: it.text)
     assert dr.find_message_container(object(), "", "trade-alerts") is pane
+
+
+def test_parse_message_time_with_date():
+    ts = dr.parse_message_time(
+        "12:45 AM Friday, September 18, 2026 12:45 AM "
+        "BOUGHT 0DTE SPX 7645c @ .65"
+    )
+    assert ts is not None
+    assert (ts.year, ts.month, ts.day, ts.hour, ts.minute) == (
+        2026, 9, 18, 0, 45,
+    )
+
+
+def test_parse_message_time_today_only():
+    from datetime import datetime
+    ts = dr.parse_message_time("DoubleL 3:05 PM hello")
+    assert ts is not None
+    now = datetime.now()
+    assert (ts.year, ts.month, ts.day) == (now.year, now.month, now.day)
+    assert (ts.hour, ts.minute) == (15, 5)
+
+
+def test_parse_message_time_none():
+    assert dr.parse_message_time("BOUGHT 0DTE SPX 7645c @ .65") is None
+    assert dr.parse_message_time("") is None
+
+
+def test_is_recent_message():
+    assert dr.is_recent_message("BOUGHT 0DTE SPX 7645c @ .65")
+    assert not dr.is_recent_message(
+        "11:30 PM December 25, 2020 11:30 PM old message"
+    )
+    assert not dr.is_recent_message(
+        "11:59 PM December 31, 2099 11:59 PM future message"
+    )

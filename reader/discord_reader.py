@@ -3,6 +3,7 @@ import re
 import subprocess
 import sys
 import time
+from datetime import datetime, timedelta
 
 import psutil
 import requests
@@ -57,6 +58,19 @@ UI_NOISE_RE = re.compile(
 )
 
 
+MONTHS = {
+    "january": 1, "february": 2, "march": 3, "april": 4, "may": 5,
+    "june": 6, "july": 7, "august": 8, "september": 9, "october": 10,
+    "november": 11, "december": 12,
+}
+
+TIME_RE = re.compile(r"\b(\d{1,2}):(\d{2})\s*(AM|PM)\b", re.I)
+DATE_RE = re.compile(
+    r"(January|February|March|April|May|June|July|August|September"
+    r"|October|November|December)\s+(\d{1,2}),?\s+(\d{4})",
+    re.I,
+)
+
 LOG_PASTE_RE = re.compile(
     "|".join(
         [
@@ -81,6 +95,43 @@ def strip_ui_noise(text):
     text = UI_NOISE_RE.sub(" ", text)
     text = TS_PREFIX_RE.sub("", text)
     return re.sub(r"\s{2,}", " ", text).strip()
+
+
+def parse_message_time(text):
+    if not text:
+        return None
+    times = TIME_RE.findall(text)
+    if not times:
+        return None
+    hour, minute, ampm = times[-1]
+    hour, minute = int(hour), int(minute)
+    if ampm.upper() == "PM" and hour != 12:
+        hour += 12
+    elif ampm.upper() == "AM" and hour == 12:
+        hour = 0
+    now = datetime.now()
+    d = DATE_RE.search(text)
+    if d:
+        month = MONTHS[d.group(1).lower()]
+        day = int(d.group(2))
+        year = int(d.group(3))
+    else:
+        base = now - timedelta(days=1) if re.search(
+            r"昨天|yesterday", text, re.I
+        ) else now
+        month, day, year = base.month, base.day, base.year
+    try:
+        return datetime(year, month, day, hour, minute)
+    except ValueError:
+        return None
+
+
+def is_recent_message(text, max_age_minutes=10):
+    ts = parse_message_time(text)
+    if ts is None:
+        return True
+    age = (datetime.now() - ts).total_seconds() / 60
+    return -5 <= age <= max_age_minutes
 
 
 def looks_like_message(text):
@@ -199,6 +250,7 @@ def child_texts(ctrl, sample=10):
 
 def find_message_container(window, marker, title_channel="", diag=None):
     candidates = []
+    after_title_match = 0
     for ctrl, depth in auto.WalkControl(window, includeTop=False, maxDepth=30):
         try:
             if ctrl.ControlType not in (
@@ -213,6 +265,10 @@ def find_message_container(window, marker, title_channel="", diag=None):
             name = ctrl.Name or ""
             if not marker or marker.lower() in name.lower():
                 candidates.append(ctrl)
+                if title_channel and name_matches_title(name, title_channel):
+                    after_title_match += 1
+                    if after_title_match > 6:
+                        break
         except UIAError:
             continue
     best = None
@@ -388,6 +444,7 @@ def main():
     announced_channel = None
     last_title_channel = None
     resync = False
+    seen = set()
     wait_attempts = 0
     empty_polls = 0
     sync_counter = 99
@@ -481,13 +538,21 @@ def main():
             empty_polls = 0
 
             if resync:
-                fresh = msgs[-3:]
+                fresh = [
+                    t for t in msgs[-5:]
+                    if t not in seen and is_recent_message(t)
+                ]
                 resync = False
             else:
                 fresh = new_messages(msgs, tail)
             if fresh:
                 tail = msgs
                 for text in fresh:
+                    if text in seen:
+                        continue
+                    seen.add(text)
+                    if len(seen) > 5000:
+                        seen.clear()
                     post_message(pipeline_url, text, auth_token)
             elif msgs != tail:
                 tail = msgs
