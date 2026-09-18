@@ -2,6 +2,8 @@ pipeline:
   host: "0.0.0.0"
   port: 8080
   auth_token: ""
+  tls_cert: ""
+  tls_key: ""
 
 auto_update:
   enabled: true

@@ -463,7 +463,7 @@ def new_messages(current, tail):
     return []
 
 
-def post_message(url, text, token="", ts=None):
+def post_message(url, text, token="", ts=None, verify=True):
     headers = {"X-Auth-Token": token} if token else {}
     sent = ts.strftime("%m-%d %H:%M") if ts else None
     try:
@@ -474,7 +474,7 @@ def post_message(url, text, token="", ts=None):
                 "author": "",
                 "ts": ts.timestamp() if ts else time.time(),
             },
-            headers=headers, timeout=10,
+            headers=headers, timeout=10, verify=verify,
         )
         prefix = f"[sent {sent}] " if sent else ""
         log(f"-> {resp.status_code} {prefix}{text[:80]}")
@@ -482,13 +482,13 @@ def post_message(url, text, token="", ts=None):
         log(f"post failed: {e}")
 
 
-def sync_with_server(base_url, auth_token, channel, ok):
+def sync_with_server(base_url, auth_token, channel, ok, verify=True):
     headers = {"X-Auth-Token": auth_token} if auth_token else {}
     try:
         resp = requests.post(
             f"{base_url}/api/reader_status",
             json={"channel": channel, "ok": ok},
-            headers=headers, timeout=5,
+            headers=headers, timeout=5, verify=verify,
         )
         if resp.status_code == 200:
             return resp.json()
@@ -577,6 +577,17 @@ def main():
     )
     auth_token = cfg.get("auth_token", "")
     base_url = status_base_url(pipeline_url)
+    verify_tls = not pipeline_url.lower().startswith("https")
+    if not verify_tls:
+        try:
+            import urllib3
+
+            urllib3.disable_warnings(
+                urllib3.exceptions.InsecureRequestWarning
+            )
+        except ImportError:
+            pass
+        log("pipeline URL is https - skipping certificate verification")
 
     global _log_hook
     _log_hook = WebhookLog(
@@ -693,7 +704,8 @@ def main():
                                 f"  [{ctype}] name={cname!r} score={score}"
                             )
                     resp = sync_with_server(
-                        base_url, auth_token, None, False
+                        base_url, auth_token, None, False,
+                        verify_tls,
                     )
                     marker, poll_interval, max_items, channels, changed = (
                         merged_config(
@@ -752,7 +764,7 @@ def main():
                     seen.add(text)
                     if len(seen) > 5000:
                         seen.clear()
-                    post_message(pipeline_url, text, auth_token, ts)
+                    post_message(pipeline_url, text, auth_token, ts, verify_tls)
             elif msgs != tail:
                 tail = msgs
         except UIAError as e:
@@ -776,7 +788,8 @@ def main():
         if sync_counter >= 10:
             sync_counter = 0
             resp = sync_with_server(
-                base_url, auth_token, current_channel, container is not None
+                base_url, auth_token, current_channel,
+                container is not None, verify_tls,
             )
             new_marker, new_poll, new_max, new_channels, changed = (
                 merged_config(

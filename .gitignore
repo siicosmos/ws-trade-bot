@@ -7,3 +7,4 @@ reader/discord_tree.txt
 *.db
 .env
 ws_tokens.env
+certs/

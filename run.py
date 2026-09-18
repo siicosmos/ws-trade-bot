@@ -103,9 +103,17 @@ def main():
         )
     )
     app.ws_updater = updater
+    scheme = "https" if cfg.pipeline.tls_cert and cfg.pipeline.tls_key else "http"
+    ssl_context = None
+    if scheme == "https":
+        ssl_context = (cfg.pipeline.tls_cert, cfg.pipeline.tls_key)
+        print("dashboard served over HTTPS (self-signed)")
     print(f"pipeline running in {mode.upper()} mode on {cfg.pipeline.host}:{cfg.pipeline.port}")
-    print(f"dashboard: http://127.0.0.1:{cfg.pipeline.port}/")
-    app.run(host=cfg.pipeline.host, port=cfg.pipeline.port, threaded=True)
+    print(f"dashboard: {scheme}://127.0.0.1:{cfg.pipeline.port}/")
+    app.run(
+        host=cfg.pipeline.host, port=cfg.pipeline.port, threaded=True,
+        ssl_context=ssl_context,
+    )
 
 
 if __name__ == "__main__":

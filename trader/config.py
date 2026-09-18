@@ -10,6 +10,8 @@ class PipelineConfig:
     host: str = "0.0.0.0"
     port: int = 8080
     auth_token: str = ""
+    tls_cert: str = ""
+    tls_key: str = ""
 
 
 @dataclass
@@ -231,6 +233,8 @@ def load_config(path: str) -> Config:
             host=str(_get(pipeline_raw, "host", "0.0.0.0")),
             port=int(_get(pipeline_raw, "port", 8080)),
             auth_token=str(_get(pipeline_raw, "auth_token", "")),
+            tls_cert=str(_get(pipeline_raw, "tls_cert", "")),
+            tls_key=str(_get(pipeline_raw, "tls_key", "")),
         ),
         discord=DiscordConfig(
             webhook_url=webhook,
