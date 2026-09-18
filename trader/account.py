@@ -91,6 +91,8 @@ class WealthsimpleAccount:
         self._fx_quote_ts = 0.0
         self._usd_cache = None
         self._usd_cache_ts = 0.0
+        self._funding_cache = None
+        self._funding_ts = 0.0
 
     def _client(self):
         if self._ws is None:
@@ -113,6 +115,50 @@ class WealthsimpleAccount:
                     out = [("default", None)]
             self._resolved = out
         return self._resolved
+
+    def funding_balances(self):
+        """Available trading cash per currency, per account label.
+
+        Returns {label: [{"currency": "CAD", "amount": x}, ...]} or
+        {label: None} for accounts that could not be fetched. For a
+        margin account WS reports its available trading funds here,
+        which is effectively its buying power. Cached like values.
+        """
+        now = time.time()
+        if (
+            self._funding_cache is not None
+            and now - self._funding_ts < self.cache_seconds
+        ):
+            return self._funding_cache
+        try:
+            ws = self._client()
+        except Exception:
+            return None
+        out = {}
+        any_ok = False
+        for label, account_id in self._resolve():
+            if not account_id:
+                out[label] = None
+                continue
+            try:
+                balances = ws.get_account_funding_balances(
+                    [account_id]
+                ) or []
+                entry = balances[0] if balances else {}
+                out[label] = [
+                    {
+                        "currency": str(b.get("currency") or "").upper(),
+                        "amount": float(b.get("amount") or 0),
+                    }
+                    for b in (entry.get("trading_balances") or [])
+                ]
+                any_ok = True
+            except Exception:
+                out[label] = None
+        result = out if any_ok else None
+        self._funding_cache = result
+        self._funding_ts = now
+        return result
 
     def usd_values(self):
         """Net liquidation converted to USD by Wealthsimple itself.

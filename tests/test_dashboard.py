@@ -127,8 +127,8 @@ def test_currency_split_display():
                     dash.DASHBOARD_HTML, re.S)[0]
     # account value gains a USD equivalent
     assert "usd_value" in js and "USD</span>" in js
-    # usd cash replaces the cap text when live data is present
-    assert "usd_cash" in js
+    # cash per currency renders on its own card line
+    assert "cash_cad" in js and "cash_usd" in js
     # cost shows USD with the CAD amount in brackets
     assert "cost_usd" in js and "cost_cad" in js
 

@@ -214,6 +214,13 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                 usd_vals = usd_fn() or {}
             except Exception:
                 usd_vals = None
+        funding = None
+        fb_fn = getattr(account, "funding_balances", None)
+        if callable(fb_fn):
+            try:
+                funding = fb_fn() or {}
+            except Exception:
+                funding = None
         out = []
         for label, value in values.items():
             open_risk = store.open_risk(mode, label)
@@ -230,6 +237,16 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                 if live.get("fx"):
                     fx = live["fx"]
                 usd_cash = live.get("usd_cash")
+            cash_cad = None
+            cash_usd = None
+            if funding and funding.get(label):
+                for b in funding[label]:
+                    if b.get("currency") == "CAD":
+                        cash_cad = b["amount"]
+                    elif b.get("currency") == "USD":
+                        cash_usd = b["amount"]
+            if cash_usd is None:
+                cash_usd = usd_cash
             if usd_vals and usd_vals.get(label):
                 # wealthsimple's own conversion beats our derived fx
                 usd_value = round(usd_vals[label], 2)
@@ -246,6 +263,8 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                     "value_age": value_age,
                     "usd_value": usd_value,
                     "usd_cash": usd_cash,
+                    "cash_cad": cash_cad,
+                    "cash_usd": cash_usd,
                     "open_risk": open_risk,
                     "open_risk_pct": (
                         round(open_risk / value * 100, 2)

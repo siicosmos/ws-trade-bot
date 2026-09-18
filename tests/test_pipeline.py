@@ -1242,3 +1242,62 @@ def test_notify_mode_records_trade_log(monkeypatch):
     assert trades and trades[0]["status"] == "notified"
     assert trades[0]["mode"] == "notify"
     assert "buy" in trades[0]["detail"] or "skip" in trades[0]["detail"]
+
+
+def test_summary_includes_cash_balances(monkeypatch):
+    app, store, account = _make_app(mode="paper")
+    client = app.test_client()
+    account.funding_balances = lambda: {
+        "RRSP": [
+            {"currency": "CAD", "amount": 1500.0},
+            {"currency": "USD", "amount": 250.0},
+        ],
+        "Personal": None,
+    }
+    summary = client.get("/api/summary").get_json()
+    rrsp = next(a for a in summary["accounts"] if a["label"] == "RRSP")
+    assert rrsp["cash_cad"] == 1500.0
+    assert rrsp["cash_usd"] == 250.0
+
+
+def test_funding_balances_mapping(monkeypatch):
+    from trader.account import WealthsimpleAccount
+
+    class FakeWS:
+        def get_account_funding_balances(self, account_ids):
+            return [{
+                "id": account_ids[0],
+                "trading_balances": [
+                    {"amount": "1500.00", "currency": "CAD"},
+                    {"amount": "250.00", "currency": "USD"},
+                ],
+            }]
+
+    class FakeCfg:
+        class wealthsimple:
+            positions_refresh_seconds = 30
+            values_refresh_seconds = 60
+
+    acct = WealthsimpleAccount.__new__(WealthsimpleAccount)
+    acct.cfg = FakeCfg()
+    acct.cache_seconds = 900
+    acct._ws = FakeWS()
+    acct._resolved = None
+    acct._stale = {}
+    acct._pos_cache = None
+    acct._pos_cache_ts = 0.0
+    acct._fx_quote = None
+    acct._fx_quote_ts = 0.0
+    acct._usd_cache = None
+    acct._usd_cache_ts = 0.0
+    acct._funding_cache = None
+    acct._funding_ts = 0.0
+    acct._cache = None
+    acct._cache_ts = 0.0
+    monkeypatch.setattr(acct, "_resolve", lambda: [("RRSP", "a1")])
+
+    fb = acct.funding_balances()
+    assert fb["RRSP"] == [
+        {"currency": "CAD", "amount": 1500.0},
+        {"currency": "USD", "amount": 250.0},
+    ]

@@ -270,7 +270,12 @@ async function loadSummary() {
           : (valueCurrency === "usd" ? ' <span style="font-size:12px;color:var(--yellow)">fx unavailable</span>' : ''))) + '</div>' +
       '<div class="riskbar"><div style="width:' + pct + '%;background:' + color + '"></div></div>' +
       '<div class="sub"><span style="color:' + color + (pct >= (a.max_open_risk_pct || 30) ? ';font-weight:700' : '') + '">open risk ' + fmtMoney(risk) + ' (' + (a.open_risk_pct ?? 0) + '%)</span>' +
-      '<span>' + (a.usd_cash != null ? 'usd cash $' + a.usd_cash.toLocaleString("en-CA", {minimumFractionDigits: 2, maximumFractionDigits: 2}) : 'cap ' + (a.max_open_risk_pct) + '%') + '</span></div>';
+      '<span>cap ' + (a.max_open_risk_pct) + '%</span></div>' +
+      ((a.cash_cad != null || a.cash_usd != null)
+        ? '<div class="sub"><span>cash ' + (a.cash_cad != null ? fmtMoney(a.cash_cad) : "—") +
+          (a.cash_usd != null ? ' · $' + a.cash_usd.toLocaleString("en-CA", {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' usd' : '') + '</span>' +
+          '<span>buying power</span></div>'
+        : '');
     el.appendChild(card);
   }
 }
