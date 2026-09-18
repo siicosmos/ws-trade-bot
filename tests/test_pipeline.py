@@ -1482,37 +1482,57 @@ def test_summary_allocation_values():
 
 
 def test_schema_probe_report_and_chunking():
-    from trader.schema_probe import probe_schema, _post, MAX_MESSAGE
+    from trader.schema_probe import (
+        FINANCIAL_FIELDS, POSITION_FIELDS, _post, MAX_MESSAGE, probe_schema,
+    )
 
     class FakeWS:
+        identity_id = "id1"
+
         def graphql_query(self, op, query, variables):
-            name = variables["name"]
-            if name == "Position":
-                return {"data": {"__type": {
-                    "name": "Position",
-                    "fields": [{"name": "id"}, {"name": "quantity"},
-                               {"name": "strategy"}],
-                }}}
-            return {"data": {"__type": None}}
+            field = None
+            for name in FINANCIAL_FIELDS + POSITION_FIELDS:
+                if ("\n        " + name + "\n" in query
+                        or "node { " + name + " }" in query):
+                    field = name
+                    break
+            if field == "buyingPower":
+                raise Exception(
+                    'GraphQL errors: [{"message": "Cannot query field '
+                    "'buyingPower' on type 'X'. "
+                    "Did you mean 'totalValue'?\"}]"
+                )
+            if field == "marginAvailable":
+                raise Exception(
+                    'GraphQL errors: [{"message": "Cannot query field '
+                    "'marginAvailable' on type 'X'.\"}]"
+                )
+            if field == "strategy":
+                return {"data": {"identity": {"financials": {"current": {
+                    "positions": {"edges": [{"node": {
+                        "strategy": "VERTICAL"}}]}}}}}}
+            if field == "totalValue":
+                return {"data": {"identity": {"financials": {"current": {
+                    "totalValue": {"amount": "62000.00",
+                                   "currency": "CAD"}}}}}}
+            raise Exception(
+                'GraphQL errors: [{"message": "Cannot query field"}]'
+            )
 
     class FakeAccount:
         def _client(self):
             return FakeWS()
 
     report = probe_schema(FakeAccount())
-    assert "Position: id, quantity, strategy" in report
-    assert "Account: not found" in report
+    assert "totalValue = 62000.00 CAD" in report
+    assert "buyingPower: no (did you mean 'totalValue'?)" in report
+    assert "marginAvailable: no" in report
+    assert "strategy = VERTICAL" in report
 
     sent = []
-    from trader import schema_probe
-
-    def fake_plain(url, text):
-        sent.append(text)
-
-    monkey = None
     import trader.notify as notify_mod
     orig = notify_mod.notify_plain
-    notify_mod.notify_plain = fake_plain
+    notify_mod.notify_plain = lambda url, text: sent.append(text)
     try:
         _post("http://hook", "x" * (MAX_MESSAGE + 100))
     finally:
