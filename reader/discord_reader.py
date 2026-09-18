@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import time
 
@@ -7,6 +8,32 @@ import requests
 import uiautomation as auto
 
 from inspect_discord import find_discord_window
+
+CHROME_RE = re.compile(
+    "|".join(
+        [
+            r"社区服务器",
+            r"任何人都可以加入",
+            r"个助力",
+            r"创建频道",
+            r"加入该服务器",
+            r"anyone can join",
+            r"community server",
+            r"server boost",
+            r"boost this server",
+            r"create channel",
+        ]
+    ),
+    re.I,
+)
+
+
+def looks_like_message(text):
+    if not text:
+        return False
+    if CHROME_RE.search(text):
+        return False
+    return True
 
 
 def find_config_path():
@@ -39,6 +66,33 @@ def status_base_url(pipeline_url):
     return pipeline_url
 
 
+def message_likeness(text):
+    if not looks_like_message(text):
+        return -1
+    words = text.split()
+    if len(words) >= 3:
+        return 1
+    if re.search(r"[\d@]", text):
+        return 1
+    return 0
+
+
+def container_score(ctrl, sample=8):
+    try:
+        items = message_items(ctrl)[:sample]
+    except auto.COMError:
+        return 0
+    score = 0
+    for item in items:
+        try:
+            text = item_text(item)
+        except auto.COMError:
+            continue
+        if message_likeness(text) > 0:
+            score += 1
+    return score
+
+
 def find_message_container(window, marker):
     candidates = []
     for ctrl, depth in auto.WalkControl(window, includeTop=False, maxDepth=14):
@@ -53,7 +107,14 @@ def find_message_container(window, marker):
                 candidates.append(ctrl)
         except auto.COMError:
             continue
-    return candidates[-1] if candidates else None
+    best = None
+    best_score = 0
+    for ctrl in candidates:
+        score = container_score(ctrl)
+        if score > 0 and score >= best_score:
+            best = ctrl
+            best_score = score
+    return best
 
 
 def message_items(container):
@@ -78,7 +139,7 @@ def current_messages(container, max_items=40):
     texts = []
     for item in message_items(container)[-max_items:]:
         text = item_text(item)
-        if text:
+        if text and looks_like_message(text):
             texts.append(text)
     return texts
 
@@ -87,7 +148,7 @@ def new_messages(current, tail):
     if not current:
         return []
     if not tail:
-        return current[-3:]
+        return []
     last = tail[-1]
     for i in range(len(current) - 1, -1, -1):
         if current[i] == last:
@@ -167,10 +228,6 @@ def main():
         print(f"channel marker: {marker!r}")
     else:
         print("channel marker empty - following whatever channel is open")
-
-    container = None
-    current_channel = None
-    sync_counter = 99
 
     container = None
     current_channel = None

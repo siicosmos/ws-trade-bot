@@ -20,7 +20,7 @@ def create_app(cfg, store: Store, risk, executor, account=None,
     @app.before_request
     def auth_guard():
         token = cfg.pipeline.auth_token
-        if not token or request.path == "/health":
+        if not token or request.path in ("/health", "/favicon.ico"):
             return None
         if request.headers.get("X-Auth-Token") == token:
             return None
@@ -39,6 +39,10 @@ def create_app(cfg, store: Store, risk, executor, account=None,
     @app.get("/health")
     def health():
         return jsonify({"status": "ok", "mode": mode})
+
+    @app.get("/favicon.ico")
+    def favicon():
+        return Response(status=204)
 
     def _account_summaries():
         values = {}
