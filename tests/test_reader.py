@@ -155,10 +155,12 @@ def test_current_messages_filters_chrome(monkeypatch):
         ],
     )
     monkeypatch.setattr(dr, "item_text", lambda it: it.text)
-    assert dr.current_messages(container) == [
+    msgs = dr.current_messages(container)
+    assert [t for t, _ in msgs] == [
         "BOUGHT 0DTE SPX 7645c @ .65 tiny size",
         "123",
     ]
+    assert all(ts is None for _, ts in msgs)
 
 
 def test_current_messages_falls_back_to_item_name(monkeypatch):
@@ -170,7 +172,8 @@ def test_current_messages_falls_back_to_item_name(monkeypatch):
         ],
     )
     monkeypatch.setattr(dr, "item_text", lambda it: it.text)
-    assert dr.current_messages(container) == [
+    msgs = dr.current_messages(container)
+    assert [t for t, _ in msgs] == [
         "DoubleL, 今天 00:13",
         "Liam, 今天 00:14",
     ]
@@ -217,6 +220,17 @@ def test_strip_ui_noise():
     )
     assert dr.strip_ui_noise("plain message") == "plain message"
     assert dr.strip_ui_noise("") == ""
+
+
+def test_looks_like_message_rejects_system_messages():
+    junk = [
+        "这是 ⁠test-alerts 频道的起点。 编辑频道",
+        "September 18, 2026",
+        "Today",
+        "今天",
+    ]
+    for text in junk:
+        assert not dr.looks_like_message(text), text
 
 
 def test_looks_like_message_rejects_log_pastes():
@@ -380,9 +394,8 @@ def test_current_messages_drops_old_by_meta(monkeypatch):
         ],
     )
     monkeypatch.setattr(dr, "item_text", lambda it: it.text)
-    assert dr.current_messages(container) == [
-        f"BOUGHT 0DTE SPX 7645c @ .65"
-    ]
+    msgs = dr.current_messages(container)
+    assert [t for t, _ in msgs] == [f"BOUGHT 0DTE SPX 7645c @ .65"]
 
 
 def _load_inspect_discord():

@@ -29,6 +29,7 @@ CHROME_RE = re.compile(
             r"server boost",
             r"boost this server",
             r"create channel",
+            r"频道的起点",
         ]
     ),
     re.I,
@@ -50,14 +51,25 @@ UI_NOISE_RE = re.compile(
     "|".join(
         [
             r":[\w+-]+:\s*点击反应",
-            r"\b点击反应\b",
-            r"\b添加反应\b",
-            r"\b编辑\b",
-            r"\b转发\b",
-            r"\b更多\b",
+            r"点击反应",
+            r"添加反应",
+            r"编辑",
+            r"转发",
+            r"更多",
         ]
     )
 )
+
+DATE_ONLY_RE = re.compile(
+    r"^(?:今天|昨天|today|yesterday)?\s*"
+    r"(?:(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)"
+    r"[,]?\s*)?"
+    r"(?:january|february|march|april|may|june|july|august|september"
+    r"|october|november|december)\s+\d{1,2},?\s*\d{4}\s*$",
+    re.I,
+)
+
+TODAY_ONLY_RE = re.compile(r"^(今天|昨天|today|yesterday)$", re.I)
 
 
 MONTHS = {
@@ -156,6 +168,8 @@ def looks_like_message(text):
     if not text:
         return False
     if CHROME_RE.search(text) or LOG_PASTE_RE.search(text):
+        return False
+    if DATE_ONLY_RE.match(text) or TODAY_ONLY_RE.match(text):
         return False
     return True
 
@@ -382,7 +396,7 @@ def current_messages(container, max_items=40):
             continue
         if not is_recent_message(text):
             continue
-        texts.append(strip_ui_noise(text))
+        texts.append((strip_ui_noise(text), meta_time(text)))
     return texts
 
 
@@ -398,14 +412,21 @@ def new_messages(current, tail):
     return []
 
 
-def post_message(url, text, token=""):
+def post_message(url, text, token="", ts=None):
     headers = {"X-Auth-Token": token} if token else {}
+    sent = ts.strftime("%m-%d %H:%M") if ts else None
     try:
         resp = requests.post(
-            url, json={"text": text, "author": "", "ts": time.time()},
+            url,
+            json={
+                "text": text,
+                "author": "",
+                "ts": ts.timestamp() if ts else time.time(),
+            },
             headers=headers, timeout=10,
         )
-        log(f"-> {resp.status_code} {text[:80]}")
+        prefix = f"[sent {sent}] " if sent else ""
+        log(f"-> {resp.status_code} {prefix}{text[:80]}")
     except requests.RequestException as e:
         log(f"post failed: {e}")
 
@@ -657,19 +678,21 @@ def main():
             empty_polls = 0
 
             if resync:
-                fresh = [t for t in msgs[-5:] if t not in seen]
+                fresh = [
+                    (t, ts) for t, ts in msgs[-5:] if t not in seen
+                ]
                 resync = False
             else:
                 fresh = new_messages(msgs, tail)
             if fresh:
                 tail = msgs
-                for text in fresh:
+                for text, ts in fresh:
                     if text in seen:
                         continue
                     seen.add(text)
                     if len(seen) > 5000:
                         seen.clear()
-                    post_message(pipeline_url, text, auth_token)
+                    post_message(pipeline_url, text, auth_token, ts)
             elif msgs != tail:
                 tail = msgs
         except UIAError as e:
