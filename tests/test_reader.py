@@ -187,3 +187,19 @@ def test_git_head_none_outside_repo():
     import tempfile
     with tempfile.TemporaryDirectory() as d:
         assert dr.git_head(d) is None
+
+
+def test_normalize_channel_name():
+    assert dr.normalize_channel_name(
+        "test-message中的消息", "#test-message"
+    ) == "#test-message"
+    assert dr.normalize_channel_name(
+        "Messages in general", "#general"
+    ) == "#general"
+    assert dr.normalize_channel_name("", "#test-message") == "#test-message"
+    assert dr.normalize_channel_name(
+        "🚨│player-alerts", "#other"
+    ) == "🚨│player-alerts"
+    assert dr.normalize_channel_name(
+        "test-message", "#test-message"
+    ) == "#test-message"

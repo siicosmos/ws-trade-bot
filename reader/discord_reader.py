@@ -8,6 +8,11 @@ import psutil
 import requests
 import uiautomation as auto
 
+try:
+    from _ctypes import COMError as UIAError
+except ImportError:
+    UIAError = Exception
+
 from inspect_discord import find_discord_window
 
 CHROME_RE = re.compile(
@@ -90,6 +95,19 @@ def channel_from_title(title):
     return clean_channel(title.split("|")[0])
 
 
+def normalize_channel_name(name, title_channel=""):
+    s = clean_channel(name)
+    if not s:
+        return title_channel
+    if s.endswith("中的消息"):
+        s = s[: -len("中的消息")].strip()
+    elif s.lower().startswith("messages in "):
+        s = s[len("messages in "):].strip()
+    if title_channel and s.lstrip("#").lower() == title_channel.lstrip("#").lower():
+        return title_channel
+    return s
+
+
 def container_score(ctrl):
     score = 0
     for text in child_texts(ctrl):
@@ -103,11 +121,11 @@ def child_texts(ctrl, sample=10):
     for item in message_items(ctrl)[:sample]:
         try:
             name = (item.Name or "").strip()
-        except auto.COMError:
+        except UIAError:
             name = ""
         try:
             text = item_text(item)
-        except auto.COMError:
+        except UIAError:
             text = ""
         if name:
             texts.append(name)
@@ -132,7 +150,7 @@ def find_message_container(window, marker, title_channel="", diag=None):
             name = ctrl.Name or ""
             if not marker or marker.lower() in name.lower():
                 candidates.append(ctrl)
-        except auto.COMError:
+        except UIAError:
             continue
     best = None
     best_score = 0
@@ -149,7 +167,7 @@ def find_message_container(window, marker, title_channel="", diag=None):
                 diag.append(
                     (ctrl.ControlTypeName, (ctrl.Name or "")[:40], score)
                 )
-            except auto.COMError:
+            except UIAError:
                 pass
         if score > 0 and score >= best_score:
             best = ctrl
@@ -160,7 +178,7 @@ def find_message_container(window, marker, title_channel="", diag=None):
 def message_items(container):
     try:
         return container.GetChildren()
-    except auto.COMError:
+    except UIAError:
         return []
 
 
@@ -170,7 +188,7 @@ def item_text(item):
         try:
             if ctrl.ControlType == auto.ControlType.TextControl and ctrl.Name:
                 parts.append(ctrl.Name.strip())
-        except auto.COMError:
+        except UIAError:
             continue
     return " ".join(parts).strip()
 
@@ -182,7 +200,7 @@ def current_messages(container, max_items=40):
         if not text:
             try:
                 text = (item.Name or "").strip()
-            except auto.COMError:
+            except UIAError:
                 text = ""
         if text and looks_like_message(text):
             texts.append(text)
@@ -298,6 +316,7 @@ def main():
     container = None
     current_channel = None
     announced_channel = None
+    last_title_channel = None
     wait_attempts = 0
     empty_polls = 0
     sync_counter = 99
@@ -306,19 +325,21 @@ def main():
         try:
             try:
                 title_channel = channel_from_title(window.Name)
-            except auto.COMError:
+            except UIAError:
                 title_channel = ""
+            if not title_channel:
+                title_channel = last_title_channel or ""
             if (
                 not marker
                 and title_channel
-                and announced_channel is not None
-                and title_channel != announced_channel
+                and last_title_channel is not None
+                and title_channel != last_title_channel
             ):
                 container = None
                 tail = []
                 current_channel = title_channel
-                print(f"channel switched: {title_channel!r}")
-                announced_channel = title_channel
+            if title_channel:
+                last_title_channel = title_channel
 
             if container is None:
                 diag = []
@@ -350,8 +371,10 @@ def main():
                 wait_attempts = 0
 
             try:
-                name = clean_channel((container.Name or "")[:80])
-            except auto.COMError:
+                name = normalize_channel_name(
+                    (container.Name or "")[:80], title_channel
+                )
+            except UIAError:
                 name = ""
             if not name:
                 name = title_channel
@@ -384,16 +407,22 @@ def main():
                 tail = msgs
         except KeyboardInterrupt:
             break
-        except auto.COMError as e:
+        except UIAError as e:
             print(f"UIA error: {e}")
             container = None
             current_channel = None
-            window = find_discord_window()
+            try:
+                window = find_discord_window()
+            except UIAError:
+                window = None
             if window is None:
                 print("Discord window lost; waiting...")
                 while window is None:
                     time.sleep(2)
-                    window = find_discord_window()
+                    try:
+                        window = find_discord_window()
+                    except UIAError:
+                        window = None
 
         sync_counter += 1
         if sync_counter >= 10:

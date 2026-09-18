@@ -3,6 +3,11 @@ import argparse
 import psutil
 import uiautomation as auto
 
+try:
+    from _ctypes import COMError as UIAError
+except ImportError:
+    UIAError = Exception
+
 
 def discord_pids():
     pids = set()
@@ -25,7 +30,7 @@ def find_discord_window():
                 continue
             if win.ProcessId in pids or "discord" in (win.Name or "").lower():
                 return win
-        except auto.COMError:
+        except UIAError:
             continue
     return None
 
@@ -43,12 +48,12 @@ def dump(control, depth, out, max_depth):
         )
         print(line)
         out.append(line)
-    except auto.COMError:
+    except UIAError:
         return
     try:
         for child in control.GetChildren():
             dump(child, depth + 1, out, max_depth)
-    except auto.COMError:
+    except UIAError:
         pass
 
 

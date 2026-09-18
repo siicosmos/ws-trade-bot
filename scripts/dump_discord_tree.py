@@ -4,6 +4,11 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "reader"))
 
 import uiautomation as auto
+
+try:
+    from _ctypes import COMError as UIAError
+except ImportError:
+    UIAError = Exception
 from inspect_discord import find_discord_window
 
 
@@ -27,7 +32,7 @@ def main():
             name = (ctrl.Name or "")[:60]
             try:
                 children = ctrl.GetChildren()
-            except auto.COMError:
+            except UIAError:
                 children = []
             print(
                 f"[{ctrl.ControlTypeName}] depth={depth} name={name!r} "
@@ -48,9 +53,9 @@ def main():
                         f"    child [{child.ControlTypeName}] "
                         f"name={child_name!r} -> {texts}"
                     )
-                except auto.COMError:
+                except UIAError:
                     continue
-        except auto.COMError:
+        except UIAError:
             continue
 
 
