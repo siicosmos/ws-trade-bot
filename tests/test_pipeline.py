@@ -548,3 +548,42 @@ def test_account_sizing_shows_stale_warning():
     assert rows[0]["value"] == 50000.0
     assert rows[0]["contracts"] == 2
     assert any("cached account value" in w for w in rows[0]["warnings"])
+
+
+def test_load_env_tokens():
+    import trader.ws_tokens as wt
+
+    fd, path = tempfile.mkstemp(suffix=".env")
+    os.close(fd)
+    with open(path, "w") as f:
+        f.write("export WS_ACCESS_TOKEN=tokA\n")
+        f.write("export WS_REFRESH_TOKEN=tokB\n")
+        f.write("garbage line\n")
+    old = os.environ.get("WS_ACCESS_TOKEN"), os.environ.get("WS_REFRESH_TOKEN")
+    try:
+        os.environ.pop("WS_ACCESS_TOKEN", None)
+        os.environ.pop("WS_REFRESH_TOKEN", None)
+        assert wt.load_env_tokens(path=path) is True
+        assert os.environ["WS_ACCESS_TOKEN"] == "tokA"
+        assert os.environ["WS_REFRESH_TOKEN"] == "tokB"
+
+        os.environ["WS_ACCESS_TOKEN"] = "envwins"
+        wt.load_env_tokens(path=path)
+        assert os.environ["WS_ACCESS_TOKEN"] == "envwins"
+        assert os.environ["WS_REFRESH_TOKEN"] == "tokB"
+    finally:
+        if old[0] is None:
+            os.environ.pop("WS_ACCESS_TOKEN", None)
+        else:
+            os.environ["WS_ACCESS_TOKEN"] = old[0]
+        if old[1] is None:
+            os.environ.pop("WS_REFRESH_TOKEN", None)
+        else:
+            os.environ["WS_REFRESH_TOKEN"] = old[1]
+        os.unlink(path)
+
+
+def test_load_env_tokens_missing_file():
+    import trader.ws_tokens as wt
+
+    assert wt.load_env_tokens(path="/nonexistent/ws_tokens.env") is False

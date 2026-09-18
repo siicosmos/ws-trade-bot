@@ -22,3 +22,24 @@ def persist_env_tokens(path=None) -> bool:
     os.chmod(target, 0o600)
     _last_written = current
     return True
+
+
+def load_env_tokens(path=None) -> bool:
+    target = path or _TOKEN_PATH
+    if not os.path.exists(target):
+        return False
+    loaded = False
+    with open(target) as f:
+        for line in f:
+            line = line.strip()
+            if not line or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.replace("export", "").strip()
+            value = value.strip()
+            if key not in ("WS_ACCESS_TOKEN", "WS_REFRESH_TOKEN"):
+                continue
+            if not os.environ.get(key) and value:
+                os.environ[key] = value
+                loaded = True
+    return loaded

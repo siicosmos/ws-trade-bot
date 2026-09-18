@@ -18,6 +18,10 @@ def main():
     store = Store(args.db)
     mode = cfg.trading.mode
 
+    from trader.ws_tokens import load_env_tokens
+
+    load_env_tokens()
+
     account = None
     executor = None
 
