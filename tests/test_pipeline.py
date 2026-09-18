@@ -627,3 +627,23 @@ def test_notify_mode_alert_with_correction_flag():
     )
     assert res["status"] == "notified"
     assert res["correction"] is True
+
+
+def test_ignored_message_forwarded_plain(monkeypatch):
+    import trader.notify as notify_mod
+
+    sent = []
+
+    def fake_post(url, json=None, timeout=None, **kw):
+        sent.append((url, json))
+
+    monkeypatch.setattr(notify_mod.requests, "post", fake_post)
+
+    cfg, store, account, risk = _setup(mode="notify")
+    cfg.discord.webhook_url = "http://hook"
+    res = process_alert(
+        "executed 2.15 ^", "", cfg, store, risk, None, account
+    )
+    assert res["status"] == "ignored"
+    plain = [p for p in sent if p[1] and "content" in p[1]]
+    assert plain and plain[0][1]["content"] == "executed 2.15 ^"

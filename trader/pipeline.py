@@ -1,7 +1,12 @@
 import hashlib
 
 from .executor import ExecutionResult, account_sizing
-from .notify import notify_alert, notify_correction, notify_discord
+from .notify import (
+    notify_alert,
+    notify_correction,
+    notify_discord,
+    notify_plain,
+)
 from .parser import is_correction, parse_alert
 from .risk import RiskEngine
 
@@ -31,6 +36,7 @@ def process_alert(
         if correction:
             notify_correction(cfg.discord.webhook_url, text)
             return {"status": "correction", "alert": None}
+        notify_plain(cfg.discord.webhook_url, text)
         return {"status": "ignored", "reason": "no actionable signal"}
 
     if cfg.trading.mode == "notify":

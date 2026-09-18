@@ -23,6 +23,19 @@ def notify_discord(webhook_url: str, title: str, fields: dict, ok: bool = True,
         pass
 
 
+def notify_plain(webhook_url: str, text: str):
+    if not webhook_url:
+        return
+    try:
+        requests.post(
+            webhook_url,
+            json={"content": str(text or "")[:1500]},
+            timeout=10,
+        )
+    except requests.RequestException:
+        pass
+
+
 def notify_correction(webhook_url: str, text: str):
     if not webhook_url:
         return
