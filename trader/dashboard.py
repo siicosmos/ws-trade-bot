@@ -92,12 +92,12 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   .pos { table-layout: fixed; font-size: 12px; }
   .pos th, .pos td { padding: 6px 5px; word-break: break-word; }
   .pos th:nth-child(1), .pos td:nth-child(1) { width: 12%; }
-  .pos th:nth-child(2), .pos td:nth-child(2) { width: 22%; }
-  .pos th:nth-child(3), .pos td:nth-child(3) { width: 11%; }
+  .pos th:nth-child(2), .pos td:nth-child(2) { width: 17%; }
+  .pos th:nth-child(3), .pos td:nth-child(3) { width: 9%; }
   .pos th:nth-child(4), .pos td:nth-child(4) { width: 13%; }
   .pos th:nth-child(5), .pos td:nth-child(5) { width: 13%; }
   .pos th:nth-child(6), .pos td:nth-child(6) { width: 14%; }
-  .pos th:nth-child(7), .pos td:nth-child(7) { width: 15%; }
+  .pos th:nth-child(7), .pos td:nth-child(7) { width: 20%; }
   th { text-align: left; color: var(--muted); font-weight: 600; padding: 8px 10px; border-bottom: 1px solid var(--border); font-size: 11px; text-transform: uppercase; }
   td { padding: 8px 10px; border-bottom: 1px solid #21262d; font-variant-numeric: tabular-nums; }
   tr:hover td { background: #1c2129; }
