@@ -282,26 +282,7 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                     for r in live["positions"]
                 ), 2)
 
-            def _margin_total(rows):
-                total = 0.0
-                found = False
-                for r in rows:
-                    amt = r.get("margin_req_amount")
-                    if amt is None:
-                        continue
-                    found = True
-                    if r.get("margin_req_currency") == "USD":
-                        total += amt * conv_fx
-                    else:
-                        total += amt
-                return round(total, 2) if found else None
-
-            margin_req = _margin_total(
-                (live["positions"] if live is not None else []) + (sk or [])
-            )
-            if margin_req is not None:
-                # registered plans have no margin: the reported
-                # figure is cash collateral
+            def _registered_plan():
                 type_map_fn = getattr(account, "account_type_map", None)
                 resolve_fn = getattr(account, "_resolve", None)
                 if callable(type_map_fn) and callable(resolve_fn):
@@ -313,14 +294,68 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                         acct_type = str(
                             type_map.get(ids.get(label) or "") or ""
                         ).upper()
-                        label_upper = str(label or "").upper()
-                        if acct_type in REGISTERED_ACCOUNT_TYPES or any(
-                            t in label_upper
-                            for t in REGISTERED_ACCOUNT_TYPES
-                        ):
-                            margin_req = None
+                        if acct_type in REGISTERED_ACCOUNT_TYPES:
+                            return True
                     except Exception:
                         pass
+                label_upper = str(label or "").upper()
+                return any(
+                    t in label_upper for t in REGISTERED_ACCOUNT_TYPES
+                )
+
+            margin_req = None
+            margin_used = None
+            margin_available = None
+            max_buying_power = None
+            if not _registered_plan() and value:
+                # computed per the WS margin page: requirement is
+                # the maintenance rate over holdings (rate per
+                # symbol, long options get no loan value, shorts
+                # count their defined risk), margin used is the
+                # negative trading balance, availability is equity
+                # minus what is committed
+                default_rate = getattr(
+                    cfg.wealthsimple, "stock_margin_rate", 0.30
+                )
+                overrides = getattr(
+                    cfg.wealthsimple, "margin_rate_overrides", {}
+                ) or {}
+                req = 0.0
+                for r in (sk or []):
+                    mv = r.get("market_value") or 0
+                    if r.get("currency") == "USD":
+                        mv *= conv_fx
+                    sym = str(r.get("underlying") or "")
+                    rate = float(overrides.get(sym, default_rate))
+                    req += mv * rate
+                if live is not None:
+                    for r in live["positions"]:
+                        if r.get("short"):
+                            req += r.get("risk_cad") or 0
+                        else:
+                            req += (
+                                abs(r.get("market_value") or 0)
+                                * conv_fx
+                            )
+                margin_req = round(req, 2)
+                used = 0.0
+                if funding and funding.get(label):
+                    for b in funding[label]:
+                        amt = b.get("amount")
+                        if amt is not None and amt < 0:
+                            used += -amt * (
+                                conv_fx
+                                if b.get("currency") == "USD" else 1
+                            )
+                margin_used = round(used, 2)
+                # NLV already nets the loan as negative cash, so
+                # availability is simply equity minus requirement
+                margin_available = round(value - margin_req, 2)
+                max_buying_power = (
+                    round(margin_available / default_rate, 2)
+                    if margin_available and margin_available > 0
+                    else 0.0
+                )
             out.append(
                 {
                     "label": label,
@@ -334,6 +369,9 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                     "stock_value": stock_value,
                     "option_value": option_value,
                     "margin_requirement": margin_req,
+                    "margin_used": margin_used,
+                    "margin_available": margin_available,
+                    "max_buying_power": max_buying_power,
                     "open_risk_pct": (
                         round(open_risk / value * 100, 2)
                         if value and value > 0

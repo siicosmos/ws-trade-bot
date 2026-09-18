@@ -85,6 +85,11 @@ class WealthsimpleConfig:
     exchange_hint: str = ""
     positions_refresh_seconds: int = 30
     values_refresh_seconds: int = 60
+    # maintenance margin requirement rate for stock holdings in
+    # margin accounts (WS uses 30% for most listings), with optional
+    # per-symbol overrides
+    stock_margin_rate: float = 0.30
+    margin_rate_overrides: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -259,6 +264,12 @@ def load_config(path: str) -> Config:
             ),
             values_refresh_seconds=int(
                 _get(ws_raw, "values_refresh_seconds", 60)
+            ),
+            stock_margin_rate=float(
+                _get(ws_raw, "stock_margin_rate", 0.30)
+            ),
+            margin_rate_overrides=dict(
+                _get(ws_raw, "margin_rate_overrides", {}) or {}
             ),
         ),
         parser=ParserConfig(

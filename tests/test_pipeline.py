@@ -1636,28 +1636,39 @@ def test_summary_margin_requirement():
     app, store, account = _make_app()
     client = app.test_client()
     account.open_option_positions = lambda: {
-        "Personal": {
-            "positions": [
-                {"market_value": 100.0, "risk_cad": 120.0,
-                 "cost_cad": 130.0, "short": False,
-                 "margin_req_amount": 55.0,
-                 "margin_req_currency": "USD"},
-            ],
-            "fx": 1.25,
-        },
+        "Personal": {"positions": [], "fx": 1.25, "usd_cash": None},
     }
     account.stock_holdings = lambda: {
         "Personal": [
-            {"market_value": 800.0, "currency": "USD",
-             "margin_req_amount": 400.0,
-             "margin_req_currency": "USD"},
+            # VDY / ZWC-style CAD holdings: 30% maintenance
+            {"market_value": 56.13, "currency": "CAD",
+             "underlying": "VDY"},
+            {"market_value": 1871.07, "currency": "CAD",
+             "underlying": "ZWC"},
         ],
     }
+    account.funding_balances = lambda: {
+        "Personal": [
+            {"currency": "CAD", "amount": 0.30},
+            {"currency": "USD", "amount": -148.29},
+        ],
+    }
+    account.values = lambda: {"Personal": 1720.02}
+    account.account_type_map = lambda: {"pers": "PERSONAL"}
+    account._resolve = lambda: [("Personal", "pers")]
+
     summary = client.get("/api/summary").get_json()
     row = next(a for a in summary["accounts"] if a["label"] == "Personal")
-    # 55 * 1.25 + 400 * 1.25
-    assert row["margin_requirement"] == 568.75
-
+    assert row["margin_requirement"] == round(0.3 * 1927.20, 2)
+    # 148.29 usd loan at the account fx (1.25 here)
+    assert row["margin_used"] == round(148.29 * 1.25, 2)
+    # NLV already nets the loan
+    assert row["margin_available"] == round(
+        1720.02 - round(0.3 * 1927.20, 2), 2
+    )
+    assert row["max_buying_power"] == round(
+        row["margin_available"] / 0.30, 2
+    )
 
 def test_registered_account_no_margin(monkeypatch):
     app, store, account = _make_app()
@@ -1666,26 +1677,30 @@ def test_registered_account_no_margin(monkeypatch):
         "Personal": {
             "positions": [
                 {"market_value": 100.0, "risk_cad": 120.0,
-                 "cost_cad": 130.0, "short": False,
-                 "margin_req_amount": 55.0,
-                 "margin_req_currency": "USD"},
+                 "cost_cad": 130.0, "short": False},
             ],
             "fx": 1.25,
         },
     }
-    account.stock_holdings = lambda: {"Personal": []}
+    account.stock_holdings = lambda: {
+        "Personal": [
+            {"market_value": 800.0, "currency": "USD",
+             "underlying": "AAPL"},
+        ],
+    }
+    account.values = lambda: {"Personal": 50000.0}
     account._resolve = lambda: [("Personal", "pers")]
     account.account_type_map = lambda: {"pers": "RRSP"}
 
     summary = client.get("/api/summary").get_json()
     row = next(a for a in summary["accounts"] if a["label"] == "Personal")
     assert row["margin_requirement"] is None
+    assert row["margin_available"] is None
 
     account.account_type_map = lambda: {"pers": "PERSONAL"}
     summary = client.get("/api/summary").get_json()
     row = next(a for a in summary["accounts"] if a["label"] == "Personal")
-    assert row["margin_requirement"] == 68.75
-
+    assert row["margin_requirement"] is not None
 
 def test_account_type_map_cached():
     from trader.account import WealthsimpleAccount
@@ -1715,39 +1730,18 @@ def test_account_type_map_cached():
 def test_registered_label_suppresses_margin():
     app, store, account = _make_app()
     client = app.test_client()
-    # type lookup unavailable (get_accounts failed) but the label
-    # itself names a registered plan
-    account.open_option_positions = lambda: {
-        "Personal": {
-            "positions": [
-                {"market_value": 100.0, "risk_cad": 120.0,
-                 "cost_cad": 130.0, "short": False,
-                 "margin_req_amount": 55.0,
-                 "margin_req_currency": "USD"},
-            ],
-            "fx": 1.25,
-        },
+    account.open_option_positions = lambda: {"RRSP": None}
+    account.stock_holdings = lambda: {
+        "RRSP": [
+            {"market_value": 800.0, "currency": "CAD",
+             "underlying": "AAPL"},
+        ],
     }
-    account.stock_holdings = lambda: {"Personal": []}
+    account.values = lambda: {"RRSP": 50000.0}
     account.account_type_map = lambda: {}
-    account._resolve = lambda: [("Personal", "pers")]
-    summary = client.get("/api/summary").get_json()
-    row = next(a for a in summary["accounts"] if a["label"] == "Personal")
-    assert row["margin_requirement"] == 68.75
-
-    # same margin rows under an RRSP label -> suppressed by the
-    # label alone even with no type information
-    account.open_option_positions = lambda: {
-        "RRSP": {
-            "positions": [
-                {"market_value": 100.0, "risk_cad": 120.0,
-                 "cost_cad": 130.0, "short": False,
-                 "margin_req_amount": 55.0,
-                 "margin_req_currency": "USD"},
-            ],
-            "fx": 1.25,
-        },
-    }
+    account._resolve = lambda: [("RRSP", "pers")]
     summary = client.get("/api/summary").get_json()
     row = next(a for a in summary["accounts"] if a["label"] == "RRSP")
     assert row["margin_requirement"] is None
+    assert row["margin_available"] is None
+

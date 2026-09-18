@@ -320,5 +320,7 @@ def test_margin_requirement_line():
 
     js = re.findall(r"<script>(.*?)</script>",
                     dash.DASHBOARD_HTML, re.S)[0]
-    assert "margin requirement " in js
+    assert "margin used " in js
+    assert "margin available " in js
+    assert "max buying power " in js
     assert 'esc(p.strategy_type || "multi-leg spread")' in js
