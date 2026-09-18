@@ -78,7 +78,7 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 <h2>Settings <button id="settings-save" onclick="saveSettings()" style="float:right;background:#238636;color:#fff;border:0;border-radius:6px;padding:4px 14px;font-weight:600;cursor:pointer">Save</button></h2>
 <div id="settings" class="card"></div>
 
-<h2>Recent Alerts</h2>
+<h2>Recent Alerts <button id="toggle-ignored" onclick="toggleIgnored()" style="float:right;background:#21262d;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 14px;font-size:12px;cursor:pointer">Hide ignored</button></h2>
 <div id="signals"></div>
 
 <h2>Trade Log</h2>
@@ -163,12 +163,22 @@ async function loadPositions() {
   el.innerHTML = html + "</table>";
 }
 
+let showIgnored = true;
+
+function toggleIgnored() {
+  showIgnored = !showIgnored;
+  document.getElementById("toggle-ignored").textContent = showIgnored ? "Hide ignored" : "Show ignored";
+  loadSignals();
+}
+
 async function loadSignals() {
   const rows = await api("/api/signals");
   const el = document.getElementById("signals");
+  const visible = showIgnored ? rows : rows.filter(function(s) { return s.parsed || s.correction; });
   if (!rows.length) { el.innerHTML = '<div class="empty">no alerts yet</div>'; return; }
+  if (!visible.length) { el.innerHTML = '<div class="empty">no matching alerts (ignored hidden)</div>'; return; }
   let html = "<table><tr><th>Time</th><th>Message</th><th>Status</th></tr>";
-  for (const s of rows) {
+  for (const s of visible) {
     const tag = s.parsed ? '<span class="tag buy">signal</span>' : (s.correction ? '<span class="tag skip">correction</span>' : '<span class="tag ignored">ignored</span>');
     html += "<tr><td>" + fmtTime(s.ts) + '</td><td class="msg">' + (s.text || "").replace(/</g, "&lt;") + "</td><td>" + tag + "</td></tr>";
   }
@@ -216,9 +226,9 @@ async function loadSettings() {
     html += '<div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">' + label + '</label>' +
       '<input id="set-' + k + '" type="number" step="any" value="' + t[k] + '" style="width:100%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px"></div>';
   }
-  for (const k of ["ticker_whitelist", "skip_underlyings"]) {
+  for (const [k, hint] of [["ticker_whitelist", "comma-separated tickers, e.g. SPY, SPX - empty = allow all"], ["skip_underlyings", "comma-separated tickers never traded, e.g. SPX - empty = none"]]) {
     html += '<div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">' + k.replace('_', ' ') + '</label>' +
-      '<input id="set-' + k + '" type="text" value="' + (t[k] || []).join(', ') + '" placeholder="empty = off" style="width:100%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px"></div>';
+      '<input id="set-' + k + '" type="text" value="' + (t[k] || []).join(', ') + '" placeholder="' + hint + '" style="width:100%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px"></div>';
   }
   html += "</div>";
   html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-top:14px">';
@@ -274,8 +284,9 @@ async function saveSettings() {
   for (const k of ["risk_per_trade_pct","max_contracts_per_trade","max_open_risk_pct","stop_loss_pct","trailing_stop_pct","stop_check_seconds","max_consecutive_losses","min_dte_days","max_trades_per_day","cooldown_seconds","dedupe_window_minutes"]) {
     trading[k] = num("set-" + k);
   }
-  trading.ticker_whitelist = val("set-ticker_whitelist");
-  trading.skip_underlyings = val("set-skip_underlyings");
+  const toList = (id) => val(id).split(",").map(function(s) { return s.trim(); }).filter(Boolean);
+  trading.ticker_whitelist = toList("set-ticker_whitelist");
+  trading.skip_underlyings = toList("set-skip_underlyings");
   const tiers = {};
   document.querySelectorAll("[id^=tier-]").forEach(() => {});
   const names = new Set();
