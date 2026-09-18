@@ -239,3 +239,14 @@ def test_utc_storage_rendered_locally():
     assert "d.getHours()" in js and "d.getMinutes()" in js
     # ws expiry dates are ET trading dates - display date only
     assert 'String(p.expiry || "").slice(0, 10)' in js
+
+
+def test_dual_timestamps_rendered():
+    import trader.dashboard as dash
+
+    js = re.findall(r"<script>(.*?)</script>",
+                    dash.DASHBOARD_HTML, re.S)[0]
+    # recent alerts show the alert time and when it was parsed down
+    assert "parsed ' + fmtTime(s.received_ts)" in js
+    assert "function fmtIso(" in js
+    assert "d.getHours()" in js and "d.getMinutes()" in js

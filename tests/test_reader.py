@@ -890,11 +890,39 @@ def test_store_keeps_message_time():
 
     store = Store(":memory:")
     epoch = time_mod.time() - 3600  # an hour ago
-    store.record_signal("k", "a", "text", True, ts_epoch=epoch)
-    row = store.recent_signals()[0]
     from datetime import datetime, timezone
 
+    parsed_epoch = time_mod.time()
+    store.record_signal(
+        "k", "a", "text", True, ts_epoch=epoch, parsed_epoch=parsed_epoch
+    )
+    row = store.recent_signals()[0]
     expect = datetime.fromtimestamp(
         epoch, tz=timezone.utc
     ).isoformat(timespec="seconds")
     assert row["ts"] == expect
+    expect_r = datetime.fromtimestamp(
+        parsed_epoch, tz=timezone.utc
+    ).isoformat(timespec="seconds")
+    assert row["received_ts"] == expect_r
+
+
+def test_snap_falls_back_to_end_key(monkeypatch):
+    import discord_reader as dr
+
+    class NoScroll:
+        def GetScrollPattern(self):
+            return None
+
+        def SetFocus(self):
+            NoScroll.focused = True
+
+    NoScroll.focused = False
+    sent = []
+    monkeypatch.setattr(dr.auto, "SendKeys",
+                        lambda keys, waitTime=None: sent.append(keys))
+
+    logs = []
+    dr.snap_to_bottom(NoScroll(), log_fn=logs.append)
+    assert NoScroll.focused
+    assert sent == ["{End}"]

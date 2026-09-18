@@ -204,13 +204,16 @@ function fmtMoney(v) {
   return "$" + Number(v).toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+function fmtIso(ts) {
+  let s = String(ts);
+  // stored values are UTC; append Z when a value lacks a timezone
+  if (!/[zZ+]/.test(s.slice(-6))) s += "Z";
+  return s;
+}
+
 function fmtTime(ts) {
   if (!ts) return "—";
-  let s = String(ts);
-  // stored values are UTC; render in the browser's timezone just
-  // like the clock does
-  if (!/[zZ+]/.test(s.slice(-6))) s += "Z";
-  const d = new Date(s);
+  const d = new Date(fmtIso(ts));
   if (isNaN(d)) return String(ts);
   const pad = (n) => String(n).padStart(2, "0");
   return pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + " " +
@@ -359,7 +362,24 @@ async function loadSignals() {
   for (const s of visible) {
     const test = (s.channel || "").toLowerCase().indexOf("test") >= 0 ? ' <span class="tag skip" title="from ' + esc(s.channel || "") + '">test</span>' : "";
     const tag = (s.parsed ? '<span class="tag buy">signal</span>' : (s.correction ? '<span class="tag skip">correction</span>' : '<span class="tag ignored">ignored</span>')) + test;
-    html += "<tr><td>" + fmtTime(s.ts) + '</td><td class="msg">' + esc(s.text || "") + "</td><td>" + tag + "</td></tr>";
+    let cell = fmtTime(s.ts);
+    if (s.received_ts) {
+      const lag = Math.round(
+        (new Date(fmtIso(s.received_ts)) - new Date(fmtIso(s.ts))) / 1000
+      );
+      if (!isNaN(lag) && s.ts) {
+        const lbl = lag >= 0 ? "+" : "-";
+        const a = Math.abs(lag);
+        const lagTxt = a >= 3600
+          ? lbl + Math.floor(a / 3600) + "h" + Math.round((a % 3600) / 60) + "m"
+          : a >= 60 ? lbl + Math.round(a / 60) + "m" : lbl + a + "s";
+        cell += '<span class="subv">parsed ' + fmtTime(s.received_ts) +
+          " (" + lagTxt + ")</span>";
+      } else {
+        cell += '<span class="subv">parsed ' + fmtTime(s.received_ts) + "</span>";
+      }
+    }
+    html += "<tr><td>" + cell + '</td><td class="msg">' + esc(s.text || "") + "</td><td>" + tag + "</td></tr>";
   }
   el.innerHTML = html + "</table>";
 }

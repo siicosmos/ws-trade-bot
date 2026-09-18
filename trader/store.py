@@ -21,7 +21,8 @@ class Store:
                     text TEXT,
                     parsed INTEGER NOT NULL DEFAULT 0,
                     correction INTEGER NOT NULL DEFAULT 0,
-                    channel TEXT
+                    channel TEXT,
+                    received_ts TEXT
                 );
                 CREATE TABLE IF NOT EXISTS trades (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -127,7 +128,29 @@ class Store:
 
     def record_signal(self, message_key: str, author: str, text: str, parsed: bool,
                       correction: bool = False, channel: str = "",
-                      ts_epoch=None):
+                      ts_epoch=None, parsed_epoch=None):
+        with self._lock, self._conn:
+            cols = {
+                r[1] for r in self._conn.execute(
+                    "PRAGMA table_info(signals)"
+                )
+            }
+            if "received_ts" not in cols:
+                self._conn.execute(
+                    "ALTER TABLE signals ADD COLUMN received_ts TEXT"
+                )
+        # both stored in UTC: the alert's own (Discord-displayed) time
+        # and the moment the reader parsed and passed it down
+        ts = (
+            datetime.fromtimestamp(ts_epoch, tz=timezone.utc)
+            .isoformat(timespec="seconds")
+            if ts_epoch else self._now()
+        )
+        received = (
+            datetime.fromtimestamp(parsed_epoch, tz=timezone.utc)
+            .isoformat(timespec="seconds")
+            if parsed_epoch else None
+        )
         # everything is stored in UTC; the browser renders it in the
         # user's timezone
         ts = (
@@ -138,10 +161,11 @@ class Store:
         with self._lock, self._conn:
             self._conn.execute(
                 "INSERT OR IGNORE INTO signals "
-                "(message_key, ts, author, text, parsed, correction, channel) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "(message_key, ts, author, text, parsed, correction, "
+                "channel, received_ts) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (message_key, ts, author, text[:2000], int(parsed),
-                 int(correction), channel[:80]),
+                 int(correction), channel[:80], received),
             )
 
     def trades_today(self, mode: str) -> int:
@@ -347,11 +371,12 @@ class Store:
     def recent_signals(self, limit=50):
         with self._lock, self._conn:
             rows = self._conn.execute(
-                "SELECT ts, text, parsed, correction, channel FROM signals "
-                "ORDER BY rowid DESC LIMIT ?",
+                "SELECT ts, text, parsed, correction, channel, received_ts "
+                "FROM signals ORDER BY rowid DESC LIMIT ?",
                 (limit,),
             ).fetchall()
-        keys = ["ts", "text", "parsed", "correction", "channel"]
+        keys = ["ts", "text", "parsed", "correction", "channel",
+                "received_ts"]
         return [dict(zip(keys, r)) for r in rows]
 
     def get_cached_value(self, label: str):

@@ -409,9 +409,17 @@ def create_app(cfg, store: Store, risk, executor, account=None,
             ts = float(data.get("ts")) if data.get("ts") else None
         except (TypeError, ValueError):
             ts = None
+        try:
+            parsed_ts = (
+                float(data.get("parsed_ts"))
+                if data.get("parsed_ts") else None
+            )
+        except (TypeError, ValueError):
+            parsed_ts = None
         result = process_alert(
             text, author, cfg, store, risk, executor, account,
             channel=str(data.get("channel") or ""), ts=ts,
+            parsed_ts=parsed_ts,
         )
         return jsonify(result)
 

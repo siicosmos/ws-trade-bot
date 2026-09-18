@@ -587,7 +587,8 @@ def post_message(url, text, token="", ts=None, verify=True, channel=""):
             json={
                 "text": text,
                 "author": "",
-                "ts": ts.timestamp() if ts else time.time(),
+                "ts": ts.timestamp() if ts else None,
+                "parsed_ts": time.time(),
                 "channel": channel or "",
             },
             headers=headers, timeout=10, verify=verify,
@@ -630,12 +631,21 @@ def snap_to_bottom(container, log_fn=None):
         except Exception:
             node = None
     if not pattern:
-        if log_fn and time.time() - _snap_warn_ts > 300:
-            log_fn(
-                "no scroll pattern on the message pane or its "
-                "ancestors - cannot auto-scroll"
-            )
-            _snap_warn_ts = time.time()
+        # fallback: focus the pane and send End - Discord jumps the
+        # chat to the newest messages, materializing them in the tree
+        try:
+            container.SetFocus()
+            auto.SendKeys("{End}", waitTime=0.05)
+            if log_fn and time.time() - _snap_warn_ts > 600:
+                log_fn(
+                    "no scroll pattern - using End key to jump to "
+                    "latest messages"
+                )
+                _snap_warn_ts = time.time()
+        except Exception as e:
+            if log_fn and time.time() - _snap_warn_ts > 600:
+                log_fn(f"auto-scroll fallback failed: {e}")
+                _snap_warn_ts = time.time()
         return
     try:
         visible = _uia_prop(pattern, "VerticalViewSize")
