@@ -697,12 +697,14 @@ def main():
                         notable = [
                             (ctype, cname, score)
                             for ctype, cname, score in diag
-                            if cname or score != 0
+                            if cname
                         ]
                         for ctype, cname, score in notable[-8:]:
                             log(
                                 f"  [{ctype}] name={cname!r} score={score}"
                             )
+                        if not notable:
+                            log("  (no named candidates)")
                     resp = sync_with_server(
                         base_url, auth_token, None, False,
                         verify_tls,
