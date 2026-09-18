@@ -533,7 +533,7 @@ def new_messages(current, tail):
     return []
 
 
-def post_message(url, text, token="", ts=None, verify=True):
+def post_message(url, text, token="", ts=None, verify=True, channel=""):
     headers = {"X-Auth-Token": token} if token else {}
     sent = ts.strftime("%m-%d %H:%M") if ts else None
     try:
@@ -543,6 +543,7 @@ def post_message(url, text, token="", ts=None, verify=True):
                 "text": text,
                 "author": "",
                 "ts": ts.timestamp() if ts else time.time(),
+                "channel": channel or "",
             },
             headers=headers, timeout=10, verify=verify,
         )
@@ -844,7 +845,10 @@ def main():
                     seen.add(text)
                     if len(seen) > 5000:
                         seen.clear()
-                    post_message(pipeline_url, text, auth_token, ts, verify_tls)
+                    post_message(
+                        pipeline_url, text, auth_token, ts, verify_tls,
+                        current_channel or "",
+                    )
             elif msgs != tail:
                 tail = msgs
         except UIAError as e:

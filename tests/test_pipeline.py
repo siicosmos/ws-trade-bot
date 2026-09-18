@@ -669,3 +669,23 @@ def test_repeated_plain_message_notifies_each_time(monkeypatch):
     plain = [p for p in sent if p[1] and "content" in p[1]]
     assert len(plain) == 2
     assert plain[0][1]["content"] == "executed 2.15 ^"
+
+
+def test_signal_records_channel():
+    cfg, store, account, risk = _setup(mode="notify")
+    res = process_alert(
+        "BOUGHT 0DTE SPY 759c @ 1.5", "", cfg, store, risk, None, account,
+        channel="test-alerts",
+    )
+    assert res["status"] == "notified"
+    signals = store.recent_signals(10)
+    assert signals[0]["channel"] == "test-alerts"
+
+
+def test_signal_channel_defaults_empty():
+    cfg, store, account, risk = _setup(mode="notify")
+    process_alert(
+        "BOUGHT 0DTE SPY 759c @ 1.5", "", cfg, store, risk, None, account
+    )
+    signals = store.recent_signals(10)
+    assert signals[0]["channel"] == ""

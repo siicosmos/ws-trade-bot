@@ -20,7 +20,8 @@ class Store:
                     author TEXT,
                     text TEXT,
                     parsed INTEGER NOT NULL DEFAULT 0,
-                    correction INTEGER NOT NULL DEFAULT 0
+                    correction INTEGER NOT NULL DEFAULT 0,
+                    channel TEXT
                 );
                 CREATE TABLE IF NOT EXISTS trades (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -64,6 +65,12 @@ class Store:
                 self._conn.execute(
                     "ALTER TABLE signals ADD COLUMN correction "
                     "INTEGER NOT NULL DEFAULT 0"
+                )
+            except sqlite3.OperationalError:
+                pass
+            try:
+                self._conn.execute(
+                    "ALTER TABLE signals ADD COLUMN channel TEXT"
                 )
             except sqlite3.OperationalError:
                 pass
@@ -119,14 +126,14 @@ class Store:
             return row is not None
 
     def record_signal(self, message_key: str, author: str, text: str, parsed: bool,
-                      correction: bool = False):
+                      correction: bool = False, channel: str = ""):
         with self._lock, self._conn:
             self._conn.execute(
                 "INSERT OR IGNORE INTO signals "
-                "(message_key, ts, author, text, parsed, correction) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
+                "(message_key, ts, author, text, parsed, correction, channel) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (message_key, self._now(), author, text[:2000], int(parsed),
-                 int(correction)),
+                 int(correction), channel[:80]),
             )
 
     def trades_today(self, mode: str) -> int:
@@ -332,11 +339,11 @@ class Store:
     def recent_signals(self, limit=50):
         with self._lock, self._conn:
             rows = self._conn.execute(
-                "SELECT ts, text, parsed, correction FROM signals "
+                "SELECT ts, text, parsed, correction, channel FROM signals "
                 "ORDER BY rowid DESC LIMIT ?",
                 (limit,),
             ).fetchall()
-        keys = ["ts", "text", "parsed", "correction"]
+        keys = ["ts", "text", "parsed", "correction", "channel"]
         return [dict(zip(keys, r)) for r in rows]
 
     def get_cached_value(self, label: str):

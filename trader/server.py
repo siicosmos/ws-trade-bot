@@ -252,7 +252,8 @@ def create_app(cfg, store: Store, risk, executor, account=None,
         text = data.get("text", "")
         author = data.get("author", "")
         result = process_alert(
-            text, author, cfg, store, risk, executor, account
+            text, author, cfg, store, risk, executor, account,
+            channel=str(data.get("channel") or ""),
         )
         return jsonify(result)
 

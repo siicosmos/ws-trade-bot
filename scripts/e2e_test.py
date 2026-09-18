@@ -110,9 +110,12 @@ def stop(proc):
     raise RuntimeError("server still responding after stop")
 
 
-def post_alert(text, headers=None):
+def post_alert(text, headers=None, channel=""):
+    payload = {"text": text, "author": "e2e"}
+    if channel:
+        payload["channel"] = channel
     r = requests.post(
-        f"{_current_base()}/alert", json={"text": text, "author": "e2e"}, timeout=10,
+        f"{_current_base()}/alert", json=payload, timeout=10,
         headers=headers or {},
     )
     if r.status_code != 200:
@@ -149,6 +152,15 @@ def run_notify_phase():
         rrsp = sizing_of(resp, "RRSP")
         pers = sizing_of(resp, "Personal")
         check("small size -> notified", code == 200 and resp["status"] == "notified")
+
+        code, resp = post_alert(
+            "BOUGHT 0DTE SPY 758c @ 1.5 @everyone small size",
+            channel="test-alerts",
+        )
+        sig = requests.get(f"{_current_base()}/api/signals", timeout=5).json()
+        row = [s for s in sig if s.get("channel") == "test-alerts"]
+        check("test channel recorded on signal", bool(row), str(sig[:2]))
+        rrsp = sizing_of(resp, "RRSP")
         check("RRSP small sizing 2 contracts", rrsp.get("contracts") == 2, str(rrsp))
         check("RRSP tier cap warning", any("tier max" in w for w in rrsp.get("warnings", [])), str(rrsp))
         check("Personal small sizing 0 with warning", pers.get("contracts") == 0 and any("can't cover" in w for w in pers.get("warnings", [])), str(pers))

@@ -17,7 +17,8 @@ def _message_key(text: str, author: str = "") -> str:
 
 
 def process_alert(
-    text, author, cfg, store, risk: RiskEngine, executor, account=None
+    text, author, cfg, store, risk: RiskEngine, executor, account=None,
+    channel: str = "",
 ) -> dict:
     if not text or not text.strip():
         return {"status": "ignored", "reason": "empty message"}
@@ -28,7 +29,8 @@ def process_alert(
     if (alert is not None or correction) and store.seen_signal(key):
         return {"status": "ignored", "reason": "duplicate message"}
     store.record_signal(
-        key, author, text, alert is not None, correction=correction
+        key, author, text, alert is not None, correction=correction,
+        channel=channel,
     )
 
     if alert is None:
