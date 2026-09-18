@@ -192,3 +192,68 @@ def test_seed_skipped_without_pull_reflog(tmp_path):
     _commit(repo, "a")
     up = AutoUpdater(_cfg(), str(repo), "")
     assert up.last_pull() is None
+
+
+def test_interval_change_applies_mid_cycle(tmp_path, monkeypatch):
+    # a shorter interval saved while a long cycle is waiting must
+    # shorten the running wait instead of waiting out the old deadline
+    import trader.updater as upd
+
+    class FakeClock:
+        def __init__(self):
+            self.now = 1000.0
+
+        def time(self):
+            return self.now
+
+        def sleep(self, secs):
+            self.now += secs
+
+    clock = FakeClock()
+    monkeypatch.setattr(upd, "time", clock)
+    monkeypatch.setattr(upd.AutoUpdater, "_local_head_changed",
+                        lambda self: False)
+
+    class Cfg:
+        class auto_update:
+            enabled = True
+            interval_seconds = 600
+
+    class Gate(BaseException):
+        pass
+
+    checks = []
+
+    def fake_check(self):
+        checks.append(clock.now)
+        if len(checks) == 2:
+            raise Gate
+
+    monkeypatch.setattr(upd.AutoUpdater, "check_once", fake_check)
+
+    def flip_interval():
+        # user saves 60s at t=1100, mid-way through the 600s cycle
+        Cfg.auto_update.interval_seconds = 60
+
+    real_sleep = clock.sleep
+
+    def sleep_with_flip(secs):
+        if clock.now < 1100 <= clock.now + secs:
+            flip_interval()
+        real_sleep(secs)
+
+    clock.sleep = sleep_with_flip
+
+    u = upd.AutoUpdater(
+        Cfg(), str(tmp_path), ""
+    )
+    try:
+        u._run()
+    except Gate:
+        pass
+
+    # first check fires ~60s after the mid-cycle change (1100+60),
+    # not at the original 600s deadline (1600)
+    assert checks[0] < 1250, checks
+    # second check is a full 60s later
+    assert 55 <= checks[1] - checks[0] <= 75, checks

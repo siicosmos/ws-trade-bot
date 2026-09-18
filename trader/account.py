@@ -87,6 +87,8 @@ class WealthsimpleAccount:
         self._stale = {}
         self._pos_cache = None
         self._pos_cache_ts = 0.0
+        self._fx_quote = None
+        self._fx_quote_ts = 0.0
 
     def _client(self):
         if self._ws is None:
@@ -109,6 +111,42 @@ class WealthsimpleAccount:
                     out = [("default", None)]
             self._resolved = out
         return self._resolved
+
+    def _usd_cad_quote(self):
+        """USD:CAD rate from the WS quote API, cached for an hour."""
+        now = time.time()
+        if (
+            self._fx_quote
+            and now - self._fx_quote_ts < 3600
+        ):
+            return self._fx_quote
+        try:
+            ws = self._client()
+            rate = None
+            for sec in ws.search_securities("USD:CAD") or []:
+                sid = sec.get("id") or (
+                    (sec.get("security") or {}).get("id")
+                )
+                if not sid:
+                    continue
+                quote = ws.get_security_quote(sid) or {}
+                price = (
+                    quote.get("price")
+                    or (quote.get("amount") or {}).get("amount")
+                    if isinstance(quote.get("amount"), dict)
+                    else quote.get("amount")
+                    or quote.get("lastPrice")
+                )
+                if price:
+                    rate = float(price)
+                    break
+            if rate and 0.5 < rate < 2.5:
+                self._fx_quote = rate
+                self._fx_quote_ts = now
+                return rate
+        except Exception:
+            pass
+        return None
 
     def open_option_positions(self, max_age_seconds=None):
         """Real open option positions per account label.
@@ -232,6 +270,8 @@ class WealthsimpleAccount:
                 )
             if fx:
                 self._fx_hint = fx
+            if fx is None:
+                fx = self._usd_cad_quote()
             out[label] = {
                 "positions": rows,
                 "fx": fx,

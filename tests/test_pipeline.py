@@ -895,6 +895,8 @@ def test_open_option_positions_filters_and_maps(monkeypatch, tmp_path):
     acct._stale = {}
     acct._pos_cache = None
     acct._pos_cache_ts = 0.0
+    acct._fx_quote = None
+    acct._fx_quote_ts = 0.0
     acct._cache = None
     acct._cache_ts = 0.0
     monkeypatch.setattr(

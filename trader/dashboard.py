@@ -220,7 +220,9 @@ async function loadSummary() {
       (a.value_age ? ' <span style="font-size:12px;color:#d29922">(cached ' + a.value_age + ')</span>' : '') +
       (showUsd
         ? ' <span style="font-size:13px;color:var(--muted)">≈ ' + fmtMoney(a.value) + ' CAD</span>'
-        : (a.usd_value ? ' <span style="font-size:13px;color:var(--muted)">≈ $' + a.usd_value.toLocaleString("en-CA", {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' USD</span>' : '')) + '</div>' +
+        : (a.usd_value
+          ? ' <span style="font-size:13px;color:var(--muted)">≈ $' + a.usd_value.toLocaleString("en-CA", {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' USD</span>'
+          : (valueCurrency === "usd" ? ' <span style="font-size:12px;color:var(--yellow)">fx unavailable</span>' : ''))) + '</div>' +
       '<div class="riskbar"><div style="width:' + pct + '%;background:' + color + '"></div></div>' +
       '<div class="sub"><span style="color:' + color + (pct >= (a.max_open_risk_pct || 30) ? ';font-weight:700' : '') + '">open risk ' + fmtMoney(risk) + ' (' + (a.open_risk_pct ?? 0) + '%)</span>' +
       '<span>' + (a.usd_cash != null ? 'usd cash $' + a.usd_cash.toLocaleString("en-CA", {minimumFractionDigits: 2, maximumFractionDigits: 2}) : 'cap ' + (a.max_open_risk_pct) + '%') + '</span></div>';
