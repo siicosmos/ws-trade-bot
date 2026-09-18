@@ -970,3 +970,45 @@ def test_positions_endpoint_merges_live(monkeypatch):
     assert rrsp["open_risk"] == 450.0   # CAD cost
     # Personal has live (empty) data: tracked rows for it are dropped
     assert by_account.get("Personal", []) == []
+
+
+def test_usd_values_from_financials(monkeypatch):
+    from trader.account import WealthsimpleAccount
+
+    class FakeWS:
+        def get_account_current_financials(self, account_id, currency="CAD"):
+            if currency == "USD":
+                return {
+                    "netLiquidationValueV2": {
+                        "amount": "16000.50", "currency": "USD"
+                    }
+                }
+            return {
+                "netLiquidationValueV2": {
+                    "amount": "22000.00", "currency": "CAD"
+                }
+            }
+
+    acct = WealthsimpleAccount.__new__(WealthsimpleAccount)
+    acct._ws = FakeWS()
+    acct.cache_seconds = 900
+    acct._cache = None
+    acct._cache_ts = 0.0
+    acct._usd_cache = None
+    acct._usd_cache_ts = 0.0
+    monkeypatch.setattr(acct, "_resolve", lambda: [("RRSP", "acct-1")])
+
+    usd = acct.usd_values()
+    assert usd == {"RRSP": 16000.50}
+
+
+def test_summary_prefers_ws_usd_value(monkeypatch):
+    app, store, account = _make_app(mode="paper")
+    client = app.test_client()
+    account.usd_values = lambda: {"RRSP": 16000.5}
+    account.open_option_positions = lambda: {
+        "RRSP": {"positions": [], "fx": 1.3636, "usd_cash": None},
+    }
+    summary = client.get("/api/summary").get_json()
+    rrsp = next(a for a in summary["accounts"] if a["label"] == "RRSP")
+    assert rrsp["usd_value"] == 16000.5

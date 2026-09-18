@@ -207,6 +207,13 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                 break
         if shared_fx is None:
             shared_fx = getattr(account, "_fx_hint", None)
+        usd_vals = None
+        usd_fn = getattr(account, "usd_values", None)
+        if callable(usd_fn):
+            try:
+                usd_vals = usd_fn() or {}
+            except Exception:
+                usd_vals = None
         out = []
         for label, value in values.items():
             open_risk = store.open_risk(mode, label)
@@ -221,7 +228,13 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                 if live.get("fx"):
                     fx = live["fx"]
                 usd_cash = live.get("usd_cash")
-            usd_value = round(value / fx, 2) if (fx and value) else None
+            if usd_vals and usd_vals.get(label):
+                # wealthsimple's own conversion beats our derived fx
+                usd_value = round(usd_vals[label], 2)
+            elif fx and value:
+                usd_value = round(value / fx, 2)
+            else:
+                usd_value = None
             stale_fn = getattr(account, "stale_age", None)
             value_age = stale_fn(label) if callable(stale_fn) else None
             out.append(

@@ -89,6 +89,8 @@ class WealthsimpleAccount:
         self._pos_cache_ts = 0.0
         self._fx_quote = None
         self._fx_quote_ts = 0.0
+        self._usd_cache = None
+        self._usd_cache_ts = 0.0
 
     def _client(self):
         if self._ws is None:
@@ -111,6 +113,46 @@ class WealthsimpleAccount:
                     out = [("default", None)]
             self._resolved = out
         return self._resolved
+
+    def usd_values(self):
+        """Net liquidation converted to USD by Wealthsimple itself.
+
+        Returns {label: usd_amount} or None when unavailable; cached
+        on the same cadence as CAD values.
+        """
+        now = time.time()
+        if (
+            self._usd_cache is not None
+            and now - self._usd_cache_ts < self.cache_seconds
+        ):
+            return self._usd_cache
+        try:
+            ws = self._client()
+        except Exception:
+            return None
+        out = {}
+        any_ok = False
+        for label, account_id in self._resolve():
+            if not account_id:
+                out[label] = None
+                continue
+            try:
+                fin = ws.get_account_current_financials(
+                    account_id, currency="USD"
+                )
+                nlv = fin.get("netLiquidationValueV2") or {}
+                amount = float(nlv.get("amount") or 0)
+                if nlv.get("currency") == "USD" and amount > 0:
+                    out[label] = amount
+                    any_ok = True
+                else:
+                    out[label] = None
+            except Exception:
+                out[label] = None
+        result = out if any_ok else None
+        self._usd_cache = result
+        self._usd_cache_ts = now
+        return result
 
     def _usd_cad_quote(self):
         """USD:CAD rate from the WS quote API, cached for an hour."""
