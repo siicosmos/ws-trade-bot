@@ -80,7 +80,7 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   <span id="reader" style="color:var(--muted);font-size:12px"></span>
   <span id="git" style="color:var(--muted);font-size:12px"></span>
   <span id="updated"></span>
-  <span id="clock" style="color:var(--muted);font-size:12px"></span>
+  <span id="clock"></span>
   <span id="stops" style="color:var(--muted);font-size:12px;flex-basis:100%;margin-top:-4px"></span>
 </header>
 
