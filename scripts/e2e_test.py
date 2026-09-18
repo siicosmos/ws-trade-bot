@@ -341,6 +341,27 @@ def run_settings_phase():
 
         update = requests.get(f"{base}/api/update_status", timeout=5).json()
         check("update status endpoint", "status" in update, str(update))
+
+        code, resp = post_alert("BOUGHT 0DTE SPY 761c @ 1.5 @everyone big size")
+        rrsp = sizing_of(resp, "RRSP")
+        check("account cap 20 allows big tier", rrsp.get("contracts") == 10, str(rrsp))
+
+        r = requests.post(
+            f"{base}/api/settings",
+            json={"accounts": [
+                {"label": "RRSP", "max_contracts_per_trade": 2},
+            ]},
+            timeout=5,
+        )
+        check("portal sets account cap", r.status_code == 200, r.text[:200])
+
+        code, resp = post_alert("BOUGHT 0DTE SPY 762c @ 1.5 @everyone big size")
+        rrsp = sizing_of(resp, "RRSP")
+        check(
+            "account cap change applies immediately",
+            rrsp.get("contracts") == 2 and "capped at account max 2" in str(rrsp.get("warnings")),
+            str(rrsp),
+        )
     finally:
         stop(proc)
 

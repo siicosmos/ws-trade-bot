@@ -433,3 +433,99 @@ def test_reader_status_endpoints():
     state = client.get("/api/reader_status").get_json()
     assert state["channel"] == "test"
     assert state["desired"] == "player-alerts"
+
+
+def test_account_settings_apply_and_persist():
+    fd, cfg_path = tempfile.mkstemp(suffix=".yaml")
+    os.close(fd)
+    with open(cfg_path, "w") as f:
+        f.write(
+            "wealthsimple:\n"
+            "  exchange_hint: NASDAQ\n"
+            "  accounts:\n"
+            "    - account_id: r1\n"
+            "      label: RRSP\n"
+            "      max_contracts_per_trade: 20\n"
+            "    - account_id: p1\n"
+            "      label: Personal\n"
+        )
+    cfg = ConfigStub(
+        TradingConfig(mode="notify"),
+        accounts=[
+            WSAccountConfig(account_id="r1", label="RRSP",
+                            max_contracts_per_trade=20),
+            WSAccountConfig(account_id="p1", label="Personal"),
+        ],
+    )
+
+    applied, errors = apply_settings(
+        cfg,
+        {"accounts": [
+            {"label": "Personal", "max_contracts_per_trade": 5,
+             "risk_per_trade_pct": 8, "paper_value": 2500,
+             "account_id": "p1-updated", "enabled": True},
+        ]},
+        cfg_path,
+    )
+    assert errors == [], errors
+
+    personal = [a for a in cfg.wealthsimple.accounts if a.label == "Personal"][0]
+    assert personal.max_contracts_per_trade == 5
+    assert personal.risk_per_trade_pct == 8
+    assert personal.paper_value == 2500
+    assert personal.account_id == "p1-updated"
+
+    from trader.config import load_config
+
+    reloaded = load_config(cfg_path)
+    assert reloaded.wealthsimple.exchange_hint == "NASDAQ"
+    rp = [a for a in reloaded.wealthsimple.accounts if a.label == "Personal"][0]
+    assert rp.max_contracts_per_trade == 5
+    assert rp.risk_per_trade_pct == 8.0
+    rrsp = [a for a in reloaded.wealthsimple.accounts if a.label == "RRSP"][0]
+    assert rrsp.max_contracts_per_trade == 20
+    os.unlink(cfg_path)
+
+
+def test_account_settings_clear_override_with_null():
+    cfg = ConfigStub(
+        TradingConfig(mode="notify"),
+        accounts=[WSAccountConfig(account_id="r1", label="RRSP",
+                                  max_contracts_per_trade=20)],
+    )
+    applied, errors = apply_settings(
+        cfg,
+        {"accounts": [
+            {"label": "RRSP", "max_contracts_per_trade": None},
+        ]},
+    )
+    assert errors == []
+    rrsp = [a for a in cfg.wealthsimple.accounts if a.label == "RRSP"][0]
+    assert rrsp.max_contracts_per_trade is None
+
+
+def test_account_settings_validation():
+    cfg = ConfigStub(
+        TradingConfig(mode="notify"),
+        accounts=[
+            WSAccountConfig(account_id="r1", label="RRSP"),
+            WSAccountConfig(account_id="p1", label="Personal"),
+        ],
+    )
+    applied, errors = apply_settings(
+        cfg, {"accounts": [{"label": "Nope", "max_contracts_per_trade": 5}]}
+    )
+    assert errors and "unknown account" in errors[0]
+
+    applied, errors = apply_settings(
+        cfg, {"accounts": [{"label": "RRSP", "risk_per_trade_pct": 900}]}
+    )
+    assert errors
+
+    applied, errors = apply_settings(
+        cfg, {"accounts": [{"label": "Personal", "max_contracts_per_trade": 3}]}
+    )
+    assert errors == []
+    personal = [a for a in cfg.wealthsimple.accounts
+                if a.label == "Personal"][0]
+    assert personal.max_contracts_per_trade == 3

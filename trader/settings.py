@@ -22,6 +22,11 @@ EDITABLE_READER = {
     "poll_interval": ("float", 0.2, 10),
     "max_items": ("int", 5, 200),
 }
+EDITABLE_ACCOUNT_NUMERIC = {
+    "risk_per_trade_pct": (0.0, 100.0),
+    "max_contracts_per_trade": (0, 1000),
+    "paper_value": (0.0, 100000000.0),
+}
 
 
 def get_settings(cfg) -> dict:
@@ -30,9 +35,21 @@ def get_settings(cfg) -> dict:
         trading[k] = getattr(cfg.trading, k)
     trading["size_tiers"] = cfg.trading.size_tiers
     reader = {k: getattr(cfg.reader, k) for k in EDITABLE_READER}
+    accounts = [
+        {
+            "account_id": a.account_id,
+            "label": a.label,
+            "risk_per_trade_pct": a.risk_per_trade_pct,
+            "max_contracts_per_trade": a.max_contracts_per_trade,
+            "paper_value": a.paper_value,
+            "enabled": a.enabled,
+        }
+        for a in cfg.wealthsimple.accounts
+    ]
     return {
         "trading": trading,
         "reader": reader,
+        "accounts": accounts,
         "auto_update": {
             "enabled": cfg.auto_update.enabled,
             "interval_seconds": cfg.auto_update.interval_seconds,
@@ -127,6 +144,55 @@ def apply_settings(cfg, payload: dict, config_path=None) -> tuple:
         setattr(cfg.reader, key, value)
         applied[f"reader.{key}"] = value
 
+    accounts_payload = payload.get("accounts")
+    if isinstance(accounts_payload, list):
+        existing = {a.label: a for a in cfg.wealthsimple.accounts}
+        for entry in accounts_payload:
+            if not isinstance(entry, dict):
+                errors.append("accounts: expected mappings")
+                continue
+            label = str(entry.get("label") or "").strip()
+            if not label or label not in existing:
+                errors.append(f"accounts: unknown account label {label!r}")
+                continue
+            acct = existing[label]
+
+            new_id = entry.get("account_id")
+            if new_id is not None:
+                new_id = str(new_id).strip()[:100]
+                if new_id != acct.account_id:
+                    acct.account_id = new_id
+                    applied[f"accounts.{label}.account_id"] = new_id
+
+            for field, (lo, hi) in EDITABLE_ACCOUNT_NUMERIC.items():
+                if field not in entry:
+                    continue
+                raw = entry[field]
+                if raw is None or raw == "":
+                    if getattr(acct, field) is not None:
+                        setattr(acct, field, None)
+                        applied[f"accounts.{label}.{field}"] = None
+                    continue
+                try:
+                    value = float(raw) if lo != int(lo) or isinstance(lo, float) else int(float(raw))
+                except (TypeError, ValueError):
+                    errors.append(f"accounts.{label}.{field}: not a number")
+                    continue
+                if value < lo or value > hi:
+                    errors.append(
+                        f"accounts.{label}.{field}: must be between "
+                        f"{lo:g} and {hi:g}"
+                    )
+                    continue
+                if field == "max_contracts_per_trade":
+                    value = int(value)
+                setattr(acct, field, value)
+                applied[f"accounts.{label}.{field}"] = value
+
+            if "enabled" in entry:
+                acct.enabled = bool(entry["enabled"])
+                applied[f"accounts.{label}.enabled"] = acct.enabled
+
     au = payload.get("auto_update") or {}
     if "enabled" in au:
         cfg.auto_update.enabled = bool(au["enabled"])
@@ -172,6 +238,19 @@ def _persist(cfg, config_path):
     reader = raw.setdefault("reader", {})
     for key in EDITABLE_READER:
         reader[key] = getattr(cfg.reader, key)
+
+    ws = raw.setdefault("wealthsimple", {})
+    ws["accounts"] = [
+        {
+            "account_id": a.account_id,
+            "label": a.label,
+            "risk_per_trade_pct": a.risk_per_trade_pct,
+            "max_contracts_per_trade": a.max_contracts_per_trade,
+            "paper_value": a.paper_value,
+            "enabled": a.enabled,
+        }
+        for a in cfg.wealthsimple.accounts
+    ]
 
     directory = os.path.dirname(os.path.abspath(config_path))
     fd, tmp = tempfile.mkstemp(dir=directory, suffix=".yaml.tmp")

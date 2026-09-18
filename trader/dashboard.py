@@ -196,8 +196,11 @@ async function loadTrades() {
   el.innerHTML = html + "</table>";
 }
 
+let lastSettings = null;
+
 async function loadSettings() {
   const s = await api("/api/settings");
+  lastSettings = s;
   const el = document.getElementById("settings");
   let html = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px">';
   const t = s.trading;
@@ -227,6 +230,24 @@ async function loadSettings() {
       '<input id="tier-' + name + '-max" type="number" value="' + tier.contracts_max + '" title="max contracts" style="width:50%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px"></div></div>';
   }
   html += "</div>";
+  if (s.accounts && s.accounts.length) {
+    html += '<div style="color:var(--muted);font-size:12px;margin-top:14px">accounts (numeric overrides: empty = inherit global)</div>';
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px">';
+    s.accounts.forEach((a, i) => {
+      html += '<div style="border:1px solid var(--border);border-radius:8px;padding:10px">' +
+        '<div style="color:var(--text);font-weight:600;margin-bottom:6px">' + a.label +
+        ' <label style="float:right;color:var(--muted);font-size:11px"><input id="set-acct-' + i + '-enabled" type="checkbox"' + (a.enabled ? " checked" : "") + '> on</label></div>' +
+        '<label style="color:var(--muted);font-size:10px;text-transform:uppercase">account id</label>' +
+        '<input id="set-acct-' + i + '-id" type="text" value="' + (a.account_id || "") + '" style="width:100%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:12px">' +
+        '<label style="color:var(--muted);font-size:10px;text-transform:uppercase;margin-top:4px;display:block">max contracts</label>' +
+        '<input id="set-acct-' + i + '-max" type="number" value="' + (a.max_contracts_per_trade ?? "") + '" placeholder="global 10" style="width:100%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:12px">' +
+        '<label style="color:var(--muted);font-size:10px;text-transform:uppercase;margin-top:4px;display:block">risk % (default trades)</label>' +
+        '<input id="set-acct-' + i + '-risk" type="number" step="any" value="' + (a.risk_per_trade_pct ?? "") + '" placeholder="global 5" style="width:100%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:12px">' +
+        '<label style="color:var(--muted);font-size:10px;text-transform:uppercase;margin-top:4px;display:block">paper value $</label>' +
+        '<input id="set-acct-' + i + '-paper" type="number" step="any" value="' + (a.paper_value ?? "") + '" placeholder="10000" style="width:100%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:12px"></div>';
+    });
+    html += "</div>";
+  }
   html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-top:14px">' +
     '<div style="color:var(--muted);font-size:12px;grid-column:1/-1">reader (channel marker: empty = follow whatever channel is open in Discord)</div>' +
     '<div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">channel marker</label>' +
@@ -260,8 +281,23 @@ async function saveSettings() {
     tiers[name] = { risk_pct_max: num("tier-" + name + "-risk"), contracts_min: parseInt(val("tier-" + name + "-min")), contracts_max: parseInt(val("tier-" + name + "-max")) };
   }
   trading.size_tiers = tiers;
+  const accounts = (lastSettings.accounts || []).map((a, i) => {
+    const numOrNull = (id) => {
+      const v = val(id);
+      return v === "" ? null : parseFloat(v);
+    };
+    return {
+      label: a.label,
+      account_id: val("set-acct-" + i + "-id"),
+      max_contracts_per_trade: val("set-acct-" + i + "-max") === "" ? null : parseInt(val("set-acct-" + i + "-max")),
+      risk_per_trade_pct: numOrNull("set-acct-" + i + "-risk"),
+      paper_value: numOrNull("set-acct-" + i + "-paper"),
+      enabled: document.getElementById("set-acct-" + i + "-enabled").checked,
+    };
+  });
   const payload = {
     trading,
+    accounts,
     reader: {
       channel_marker: val("set-reader-channel_marker"),
       poll_interval: num("set-reader-poll_interval"),

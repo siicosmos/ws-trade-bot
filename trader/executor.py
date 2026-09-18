@@ -124,6 +124,15 @@ def account_sizing(alert, cfg, account, store=None) -> list:
                     )
             elif plan["affordable"] > plan["qty"]:
                 if (
+                    plan["cap"]
+                    and plan["cap"] > 0
+                    and (plan["tier_max"] is None or plan["cap"] < plan["tier_max"])
+                ):
+                    warnings.append(
+                        f"capped at account max {plan['cap']} "
+                        f"(budget could afford {plan['affordable']})"
+                    )
+                elif (
                     plan["tier_max"] is not None
                     and plan["affordable"] > plan["tier_max"]
                 ):
@@ -131,8 +140,6 @@ def account_sizing(alert, cfg, account, store=None) -> list:
                         f"capped at tier max {plan['tier_max']} "
                         f"(budget could afford {plan['affordable']})"
                     )
-                elif plan["cap"] and plan["cap"] > 0:
-                    warnings.append(f"over contract cap ({plan['cap']})")
 
         if (
             alert.action == "BUY"
