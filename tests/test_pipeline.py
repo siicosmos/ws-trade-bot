@@ -1482,6 +1482,7 @@ def test_summary_allocation_values():
 
 
 def test_schema_probe_report_and_chunking():
+    import re as _re
     from trader.schema_probe import (
         FINANCIAL_FIELDS, POSITION_FIELDS, _post, MAX_MESSAGE, probe_schema,
     )
@@ -1492,15 +1493,14 @@ def test_schema_probe_report_and_chunking():
         def graphql_query(self, op, query, variables):
             field = None
             for name in FINANCIAL_FIELDS + POSITION_FIELDS:
-                if ("\n        " + name + "\n" in query
-                        or "node { " + name + " }" in query):
+                if _re.search(r"\n\s+" + _re.escape(name) + r"\n", query):
                     field = name
                     break
             if field == "buyingPower":
                 raise Exception(
                     'GraphQL errors: [{"message": "Cannot query field '
                     "'buyingPower' on type 'X'. "
-                    "Did you mean 'totalValue'?\"}]"
+                    'Did you mean \'totalValue\'?"}]'
                 )
             if field == "marginAvailable":
                 raise Exception(
@@ -1511,6 +1511,10 @@ def test_schema_probe_report_and_chunking():
                 return {"data": {"identity": {"financials": {"current": {
                     "positions": {"edges": [{"node": {
                         "strategy": "VERTICAL"}}]}}}}}}
+            if field == "quantity":
+                return {"data": {"identity": {"financials": {"current": {
+                    "positions": {"edges": [{"node": {
+                        "quantity": "3"}}]}}}}}}
             if field == "totalValue":
                 return {"data": {"identity": {"financials": {"current": {
                     "totalValue": {"amount": "62000.00",
@@ -1524,9 +1528,11 @@ def test_schema_probe_report_and_chunking():
             return FakeWS()
 
     report = probe_schema(FakeAccount())
+    assert "probe template: lib-null-ids" in report
     assert "totalValue = 62000.00 CAD" in report
     assert "buyingPower: no (did you mean 'totalValue'?)" in report
     assert "marginAvailable: no" in report
+    assert "quantity = 3" in report
     assert "strategy = VERTICAL" in report
 
     sent = []

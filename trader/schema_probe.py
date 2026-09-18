@@ -1,11 +1,14 @@
 """Wealthsimple GraphQL field discovery via validation errors.
 
-Introspection is disabled on their endpoint, but the validator
-tells us what exists: a query with an unknown field fails with
-"Cannot query field 'x' on type 'Y'" (often with "Did you mean"
-suggestions naming real fields), while a known field returns its
-actual value. We probe a candidate list of margin / buying-power /
-multi-leg field names and report what exists.
+Introspection is disabled on their endpoint, so fields are
+discovered by querying candidate names on the live shapes:
+unknown fields fail validation with "Cannot query field" (often
+with "Did you mean" suggestions), known ones return values.
+
+The financials query shape that works is probed at runtime: the
+library-exact header, a filterless variant, and a null-filtered
+variant are tried with a totalValue control and the first that
+executes wins.
 
 Runs once shortly after the pipeline starts; results go to the
 log and the update webhook.
@@ -15,9 +18,7 @@ import threading
 import time
 
 FINANCIAL_FIELDS = [
-    # control - known to exist, validates the probe itself
     "totalValue",
-    # candidates
     "buyingPower",
     "availableToWithdraw",
     "marginAvailable",
@@ -38,9 +39,7 @@ FINANCIAL_FIELDS = [
 ]
 
 POSITION_FIELDS = [
-    # control
-    "id",
-    # candidates
+    "quantity",
     "strategy",
     "positionGroup",
     "groupId",
@@ -52,7 +51,39 @@ POSITION_FIELDS = [
     "marginRequirement",
 ]
 
-FINANCIAL_PROBE = """
+LIB_HEADER = """
+query FetchIdentityPositions($identityId: ID!, $currency: Currency!, $first: Int, $cursor: String,
+                             $accountIds: [ID!], $aggregated: Boolean, $currencyOverride: CurrencyOverride,
+                             $filter: PositionFilter, $includeSecurity: Boolean = false) {
+"""
+
+T_LIB_FIN = LIB_HEADER + """
+  identity(id: $identityId) {
+    financials(filter: {accounts: $accountIds}) {
+      current(currency: $currency) {
+        FIELD
+        __typename
+      }
+      __typename
+    }
+    __typename
+  }
+}
+"""
+
+T_NOFILTER = """
+query ProbeField($identityId: ID!, $currency: Currency!) {
+  identity(id: $identityId) {
+    financials {
+      current(currency: $currency) {
+        FIELD
+      }
+    }
+  }
+}
+"""
+
+T_NULLFILTER = """
 query ProbeField($identityId: ID!, $currency: Currency!, $accountIds: [ID!]) {
   identity(id: $identityId) {
     financials(filter: {accounts: $accountIds}) {
@@ -64,16 +95,24 @@ query ProbeField($identityId: ID!, $currency: Currency!, $accountIds: [ID!]) {
 }
 """
 
-POSITION_PROBE = """
-query ProbeField($identityId: ID!, $accountIds: [ID!], $first: Int) {
+T_LIB_POS = LIB_HEADER + """
   identity(id: $identityId) {
     financials(filter: {accounts: $accountIds}) {
-      current {
-        positions(first: $first) {
-          edges { node { FIELD } }
+      current(currency: $currency) {
+        positions(first: $first, after: $cursor, aggregated: $aggregated, filter: $filter) {
+          edges {
+            node {
+              FIELD
+            }
+          }
+          pageInfo { hasNextPage endCursor __typename }
+          totalCount status __typename
         }
+        __typename
       }
+      __typename
     }
+    __typename
   }
 }
 """
@@ -119,9 +158,21 @@ def _probe_field(ws, template, field, variables, path):
             break
     if node is None:
         return None, "yes (no value returned)"
-    if isinstance(node, list) and not node:
-        return None, "yes (no positions)"
     return node, "yes"
+
+
+def _lib_vars(identity_id):
+    return {
+        "identityId": identity_id,
+        "currency": "CAD",
+        "accountIds": None,
+        "first": 1,
+        "cursor": None,
+        "aggregated": False,
+        "currencyOverride": "MARKET",
+        "filter": None,
+        "includeSecurity": False,
+    }
 
 
 def probe_schema(account):
@@ -140,52 +191,61 @@ def probe_schema(account):
     if not identity_id:
         return "schema probe: no identity id available"
 
-    account_ids = None
-    resolve = getattr(account, "_resolve", None)
-    if callable(resolve):
-        try:
-            account_ids = [
-                aid for _, aid in resolve() if aid
-            ] or None
-        except Exception:
-            account_ids = None
-
+    fin_path = ["identity", "financials", "current", "totalValue"]
+    variants = [
+        ("lib-null-ids", T_LIB_FIN, _lib_vars(identity_id)),
+        ("no-filter", T_NOFILTER,
+         {"identityId": identity_id, "currency": "CAD"}),
+        ("null-filter", T_NULLFILTER,
+         {"identityId": identity_id, "currency": "CAD",
+          "accountIds": None}),
+    ]
     lines = []
-    control = _probe_field(
-        ws, FINANCIAL_PROBE, "totalValue",
-        {"identityId": identity_id, "currency": "CAD",
-         "accountIds": account_ids},
-        ["identity", "financials", "current", "totalValue"],
-    )
-    if control[0] is None and control[1].startswith("error"):
-        return f"schema probe: financials query broken - {control[1]}"
+    template = None
+    variables = None
+    for name, tmpl, vars_ in variants:
+        value, status = _probe_field(
+            ws, tmpl, "totalValue", vars_, fin_path
+        )
+        if value is not None:
+            lines.append(f"probe template: {name} (control totalValue = "
+                         f"{_fmt(value)})")
+            template = tmpl
+            variables = vars_
+            break
+        lines.append(f"template {name}: {status}")
+    if template is None:
+        return "schema probe: no working financials query shape\n" + \
+            "\n".join(lines)
 
     lines.append("financials.current:")
     for field in FINANCIAL_FIELDS:
-        variables = {"identityId": identity_id, "currency": "CAD",
-                     "accountIds": account_ids}
         value, status = _probe_field(
-            ws, FINANCIAL_PROBE, field, variables,
-            ["identity", "financials", "current", field],
+            ws, template, field, variables, fin_path[:-1] + [field]
         )
         if value is not None:
             lines.append(f"  {field} = {_fmt(value)}")
         else:
             lines.append(f"  {field}: {status}")
 
-    lines.append("position:")
-    for field in POSITION_FIELDS:
-        variables = {"identityId": identity_id, "accountIds": account_ids,
-                     "first": 1}
-        value, status = _probe_field(
-            ws, POSITION_PROBE, field, variables,
-            ["identity", "financials", "current", "positions", "edges",
-             0, "node", field],
-        )
-        if value is not None:
-            lines.append(f"  {field} = {_fmt(value)}")
-        else:
-            lines.append(f"  {field}: {status}")
+    pos_vars = _lib_vars(identity_id)
+    pos_path = ["identity", "financials", "current", "positions",
+                "edges", 0, "node", "quantity"]
+    value, status = _probe_field(
+        ws, T_LIB_POS, "quantity", pos_vars, pos_path
+    )
+    if value is None and not status.startswith("yes"):
+        lines.append(f"position probing unavailable ({status})")
+    else:
+        lines.append("position:")
+        for field in POSITION_FIELDS:
+            value, status = _probe_field(
+                ws, T_LIB_POS, field, pos_vars, pos_path[:-1] + [field]
+            )
+            if value is not None:
+                lines.append(f"  {field} = {_fmt(value)}")
+            else:
+                lines.append(f"  {field}: {status}")
     return "\n".join(lines)
 
 
