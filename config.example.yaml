@@ -41,6 +41,10 @@ trading:
       risk_pct_max: 0.5
       contracts_min: 1
       contracts_max: 1
+    micro:
+      risk_pct_max: 0.5
+      contracts_min: 1
+      contracts_max: 1
     tiny:
       risk_pct_max: 1
       contracts_min: 1
@@ -54,6 +58,14 @@ trading:
       contracts_min: 1
       contracts_max: 5
     large:
+      risk_pct_max: 10
+      contracts_min: 1
+      contracts_max: 10
+    big:
+      risk_pct_max: 10
+      contracts_min: 1
+      contracts_max: 10
+    full:
       risk_pct_max: 10
       contracts_min: 1
       contracts_max: 10
@@ -77,10 +89,14 @@ wealthsimple:
   accounts:
     - account_id: "YOUR_RRSP_ACCOUNT_ID"
       label: "RRSP"
+      enabled: true
+      risk_per_trade_pct: null
       max_contracts_per_trade: 20
       paper_value: 50000
     - account_id: "YOUR_PERSONAL_ACCOUNT_ID"
       label: "Personal"
+      enabled: true
+      risk_per_trade_pct: null
       max_contracts_per_trade: 5
       paper_value: 2000
   exchange_hint: ""
