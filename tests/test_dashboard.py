@@ -284,3 +284,13 @@ def test_stock_section_and_alloc_bar():
     # allocation bar: stocks blue, options purple
     assert "function allocBar" in js
     assert "#4493f8" in js and "#ab7df6" in js
+
+
+def test_stock_holdings_hidden_by_default():
+    import trader.dashboard as dash
+
+    js = re.findall(r"<script>(.*?)</script>",
+                    dash.DASHBOARD_HTML, re.S)[0]
+    # holdings section is collapsed until the user opts in
+    assert 'localStorage.getItem("ws_show_stocks") === "1"' in js
+    assert "toggle-stocks" in dash.DASHBOARD_HTML

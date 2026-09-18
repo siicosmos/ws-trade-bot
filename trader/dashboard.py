@@ -138,7 +138,7 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 <h2>Open Positions</h2>
 <div id="positions"></div>
 
-<h2>Stock Holdings</h2>
+<h2>Stock Holdings <button id="toggle-stocks" onclick="toggleStocks()" style="float:right;background:#21262d;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 14px;font-size:12px;cursor:pointer">Show holdings</button></h2>
 <div id="stock-positions"></div>
 
 <h2>Recent Alerts <button id="toggle-ignored" onclick="toggleIgnored()" style="float:right;background:#21262d;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 14px;font-size:12px;cursor:pointer">Hide ignored</button></h2>
@@ -300,8 +300,13 @@ function allocBar(a) {
 
 async function loadPositions() {
   const rows = await api("/api/positions");
+  const stocksEl = document.getElementById("stock-positions");
+  stocksEl.style.display = showStocks ? "" : "none";
+  document.getElementById("toggle-stocks").textContent = showStocks ? "Hide holdings" : "Show holdings";
   renderPositionsInto("positions", rows.filter(r => r.kind !== "stock"), "no open positions");
-  renderPositionsInto("stock-positions", rows.filter(r => r.kind === "stock"), "no stock holdings");
+  if (showStocks) {
+    renderPositionsInto("stock-positions", rows.filter(r => r.kind === "stock"), "no stock holdings");
+  }
 }
 
 function renderPositionsInto(elId, rows, emptyText) {
@@ -390,6 +395,16 @@ function toggleValueCurrency() {
   valueCurrency = valueCurrency === "cad" ? "usd" : "cad";
   localStorage.setItem("ws_value_currency", valueCurrency);
   loadSummary();
+}
+
+let showStocks = localStorage.getItem("ws_show_stocks") === "1";
+
+function toggleStocks() {
+  showStocks = !showStocks;
+  localStorage.setItem("ws_show_stocks", showStocks ? "1" : "0");
+  document.getElementById("toggle-stocks").textContent = showStocks ? "Hide holdings" : "Show holdings";
+  document.getElementById("stock-positions").style.display = showStocks ? "" : "none";
+  loadPositions();
 }
 
 function toggleIgnored() {
