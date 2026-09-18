@@ -285,8 +285,8 @@ async function loadSettings() {
     html += '<div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">' + label + '</label>' +
       '<input id="set-' + k + '" type="number" step="any" value="' + t[k] + '" style="width:100%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px"></div>';
   }
-  for (const [k, hint] of [["ticker_whitelist", "comma-separated tickers, e.g. SPY, SPX - empty = allow all"], ["skip_underlyings", "comma-separated tickers never traded, e.g. SPX - empty = none"]]) {
-    html += '<div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">' + k.replace('_', ' ') + '</label>' +
+  for (const [k, hint] of [["ticker_whitelist", "e.g. SPY, SPX - empty = allow all"], ["skip_underlyings", "e.g. SPX - empty = none"]]) {
+    html += '<div style="grid-column:1/-1"><label style="color:var(--muted);font-size:11px;text-transform:uppercase">' + k.replace('_', ' ') + ' (comma-separated)</label>' +
       '<input id="set-' + k + '" type="text" value="' + (t[k] || []).join(', ') + '" placeholder="' + hint + '" style="width:100%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px"></div>';
   }
   html += "</div>";
