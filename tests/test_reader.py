@@ -541,3 +541,67 @@ def test_heartbeat_status_reports_quiet_allowed_channel():
     assert heartbeat_status(False, "#pipeline-log") == (None, False)
     # allowed but no title: nothing to report
     assert heartbeat_status(True, "") == (None, False)
+
+
+def test_heartbeat_fires_while_channel_quiet(monkeypatch):
+    # regression: a quiet channel (no recent messages) used to skip the
+    # heartbeat entirely, so the portal said "waiting for any open
+    # channel" while the reader was attached and healthy
+    import discord_reader as dr
+
+    cfg = {
+        "reader": {
+            "pipeline_url": "http://localhost:8080/alert",
+            "poll_interval": 0.01,
+            "channels": ["player-alerts"],
+            "auth_token": "",
+        },
+        "discord": {"webhook_url": ""},
+    }
+
+    class FakeWindow:
+        Name = "🚨│player-alerts | #general - Discord"
+
+    class FakeContainer:
+        Name = "🚨│player-alerts 中的消息"
+
+    heartbeats = []
+
+    def fake_sync(base_url, auth_token, channel, ok, verify=True):
+        heartbeats.append((channel, ok))
+        return None
+
+    monkeypatch.setattr(dr, "load_config", lambda: cfg)
+    monkeypatch.setattr(dr, "sync_clock", lambda: None)
+    monkeypatch.setattr(dr, "git_head", lambda root: "abc123")
+    monkeypatch.setattr(dr, "repo_root", lambda: ".")
+    monkeypatch.setattr(dr, "find_discord_window", lambda: FakeWindow())
+    monkeypatch.setattr(
+        dr, "find_message_container",
+        lambda *a, **k: FakeContainer(),
+    )
+    monkeypatch.setattr(
+        dr, "current_messages", lambda container, max_items=40: []
+    )
+    monkeypatch.setattr(dr, "WebhookLog", lambda url: None)
+    monkeypatch.setattr(dr, "sync_with_server", fake_sync)
+
+    sleeps = {"n": 0}
+
+    def fake_sleep(secs):
+        sleeps["n"] += 1
+        if sleeps["n"] > 120:
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(dr.time, "sleep", fake_sleep)
+
+    try:
+        dr.main()
+    except KeyboardInterrupt:
+        pass
+
+    good = [
+        (ch, ok) for ch, ok in heartbeats
+        if ch and "player-alerts" in ch and ok
+    ]
+    assert good, f"no heartbeats while quiet: {heartbeats!r}"

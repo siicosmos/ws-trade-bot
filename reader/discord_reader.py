@@ -833,6 +833,36 @@ def main():
                         log(f"channel switched: {current_channel!r}")
                     announced_channel = name
 
+            # heartbeats fire from here so a quiet channel (no recent
+            # messages -> current_messages returns []) still reports
+            # the open channel instead of going silent
+            sync_counter += 1
+            if sync_counter >= 10:
+                sync_counter = 0
+                resp = sync_with_server(
+                    base_url, auth_token, current_channel,
+                    container is not None, verify_tls,
+                )
+                new_marker, new_poll, new_max, new_channels, changed = (
+                    merged_config(
+                        resp, marker, poll_interval, max_items, channels
+                    )
+                )
+                if changed:
+                    marker = new_marker
+                    channels = new_channels
+                    poll_interval = new_poll
+                    max_items = new_max
+                    container = None
+                    log(
+                        f"channel config -> marker={marker!r} "
+                        f"channels={channels}"
+                    )
+                    time.sleep(poll_interval)
+                    continue
+                poll_interval = new_poll
+                max_items = new_max
+
             msgs = current_messages(container, max_items)
             if not msgs:
                 empty_polls += 1
@@ -885,29 +915,6 @@ def main():
                         window = find_discord_window()
                     except UIAError:
                         window = None
-
-        sync_counter += 1
-        if sync_counter >= 10:
-            sync_counter = 0
-            resp = sync_with_server(
-                base_url, auth_token, current_channel,
-                container is not None, verify_tls,
-            )
-            new_marker, new_poll, new_max, new_channels, changed = (
-                merged_config(
-                    resp, marker, poll_interval, max_items, channels
-                )
-            )
-            if changed:
-                marker = new_marker
-                channels = new_channels
-                container = None
-                log(
-                    f"channel config -> marker={marker!r} "
-                    f"channels={channels}"
-                )
-            poll_interval = new_poll
-            max_items = new_max
 
         time.sleep(poll_interval)
 
