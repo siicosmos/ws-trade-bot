@@ -182,7 +182,7 @@ async function loadSummary() {
       '<div class="value">' + fmtMoney(a.value) +
       (a.value_age ? ' <span style="font-size:12px;color:#d29922">(cached ' + a.value_age + ')</span>' : '') + '</div>' +
       '<div class="riskbar"><div style="width:' + pct + '%;background:' + color + '"></div></div>' +
-      '<div class="sub"><span>open risk ' + fmtMoney(a.open_risk) + ' (' + (a.open_risk_pct ?? 0) + '%)</span>' +
+      '<div class="sub"><span style="color:' + color + (pct >= (a.max_open_risk_pct || 30) ? ';font-weight:700' : '') + '">open risk ' + fmtMoney(a.open_risk) + ' (' + (a.open_risk_pct ?? 0) + '%)</span>' +
       '<span>cap ' + (a.max_open_risk_pct) + '%</span></div>';
     el.appendChild(card);
   }

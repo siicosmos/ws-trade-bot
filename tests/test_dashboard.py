@@ -79,3 +79,15 @@ def test_login_page_rejects_injection():
     rendered = dash.LOGIN_HTML('<script>alert(1)</script>')
     assert "<script>alert(1)</script>" not in rendered
     assert "&lt;script&gt;" in rendered
+
+
+def test_open_risk_percentage_colored_by_cap():
+    # the open-risk text inherits the bar's warning colors (red over the
+    # cap, yellow near it) and goes bold when exceeded
+    import trader.dashboard as dash
+
+    js = re.findall(r"<script>(.*?)</script>",
+                    dash.DASHBOARD_HTML, re.S)[0]
+    assert "open risk ' + fmtMoney(a.open_risk)" in js
+    assert "color:' + color" in js
+    assert "font-weight:700" in js
