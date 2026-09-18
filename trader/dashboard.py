@@ -78,14 +78,14 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 <h2>Open Positions</h2>
 <div id="positions"></div>
 
-<h2>Settings <button id="settings-toggle" onclick="toggleSettings()" style="background:#21262d;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 14px;font-size:12px;cursor:pointer">Show</button> <button id="settings-save" onclick="saveSettings()" style="float:right;background:#238636;color:#fff;border:0;border-radius:6px;padding:4px 14px;font-weight:600;cursor:pointer">Save</button></h2>
-<div id="settings" class="card"></div>
-
 <h2>Recent Alerts <button id="toggle-ignored" onclick="toggleIgnored()" style="float:right;background:#21262d;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 14px;font-size:12px;cursor:pointer">Hide ignored</button></h2>
 <div id="signals"></div>
 
 <h2>Trade Log</h2>
 <div id="trades"></div>
+
+<h2>Settings <button id="settings-toggle" onclick="toggleSettings()" style="background:#21262d;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 14px;font-size:12px;cursor:pointer">Show</button> <button id="settings-save" onclick="saveSettings()" style="float:right;background:#238636;color:#fff;border:0;border-radius:6px;padding:4px 14px;font-weight:600;cursor:pointer">Save</button></h2>
+<div id="settings" class="card"></div>
 
 <script>
 let token = localStorage.getItem("ws_token") || "";
