@@ -261,7 +261,7 @@ def test_account_sizing_rows():
     assert by_label["Personal"]["risk_pct"] == 2.0
     assert by_label["Personal"]["contracts"] == 0
     assert by_label["Personal"]["warnings"] == [
-        "budget $40 can't cover 1 contract at $150"
+        "2% budget $40.00 can't cover 1 contract at $150"
     ]
 
 
@@ -276,7 +276,7 @@ def test_account_sizing_tier_min_warning():
     row = rows[0]
     assert row["contracts"] == 0
     assert row["warnings"] == [
-        "budget $200 affords 1, tier minimum is 4"
+        "2% budget $200.00 affords 1, tier minimum is 4"
     ]
 
 

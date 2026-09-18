@@ -114,13 +114,15 @@ def account_sizing(alert, cfg, account, store=None) -> list:
             if plan["qty"] < 1:
                 if plan["affordable"] >= 1:
                     warnings.append(
-                        f"budget ${plan['budget']:,.0f} affords "
+                        f"{plan['risk_pct']:g}% budget "
+                        f"${plan['budget']:,.2f} affords "
                         f"{plan['affordable']}, tier minimum is "
                         f"{plan['tier_min'] or 1}"
                     )
                 else:
                     warnings.append(
-                        f"budget ${plan['budget']:,.0f} can't cover "
+                        f"{plan['risk_pct']:g}% budget "
+                        f"${plan['budget']:,.2f} can't cover "
                         f"1 contract at ${plan['cost']:,.0f}"
                     )
             elif plan["affordable"] > plan["qty"]:
