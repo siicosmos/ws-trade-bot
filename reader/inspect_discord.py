@@ -24,11 +24,23 @@ def discord_pids():
 def find_discord_window():
     pids = discord_pids()
     root = auto.GetRootControl()
-    for win in root.GetChildren():
+    try:
+        windows = root.GetChildren()
+    except UIAError:
+        return None
+    for win in windows:
         try:
             if win.ControlType != auto.ControlType.WindowControl:
                 continue
-            if win.ProcessId in pids or "discord" in (win.Name or "").lower():
+            if win.ProcessId in pids:
+                return win
+        except UIAError:
+            continue
+    for win in windows:
+        try:
+            if win.ControlType != auto.ControlType.WindowControl:
+                continue
+            if (win.Name or "").lower().endswith(" - discord"):
                 return win
         except UIAError:
             continue

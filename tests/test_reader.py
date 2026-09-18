@@ -383,3 +383,59 @@ def test_current_messages_drops_old_by_meta(monkeypatch):
     assert dr.current_messages(container) == [
         f"BOUGHT 0DTE SPX 7645c @ .65"
     ]
+
+
+def _load_inspect_discord():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "real_inspect_discord", os.path.join(_READER_DIR, "inspect_discord.py")
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_find_discord_window_ignores_vscode(monkeypatch):
+    insp = _load_inspect_discord()
+    vscode = types.SimpleNamespace(
+        ControlType=dr.auto.ControlType.WindowControl,
+        ProcessId=1,
+        Name="discord_reader.py - ws-trade-bot - Visual Studio Code",
+    )
+    discord_win = types.SimpleNamespace(
+        ControlType=dr.auto.ControlType.WindowControl,
+        ProcessId=999,
+        Name="⁠test-message | my-trade-alert-server - Discord",
+    )
+    monkeypatch.setattr(
+        insp, "discord_pids", lambda: set()
+    )
+    monkeypatch.setattr(
+        dr.auto, "GetRootControl",
+        lambda: types.SimpleNamespace(
+            GetChildren=lambda: [vscode, discord_win]
+        ),
+    )
+    assert insp.find_discord_window() is discord_win
+
+
+def test_find_discord_window_prefers_pid(monkeypatch):
+    insp = _load_inspect_discord()
+    other = types.SimpleNamespace(
+        ControlType=dr.auto.ControlType.WindowControl,
+        ProcessId=1,
+        Name="something - Discord",
+    )
+    discord_win = types.SimpleNamespace(
+        ControlType=dr.auto.ControlType.WindowControl,
+        ProcessId=999,
+        Name="whatever",
+    )
+    monkeypatch.setattr(insp, "discord_pids", lambda: {999})
+    monkeypatch.setattr(
+        dr.auto, "GetRootControl",
+        lambda: types.SimpleNamespace(
+            GetChildren=lambda: [other, discord_win]
+        ),
+    )
+    assert insp.find_discord_window() is discord_win
