@@ -57,6 +57,24 @@ UI_NOISE_RE = re.compile(
 )
 
 
+LOG_PASTE_RE = re.compile(
+    "|".join(
+        [
+            r"-> \d{3} ",
+            r"\bUIA error\b",
+            r"\bchannel switched\b",
+            r"\bwatching channel\b",
+            r"\bchannel marker\b",
+            r"\bwatching window\b",
+            r"\bpoll every\b",
+            r"\bchecking dependencies\b",
+            r"\blooking for Discord\b",
+            r"\bno message pane found\b",
+        ]
+    )
+)
+
+
 def strip_ui_noise(text):
     if not text:
         return text
@@ -68,7 +86,7 @@ def strip_ui_noise(text):
 def looks_like_message(text):
     if not text:
         return False
-    if CHROME_RE.search(text):
+    if CHROME_RE.search(text) or LOG_PASTE_RE.search(text):
         return False
     return True
 
@@ -126,14 +144,28 @@ def channel_from_title(title):
     return clean_channel(title.split("|")[0])
 
 
-def normalize_channel_name(name, title_channel=""):
+def strip_channel_wrapper(name):
     s = clean_channel(name)
-    if not s:
-        return title_channel
     if s.endswith("中的消息"):
         s = s[: -len("中的消息")].strip()
     elif s.lower().startswith("messages in "):
         s = s[len("messages in "):].strip()
+    return s
+
+
+def name_matches_title(name, title_channel):
+    if not name or not title_channel:
+        return False
+    s = strip_channel_wrapper(name)
+    if not s:
+        return False
+    return s.lstrip("#").lower() == title_channel.lstrip("#").lower()
+
+
+def normalize_channel_name(name, title_channel=""):
+    s = strip_channel_wrapper(name)
+    if not s:
+        return title_channel
     if title_channel and s.lstrip("#").lower() == title_channel.lstrip("#").lower():
         return title_channel
     return s
@@ -185,25 +217,31 @@ def find_message_container(window, marker, title_channel="", diag=None):
             continue
     best = None
     best_score = 0
+    fallback = None
+    fallback_score = 0
     for ctrl in candidates:
+        try:
+            ctrl_name = ctrl.Name or ""
+        except UIAError:
+            ctrl_name = ""
         score = container_score(ctrl)
-        if (
-            score > 0
-            and title_channel
-            and title_channel.lower() in (ctrl.Name or "").lower()
-        ):
+        matches_title = name_matches_title(ctrl_name, title_channel)
+        if matches_title:
             score += 3
         if diag is not None:
             try:
                 diag.append(
-                    (ctrl.ControlTypeName, (ctrl.Name or "")[:40], score)
+                    (ctrl.ControlTypeName, ctrl_name[:40], score)
                 )
             except UIAError:
                 pass
-        if score > 0 and score >= best_score:
+        if matches_title and score >= best_score:
             best = ctrl
             best_score = score
-    return best
+        if score > 0 and score >= fallback_score:
+            fallback = ctrl
+            fallback_score = score
+    return best if best is not None else fallback
 
 
 def message_items(container):
@@ -376,7 +414,9 @@ def main():
             if container is None:
                 diag = []
                 container = find_message_container(
-                    window, marker, title_channel, diag
+                    window, marker,
+                    "" if marker else title_channel,
+                    diag,
                 )
                 if container is None:
                     wait_attempts += 1

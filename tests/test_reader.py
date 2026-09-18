@@ -217,3 +217,40 @@ def test_strip_ui_noise():
     )
     assert dr.strip_ui_noise("plain message") == "plain message"
     assert dr.strip_ui_noise("") == ""
+
+
+def test_looks_like_message_rejects_log_pastes():
+    pastes = [
+        "-> 200 12:45 AM BOUGHT 0DTE SPX 7645c @ .65 ROLL UP",
+        "UIA error: (-2147220991)",
+        "channel switched: '服务器'",
+        "watching channel: '#test-message'",
+        "no message pane found (title channel: 'trade-alerts')",
+    ]
+    for text in pastes:
+        assert not dr.looks_like_message(text), text
+
+
+def test_name_matches_title():
+    assert dr.name_matches_title("trade-alerts中的消息", "trade-alerts")
+    assert dr.name_matches_title("trade-alerts", "trade-alerts")
+    assert dr.name_matches_title("#general", "general")
+    assert not dr.name_matches_title("服务器", "trade-alerts")
+    assert not dr.name_matches_title("", "trade-alerts")
+    assert not dr.name_matches_title("trade-alerts", "")
+
+
+def test_find_message_container_title_match_beats_score(monkeypatch):
+    rail = _fake_ctrl(
+        name="服务器",
+        children=[
+            _item(text="Let's Play Some Doto community"),
+            _item(text="my-trade-alert-server SPX Plays"),
+        ],
+    )
+    pane = _fake_ctrl(name="trade-alerts中的消息", children=[])
+    monkeypatch.setattr(
+        dr.auto, "WalkControl", lambda *a, **k: [(rail, 1), (pane, 4)]
+    )
+    monkeypatch.setattr(dr, "item_text", lambda it: it.text)
+    assert dr.find_message_container(object(), "", "trade-alerts") is pane

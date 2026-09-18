@@ -84,7 +84,8 @@ def notify_alert(webhook_url: str, alert, sizing=None, correction=False):
                 noun = "contract" if contracts == 1 else "contracts"
                 line = (
                     f"Buy {contracts} {noun} — ${risk:,.0f} risk "
-                    f"({row.get('risk_pct')}% budget)"
+                    f"({row.get('risk_pct')}% budget - "
+                    f"${row.get('budget') or 0:,.2f})"
                 )
                 if warnings:
                     line += " ⚠ " + "; ".join(warnings)
