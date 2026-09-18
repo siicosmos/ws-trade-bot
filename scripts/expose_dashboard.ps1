@@ -13,5 +13,5 @@ if (-not $rule) {
 }
 
 $lanIp = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.InterfaceAlias -notmatch "Loopback|vEthernet" } | Select-Object -First 1).IPAddress
-Write-Host "dashboard reachable on your network at: http://${lanIp}:8080" -ForegroundColor Green
+Write-Host "dashboard reachable on your network at: https://${lanIp}:8080" -ForegroundColor Green
 Write-Host "browser login: any username, password = your pipeline.auth_token"
