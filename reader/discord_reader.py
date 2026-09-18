@@ -423,26 +423,34 @@ def find_message_container(window, marker, title_channel="", diag=None,
                             strict_title=False):
     candidates = []
     after_title_match = 0
-    for ctrl, depth in auto.WalkControl(window, includeTop=False, maxDepth=30):
-        try:
-            if ctrl.ControlType not in (
-                auto.ControlType.ListControl,
-                auto.ControlType.DocumentControl,
-                auto.ControlType.PaneControl,
-                auto.ControlType.GroupControl,
-                auto.ControlType.TableControl,
-                auto.ControlType.CustomControl,
-            ):
+    try:
+        walker = auto.WalkControl(
+            window, includeTop=False, maxDepth=30
+        )
+        for ctrl, depth in walker:
+            try:
+                if ctrl.ControlType not in (
+                    auto.ControlType.ListControl,
+                    auto.ControlType.DocumentControl,
+                    auto.ControlType.PaneControl,
+                    auto.ControlType.GroupControl,
+                    auto.ControlType.TableControl,
+                    auto.ControlType.CustomControl,
+                ):
+                    continue
+                name = ctrl.Name or ""
+                if not marker or marker.lower() in name.lower():
+                    candidates.append(ctrl)
+                    if title_channel and name_matches_title(
+                        name, title_channel
+                    ):
+                        after_title_match += 1
+                        if after_title_match > 6:
+                            break
+            except UIAError:
                 continue
-            name = ctrl.Name or ""
-            if not marker or marker.lower() in name.lower():
-                candidates.append(ctrl)
-                if title_channel and name_matches_title(name, title_channel):
-                    after_title_match += 1
-                    if after_title_match > 6:
-                        break
-        except UIAError:
-            continue
+    except UIAError:
+        pass
     best = None
     best_score = 0
     fallback = None
@@ -483,12 +491,16 @@ def message_items(container):
 
 def item_text(item):
     parts = []
-    for ctrl, depth in auto.WalkControl(item, includeTop=False, maxDepth=12):
-        try:
-            if ctrl.ControlType == auto.ControlType.TextControl and ctrl.Name:
-                parts.append(ctrl.Name.strip())
-        except UIAError:
-            continue
+    try:
+        walker = auto.WalkControl(item, includeTop=False, maxDepth=12)
+        for ctrl, depth in walker:
+            try:
+                if ctrl.ControlType == auto.ControlType.TextControl and ctrl.Name:
+                    parts.append(ctrl.Name.strip())
+            except UIAError:
+                continue
+    except UIAError:
+        pass
     return " ".join(parts).strip()
 
 
@@ -682,6 +694,7 @@ def main():
     seen = set()
     wait_attempts = 0
     empty_polls = 0
+    last_stale_log = 0.0
     sync_counter = 99
 
     while True:
@@ -835,7 +848,12 @@ def main():
             elif msgs != tail:
                 tail = msgs
         except UIAError as e:
-            log(f"UIA stale element ({e}) - re-attaching")
+            if time.time() - last_stale_log > 300:
+                log(
+                    f"UIA stale element ({e}) - re-attaching "
+                    f"(further occurrences hidden for 5m)"
+                )
+                last_stale_log = time.time()
             container = None
             current_channel = None
             try:

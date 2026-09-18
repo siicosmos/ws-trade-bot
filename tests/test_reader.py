@@ -515,3 +515,16 @@ def test_embed_prefixed_message_is_old_and_cleaned():
     assert dr.strip_ui_noise(raw) == (
         "BOUGHT 0DTE SPX 7620p @ 1.5 small size SL 15m > 7644"
     )
+
+
+def test_item_text_survives_stale_element(monkeypatch):
+    class Boom(Exception):
+        pass
+
+    monkeypatch.setattr(dr, "UIAError", Boom)
+
+    def boom_walk(*a, **k):
+        raise Boom("stale")
+
+    monkeypatch.setattr(dr.auto, "WalkControl", boom_walk)
+    assert dr.item_text(object()) == ""
