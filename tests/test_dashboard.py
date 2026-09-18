@@ -4,7 +4,7 @@ from trader.dashboard import DASHBOARD_HTML
 
 
 def _strip_complete_strings(line):
-    code = re.sub(r"//.*", "", line)
+    code = re.sub(r"(?<!:)//.*", "", line)
     code = re.sub(r"'(?:[^'\\\n]|\\.)*'", "", code)
     code = re.sub(r"`(?:[^`\\]|\\.)*`", "", code)
     code = re.sub(r'"(?:[^"\\\n]|\\.)*"', "", code)

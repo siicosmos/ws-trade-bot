@@ -21,7 +21,9 @@ class ConfigStub:
     def __init__(self, trading=None, accounts=None, auth_token=""):
         self.trading = trading or TradingConfig(mode="paper")
         self.pipeline = type("PI", (), {"auth_token": auth_token})()
-        self.discord = type("D", (), {"webhook_url": ""})()
+        from trader.config import DiscordConfig
+
+        self.discord = DiscordConfig()
         self.parser = type("P", (), {"custom_patterns": []})()
         self.wealthsimple = WealthsimpleConfig(accounts=accounts or [])
         self.reader = ReaderConfig()
@@ -692,3 +694,36 @@ def test_ws_refresh_settings_editable(tmp_path):
         str(cfg_path),
     )
     assert errors2 and "10-86400" in errors2[0]
+
+
+def test_update_webhook_setting(tmp_path):
+    from trader.config import load_config
+    from trader.settings import apply_settings, get_settings
+
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(
+        "discord:\n  webhook_url: \"https://discord.com/api/webhooks/main\"\n"
+        "trading:\n  mode: notify\n",
+        encoding="utf-8",
+    )
+    cfg = load_config(str(cfg_path))
+    assert cfg.discord.update_webhook_url == ""
+
+    applied, errors = apply_settings(
+        cfg,
+        {"discord": {"update_webhook_url":
+                     "https://discord.com/api/webhooks/updates"}},
+        str(cfg_path),
+    )
+    assert not errors, errors
+    assert applied["discord.update_webhook_url"].endswith("/updates")
+    text = cfg_path.read_text(encoding="utf-8")
+    assert "update_webhook_url: https://discord.com/api/webhooks/updates" \
+        in text
+    # the main webhook survives the persist
+    assert "webhooks/main" in text
+
+    bad, errors2 = apply_settings(
+        cfg, {"discord": {"update_webhook_url": "http://insecure"}}, None
+    )
+    assert errors2 and "https" in errors2[0]

@@ -366,6 +366,8 @@ async function loadSettings() {
   html += '<div style="display:flex;gap:10px;margin-top:14px;align-items:center;flex-wrap:wrap">' +
     '<label style="color:var(--muted);font-size:12px"><input id="set-au-enabled" type="checkbox"' + (s.auto_update.enabled ? " checked" : "") + '> auto-update</label>' +
     '<label style="color:var(--muted);font-size:12px">every <input id="set-au-interval" type="number" value="' + s.auto_update.interval_seconds + '" style="width:80px;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:13px">s</label>' +
+    '<div style="grid-column:1/-1"><label style="color:var(--muted);font-size:11px;text-transform:uppercase">update notifications webhook</label>' +
+    '<input id="set-discord-update_webhook_url" type="text" value="' + esc((s.discord || {}).update_webhook_url || "") + '" placeholder="https://discord.com/api/webhooks/... - empty = trade alerts channel" style="width:100%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px"></div>' +
     '<label style="color:var(--muted);font-size:12px">positions every <input id="set-ws-positions" type="number" value="' + (s.wealthsimple ? s.wealthsimple.positions_refresh_seconds : 30) + '" style="width:70px;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:13px">s</label>' +
     '<label style="color:var(--muted);font-size:12px">account values every <input id="set-ws-values" type="number" value="' + (s.wealthsimple ? s.wealthsimple.values_refresh_seconds : 60) + '" style="width:70px;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:13px">s</label>' +
     '<label style="color:var(--muted);font-size:12px"><input id="set-quotes-enabled" type="checkbox"' + (s.quotes.enabled ? " checked" : "") + '> live option quotes (stop monitor)</label>' +
@@ -417,6 +419,7 @@ async function saveSettings() {
     auto_update: { enabled: document.getElementById("set-au-enabled").checked, interval_seconds: parseInt(val("set-au-interval")) },
     quotes: { enabled: document.getElementById("set-quotes-enabled").checked },
     wealthsimple: { positions_refresh_seconds: parseInt(val("set-ws-positions")), values_refresh_seconds: parseInt(val("set-ws-values")) },
+    discord: { update_webhook_url: val("set-discord-update_webhook_url").trim() },
   };
   const res = await fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
   const data = await res.json();

@@ -69,6 +69,9 @@ def get_settings(cfg) -> dict:
                 cfg.wealthsimple.values_refresh_seconds
             ),
         },
+        "discord": {
+            "update_webhook_url": cfg.discord.update_webhook_url,
+        },
     }
 
 
@@ -234,6 +237,17 @@ def apply_settings(cfg, payload: dict, config_path=None) -> tuple:
             cfg.quotes.provider = provider
             applied["quotes.provider"] = provider
 
+    discord_payload = payload.get("discord") or {}
+    if "update_webhook_url" in discord_payload:
+        url = str(discord_payload["update_webhook_url"]).strip()
+        if url and not url.startswith("https://"):
+            errors.append(
+                "discord.update_webhook_url: must be an https URL"
+            )
+        else:
+            cfg.discord.update_webhook_url = url
+            applied["discord.update_webhook_url"] = url
+
     ws_payload = payload.get("wealthsimple") or {}
     for field in ("positions_refresh_seconds", "values_refresh_seconds"):
         if field in ws_payload:
@@ -284,6 +298,12 @@ def _persist(cfg, config_path):
         trading[key] = getattr(cfg.trading, key)
     trading["size_tiers"] = cfg.trading.size_tiers
 
+    dc = raw.setdefault("discord", {})
+    if "update_webhook_url" in raw.get("discord", {}) or getattr(
+        cfg.discord, "update_webhook_url", ""
+    ):
+        dc["update_webhook_url"] = cfg.discord.update_webhook_url
+
     ws = raw.setdefault("wealthsimple", {})
     for field in ("positions_refresh_seconds", "values_refresh_seconds"):
         ws[field] = getattr(cfg.wealthsimple, field)
@@ -301,6 +321,12 @@ def _persist(cfg, config_path):
         reader[key] = getattr(cfg.reader, key)
     for key in EDITABLE_READER_LISTS:
         reader[key] = getattr(cfg.reader, key)
+
+    dc = raw.setdefault("discord", {})
+    if "update_webhook_url" in raw.get("discord", {}) or getattr(
+        cfg.discord, "update_webhook_url", ""
+    ):
+        dc["update_webhook_url"] = cfg.discord.update_webhook_url
 
     ws = raw.setdefault("wealthsimple", {})
     ws["accounts"] = [

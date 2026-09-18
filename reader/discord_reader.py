@@ -696,6 +696,9 @@ def main():
     cfg = raw_cfg.get("reader") or {}
     discord_cfg = raw_cfg.get("discord") or {}
     webhook_url = str(discord_cfg.get("webhook_url") or "")
+    update_webhook_url = (
+        str(discord_cfg.get("update_webhook_url") or "") or webhook_url
+    )
     pipeline_url = cfg.get("pipeline_url", "http://localhost:8080/alert")
     marker = str(cfg.get("channel_marker", ""))
     poll_interval = float(cfg.get("poll_interval", 0.5))
@@ -787,7 +790,7 @@ def main():
             if head and start_head and head != start_head:
                 log("repo updated on disk - restarting reader for new code")
                 notify_restart(
-                    webhook_url, f"code updated to {head[:8]}"
+                    update_webhook_url, f"code updated to {head[:8]}"
                 )
                 os._exit(77)
 

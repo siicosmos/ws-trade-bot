@@ -49,6 +49,8 @@ discord:
   webhook_url: "YOUR_PRIVATE_SERVER_WEBHOOK_URL"  # trade alerts to your phone
   reader_log_webhook_url: ""    # reader log lines (optional)
   pipeline_log_webhook_url: ""  # pipeline log lines (optional)
+  update_webhook_url: ""        # server update/restart notices;
+                               # empty = use the main webhook channel
 
 # ---------------------------------------------------------------------------
 # trading - how alerts are sized, executed, and risk-managed

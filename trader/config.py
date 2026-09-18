@@ -19,6 +19,7 @@ class DiscordConfig:
     webhook_url: str = ""
     reader_log_webhook_url: str = ""
     pipeline_log_webhook_url: str = ""
+    update_webhook_url: str = ""
 
 
 def _default_size_tiers() -> dict:
@@ -243,6 +244,9 @@ def load_config(path: str) -> Config:
             ),
             pipeline_log_webhook_url=str(
                 _get(discord_raw, "pipeline_log_webhook_url", "")
+            ),
+            update_webhook_url=str(
+                _get(discord_raw, "update_webhook_url", "")
             ),
         ),
         trading=trading,

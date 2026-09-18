@@ -102,7 +102,10 @@ def main():
                 f"checked every {cfg.trading.stop_check_seconds}s"
             )
 
-    updater = AutoUpdater(cfg, ROOT, cfg.discord.webhook_url)
+    updater = AutoUpdater(
+        cfg, ROOT,
+        cfg.discord.update_webhook_url or cfg.discord.webhook_url,
+    )
     updater.start()
     if cfg.auto_update.enabled:
         print(
