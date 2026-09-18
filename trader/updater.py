@@ -20,15 +20,52 @@ class AutoUpdater:
         self.last_check = None
         self.last_result = "not checked yet"
         self.errors = 0
+        self.start_head = self._head()
 
     def start(self):
         if self._thread is None:
             self._thread = threading.Thread(target=self._run, daemon=True)
             self._thread.start()
 
+    def _head(self):
+        r = _git(self.root, "rev-parse", "HEAD")
+        if r.returncode == 0:
+            return r.stdout.strip() or None
+        return None
+
+    def _local_head_changed(self):
+        current = self._head()
+        return bool(current and self.start_head and current != self.start_head)
+
+    def _restart_for_local_change(self):
+        new = self._head()
+        from .notify import notify_discord
+
+        notify_discord(
+            self.webhook_url,
+            "Bot code changed on disk",
+            {"action": "restarting pipeline (git pull detected)"},
+            ok=True,
+        )
+        print("auto-update: local code changed - restarting pipeline...")
+        self.last_result = f"local change: {new[:8] if new else '?'}"
+        self._restart()
+
     def _run(self):
         while True:
-            time.sleep(max(30, int(self.cfg.auto_update.interval_seconds)))
+            interval = max(30, int(self.cfg.auto_update.interval_seconds))
+            deadline = time.time() + interval
+            while True:
+                remain = deadline - time.time()
+                if remain <= 0:
+                    break
+                time.sleep(min(15, remain))
+                try:
+                    if self._local_head_changed():
+                        self._restart_for_local_change()
+                        return
+                except Exception:
+                    pass
             try:
                 self.check_once()
             except Exception as e:
