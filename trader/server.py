@@ -203,11 +203,17 @@ def create_app(cfg, store: Store, risk, executor, account=None,
         out = []
         for label, value in values.items():
             open_risk = store.open_risk(mode, label)
-            real_rows = real.get(label)
-            if real_rows is not None:
+            fx = None
+            usd_cash = None
+            live = real.get(label)
+            if live is not None:
                 open_risk = sum(
-                    r.get("cost") or 0 for r in real_rows
+                    r.get("cost_cad") or r.get("cost") or 0
+                    for r in live["positions"]
                 )
+                fx = live.get("fx")
+                usd_cash = live.get("usd_cash")
+            usd_value = round(value / fx, 2) if (fx and value) else None
             stale_fn = getattr(account, "stale_age", None)
             value_age = stale_fn(label) if callable(stale_fn) else None
             out.append(
@@ -215,6 +221,8 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                     "label": label,
                     "value": value,
                     "value_age": value_age,
+                    "usd_value": usd_value,
+                    "usd_cash": usd_cash,
                     "open_risk": open_risk,
                     "open_risk_pct": (
                         round(open_risk / value * 100, 2)
@@ -278,12 +286,14 @@ def create_app(cfg, store: Store, risk, executor, account=None,
         if real:
             # live Wealthsimple positions replace tracked ones for the
             # accounts we could fetch (manual trades included)
-            replaced = {label for label, r in real.items() if r is not None}
+            replaced = {
+                label for label, r in real.items() if r is not None
+            }
             rows = [r for r in rows if r["account"] not in replaced]
             for label, live in real.items():
                 if not live:
                     continue
-                for r in live:
+                for r in live["positions"]:
                     row = dict(r)
                     row["account"] = label
                     row["source"] = "ws"

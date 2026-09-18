@@ -6,6 +6,26 @@ from .config import WSAccountConfig
 from .ws_tokens import persist_env_tokens
 
 
+def _amount(node) -> float:
+    """Amount of a {amount, currency} GraphQL field, 0 when absent."""
+    if not node:
+        return 0.0
+    try:
+        return float(node.get("amount") or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _quote_price(node) -> float:
+    """Price of a quoteV2 field ({price, ...}), 0 when absent."""
+    if not node:
+        return 0.0
+    try:
+        return float(node.get("price") or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def effective_accounts(cfg) -> List[WSAccountConfig]:
     accounts = [a for a in cfg.wealthsimple.accounts if a.enabled]
     if accounts:
@@ -93,9 +113,12 @@ class WealthsimpleAccount:
     def open_option_positions(self, max_age_seconds=None):
         """Real open option positions per account label.
 
-        Returns {label: [position-dicts]} or {label: None} for accounts
-        that could not be fetched, so callers can fall back to tracked
-        positions. Cached for a few minutes.
+        Returns {label: {"positions": [...], "fx": float|None,
+        "usd_cash": float|None}} with amounts split by currency
+        (US options quote in USD, the account books in CAD), or
+        {label: None} for accounts that could not be fetched so
+        callers can fall back to tracked positions. Cached for a
+        few minutes.
         """
         if max_age_seconds is None:
             max_age_seconds = getattr(
@@ -122,8 +145,27 @@ class WealthsimpleAccount:
                 out[label] = None
                 continue
             rows = []
+            fx = None
+            usd_cash = None
             for p in positions or []:
                 sec = p.get("security") or {}
+                book = _amount(p.get("bookValue"))
+                market_book = _amount(p.get("marketBookValue"))
+
+                if (sec.get("securityType") or "").upper() == "CURRENCY":
+                    symbol = str(
+                        (sec.get("stock") or {}).get("symbol") or ""
+                    ).upper()
+                    if "USD" in symbol:
+                        try:
+                            usd_cash = float(p.get("quantity") or 0)
+                        except (TypeError, ValueError):
+                            usd_cash = None
+                        quote = _quote_price(sec.get("quoteV2"))
+                        if quote:
+                            fx = quote
+                    continue
+
                 od = sec.get("optionDetails")
                 if not od:
                     continue
@@ -139,19 +181,17 @@ class WealthsimpleAccount:
                     or (sec.get("stock") or {}).get("symbol")
                     or ""
                 )
-                book = float(
-                    (p.get("bookValue") or {}).get("amount") or 0
-                )
                 multiplier = float(od.get("multiplier") or 100) or 100
-                try:
-                    avg = float(
-                        (p.get("averagePrice") or {}).get("amount") or 0
-                    )
-                except (TypeError, ValueError):
-                    avg = 0
-                per_unit = (
-                    book / (qty * multiplier)
-                    if book and qty else avg / multiplier
+                cost_cad = book
+                cost_usd = market_book
+                if cost_usd and cost_cad:
+                    fx = cost_cad / cost_usd
+                quote = _quote_price(sec.get("quoteV2"))  # USD for US options
+                if not cost_usd and book and fx:
+                    cost_usd = book / fx
+                per_unit_usd = (
+                    cost_usd / (qty * multiplier)
+                    if cost_usd else None
                 )
                 right = (
                     "C"
@@ -160,18 +200,11 @@ class WealthsimpleAccount:
                     )
                     else "P"
                 )
-                quote = 0
-                try:
-                    quote = float(
-                        (sec.get("quoteV2") or {}).get("price") or 0
-                    )
-                except (TypeError, ValueError):
-                    quote = 0
                 market_value = qty * quote * multiplier if quote else None
                 pct_return = None
-                if market_value and book:
+                if market_value and cost_usd:
                     pct_return = round(
-                        (market_value / book - 1) * 100, 1
+                        (market_value / cost_usd - 1) * 100, 1
                     )
                 rows.append(
                     {
@@ -184,8 +217,11 @@ class WealthsimpleAccount:
                         "strike": od.get("strikePrice"),
                         "right": right,
                         "qty": qty,
-                        "avg_premium": round(per_unit, 4),
-                        "cost": book,
+                        "avg_premium": round(per_unit_usd, 4)
+                        if per_unit_usd is not None else None,
+                        "cost": cost_usd if cost_usd is not None else book,
+                        "cost_usd": cost_usd,
+                        "cost_cad": cost_cad,
                         "current_price": quote or None,
                         "market_value": (
                             round(market_value, 2)
@@ -194,7 +230,7 @@ class WealthsimpleAccount:
                         "pct_return": pct_return,
                     }
                 )
-            out[label] = rows
+            out[label] = {"positions": rows, "fx": fx, "usd_cash": usd_cash}
         self._pos_cache = out
         self._pos_cache_ts = now
         return out

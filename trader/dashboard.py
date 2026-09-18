@@ -180,10 +180,11 @@ async function loadSummary() {
     card.innerHTML =
       '<div class="label">' + esc(a.label) + '</div>' +
       '<div class="value">' + fmtMoney(a.value) +
-      (a.value_age ? ' <span style="font-size:12px;color:#d29922">(cached ' + a.value_age + ')</span>' : '') + '</div>' +
+      (a.value_age ? ' <span style="font-size:12px;color:#d29922">(cached ' + a.value_age + ')</span>' : '') +
+      (a.usd_value ? ' <span style="font-size:13px;color:var(--muted)">≈ $' + a.usd_value.toLocaleString("en-CA", {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' USD</span>' : '') + '</div>' +
       '<div class="riskbar"><div style="width:' + pct + '%;background:' + color + '"></div></div>' +
       '<div class="sub"><span style="color:' + color + (pct >= (a.max_open_risk_pct || 30) ? ';font-weight:700' : '') + '">open risk ' + fmtMoney(a.open_risk) + ' (' + (a.open_risk_pct ?? 0) + '%)</span>' +
-      '<span>cap ' + (a.max_open_risk_pct) + '%</span></div>';
+      '<span>' + (a.usd_cash != null ? 'usd cash $' + a.usd_cash.toLocaleString("en-CA", {minimumFractionDigits: 2, maximumFractionDigits: 2}) : 'cap ' + (a.max_open_risk_pct) + '%') + '</span></div>';
     el.appendChild(card);
   }
 }
@@ -192,7 +193,7 @@ async function loadPositions() {
   const rows = await api("/api/positions");
   const el = document.getElementById("positions");
   if (!rows.length) { el.innerHTML = '<div class="empty">no open positions</div>'; return; }
-  let html = "<table><tr><th>Account</th><th>Contract</th><th class=num>Qty</th><th class=num>Avg Premium</th><th class=num>Price</th><th class=num>Return</th><th class=num>Cost</th></tr>";
+  let html = "<table><tr><th>Account</th><th>Contract</th><th class=num>Qty</th><th class=num>Avg Premium $</th><th class=num>Price $</th><th class=num>Return</th><th class=num>Cost $ (CAD)</th></tr>";
   for (const p of rows) {
     const ret = p.pct_return ?? null;
     const retColor = ret === null ? "var(--muted)" : ret >= 0 ? "var(--green)" : "var(--red)";
@@ -206,7 +207,7 @@ async function loadPositions() {
       '<td class=num>' + (p.avg_premium ?? "—") + "</td>" +
       '<td class=num>' + (p.current_price != null ? "$" + p.current_price : "—") + "</td>" +
       '<td class=num style="color:' + retColor + '">' + retText + "</td>" +
-      '<td class=num>' + fmtMoney((p.qty || 0) * (p.avg_premium || 0) * 100) + "</td></tr>";
+      '<td class=num>' + (p.cost_usd != null ? fmtMoney(p.cost_usd) + (p.cost_cad ? ' <span style="font-size:11px;color:var(--muted)">(' + fmtMoney(p.cost_cad) + ')</span>' : "") : fmtMoney((p.qty || 0) * (p.avg_premium || 0) * 100)) + "</td></tr>";
   }
   el.innerHTML = html + "</table>";
 }

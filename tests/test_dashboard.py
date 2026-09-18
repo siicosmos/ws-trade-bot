@@ -104,3 +104,16 @@ def test_positions_table_shows_price_and_return():
     assert "p.pct_return" in js
     assert "set-ws-positions" in js
     assert "set-ws-values" in js
+
+
+def test_currency_split_display():
+    import trader.dashboard as dash
+
+    js = re.findall(r"<script>(.*?)</script>",
+                    dash.DASHBOARD_HTML, re.S)[0]
+    # account value gains a USD equivalent
+    assert "usd_value" in js and "USD</span>" in js
+    # usd cash replaces the cap text when live data is present
+    assert "usd_cash" in js
+    # cost shows USD with the CAD amount in brackets
+    assert "cost_usd" in js and "cost_cad" in js

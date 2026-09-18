@@ -837,8 +837,10 @@ def _ws_position_fixture():
     return [
         {
             "quantity": "2",
-            "bookValue": {"amount": "330.00", "currency": "CAD"},
-            "averagePrice": {"amount": "1.65", "currency": "CAD"},
+            "bookValue": {"amount": "450.00", "currency": "CAD"},
+            "marketBookValue": {"amount": "330.00", "currency": "USD"},
+            "averagePrice": {"amount": "2.25", "currency": "CAD"},
+            "marketAveragePrice": {"amount": "1.65", "currency": "USD"},
             "security": {
                 "securityType": "OPTION",
                 "stock": {"symbol": "ARM"},
@@ -899,42 +901,53 @@ def test_open_option_positions_filters_and_maps(monkeypatch, tmp_path):
         acct, "_resolve", lambda: [("RRSP", "acct-1")]
     )
 
-    rows = acct.open_option_positions()
-    assert set(rows) == {"RRSP"}
-    arm = rows["RRSP"][0]
+    rows = acct.open_option_positions()["RRSP"]["positions"]
+    arm = rows[0]
     assert arm["underlying"] == "ARM"
     assert arm["qty"] == 2
-    assert arm["avg_premium"] == 1.65
-    assert arm["cost"] == 330.0
+    assert arm["avg_premium"] == 1.65      # USD per unit
+    assert arm["cost_usd"] == 330.0
+    assert arm["cost_cad"] == 450.0
     assert arm["right"] == "C"
     assert arm["contract_key"] == "ARM 2026-09-25 300C"
-    assert arm["current_price"] == 2.10
-    assert arm["market_value"] == 420.0
-    assert arm["pct_return"] == 27.3
+    assert arm["current_price"] == 2.10   # USD quote
+    assert arm["market_value"] == 420.0   # USD
+    assert arm["pct_return"] == 27.3      # USD vs USD
+
+    full = acct.open_option_positions()["RRSP"]
+    assert round(full["fx"], 4) == round(450.0 / 330.0, 4)
 
     # cached: second call does not hit the api even if it now fails
     acct._ws = FakeWS(fail=True)
-    assert acct.open_option_positions() == rows
+    assert acct.open_option_positions()["RRSP"] == full
 
 
 def test_positions_endpoint_merges_live(monkeypatch):
     app, store, account = _make_app(mode="paper")
     client = app.test_client()
     account.open_option_positions = lambda: {
-        "RRSP": [
-            {
-                "contract_key": "ARM 2026-09-25 300C",
-                "underlying": "ARM",
-                "expiry": "2026-09-25",
-                "strike": "300",
-                "right": "C",
-                "qty": 2,
-                "avg_premium": 1.65,
-                "cost": 330.0,
-                "market_value": 420.0,
-            }
-        ],
-        "Personal": [],
+        "RRSP": {
+            "positions": [
+                {
+                    "contract_key": "ARM 2026-09-25 300C",
+                    "underlying": "ARM",
+                    "expiry": "2026-09-25",
+                    "strike": "300",
+                    "right": "C",
+                    "qty": 2,
+                    "avg_premium": 1.65,
+                    "cost": 330.0,
+                    "cost_usd": 330.0,
+                    "cost_cad": 450.0,
+                    "current_price": 2.10,
+                    "market_value": 420.0,
+                    "pct_return": 27.3,
+                }
+            ],
+            "fx": 1.3636,
+            "usd_cash": 120.50,
+        },
+        "Personal": {"positions": [], "fx": None, "usd_cash": None},
     }
     from trader.parser import parse_alert
 
@@ -947,5 +960,11 @@ def test_positions_endpoint_merges_live(monkeypatch):
         by_account.setdefault(r["account"], []).append(r)
     assert by_account["RRSP"][0]["contract_key"].startswith("ARM")
     assert by_account["RRSP"][0]["source"] == "ws"
+
+    summary = client.get("/api/summary").get_json()
+    rrsp = next(a for a in summary["accounts"] if a["label"] == "RRSP")
+    assert rrsp["usd_cash"] == 120.50
+    assert rrsp["usd_value"] == round(rrsp["value"] / 1.3636, 2)
+    assert rrsp["open_risk"] == 450.0   # CAD cost
     # Personal has live (empty) data: tracked rows for it are dropped
     assert by_account.get("Personal", []) == []
