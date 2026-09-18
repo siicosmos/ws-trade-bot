@@ -317,16 +317,24 @@ async function loadPositions() {
         esc(String(p.expiry || "").slice(0, 10)) + "</span> " +
         dteBadge(p.expiry)) + "</td>" +
       '<td class=num>' + (p.short ? "-" + p.qty : p.qty) + (p.short ? ' <span class="tag skip mini" title="short position">short</span>' : (p.spread ? ' <span class="tag ignored mini" title="multi-leg spread">spread</span>' : "")) + "</td>" +
-      '<td class=num>' + (p.avg_premium != null
-        ? (p.spread ? fmtSigned(avgTotal) : "$" + avgTotal.toLocaleString("en-CA", { maximumFractionDigits: 2 }) + cur) +
-          '<span class="subv">(' + (p.spread ? fmtSigned(p.avg_premium) : "$" + p.avg_premium + cur) + ")</span>"
-        : "—") + "</td>" +
-      '<td class=num>' + (p.current_price != null
-        ? (p.spread ? fmtSigned(p.current_price) : "$" + p.current_price + cur) + (mv != null
+      '<td class=num>' + (isStock
+        ? (p.avg_premium != null
+            ? "$" + p.avg_premium.toLocaleString("en-CA", { maximumFractionDigits: 2 }) + cur
+            : "—")
+        : (p.avg_premium != null
+        ? (p.spread ? fmtSigned(avgTotal) : "$" + avgTotal.toLocaleString("en-CA", { maximumFractionDigits: 2 })) +
+          '<span class="subv">(' + (p.spread ? fmtSigned(p.avg_premium) : "$" + p.avg_premium) + ")</span>"
+        : "—")) + "</td>" +
+      '<td class=num>' + (isStock
+        ? (p.current_price != null
+            ? "$" + p.current_price.toLocaleString("en-CA", { maximumFractionDigits: 2 }) + cur
+            : "—")
+        : (p.current_price != null
+        ? (p.spread ? fmtSigned(p.current_price) : "$" + p.current_price) + (mv != null
           ? '<span class="subv">(' + (p.short || (p.spread && mv < 0) ? "-$" : "$") +
-            Math.abs(mv).toLocaleString("en-CA", { maximumFractionDigits: 2 }) + (isStock ? cur : "") + ")</span>"
+            Math.abs(mv).toLocaleString("en-CA", { maximumFractionDigits: 2 }) + ")</span>"
           : "")
-        : "—") + "</td>" +
+        : "—")) + "</td>" +
       '<td class=num style="color:' + retColor + '">' + retMain + plSpan + "</td>" +
       '<td class=num>' + (isStock
         ? (p.cost_usd != null ? "$" + p.cost_usd.toLocaleString("en-CA", { maximumFractionDigits: 2 }) + cur : "—") +
