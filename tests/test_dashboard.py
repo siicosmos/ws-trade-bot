@@ -98,10 +98,18 @@ def test_positions_table_shows_price_and_return():
 
     js = re.findall(r"<script>(.*?)</script>",
                     dash.DASHBOARD_HTML, re.S)[0]
-    assert "<th class=num>Price</th>" in js
+    assert "<th class=num>Avg $</th>" in js
+    assert "<th class=num>Price $</th>" in js
     assert "<th class=num>Return</th>" in js
-    assert "p.current_price" in js
-    assert "p.pct_return" in js
+    assert "<th class=num>Total Cost $</th>" in js
+    # contract cell stacks symbol + strike over the expiry
+    assert "p.underlying" in js and "p.expiry" in js
+    # avg shows the position total with per-unit in brackets
+    assert "avgTotal" in js
+    # price shows the quote with the signed market value
+    assert "p.current_price" in js and "p.market_value" in js
+    # return shows the dollar P&L next to the percentage
+    assert "p.cost_usd - mv" in js and "plText" in js
     assert "set-ws-positions" in js
     assert "set-ws-values" in js
 

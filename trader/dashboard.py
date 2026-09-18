@@ -234,21 +234,40 @@ async function loadPositions() {
   const rows = await api("/api/positions");
   const el = document.getElementById("positions");
   if (!rows.length) { el.innerHTML = '<div class="empty">no open positions</div>'; return; }
-  let html = "<table><tr><th>Account</th><th>Contract</th><th class=num>Qty</th><th class=num>Avg Premium $</th><th class=num>Price $</th><th class=num>Return</th><th class=num>Cost $ (CAD)</th></tr>";
+  let html = "<table><tr><th>Account</th><th>Contract</th><th class=num>Qty</th><th class=num>Avg $</th><th class=num>Price $</th><th class=num>Return</th><th class=num>Total Cost $</th></tr>";
   for (const p of rows) {
     const ret = p.pct_return ?? null;
     const retColor = ret === null ? "var(--muted)" : ret >= 0 ? "var(--green)" : "var(--red)";
-    const retText = ret === null ? "—" : (ret > 0 ? "+" : "") + ret + "%";
+    const avgTotal = (p.qty || 0) * (p.avg_premium || 0) * 100;
+    const mv = p.market_value;
+    let pl = null;
+    if (mv != null && p.cost_usd != null) {
+      pl = p.short ? p.cost_usd - mv : mv - p.cost_usd;
+    }
+    const plText = pl === null ? "" : " (" + (pl > 0 ? "+$" : pl < 0 ? "-$" : "$") +
+      Math.abs(pl).toLocaleString("en-CA", { maximumFractionDigits: 2 }) + ")";
+    const retText = ret === null ? "—" + plText : (ret > 0 ? "+" : "") + ret + "%" + plText;
     html += "<tr><td>" + esc(p.account) + (
       p.source === "ws"
         ? ' <span class="tag ignored" title="live from Wealthsimple">ws</span>'
         : ""
-    ) + "</td><td>" + esc(p.contract_key) + "</td>" +
+    ) + "</td><td><span style=\"font-weight:600\">" +
+      esc((p.underlying || "") + " ") + esc(p.strike || "") + esc(p.right || "") +
+      '</span><br><span style="font-size:11px;color:var(--muted)">' +
+      esc(p.expiry || "") + "</span></td>" +
       '<td class=num>' + (p.short ? "-" + p.qty : p.qty) + (p.short ? ' <span class="tag skip" title="short position">short</span>' : "") + "</td>" +
-      '<td class=num>' + (p.avg_premium ?? "—") + "</td>" +
-      '<td class=num>' + (p.current_price != null ? "$" + p.current_price : "—") + "</td>" +
+      '<td class=num>' + (p.avg_premium != null
+        ? "$" + avgTotal.toLocaleString("en-CA", { maximumFractionDigits: 2 }) +
+          ' <span style="font-size:11px;color:var(--muted)">($' + p.avg_premium + ")</span>"
+        : "—") + "</td>" +
+      '<td class=num>' + (p.current_price != null
+        ? "$" + p.current_price + (mv != null
+          ? ' <span style="font-size:11px;color:var(--muted)">(' + (p.short ? "-$" : "$") +
+            mv.toLocaleString("en-CA", { maximumFractionDigits: 2 }) + ")</span>"
+          : "")
+        : "—") + "</td>" +
       '<td class=num style="color:' + retColor + '">' + retText + "</td>" +
-      '<td class=num>' + (p.cost_usd != null ? fmtMoney(p.cost_usd) + (p.cost_cad ? ' <span style="font-size:11px;color:var(--muted)">(' + fmtMoney(p.cost_cad) + ')</span>' : "") : fmtMoney((p.qty || 0) * (p.avg_premium || 0) * 100)) + "</td></tr>";
+      '<td class=num>' + (p.cost_usd != null ? fmtMoney(p.cost_usd) + (p.cost_cad ? ' <span style="font-size:11px;color:var(--muted)">(' + fmtMoney(p.cost_cad) + ')</span>' : "") : fmtMoney(avgTotal)) + "</td></tr>";
   }
   el.innerHTML = html + "</table>";
 }
