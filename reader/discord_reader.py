@@ -31,17 +31,10 @@ def find_message_container(window, marker):
 
 
 def message_items(container):
-    items = []
     try:
-        children = container.GetChildren()
+        return container.GetChildren()
     except auto.COMError:
-        return items
-    for child in children:
-        if child.ControlType == auto.ControlType.ListItemControl:
-            items.append(child)
-        else:
-            items.append(child)
-    return items
+        return []
 
 
 def item_text(item):
@@ -89,40 +82,57 @@ def post_message(url, text):
 def main():
     cfg = load_config()
     pipeline_url = cfg.get("pipeline_url", "http://localhost:8080/alert")
-    poll_interval = cfg.get("poll_interval", 1.5)
+    poll_interval = float(cfg.get("poll_interval", 0.5))
     channel_marker = cfg.get("channel_marker", "")
-    max_items = cfg.get("max_items", 40)
+    max_items = int(cfg.get("max_items", 40))
 
     tail = []
     print("looking for Discord window...")
-    while True:
+    window = None
+    while window is None:
         window = find_discord_window()
-        if window:
-            break
-        time.sleep(2)
+        if window is None:
+            time.sleep(2)
 
-    print(f"watching window {window.Name!r} (poll every {poll_interval}s)")
+    print(
+        f"watching window {window.Name!r} "
+        f"(poll every {poll_interval}s)"
+    )
 
+    container = None
     while True:
         try:
-            container = find_message_container(window, channel_marker)
             if container is None:
-                print("message container not found; adjust channel_marker")
-                time.sleep(5)
-                continue
+                container = find_message_container(window, channel_marker)
+                if container is None:
+                    print("message container not found; adjust channel_marker")
+                    time.sleep(5)
+                    continue
 
             msgs = current_messages(container, max_items)
+            if not msgs:
+                container = None
+                time.sleep(poll_interval)
+                continue
+
             fresh = new_messages(msgs, tail)
             if fresh:
                 tail = msgs
                 for text in fresh:
                     post_message(pipeline_url, text)
-            elif msgs and msgs != tail:
+            elif msgs != tail:
                 tail = msgs
-        except auto.COMError as e:
-            print(f"UIA error: {e}")
         except KeyboardInterrupt:
             break
+        except auto.COMError as e:
+            print(f"UIA error: {e}")
+            container = None
+            window = find_discord_window()
+            if window is None:
+                print("Discord window lost; waiting...")
+                while window is None:
+                    time.sleep(2)
+                    window = find_discord_window()
 
         time.sleep(poll_interval)
 

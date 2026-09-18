@@ -1,6 +1,6 @@
 {
   "pipeline_url": "http://localhost:8080/alert",
-  "poll_interval": 1.5,
+  "poll_interval": 0.5,
   "channel_marker": "",
   "max_items": 40
 }
