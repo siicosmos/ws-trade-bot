@@ -84,8 +84,8 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   .tag.skip { color: var(--yellow); background: #d2992222; }
   .tag.ignored { color: var(--muted); background: #8b949e22; }
   .tag.error { color: var(--red); background: #f8514922; }
-  .msg { max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
-  .detail { max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 12px; }
+  .msg { max-width: 420px; white-space: normal; word-break: break-word; color: var(--text); }
+  .detail { max-width: 360px; white-space: normal; word-break: break-word; color: var(--muted); font-size: 12px; }
   .empty { color: var(--muted); font-size: 13px; padding: 14px; text-align: center; background: var(--panel); border-radius: 8px; }
   .num { text-align: right; }
 </style>
@@ -120,6 +120,11 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 <div id="settings" class="card"></div>
 
 <script>
+function autoGrow(el) {
+  el.style.height = "auto";
+  el.style.height = (el.scrollHeight + 2) + "px";
+}
+
 function esc(s) {
   let out = "";
   for (const ch of String(s ?? "")) {
@@ -367,19 +372,22 @@ async function loadSettings() {
     '<label style="color:var(--muted);font-size:12px"><input id="set-au-enabled" type="checkbox"' + (s.auto_update.enabled ? " checked" : "") + '> auto-update</label>' +
     '<label style="color:var(--muted);font-size:12px">every <input id="set-au-interval" type="number" value="' + s.auto_update.interval_seconds + '" style="width:80px;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:13px">s</label>' +
     '<div style="grid-column:1/-1;color:var(--muted);font-size:12px">discord webhooks (take effect after restart)</div>' +
-    '<div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">trade alerts</label>' +
-    '<input id="set-discord-webhook_url" type="text" value="' + esc((s.discord || {}).webhook_url || "") + '" placeholder="main alerts channel" style="width:100%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px"></div>' +
-    '<div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">reader log</label>' +
-    '<input id="set-discord-reader_log_webhook_url" type="text" value="' + esc((s.discord || {}).reader_log_webhook_url || "") + '" placeholder="empty = off" style="width:100%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px"></div>' +
-    '<div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">pipeline log</label>' +
-    '<input id="set-discord-pipeline_log_webhook_url" type="text" value="' + esc((s.discord || {}).pipeline_log_webhook_url || "") + '" placeholder="empty = off" style="width:100%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px"></div>' +
-    '<div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">update notices</label>' +
-    '<input id="set-discord-update_webhook_url" type="text" value="' + esc((s.discord || {}).update_webhook_url || "") + '" placeholder="empty = trade alerts channel" style="width:100%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px"></div>' +
+    [["set-discord-webhook_url", "trade alerts", "main alerts channel", (s.discord || {}).webhook_url || ""],
+     ["set-discord-reader_log_webhook_url", "reader log", "empty = off", (s.discord || {}).reader_log_webhook_url || ""],
+     ["set-discord-pipeline_log_webhook_url", "pipeline log", "empty = off", (s.discord || {}).pipeline_log_webhook_url || ""],
+     ["set-discord-update_webhook_url", "update notices", "empty = trade alerts channel", (s.discord || {}).update_webhook_url || ""]].map(hook =>
+      '<div style="grid-column:1/-1"><label style="color:var(--muted);font-size:11px;text-transform:uppercase">' + hook[1] + '</label>' +
+      '<textarea id="' + hook[0] + '" rows="1" placeholder="' + hook[2] + '" style="width:100%;box-sizing:border-box;resize:none;overflow:hidden;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px">' + esc(hook[3]) + '</textarea></div>'
+    ).join("") +
     '<label style="color:var(--muted);font-size:12px">positions every <input id="set-ws-positions" type="number" value="' + (s.wealthsimple ? s.wealthsimple.positions_refresh_seconds : 30) + '" style="width:70px;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:13px">s</label>' +
     '<label style="color:var(--muted);font-size:12px">account values every <input id="set-ws-values" type="number" value="' + (s.wealthsimple ? s.wealthsimple.values_refresh_seconds : 60) + '" style="width:70px;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:13px">s</label>' +
     '<label style="color:var(--muted);font-size:12px"><input id="set-quotes-enabled" type="checkbox"' + (s.quotes.enabled ? " checked" : "") + '> live option quotes (stop monitor)</label>' +
     '<label style="color:var(--muted);font-size:12px">quotes: <select id="set-quotes-provider" style="background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:13px"><option value="ws"' + (s.quotes.provider === "ws" ? " selected" : "") + '>ws</option><option value="moomoo"' + (s.quotes.provider === "moomoo" ? " selected" : "") + '>moomoo</option></select></label></div>';
   el.innerHTML = html;
+  el.querySelectorAll("textarea").forEach(function(t) {
+    autoGrow(t);
+    t.addEventListener("input", function() { autoGrow(t); });
+  });
 }
 
 async function saveSettings() {

@@ -107,10 +107,19 @@ class AutoUpdater:
 
         self._record_update("manual")
 
+        commit = ""
+        try:
+            log = _git(self.root, "log", "-1", "--oneline", new or "HEAD")
+            commit = log.stdout.strip()
+        except (OSError, ValueError):
+            pass
         notify_discord(
             self.webhook_url,
             "Pipeline restarting",
-            {"reason": f"code updated to {new[:8] if new else '?'}"},
+            {
+                "reason": f"code updated to {new[:8] if new else '?'}",
+                "commits": commit[:1000] or "-",
+            },
             ok=True,
         )
         print("auto-update: local code changed - restarting pipeline...")

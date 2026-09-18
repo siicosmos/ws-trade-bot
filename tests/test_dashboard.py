@@ -117,3 +117,18 @@ def test_currency_split_display():
     assert "usd_cash" in js
     # cost shows USD with the CAD amount in brackets
     assert "cost_usd" in js and "cost_cad" in js
+
+
+def test_long_text_wraps_and_webhooks_are_textareas():
+    import trader.dashboard as dash
+
+    html = dash.DASHBOARD_HTML
+    # alert entries wrap instead of overflowing the panel
+    assert "white-space: normal" in html
+    assert "word-break: break-word" in html
+    assert "white-space: nowrap; color: var(--text)" not in html
+    # webhook inputs are full-row wrapping textareas that auto-grow
+    js = re.findall(r"<script>(.*?)</script>", html, re.S)[0]
+    assert 'textarea id="' in js
+    assert "grid-column:1/-1" in js
+    assert "function autoGrow(" in js

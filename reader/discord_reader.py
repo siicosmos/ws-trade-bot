@@ -331,7 +331,21 @@ def load_config():
         return yaml.safe_load(f) or {}
 
 
-def notify_restart(webhook_url, reason):
+def git_commit_line(root, sha):
+    """One-line 'sha subject' for a commit, empty on failure."""
+    if not sha:
+        return ""
+    try:
+        r = subprocess.run(
+            ["git", "log", "-1", "--oneline", sha], cwd=root,
+            capture_output=True, text=True, timeout=15,
+        )
+        return r.stdout.strip() if r.returncode == 0 else ""
+    except (OSError, subprocess.SubprocessError):
+        return ""
+
+
+def notify_restart(webhook_url, reason, commits=""):
     if not webhook_url:
         return
     try:
@@ -349,7 +363,17 @@ def notify_restart(webhook_url, reason):
                                 "value": str(reason)[:1000],
                                 "inline": True,
                             }
-                        ],
+                        ] + (
+                            [
+                                {
+                                    "name": "commits",
+                                    "value": str(commits)[:1000] or "-",
+                                    "inline": False,
+                                }
+                            ]
+                            if commits
+                            else []
+                        ),
                     }
                 ]
             },
@@ -790,7 +814,9 @@ def main():
             if head and start_head and head != start_head:
                 log("repo updated on disk - restarting reader for new code")
                 notify_restart(
-                    update_webhook_url, f"code updated to {head[:8]}"
+                    update_webhook_url,
+                    f"code updated to {head[:8]}",
+                    commits=git_commit_line(repo_root(), head),
                 )
                 os._exit(77)
 

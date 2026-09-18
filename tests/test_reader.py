@@ -803,3 +803,36 @@ def test_seen_persistence_round_trip(tmp_path, monkeypatch):
     seen2, seen_at2 = dr.load_seen()
     assert "delivered today" in seen2
     assert "delivered long ago" not in seen2
+
+
+def test_restart_notice_includes_commit(monkeypatch, tmp_path):
+    import discord_reader as dr
+
+    sent = {}
+
+    def fake_post(url, json=None, timeout=None):
+        sent.update(json)
+
+    monkeypatch.setattr(dr.requests, "post", fake_post)
+    monkeypatch.setattr(
+        dr, "git_commit_line",
+        lambda root, sha: f"{sha[:8]} make them include all including commit",
+    )
+
+    dr.notify_restart(
+        "http://hook", "code updated to abc12345",
+        commits=dr.git_commit_line(".", "abc1234567"),
+    )
+    fields = {
+        f["name"]: f["value"] for f in sent["embeds"][0]["fields"]
+    }
+    assert fields["commits"].startswith("abc12345")
+    assert "including commit" in fields["commits"]
+
+    # without commits, no commits field is added
+    sent.clear()
+    dr.notify_restart("http://hook", "manual")
+    fields = {
+        f["name"]: f["value"] for f in sent["embeds"][0]["fields"]
+    }
+    assert "commits" not in fields
