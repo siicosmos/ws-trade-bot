@@ -102,3 +102,16 @@ def test_current_messages_filters_chrome(monkeypatch):
         "BOUGHT 0DTE SPX 7645c @ .65 tiny size",
         "123",
     ]
+
+
+def test_git_head_in_repo():
+    import re as _re
+    root = os.path.abspath(os.path.join(_READER_DIR, ".."))
+    head = dr.git_head(root)
+    assert head and _re.fullmatch(r"[0-9a-f]{40}", head)
+
+
+def test_git_head_none_outside_repo():
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        assert dr.git_head(d) is None

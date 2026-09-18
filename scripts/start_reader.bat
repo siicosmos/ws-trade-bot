@@ -24,4 +24,9 @@ if not exist ..\config.yaml (
   exit /b 1
 )
 
+:start
 .venv\Scripts\python.exe discord_reader.py
+if errorlevel 77 (
+  echo restarting reader after update...
+  goto start
+)

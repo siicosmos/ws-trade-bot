@@ -1,5 +1,6 @@
 import os
 import re
+import subprocess
 import sys
 import time
 
@@ -206,6 +207,24 @@ def merged_config(resp, marker, poll_interval, max_items):
     return marker, poll_interval, max_items, marker_changed
 
 
+def repo_root():
+    here = os.path.dirname(os.path.abspath(__file__))
+    return os.path.abspath(os.path.join(here, ".."))
+
+
+def git_head(root):
+    try:
+        r = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=root,
+            capture_output=True, text=True, timeout=15,
+        )
+        if r.returncode == 0:
+            return r.stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return None
+
+
 def main():
     cfg = load_config()
     pipeline_url = cfg.get("pipeline_url", "http://localhost:8080/alert")
@@ -214,6 +233,9 @@ def main():
     max_items = int(cfg.get("max_items", 40))
     auth_token = cfg.get("auth_token", "")
     base_url = status_base_url(pipeline_url)
+
+    start_head = git_head(repo_root())
+    last_head_check = time.time()
 
     tail = []
     print("looking for Discord window...")
@@ -313,6 +335,13 @@ def main():
                 print(f"channel marker -> {marker!r}")
             poll_interval = new_poll
             max_items = new_max
+
+        if time.time() - last_head_check > 30:
+            last_head_check = time.time()
+            head = git_head(repo_root())
+            if head and start_head and head != start_head:
+                print("repo updated on disk - restarting reader for new code")
+                os._exit(77)
 
         time.sleep(poll_interval)
 
