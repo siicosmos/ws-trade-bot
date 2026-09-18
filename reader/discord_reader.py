@@ -683,7 +683,12 @@ def main():
                             f"(title channel: {title_channel!r}) - "
                             f"{len(diag)} candidates scanned:"
                         )
-                        for ctype, cname, score in diag[-8:]:
+                        notable = [
+                            (ctype, cname, score)
+                            for ctype, cname, score in diag
+                            if cname or score != 0
+                        ]
+                        for ctype, cname, score in notable[-8:]:
                             log(
                                 f"  [{ctype}] name={cname!r} score={score}"
                             )
