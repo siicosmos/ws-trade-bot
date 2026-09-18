@@ -102,7 +102,7 @@ async function api(path) {
 
 function fmtMoney(v) {
   if (v === null || v === undefined) return "—";
-  return "$" + Number(v).toLocaleString("en-CA", { maximumFractionDigits: 0 });
+  return "$" + Number(v).toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function fmtTime(ts) {
