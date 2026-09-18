@@ -106,10 +106,17 @@ def _probe_field(ws, template, field, variables, path):
         return None, f"error: {msg[:200]}"
     node = result.get("data") or {}
     for key in path:
-        if not isinstance(node, dict):
+        if isinstance(node, list):
+            try:
+                node = node[key] if isinstance(key, int) else None
+            except (IndexError, TypeError):
+                node = None
+        elif isinstance(node, dict):
+            node = node.get(key)
+        else:
             node = None
+        if node is None:
             break
-        node = node.get(key)
     if node is None:
         return None, "yes (no value returned)"
     if isinstance(node, list) and not node:
