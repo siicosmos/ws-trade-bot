@@ -1,3 +1,5 @@
+import time
+
 from flask import Flask, Response, jsonify, request
 
 from .dashboard import DASHBOARD_HTML
@@ -9,6 +11,11 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                  config_path=None) -> Flask:
     app = Flask(__name__)
     mode = cfg.trading.mode
+    app.reader_state = {
+        "channel": None,
+        "ok": False,
+        "last_seen": None,
+    }
 
     @app.before_request
     def auth_guard():
@@ -87,10 +94,17 @@ def create_app(cfg, store: Store, risk, executor, account=None,
         if err:
             return jsonify({"error": err}), 502
         t = cfg.trading
+        last_seen = app.reader_state.get("last_seen")
+        reader = dict(app.reader_state)
+        reader["desired"] = cfg.reader.channel_marker
+        reader["age_seconds"] = (
+            round(time.time() - last_seen, 1) if last_seen else None
+        )
         return jsonify(
             {
                 "mode": mode,
                 "accounts": accounts,
+                "reader": reader,
                 "stops": {
                     "stop_loss_pct": t.stop_loss_pct,
                     "trailing_stop_pct": t.trailing_stop_pct,
@@ -135,6 +149,30 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                 "restart_required": False,
             }
         )
+
+    @app.post("/api/reader_status")
+    def api_reader_status():
+        data = request.get_json(silent=True) or {}
+        app.reader_state["channel"] = (data.get("channel") or None)
+        app.reader_state["ok"] = bool(data.get("ok"))
+        app.reader_state["last_seen"] = time.time()
+        return jsonify(
+            {
+                "channel_marker": cfg.reader.channel_marker,
+                "poll_interval": cfg.reader.poll_interval,
+                "max_items": cfg.reader.max_items,
+            }
+        )
+
+    @app.get("/api/reader_status")
+    def api_reader_status_get():
+        last_seen = app.reader_state.get("last_seen")
+        state = dict(app.reader_state)
+        state["desired"] = cfg.reader.channel_marker
+        state["age_seconds"] = (
+            round(time.time() - last_seen, 1) if last_seen else None
+        )
+        return jsonify(state)
 
     @app.get("/api/update_status")
     def api_update_status():

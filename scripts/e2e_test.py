@@ -345,12 +345,62 @@ def run_settings_phase():
         stop(proc)
 
 
+def run_reader_status_phase():
+    print("\n=== PHASE F: reader channel control via portal ===")
+    cfg_path = os.path.join(tempfile.mkdtemp(), "config.yaml")
+    db_path = os.path.join(tempfile.mkdtemp(), "trades.db")
+    write_config(cfg_path, "notify")
+    proc, health = start_pipeline(cfg_path, db_path)
+    try:
+        base = _current_base()
+        r = requests.post(
+            f"{base}/api/reader_status",
+            json={"channel": "test-channel", "ok": True}, timeout=5,
+        ).json()
+        check("reader heartbeat returns config", r["channel_marker"] == "", str(r))
+
+        r = requests.post(
+            f"{base}/api/settings",
+            json={"reader": {"channel_marker": "player-alerts",
+                             "poll_interval": 0.75}},
+            timeout=5,
+        )
+        check("portal sets channel marker", r.status_code == 200, r.text[:200])
+
+        r = requests.post(
+            f"{base}/api/reader_status",
+            json={"channel": "test-channel", "ok": True}, timeout=5,
+        ).json()
+        check("reader receives new marker", r["channel_marker"] == "player-alerts", str(r))
+        check("reader receives new poll interval", r["poll_interval"] == 0.75, str(r))
+
+        summary = requests.get(f"{base}/api/summary", timeout=5).json()
+        check("summary shows reader watching", summary["reader"]["channel"] == "test-channel")
+        check("summary shows desired channel", summary["reader"]["desired"] == "player-alerts")
+        check("summary shows heartbeat age", summary["reader"]["age_seconds"] is not None)
+
+        r = requests.post(
+            f"{base}/api/settings",
+            json={"reader": {"channel_marker": ""}},
+            timeout=5,
+        )
+        check("marker can be cleared for follow mode", r.status_code == 200)
+        r = requests.post(
+            f"{base}/api/reader_status",
+            json={"channel": "whatever", "ok": True}, timeout=5,
+        ).json()
+        check("cleared marker reaches reader", r["channel_marker"] == "")
+    finally:
+        stop(proc)
+
+
 def main():
     run_notify_phase()
     run_paper_cycle_phase()
     run_risk_gate_phase()
     run_auth_phase()
     run_settings_phase()
+    run_reader_status_phase()
 
     print(f"\n{'=' * 50}")
     print(f"RESULT: {PASS} passed, {FAIL} failed")

@@ -17,6 +17,11 @@ EDITABLE_SCALARS = {
     "dedupe_window_minutes": ("int", 0, 1440),
 }
 EDITABLE_LISTS = ("ticker_whitelist", "skip_underlyings")
+EDITABLE_READER = {
+    "channel_marker": ("str", 0, 100),
+    "poll_interval": ("float", 0.2, 10),
+    "max_items": ("int", 5, 200),
+}
 
 
 def get_settings(cfg) -> dict:
@@ -24,8 +29,10 @@ def get_settings(cfg) -> dict:
     for k in EDITABLE_LISTS:
         trading[k] = getattr(cfg.trading, k)
     trading["size_tiers"] = cfg.trading.size_tiers
+    reader = {k: getattr(cfg.reader, k) for k in EDITABLE_READER}
     return {
         "trading": trading,
+        "reader": reader,
         "auto_update": {
             "enabled": cfg.auto_update.enabled,
             "interval_seconds": cfg.auto_update.interval_seconds,
@@ -98,6 +105,28 @@ def apply_settings(cfg, payload: dict, config_path=None) -> tuple:
             cfg.trading.size_tiers[str(name).lower()] = tier
             applied[f"trading.size_tiers.{name}"] = tier
 
+    reader_payload = payload.get("reader") or {}
+    for key, (kind, lo, hi) in EDITABLE_READER.items():
+        if key not in reader_payload:
+            continue
+        raw = reader_payload[key]
+        if kind == "str":
+            value = str(raw)
+            if len(value) > hi:
+                errors.append(f"reader.{key}: too long")
+                continue
+        else:
+            try:
+                value = float(raw) if kind == "float" else int(float(raw))
+            except (TypeError, ValueError):
+                errors.append(f"reader.{key}: not a number")
+                continue
+            if value < lo or value > hi:
+                errors.append(f"reader.{key}: must be between {lo} and {hi}")
+                continue
+        setattr(cfg.reader, key, value)
+        applied[f"reader.{key}"] = value
+
     au = payload.get("auto_update") or {}
     if "enabled" in au:
         cfg.auto_update.enabled = bool(au["enabled"])
@@ -139,6 +168,10 @@ def _persist(cfg, config_path):
 
     quotes = raw.setdefault("quotes", {})
     quotes["provider"] = cfg.quotes.provider
+
+    reader = raw.setdefault("reader", {})
+    for key in EDITABLE_READER:
+        reader[key] = getattr(cfg.reader, key)
 
     directory = os.path.dirname(os.path.abspath(config_path))
     fd, tmp = tempfile.mkstemp(dir=directory, suffix=".yaml.tmp")

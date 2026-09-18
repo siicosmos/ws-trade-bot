@@ -66,6 +66,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   <h1>WS Trade Bot</h1>
   <span id="mode" class="badge notify">notify</span>
   <span id="stops" style="color:var(--muted);font-size:12px"></span>
+  <span id="reader" style="color:var(--muted);font-size:12px"></span>
   <span id="updated"></span>
 </header>
 
@@ -120,6 +121,15 @@ async function loadSummary() {
     document.getElementById("stops").textContent =
       "stops " + s.stop_loss_pct + "% · loss streak " + streak +
       (s.trailing_stop_pct > 0 ? " · trail " + s.trailing_stop_pct + "%" : "");
+  }
+  if (data.reader) {
+    const r = data.reader;
+    const age = r.age_seconds === null || r.age_seconds > 30 ? "offline" : r.age_seconds + "s ago";
+    document.getElementById("reader").textContent = r.channel
+      ? "watching: " + r.channel + " (" + age + ")"
+      : "waiting for: " + (r.desired || "any open channel") + " (" + age + ")";
+    document.getElementById("reader").style.color =
+      r.age_seconds !== null && r.age_seconds <= 30 ? "var(--green)" : "var(--yellow)";
   }
   const el = document.getElementById("accounts");
   el.innerHTML = "";
@@ -217,6 +227,15 @@ async function loadSettings() {
       '<input id="tier-' + name + '-max" type="number" value="' + tier.contracts_max + '" title="max contracts" style="width:50%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px"></div></div>';
   }
   html += "</div>";
+  html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-top:14px">' +
+    '<div style="color:var(--muted);font-size:12px;grid-column:1/-1">reader (channel marker: empty = follow whatever channel is open in Discord)</div>' +
+    '<div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">channel marker</label>' +
+    '<input id="set-reader-channel_marker" type="text" value="' + (s.reader.channel_marker || "") + '" placeholder="e.g. player-alerts" style="width:100%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px"></div>' +
+    '<div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">poll interval (s)</label>' +
+    '<input id="set-reader-poll_interval" type="number" step="any" value="' + s.reader.poll_interval + '" style="width:100%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px"></div>' +
+    '<div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">max messages kept</label>' +
+    '<input id="set-reader-max_items" type="number" value="' + s.reader.max_items + '" style="width:100%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px"></div>' +
+    "</div>";
   html += '<div style="display:flex;gap:10px;margin-top:14px;align-items:center;flex-wrap:wrap">' +
     '<label style="color:var(--muted);font-size:12px"><input id="set-au-enabled" type="checkbox"' + (s.auto_update.enabled ? " checked" : "") + '> auto-update</label>' +
     '<label style="color:var(--muted);font-size:12px">every <input id="set-au-interval" type="number" value="' + s.auto_update.interval_seconds + '" style="width:80px;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:13px">s</label>' +
@@ -241,7 +260,15 @@ async function saveSettings() {
     tiers[name] = { risk_pct_max: num("tier-" + name + "-risk"), contracts_min: parseInt(val("tier-" + name + "-min")), contracts_max: parseInt(val("tier-" + name + "-max")) };
   }
   trading.size_tiers = tiers;
-  const payload = { trading, auto_update: { enabled: document.getElementById("set-au-enabled").checked, interval_seconds: parseInt(val("set-au-interval")) } };
+  const payload = {
+    trading,
+    reader: {
+      channel_marker: val("set-reader-channel_marker"),
+      poll_interval: num("set-reader-poll_interval"),
+      max_items: parseInt(val("set-reader-max_items")),
+    },
+    auto_update: { enabled: document.getElementById("set-au-enabled").checked, interval_seconds: parseInt(val("set-au-interval")) },
+  };
   const res = await fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json", ...headers() }, body: JSON.stringify(payload) });
   const data = await res.json();
   if (res.status !== 200) {

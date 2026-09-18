@@ -86,6 +86,15 @@ class ParserConfig:
 
 
 @dataclass
+class ReaderConfig:
+    pipeline_url: str = "http://localhost:8080/alert"
+    poll_interval: float = 0.5
+    channel_marker: str = ""
+    max_items: int = 40
+    auth_token: str = ""
+
+
+@dataclass
 class AutoUpdateConfig:
     enabled: bool = True
     interval_seconds: int = 600
@@ -107,6 +116,7 @@ class Config:
     parser: ParserConfig
     auto_update: AutoUpdateConfig
     quotes: QuotesConfig
+    reader: ReaderConfig
 
 
 def _get(d, key, default):
@@ -231,6 +241,20 @@ def load_config(path: str) -> Config:
             interval_seconds=int(
                 _get(raw.get("auto_update") or {}, "interval_seconds", 600)
             ),
+        ),
+        reader=ReaderConfig(
+            pipeline_url=str(
+                _get(raw.get("reader") or {}, "pipeline_url",
+                     "http://localhost:8080/alert")
+            ),
+            poll_interval=float(
+                _get(raw.get("reader") or {}, "poll_interval", 0.5)
+            ),
+            channel_marker=str(
+                _get(raw.get("reader") or {}, "channel_marker", "")
+            ),
+            max_items=int(_get(raw.get("reader") or {}, "max_items", 40)),
+            auth_token=str(_get(raw.get("reader") or {}, "auth_token", "")),
         ),
         quotes=QuotesConfig(
             provider=str(

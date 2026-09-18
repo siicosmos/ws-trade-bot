@@ -5,7 +5,7 @@ import tempfile
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from trader.account import PaperAccount
-from trader.config import TradingConfig, WealthsimpleConfig, WSAccountConfig
+from trader.config import ReaderConfig, TradingConfig, WealthsimpleConfig, WSAccountConfig
 from trader.executor import (
     PaperExecutor, account_sizing, contracts_for, sell_quantity, tier_plan,
 )
@@ -22,6 +22,7 @@ class ConfigStub:
         self.discord = type("D", (), {"webhook_url": ""})()
         self.parser = type("P", (), {"custom_patterns": []})()
         self.wealthsimple = WealthsimpleConfig(accounts=accounts or [])
+        self.reader = ReaderConfig()
 
 
 def _fresh_store():

@@ -5,7 +5,7 @@ import tempfile
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from trader.account import PaperAccount
-from trader.config import TradingConfig, WealthsimpleConfig, WSAccountConfig, \
+from trader.config import ReaderConfig, TradingConfig, WealthsimpleConfig, WSAccountConfig, \
     AutoUpdateConfig, QuotesConfig
 from trader.executor import PaperExecutor
 from trader.parser import parse_alert
@@ -24,6 +24,7 @@ class ConfigStub:
         self.discord = type("D", (), {"webhook_url": ""})()
         self.parser = type("P", (), {"custom_patterns": []})()
         self.wealthsimple = WealthsimpleConfig(accounts=accounts or [])
+        self.reader = ReaderConfig()
         self.auto_update = AutoUpdateConfig()
         self.quotes = QuotesConfig()
 
@@ -348,3 +349,87 @@ def test_updater_up_to_date_no_restart():
         assert u.last_result == "up to date"
     finally:
         up._git = original
+
+
+def test_reader_settings_apply_and_persist():
+    fd, cfg_path = tempfile.mkstemp(suffix=".yaml")
+    os.close(fd)
+    with open(cfg_path, "w") as f:
+        f.write(
+            "reader:\n"
+            "  pipeline_url: http://localhost:8080/alert\n"
+            "  auth_token: secret123\n"
+        )
+    cfg = ConfigStub(TradingConfig(mode="notify"))
+
+    applied, errors = apply_settings(
+        cfg,
+        {"reader": {
+            "channel_marker": "🚨│player-alerts",
+            "poll_interval": 0.75,
+            "max_items": 60,
+        }},
+        cfg_path,
+    )
+    assert errors == []
+    assert cfg.reader.channel_marker == "🚨│player-alerts"
+    assert cfg.reader.poll_interval == 0.75
+    assert cfg.reader.max_items == 60
+
+    from trader.config import load_config
+
+    reloaded = load_config(cfg_path)
+    assert reloaded.reader.channel_marker == "🚨│player-alerts"
+    assert reloaded.reader.pipeline_url == "http://localhost:8080/alert"
+    assert reloaded.reader.auth_token == "secret123"
+    os.unlink(cfg_path)
+
+
+def test_reader_settings_validation():
+    cfg = ConfigStub(TradingConfig(mode="notify"))
+    applied, errors = apply_settings(
+        cfg, {"reader": {"poll_interval": 0.01}}
+    )
+    assert errors
+    applied, errors = apply_settings(
+        cfg, {"reader": {"max_items": 100000}}
+    )
+    assert errors
+
+
+def test_reader_status_endpoints():
+    from trader.server import create_app
+
+    cfg = ConfigStub(TradingConfig(mode="notify"))
+    store = _fresh_store()
+    account = PaperAccount(cfg, store)
+    risk = RiskEngine(cfg, store, account)
+    app = create_app(cfg, store, risk, None, account)
+    client = app.test_client()
+
+    resp = client.post(
+        "/api/reader_status",
+        json={"channel": "🚨│player-alerts", "ok": True},
+    )
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["channel_marker"] == ""
+    assert data["poll_interval"] == 0.5
+
+    client.post(
+        "/api/settings",
+        json={"reader": {"channel_marker": "player-alerts"}},
+    )
+    resp = client.post(
+        "/api/reader_status", json={"channel": "test", "ok": True}
+    )
+    assert resp.get_json()["channel_marker"] == "player-alerts"
+
+    summary = client.get("/api/summary").get_json()
+    assert summary["reader"]["channel"] == "test"
+    assert summary["reader"]["desired"] == "player-alerts"
+    assert summary["reader"]["age_seconds"] is not None
+
+    state = client.get("/api/reader_status").get_json()
+    assert state["channel"] == "test"
+    assert state["desired"] == "player-alerts"
