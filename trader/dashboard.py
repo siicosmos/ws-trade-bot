@@ -247,43 +247,37 @@ async function loadSummary() {
   }
   const el = document.getElementById("accounts");
   el.innerHTML = "";
-  const toggle = document.createElement("button");
-  toggle.className = "cur-toggle";
-  toggle.title = "flip account value currency";
-  toggle.textContent = valueCurrency.toUpperCase() + " ⇄";
-  toggle.onclick = toggleValueCurrency;
-  el.appendChild(toggle);
-  const eye = document.createElement("button");
-  eye.className = "cur-toggle";
-  eye.title = hideValue ? "show account value" : "hide account value";
-  eye.innerHTML = hideValue ? EYE_OFF_SVG : EYE_SVG;
-  eye.onclick = toggleHideValue;
-  el.appendChild(eye);
   for (const a of data.accounts) {
+    const cur = cardCurrency[a.label] || "cad";
+    const hidden = !!cardHidden[a.label];
     const pct = Math.min(100, Math.round((a.open_risk_pct || 0)));
     const color = pct >= (a.max_open_risk_pct || 30) ? "#f85149" : pct > (a.max_open_risk_pct || 30) * 0.6 ? "#d29922" : "#3fb950";
     const usd = a.usd_value && a.value;
-    const showUsd = valueCurrency === "usd" && usd;
+    const showUsd = cur === "usd" && usd;
     const fx = usd ? a.usd_value / a.value : null;
     const risk = showUsd ? a.open_risk * fx : a.open_risk;
     const card = document.createElement("div");
     card.className = "card";
     card.innerHTML =
-      '<div class="label">' + esc(a.label) + '</div>' +
-      '<div class="value">' + (hideValue ? "••••••" :
+      '<div class="label">' + esc(a.label) +
+      '<span style="float:right">' +
+      '<button class="cur-toggle" style="padding:1px 8px;margin:0" title="flip account value currency" onclick="flipCardCurrency(\'' + esc(a.label) + '\')">' + cur.toUpperCase() + ' ⇄</button> ' +
+      '<button class="cur-toggle" style="padding:1px 7px;margin:0" title="' + (hidden ? "show account value" : "hide account value") + '" onclick="toggleCardHidden(\'' + esc(a.label) + '\')">' + (hidden ? EYE_OFF_SVG : EYE_SVG) + '</button>' +
+      '</span></div>' +
+      '<div class="value">' + (hidden ? "••••••" :
         (showUsd ? fmtMoney(a.usd_value) + " USD" : fmtMoney(a.value) + " CAD") +
         (a.value_age ? ' <span style="font-size:12px;color:#d29922">(cached ' + a.value_age + ')</span>' : '') +
         (showUsd
           ? ' <span style="font-size:13px;color:var(--muted)">' + fmtMoney(a.value) + ' CAD</span>'
           : (a.usd_value
             ? ' <span style="font-size:13px;color:var(--muted)">$' + a.usd_value.toLocaleString("en-CA", {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' USD</span>'
-            : (valueCurrency === "usd" ? ' <span style="font-size:12px;color:var(--yellow)">fx unavailable</span>' : '')))) + '</div>' +
+            : (cur === "usd" ? ' <span style="font-size:12px;color:var(--yellow)">fx unavailable</span>' : '')))) + '</div>' +
       '<div class="riskbar"><div style="width:' + pct + '%;background:' + color + '"></div></div>' +
       '<div class="sub"><span style="color:' + color + (pct >= (a.max_open_risk_pct || 30) ? ';font-weight:700' : '') + '">open risk ' + fmtMoney(risk) + ' (' + (a.open_risk_pct ?? 0) + '%)</span>' +
       '<span>cap ' + (a.max_open_risk_pct) + '%</span></div>' +
       ((a.cash_cad != null || a.cash_usd != null)
-        ? '<div class="sub"><span>cash ' + (a.cash_cad != null ? fmtMoney(a.cash_cad) : "—") +
-          (a.cash_usd != null
+        ? '<div class="sub"><span>cash ' + (hidden ? "••••••" : (a.cash_cad != null ? fmtMoney(a.cash_cad) : "—")) +
+          (!hidden && a.cash_usd != null
             ? (a.cash_usd >= 0
               ? ' · $' + a.cash_usd.toLocaleString("en-CA", {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' usd'
               : ' · <span style="color:var(--yellow)">usd margin used $' +
@@ -396,21 +390,21 @@ let lastRefresh = null;
 
 let showIgnored = true;
 
-let valueCurrency = localStorage.getItem("ws_value_currency") || "cad";
-let hideValue = localStorage.getItem("ws_hide_value") === "1";
+let cardCurrency = JSON.parse(localStorage.getItem("ws_card_currency") || "{}");
+let cardHidden = JSON.parse(localStorage.getItem("ws_card_hidden") || "{}");
 
 const EYE_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>';
 const EYE_OFF_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
 
-function toggleHideValue() {
-  hideValue = !hideValue;
-  localStorage.setItem("ws_hide_value", hideValue ? "1" : "0");
+function flipCardCurrency(label) {
+  cardCurrency[label] = (cardCurrency[label] || "cad") === "cad" ? "usd" : "cad";
+  localStorage.setItem("ws_card_currency", JSON.stringify(cardCurrency));
   loadSummary();
 }
 
-function toggleValueCurrency() {
-  valueCurrency = valueCurrency === "cad" ? "usd" : "cad";
-  localStorage.setItem("ws_value_currency", valueCurrency);
+function toggleCardHidden(label) {
+  cardHidden[label] = !cardHidden[label];
+  localStorage.setItem("ws_card_hidden", JSON.stringify(cardHidden));
   loadSummary();
 }
 

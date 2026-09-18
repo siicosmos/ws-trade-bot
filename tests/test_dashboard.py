@@ -185,8 +185,8 @@ def test_currency_toggle():
 
     js = re.findall(r"<script>(.*?)</script>",
                     dash.DASHBOARD_HTML, re.S)[0]
-    assert 'let valueCurrency = localStorage.getItem' in js
-    assert "function toggleValueCurrency()" in js
+    assert 'localStorage.getItem("ws_card_currency")' in js
+    assert "function flipCardCurrency" in js
     assert "cur-toggle" in dash.DASHBOARD_HTML
     # usd mode converts open risk with the derived fx rate
     assert "a.open_risk * fx" in js
@@ -301,9 +301,15 @@ def test_hide_value_eye_toggle():
 
     js = re.findall(r"<script>(.*?)</script>",
                     dash.DASHBOARD_HTML, re.S)[0]
-    # eye toggle hides the account value, persisted
-    assert 'localStorage.getItem("ws_hide_value") === "1"' in js
+    # per-card eye toggle masks value and cash amounts, persisted
+    assert 'localStorage.getItem("ws_card_hidden")' in js
     assert "EYE_SVG" in js and "EYE_OFF_SVG" in js
     assert '"••••••"' in js
+    assert "toggleCardHidden" in js
+    # currency flip is per card too
+    assert "flipCardCurrency" in js
+    assert 'localStorage.getItem("ws_card_currency")' in js
+    # hidden cash keeps the label but drops the amounts
+    assert '(hidden ? "••••••" : (a.cash_cad != null' in js
     # approx symbol removed from value lines
     assert "≈" not in js
