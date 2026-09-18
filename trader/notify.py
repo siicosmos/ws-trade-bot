@@ -56,9 +56,12 @@ def notify_alert(webhook_url: str, alert, sizing=None):
         value = row.get("value")
         contracts = row.get("contracts")
         if value is not None and contracts is not None:
+            risk = row.get("actual_risk")
+            if risk is None or risk == 0:
+                risk = row.get("budget") or 0
             line = (
                 f"{contracts} contracts "
-                f"(${row.get('budget') or 0:,.0f} risk @ {row.get('risk_pct')}%)"
+                f"(${risk:,.0f} risk @ {row.get('risk_pct')}% cap)"
             )
             warnings = row.get("warnings") or []
             if warnings:

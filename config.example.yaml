@@ -1,12 +1,14 @@
 pipeline:
   host: "0.0.0.0"
   port: 8080
+  auth_token: ""
 
 reader:
   pipeline_url: "http://localhost:8080/alert"
   poll_interval: 0.5
   channel_marker: ""
   max_items: 40
+  auth_token: ""
 
 discord:
   webhook_url: "YOUR_PRIVATE_SERVER_WEBHOOK_URL"
@@ -17,15 +19,29 @@ trading:
   limit_offset_pct: 0.5
   position_size_cad: 100
   risk_per_trade_pct: 5
+  size_tiers:
+    lotto:
+      risk_pct_max: 0.5
+      contracts_min: 1
+      contracts_max: 1
+    tiny:
+      risk_pct_max: 1
+      contracts_min: 1
+      contracts_max: 1
+    small:
+      risk_pct_max: 2
+      contracts_min: 1
+      contracts_max: 2
+    medium:
+      risk_pct_max: 5
+      contracts_min: 1
+      contracts_max: 5
+    large:
+      risk_pct_max: 10
+      contracts_min: 1
+      contracts_max: 10
   max_contracts_per_trade: 10
   max_open_risk_pct: 30
-  size_risk_pct:
-    lotto: 0.5
-    tiny: 1
-    small: 1.5
-    medium: 4.5
-    big: 9
-    full: 9
   paper_account_value: 10000
   skip_underlyings:
     - SPX

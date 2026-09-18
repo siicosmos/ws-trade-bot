@@ -89,10 +89,12 @@ def new_messages(current, tail):
     return []
 
 
-def post_message(url, text):
+def post_message(url, text, token=""):
+    headers = {"X-Auth-Token": token} if token else {}
     try:
         resp = requests.post(
-            url, json={"text": text, "author": "", "ts": time.time()}, timeout=10
+            url, json={"text": text, "author": "", "ts": time.time()},
+            headers=headers, timeout=10,
         )
         print(f"-> {resp.status_code} {text[:80]}")
     except requests.RequestException as e:
@@ -106,6 +108,7 @@ def main():
     channel_marker = cfg.get("channel_marker", "")
     max_items = int(cfg.get("max_items", 40))
 
+    auth_token = cfg.get("auth_token", "")
     tail = []
     print("looking for Discord window...")
     window = None
@@ -139,7 +142,7 @@ def main():
             if fresh:
                 tail = msgs
                 for text in fresh:
-                    post_message(pipeline_url, text)
+                    post_message(pipeline_url, text, auth_token)
             elif msgs != tail:
                 tail = msgs
         except KeyboardInterrupt:

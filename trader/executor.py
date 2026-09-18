@@ -14,11 +14,18 @@ class ExecutionResult:
     breakdown: dict = field(default_factory=dict)
 
 
-def effective_risk_pct(acct, cfg, alert=None) -> float:
+def tier_for(alert, cfg):
     if alert and alert.size:
-        pct = (cfg.trading.size_risk_pct or {}).get(alert.size)
-        if pct is not None:
-            return float(pct)
+        tier = (cfg.trading.size_tiers or {}).get(alert.size)
+        if tier:
+            return tier
+    return None
+
+
+def effective_risk_pct(acct, cfg, alert=None) -> float:
+    tier = tier_for(alert, cfg)
+    if tier is not None:
+        return float(tier["risk_pct_max"])
     if acct and acct.risk_per_trade_pct is not None:
         return float(acct.risk_per_trade_pct)
     return cfg.trading.risk_per_trade_pct
@@ -30,19 +37,49 @@ def effective_contract_cap(acct, cfg) -> int:
     return cfg.trading.max_contracts_per_trade
 
 
+def tier_plan(alert, cfg, account_value, price, acct=None) -> dict:
+    cost = float(price) * 100 if price else 0.0
+    tier = tier_for(alert, cfg)
+    risk_pct = effective_risk_pct(acct, cfg, alert)
+    if account_value and account_value > 0:
+        budget = float(account_value) * risk_pct / 100.0
+    else:
+        budget = 0.0
+    affordable = int(budget // cost) if cost > 0 and account_value else 0
+    cap = effective_contract_cap(acct, cfg)
+
+    tier_min = tier_max = None
+    if tier is not None:
+        tier_min = int(tier["contracts_min"])
+        tier_max = int(tier["contracts_max"])
+        qty = min(affordable, tier_max)
+        if cap and cap > 0:
+            qty = min(qty, cap)
+        if qty < tier_min:
+            qty = 0
+    else:
+        qty = affordable
+        if cap and cap > 0:
+            qty = min(qty, cap)
+
+    return {
+        "qty": max(0, qty),
+        "affordable": affordable,
+        "budget": budget,
+        "risk_pct": risk_pct,
+        "tier_min": tier_min,
+        "tier_max": tier_max,
+        "cap": cap,
+        "cost": cost,
+    }
+
+
 def raw_contracts_for(alert, cfg, account_value, price, acct=None) -> int:
-    if not price or price <= 0 or not account_value or account_value <= 0:
-        return 0
-    budget = account_value * (effective_risk_pct(acct, cfg, alert) / 100.0)
-    return int(budget // (float(price) * 100))
+    return tier_plan(alert, cfg, account_value, price, acct)["affordable"]
 
 
 def contracts_for(alert, cfg, account_value: float, price, acct=None) -> int:
-    qty = raw_contracts_for(alert, cfg, account_value, price, acct)
-    cap = effective_contract_cap(acct, cfg)
-    if cap and cap > 0:
-        qty = min(qty, cap)
-    return max(0, qty)
+    return tier_plan(alert, cfg, account_value, price, acct)["qty"]
 
 
 def account_sizing(alert, cfg, account, store=None) -> list:
@@ -59,35 +96,41 @@ def account_sizing(alert, cfg, account, store=None) -> list:
                 value = account.value(label)
             except Exception:
                 value = None
-        risk_pct = effective_risk_pct(acct, cfg, alert)
-        budget = value * (risk_pct / 100.0) if value else None
 
-        contracts = None
-        if budget is not None and price:
-            contracts = int(budget // (float(price) * 100))
-
-        cap = effective_contract_cap(acct, cfg)
-        final_contracts = contracts
-        if (
-            contracts is not None
-            and cap and cap > 0
-        ):
-            final_contracts = min(contracts, cap)
-
+        plan = tier_plan(alert, cfg, value, price, acct)
+        contracts = plan["qty"] if (value is not None and price) else None
         warnings = []
-        if contracts is not None and price:
-            cost = float(price) * 100
-            if contracts < 1:
-                warnings.append(
-                    f"budget ${budget:,.0f} below ${cost:,.0f} per-contract cost"
-                )
-            elif cap and cap > 0 and contracts > cap:
-                warnings.append(f"over contract cap ({cap})")
+
+        if value is not None and value > 0 and price:
+            if plan["qty"] < 1:
+                if plan["affordable"] >= 1:
+                    warnings.append(
+                        f"budget ${plan['budget']:,.0f} affords "
+                        f"{plan['affordable']}, tier minimum is "
+                        f"{plan['tier_min'] or 1}"
+                    )
+                else:
+                    warnings.append(
+                        f"budget ${plan['budget']:,.0f} below "
+                        f"${plan['cost']:,.0f} per-contract cost"
+                    )
+            elif plan["affordable"] > plan["qty"]:
+                if (
+                    plan["tier_max"] is not None
+                    and plan["affordable"] > plan["tier_max"]
+                ):
+                    warnings.append(
+                        f"capped at tier max {plan['tier_max']} "
+                        f"(budget could afford {plan['affordable']})"
+                    )
+                elif plan["cap"] and plan["cap"] > 0:
+                    warnings.append(f"over contract cap ({plan['cap']})")
+
         if (
             alert.action == "BUY"
             and store is not None
             and value
-            and final_contracts
+            and plan["qty"]
             and cfg.trading.max_open_risk_pct > 0
         ):
             open_risk = store.open_risk(mode, label)
@@ -102,11 +145,16 @@ def account_sizing(alert, cfg, account, store=None) -> list:
             {
                 "label": label,
                 "value": value,
-                "risk_pct": risk_pct,
-                "budget": budget,
+                "risk_pct": plan["risk_pct"],
+                "budget": plan["budget"],
                 "price": price,
                 "contracts": contracts,
-                "final_contracts": final_contracts,
+                "final_contracts": contracts,
+                "actual_risk": (
+                    plan["qty"] * plan["cost"]
+                    if contracts is not None
+                    else None
+                ),
                 "warnings": warnings,
             }
         )
@@ -156,18 +204,33 @@ class PaperExecutor:
             for acct in effective_accounts(cfg):
                 label = account_label(acct)
                 value = self.account.value(label)
-                raw = raw_contracts_for(alert, cfg, value, price, acct)
-                qty = contracts_for(alert, cfg, value, price, acct)
-                if raw < 1:
-                    budget = value * (
-                        effective_risk_pct(acct, cfg, alert) / 100.0
-                    )
-                    breakdown[label] = (
-                        f"0 (risk budget ${budget:,.0f} < "
-                        f"${price * 100:,.0f}/contract)"
-                    )
+                plan = tier_plan(alert, cfg, value, price, acct)
+                qty = plan["qty"]
+                if qty < 1:
+                    if plan["affordable"] >= 1:
+                        breakdown[label] = (
+                            f"0 (budget ${plan['budget']:,.0f} affords "
+                            f"{plan['affordable']}, tier minimum "
+                            f"{plan['tier_min'] or 1})"
+                        )
+                    else:
+                        breakdown[label] = (
+                            f"0 (budget ${plan['budget']:,.0f} < "
+                            f"${plan['cost']:,.0f}/contract)"
+                        )
                     continue
-                note = f" (capped from {raw})" if raw > qty else ""
+                note = ""
+                if plan["affordable"] > qty:
+                    if (
+                        plan["tier_max"] is not None
+                        and plan["affordable"] > plan["tier_max"]
+                    ):
+                        note = (
+                            f" (tier max {plan['tier_max']}, "
+                            f"could afford {plan['affordable']})"
+                        )
+                    else:
+                        note = f" (capped from {plan['affordable']})"
                 if _at_open_risk_cap(store, self.mode, label, value, cfg):
                     breakdown[label] = (
                         f"skipped (open risk cap reached, wanted {qty}x)"
@@ -280,6 +343,9 @@ class WealthsimpleExecutor:
             from wealthsimple_python import WealthsimpleV2
 
             self._ws = WealthsimpleV2()
+        from .ws_tokens import persist_env_tokens
+
+        persist_env_tokens()
         return self._ws
 
     def _resolve_security(self, ws, ticker):
@@ -381,20 +447,33 @@ class WealthsimpleExecutor:
                     value = self.account.value(label)
                 except Exception:
                     value = None
-                raw = raw_contracts_for(alert, cfg, value, limit, acct)
-                qty = contracts_for(alert, cfg, value, limit, acct)
-                if raw < 1:
-                    budget = (
-                        value * (effective_risk_pct(acct, cfg, alert) / 100.0)
-                        if value
-                        else 0
-                    )
-                    breakdown[label] = (
-                        f"0 (risk budget ${budget:,.0f} < "
-                        f"${float(limit) * 100:,.0f}/contract)"
-                    )
+                plan = tier_plan(alert, cfg, value, limit, acct)
+                qty = plan["qty"]
+                if qty < 1:
+                    if plan["affordable"] >= 1:
+                        breakdown[label] = (
+                            f"0 (budget ${plan['budget']:,.0f} affords "
+                            f"{plan['affordable']}, tier minimum "
+                            f"{plan['tier_min'] or 1})"
+                        )
+                    else:
+                        breakdown[label] = (
+                            f"0 (budget ${plan['budget']:,.0f} < "
+                            f"${plan['cost']:,.0f}/contract)"
+                        )
                     continue
-                note = f" (capped from {raw})" if raw > qty else ""
+                note = ""
+                if plan["affordable"] > qty:
+                    if (
+                        plan["tier_max"] is not None
+                        and plan["affordable"] > plan["tier_max"]
+                    ):
+                        note = (
+                            f" (tier max {plan['tier_max']}, "
+                            f"could afford {plan['affordable']})"
+                        )
+                    else:
+                        note = f" (capped from {plan['affordable']})"
                 if _at_open_risk_cap(store, self.mode, label, value, cfg):
                     breakdown[label] = (
                         f"skipped (open risk cap reached, wanted {qty}x)"

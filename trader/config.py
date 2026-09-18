@@ -9,11 +9,33 @@ import yaml
 class PipelineConfig:
     host: str = "0.0.0.0"
     port: int = 8080
+    auth_token: str = ""
 
 
 @dataclass
 class DiscordConfig:
     webhook_url: str = ""
+
+
+def _default_size_tiers() -> dict:
+    return {
+        "lotto": {"risk_pct_max": 0.5, "contracts_min": 1, "contracts_max": 1},
+        "micro": {"risk_pct_max": 0.5, "contracts_min": 1, "contracts_max": 1},
+        "tiny": {"risk_pct_max": 1.0, "contracts_min": 1, "contracts_max": 1},
+        "small": {"risk_pct_max": 2.0, "contracts_min": 1, "contracts_max": 2},
+        "medium": {"risk_pct_max": 5.0, "contracts_min": 1, "contracts_max": 5},
+        "large": {"risk_pct_max": 10.0, "contracts_min": 1, "contracts_max": 10},
+        "big": {"risk_pct_max": 10.0, "contracts_min": 1, "contracts_max": 10},
+        "full": {"risk_pct_max": 10.0, "contracts_min": 1, "contracts_max": 10},
+    }
+
+
+def _norm_tier(d: dict) -> dict:
+    return {
+        "risk_pct_max": float(d.get("risk_pct_max", 5.0)),
+        "contracts_min": int(d.get("contracts_min", 1)),
+        "contracts_max": int(d.get("contracts_max", 10)),
+    }
 
 
 @dataclass
@@ -26,18 +48,6 @@ class WSAccountConfig:
     enabled: bool = True
 
 
-def _default_size_risk_pct() -> dict:
-    return {
-        "lotto": 0.5,
-        "micro": 0.5,
-        "tiny": 1.0,
-        "small": 1.5,
-        "medium": 4.5,
-        "big": 9.0,
-        "full": 9.0,
-    }
-
-
 @dataclass
 class TradingConfig:
     mode: str = "notify"
@@ -46,7 +56,7 @@ class TradingConfig:
     limit_offset_pct: float = 0.5
     position_size_cad: float = 100.0
     risk_per_trade_pct: float = 5.0
-    size_risk_pct: dict = field(default_factory=_default_size_risk_pct)
+    size_tiers: dict = field(default_factory=_default_size_tiers)
     max_contracts_per_trade: int = 10
     max_open_risk_pct: float = 30.0
     paper_account_value: float = 10000.0
@@ -136,6 +146,14 @@ def load_config(path: str) -> Config:
     if mode not in ("notify", "paper", "live"):
         mode = "notify"
 
+    raw_tiers = _get(trading_raw, "size_tiers", None)
+    if raw_tiers:
+        size_tiers = {
+            str(k).lower(): _norm_tier(v) for k, v in raw_tiers.items()
+        }
+    else:
+        size_tiers = _default_size_tiers()
+
     trading = TradingConfig(
         mode=mode,
         dry_run=mode != "live",
@@ -147,8 +165,7 @@ def load_config(path: str) -> Config:
             _get(trading_raw, "max_contracts_per_trade", 10)
         ),
         max_open_risk_pct=float(_get(trading_raw, "max_open_risk_pct", 30.0)),
-        size_risk_pct=dict(_get(trading_raw, "size_risk_pct", {}))
-        or _default_size_risk_pct(),
+        size_tiers=size_tiers,
         paper_account_value=float(
             _get(trading_raw, "paper_account_value", 10000.0)
         ),

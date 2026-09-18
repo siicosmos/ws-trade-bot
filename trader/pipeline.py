@@ -29,7 +29,9 @@ def process_alert(
 
     if cfg.trading.mode == "notify":
         sizing = (
-            account_sizing(alert, cfg, account, store) if account else []
+            account_sizing(alert, cfg, account, store)
+            if account and alert.action == "BUY"
+            else []
         )
         notify_alert(cfg.discord.webhook_url, alert, sizing)
         return {

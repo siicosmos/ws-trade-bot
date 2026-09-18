@@ -77,7 +77,7 @@ STOCK_SERVICE_RE = re.compile(
 )
 
 SIZE_RE = re.compile(
-    r"\b(?P<size>tiny|small|lotto|medium|big|full|micro)\s+size\b", re.I
+    r"\b(?P<size>tiny|small|medium|large|big|full|lotto|micro)\s+size\b", re.I
 )
 
 STOPWORDS = {

@@ -239,6 +239,27 @@ class Store:
             row = self._conn.execute(query, params).fetchone()
         return float(row[0]) if row and row[0] is not None else 0.0
 
+    def recent_trades(self, limit=50):
+        with self._lock, self._conn:
+            rows = self._conn.execute(
+                "SELECT ts, mode, action, ticker, qty, price, status, detail "
+                "FROM trades ORDER BY id DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        keys = ["ts", "mode", "action", "ticker", "qty", "price", "status",
+                "detail"]
+        return [dict(zip(keys, r)) for r in rows]
+
+    def recent_signals(self, limit=50):
+        with self._lock, self._conn:
+            rows = self._conn.execute(
+                "SELECT ts, text, parsed FROM signals "
+                "ORDER BY rowid DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        keys = ["ts", "text", "parsed"]
+        return [dict(zip(keys, r)) for r in rows]
+
     def paper_equity(self, label: str = "default"):
         with self._lock, self._conn:
             row = self._conn.execute(

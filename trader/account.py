@@ -2,6 +2,7 @@ import time
 from typing import List
 
 from .config import WSAccountConfig
+from .ws_tokens import persist_env_tokens
 
 
 def effective_accounts(cfg) -> List[WSAccountConfig]:
@@ -96,6 +97,7 @@ class WealthsimpleAccount:
             )
         self._cache = result
         self._cache_ts = now
+        persist_env_tokens()
         return result
 
     def value(self, label: str = "default"):
