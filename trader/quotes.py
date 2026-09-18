@@ -2,6 +2,12 @@ from .parser import Alert
 
 
 def make_quote_provider(cfg, account):
+    if not cfg.quotes.enabled:
+        print(
+            "live option quotes disabled (quotes.enabled=false) - "
+            "stop monitor off"
+        )
+        return None
     provider = (cfg.quotes.provider or "ws").lower()
     if provider == "moomoo":
         try:

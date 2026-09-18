@@ -58,6 +58,7 @@ def get_settings(cfg) -> dict:
             "interval_seconds": cfg.auto_update.interval_seconds,
         },
         "quotes": {
+            "enabled": cfg.quotes.enabled,
             "provider": cfg.quotes.provider,
         },
     }
@@ -213,6 +214,18 @@ def apply_settings(cfg, payload: dict, config_path=None) -> tuple:
                 acct.enabled = bool(entry["enabled"])
                 applied[f"accounts.{label}.enabled"] = acct.enabled
 
+    quotes_payload = payload.get("quotes") or {}
+    if "enabled" in quotes_payload:
+        cfg.quotes.enabled = bool(quotes_payload["enabled"])
+        applied["quotes.enabled"] = cfg.quotes.enabled
+    if "provider" in quotes_payload:
+        provider = str(quotes_payload["provider"]).strip().lower()
+        if provider not in ("ws", "moomoo"):
+            errors.append("quotes.provider: must be ws or moomoo")
+        else:
+            cfg.quotes.provider = provider
+            applied["quotes.provider"] = provider
+
     au = payload.get("auto_update") or {}
     if "enabled" in au:
         cfg.auto_update.enabled = bool(au["enabled"])
@@ -253,6 +266,7 @@ def _persist(cfg, config_path):
     au["interval_seconds"] = cfg.auto_update.interval_seconds
 
     quotes = raw.setdefault("quotes", {})
+    quotes["enabled"] = cfg.quotes.enabled
     quotes["provider"] = cfg.quotes.provider
 
     reader = raw.setdefault("reader", {})

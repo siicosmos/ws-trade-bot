@@ -8,6 +8,7 @@ auto_update:
   interval_seconds: 600
 
 quotes:
+  enabled: false
   provider: ws
   moomoo_host: "127.0.0.1"
   moomoo_port: 11111

@@ -103,6 +103,7 @@ class AutoUpdateConfig:
 
 @dataclass
 class QuotesConfig:
+    enabled: bool = False
     provider: str = "ws"
     moomoo_host: str = "127.0.0.1"
     moomoo_port: int = 11111
@@ -263,6 +264,7 @@ def load_config(path: str) -> Config:
             ],
         ),
         quotes=QuotesConfig(
+            enabled=bool(_get(raw.get("quotes") or {}, "enabled", False)),
             provider=str(
                 _get(raw.get("quotes") or {}, "provider", "ws")
             ).lower(),

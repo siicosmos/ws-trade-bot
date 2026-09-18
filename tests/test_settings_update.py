@@ -566,3 +566,22 @@ def test_reader_channels_setting(tmp_path):
     )
     assert not errors, errors
     assert cfg.reader.channels == []
+
+
+def test_quotes_disabled_by_default(tmp_path):
+    from trader.config import load_config
+    from trader.quotes import make_quote_provider
+
+    cfg_path = tmp_path / "config.yaml"
+    with open(cfg_path, "w") as f:
+        f.write("quotes:\n  provider: ws\n")
+    cfg = load_config(str(cfg_path))
+    assert cfg.quotes.enabled is False
+    assert make_quote_provider(cfg, None) is None
+
+    applied, errors = apply_settings(
+        cfg, {"quotes": {"enabled": True}}, str(cfg_path)
+    )
+    assert not errors, errors
+    assert cfg.quotes.enabled is True
+    assert applied["quotes.enabled"] is True
