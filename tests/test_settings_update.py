@@ -54,7 +54,10 @@ def test_apply_settings_updates_memory_and_file():
             "trading:\n  mode: paper\n  risk_per_trade_pct: 5\n"
             "discord:\n  webhook_url: \"x\"\n"
         )
-    cfg = ConfigStub(TradingConfig(mode="paper"))
+    from trader.config import load_config
+
+    cfg = load_config(cfg_path)
+    assert cfg.discord.webhook_url == "x"
 
     applied, errors = apply_settings(
         cfg, {"trading": {"risk_per_trade_pct": 7}}, cfg_path
@@ -725,5 +728,53 @@ def test_update_webhook_setting(tmp_path):
 
     bad, errors2 = apply_settings(
         cfg, {"discord": {"update_webhook_url": "http://insecure"}}, None
+    )
+    assert errors2 and "https" in errors2[0]
+
+
+def test_all_webhooks_editable(tmp_path):
+    from trader.config import load_config
+    from trader.settings import apply_settings, get_settings
+
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(
+        "discord:\n"
+        "  webhook_url: \"https://discord.com/api/webhooks/main\"\n"
+        "trading:\n  mode: notify\n",
+        encoding="utf-8",
+    )
+    cfg = load_config(str(cfg_path))
+    s = get_settings(cfg)
+    for field in (
+        "webhook_url",
+        "reader_log_webhook_url",
+        "pipeline_log_webhook_url",
+        "update_webhook_url",
+    ):
+        assert field in s["discord"]
+
+    applied, errors = apply_settings(
+        cfg,
+        {
+            "discord": {
+                "reader_log_webhook_url":
+                    "https://discord.com/api/webhooks/rl",
+                "pipeline_log_webhook_url":
+                    "https://discord.com/api/webhooks/pl",
+                "update_webhook_url":
+                    "https://discord.com/api/webhooks/up",
+            }
+        },
+        str(cfg_path),
+    )
+    assert not errors, errors
+    text = cfg_path.read_text(encoding="utf-8")
+    assert "webhooks/main" in text          # untouched value survives
+    assert "webhooks/rl" in text
+    assert "webhooks/pl" in text
+    assert "webhooks/up" in text
+
+    bad, errors2 = apply_settings(
+        cfg, {"discord": {"webhook_url": "ftp://nope"}}, None
     )
     assert errors2 and "https" in errors2[0]

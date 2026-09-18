@@ -70,6 +70,11 @@ def get_settings(cfg) -> dict:
             ),
         },
         "discord": {
+            "webhook_url": cfg.discord.webhook_url,
+            "reader_log_webhook_url": cfg.discord.reader_log_webhook_url,
+            "pipeline_log_webhook_url": (
+                cfg.discord.pipeline_log_webhook_url
+            ),
             "update_webhook_url": cfg.discord.update_webhook_url,
         },
     }
@@ -238,15 +243,21 @@ def apply_settings(cfg, payload: dict, config_path=None) -> tuple:
             applied["quotes.provider"] = provider
 
     discord_payload = payload.get("discord") or {}
-    if "update_webhook_url" in discord_payload:
-        url = str(discord_payload["update_webhook_url"]).strip()
-        if url and not url.startswith("https://"):
-            errors.append(
-                "discord.update_webhook_url: must be an https URL"
-            )
-        else:
-            cfg.discord.update_webhook_url = url
-            applied["discord.update_webhook_url"] = url
+    for field in (
+        "webhook_url",
+        "reader_log_webhook_url",
+        "pipeline_log_webhook_url",
+        "update_webhook_url",
+    ):
+        if field in discord_payload:
+            url = str(discord_payload[field]).strip()
+            if url and not url.startswith("https://"):
+                errors.append(
+                    f"discord.{field}: must be an https URL"
+                )
+            else:
+                setattr(cfg.discord, field, url)
+                applied[f"discord.{field}"] = url
 
     ws_payload = payload.get("wealthsimple") or {}
     for field in ("positions_refresh_seconds", "values_refresh_seconds"):
@@ -299,10 +310,16 @@ def _persist(cfg, config_path):
     trading["size_tiers"] = cfg.trading.size_tiers
 
     dc = raw.setdefault("discord", {})
-    if "update_webhook_url" in raw.get("discord", {}) or getattr(
-        cfg.discord, "update_webhook_url", ""
+    for field in (
+        "webhook_url",
+        "reader_log_webhook_url",
+        "pipeline_log_webhook_url",
+        "update_webhook_url",
     ):
-        dc["update_webhook_url"] = cfg.discord.update_webhook_url
+        if field in raw.get("discord", {}) or getattr(
+            cfg.discord, field, ""
+        ):
+            dc[field] = getattr(cfg.discord, field)
 
     ws = raw.setdefault("wealthsimple", {})
     for field in ("positions_refresh_seconds", "values_refresh_seconds"):
@@ -323,10 +340,16 @@ def _persist(cfg, config_path):
         reader[key] = getattr(cfg.reader, key)
 
     dc = raw.setdefault("discord", {})
-    if "update_webhook_url" in raw.get("discord", {}) or getattr(
-        cfg.discord, "update_webhook_url", ""
+    for field in (
+        "webhook_url",
+        "reader_log_webhook_url",
+        "pipeline_log_webhook_url",
+        "update_webhook_url",
     ):
-        dc["update_webhook_url"] = cfg.discord.update_webhook_url
+        if field in raw.get("discord", {}) or getattr(
+            cfg.discord, field, ""
+        ):
+            dc[field] = getattr(cfg.discord, field)
 
     ws = raw.setdefault("wealthsimple", {})
     ws["accounts"] = [

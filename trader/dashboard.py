@@ -366,12 +366,19 @@ async function loadSettings() {
   html += '<div style="display:flex;gap:10px;margin-top:14px;align-items:center;flex-wrap:wrap">' +
     '<label style="color:var(--muted);font-size:12px"><input id="set-au-enabled" type="checkbox"' + (s.auto_update.enabled ? " checked" : "") + '> auto-update</label>' +
     '<label style="color:var(--muted);font-size:12px">every <input id="set-au-interval" type="number" value="' + s.auto_update.interval_seconds + '" style="width:80px;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:13px">s</label>' +
-    '<div style="grid-column:1/-1"><label style="color:var(--muted);font-size:11px;text-transform:uppercase">update notifications webhook</label>' +
-    '<input id="set-discord-update_webhook_url" type="text" value="' + esc((s.discord || {}).update_webhook_url || "") + '" placeholder="https://discord.com/api/webhooks/... - empty = trade alerts channel" style="width:100%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px"></div>' +
+    '<div style="grid-column:1/-1;color:var(--muted);font-size:12px">discord webhooks (take effect after restart)</div>' +
+    '<div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">trade alerts</label>' +
+    '<input id="set-discord-webhook_url" type="text" value="' + esc((s.discord || {}).webhook_url || "") + '" placeholder="main alerts channel" style="width:100%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px"></div>' +
+    '<div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">reader log</label>' +
+    '<input id="set-discord-reader_log_webhook_url" type="text" value="' + esc((s.discord || {}).reader_log_webhook_url || "") + '" placeholder="empty = off" style="width:100%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px"></div>' +
+    '<div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">pipeline log</label>' +
+    '<input id="set-discord-pipeline_log_webhook_url" type="text" value="' + esc((s.discord || {}).pipeline_log_webhook_url || "") + '" placeholder="empty = off" style="width:100%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px"></div>' +
+    '<div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">update notices</label>' +
+    '<input id="set-discord-update_webhook_url" type="text" value="' + esc((s.discord || {}).update_webhook_url || "") + '" placeholder="empty = trade alerts channel" style="width:100%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px"></div>' +
     '<label style="color:var(--muted);font-size:12px">positions every <input id="set-ws-positions" type="number" value="' + (s.wealthsimple ? s.wealthsimple.positions_refresh_seconds : 30) + '" style="width:70px;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:13px">s</label>' +
     '<label style="color:var(--muted);font-size:12px">account values every <input id="set-ws-values" type="number" value="' + (s.wealthsimple ? s.wealthsimple.values_refresh_seconds : 60) + '" style="width:70px;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:13px">s</label>' +
     '<label style="color:var(--muted);font-size:12px"><input id="set-quotes-enabled" type="checkbox"' + (s.quotes.enabled ? " checked" : "") + '> live option quotes (stop monitor)</label>' +
-    '<span style="color:var(--muted);font-size:12px">quotes: ' + esc(s.quotes.provider) + '</span></div>';
+    '<label style="color:var(--muted);font-size:12px">quotes: <select id="set-quotes-provider" style="background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:13px"><option value="ws"' + (s.quotes.provider === "ws" ? " selected" : "") + '>ws</option><option value="moomoo"' + (s.quotes.provider === "moomoo" ? " selected" : "") + '>moomoo</option></select></label></div>';
   el.innerHTML = html;
 }
 
@@ -417,9 +424,9 @@ async function saveSettings() {
       channels: val("set-reader-channels").split(",").map(function(s) { return s.trim(); }).filter(Boolean),
     },
     auto_update: { enabled: document.getElementById("set-au-enabled").checked, interval_seconds: parseInt(val("set-au-interval")) },
-    quotes: { enabled: document.getElementById("set-quotes-enabled").checked },
     wealthsimple: { positions_refresh_seconds: parseInt(val("set-ws-positions")), values_refresh_seconds: parseInt(val("set-ws-values")) },
-    discord: { update_webhook_url: val("set-discord-update_webhook_url").trim() },
+    discord: { webhook_url: val("set-discord-webhook_url").trim(), reader_log_webhook_url: val("set-discord-reader_log_webhook_url").trim(), pipeline_log_webhook_url: val("set-discord-pipeline_log_webhook_url").trim(), update_webhook_url: val("set-discord-update_webhook_url").trim() },
+    quotes: { enabled: document.getElementById("set-quotes-enabled").checked, provider: val("set-quotes-provider") },
   };
   const res = await fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
   const data = await res.json();
