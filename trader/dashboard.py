@@ -350,7 +350,7 @@ async function loadSettings() {
   html += "</div>";
   if (s.accounts && s.accounts.length) {
     html += '<div style="color:var(--muted);font-size:12px;margin-top:14px">accounts (numeric overrides: empty = inherit global)</div>';
-    html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px">';
+    html += '<div style="display:grid;grid-template-columns:1fr;gap:10px">';
     s.accounts.forEach((a, i) => {
       html += '<div style="border:1px solid var(--border);border-radius:8px;padding:10px">' +
         '<div style="color:var(--text);font-weight:600;margin-bottom:6px">' + esc(a.label) +
@@ -385,7 +385,7 @@ async function loadSettings() {
      ["set-discord-reader_log_webhook_url", "reader log", "empty = off", (s.discord || {}).reader_log_webhook_url || ""],
      ["set-discord-pipeline_log_webhook_url", "pipeline log", "empty = off", (s.discord || {}).pipeline_log_webhook_url || ""],
      ["set-discord-update_webhook_url", "update notices", "empty = trade alerts channel", (s.discord || {}).update_webhook_url || ""]].map(hook =>
-      '<div style="grid-column:1/-1"><label style="color:var(--muted);font-size:11px;text-transform:uppercase">' + hook[1] + '</label>' +
+      '<div style="flex-basis:100%"><label style="color:var(--muted);font-size:11px;text-transform:uppercase">' + hook[1] + '</label>' +
       '<textarea id="' + hook[0] + '" rows="1" placeholder="' + hook[2] + '" style="width:100%;box-sizing:border-box;resize:none;overflow:hidden;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px">' + esc(hook[3]) + '</textarea></div>'
     ).join("") +
     '<label style="color:var(--muted);font-size:12px">positions every <input id="set-ws-positions" type="number" value="' + (s.wealthsimple ? s.wealthsimple.positions_refresh_seconds : 30) + '" style="width:70px;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:13px">s</label>' +
