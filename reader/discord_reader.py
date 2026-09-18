@@ -491,8 +491,6 @@ def main():
                     post_message(pipeline_url, text, auth_token)
             elif msgs != tail:
                 tail = msgs
-        except KeyboardInterrupt:
-            break
         except UIAError as e:
             print(f"UIA error: {e}")
             container = None
@@ -537,4 +535,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("reader stopped")
