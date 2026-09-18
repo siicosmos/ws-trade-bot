@@ -260,3 +260,14 @@ def test_stock_kind_cell():
     # stocks render their own compact cell (symbol + stock label)
     assert 'p.kind === "stock"' in js
     assert '>stock</span>' in js
+
+
+def test_stock_currency_display():
+    import trader.dashboard as dash
+
+    js = re.findall(r"<script>(.*?)</script>",
+                    dash.DASHBOARD_HTML, re.S)[0]
+    # stocks use multiplier 1 (not the 100x option multiplier) and
+    # label amounts with the quote currency
+    assert "isStock ? 1 : 100" in js
+    assert 'p.currency === "CAD" ? " cad"' in js

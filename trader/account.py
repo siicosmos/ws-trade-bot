@@ -309,6 +309,9 @@ class WealthsimpleAccount:
                 cost_cad = abs(book)
                 cost_usd = abs(market_book)
                 quote = _quote_price(sec.get("quoteV2"))
+                currency = str(
+                    (sec.get("quoteV2") or {}).get("currency") or ""
+                ).upper() or None
                 avg = _amount(p.get("marketAveragePrice"))
                 per_unit = avg if avg else (
                     cost_usd / qty if cost_usd else None
@@ -334,6 +337,7 @@ class WealthsimpleAccount:
                         "qty": qty,
                         "short": is_short,
                         "kind": "stock",
+                        "currency": currency,
                         "avg_premium": round(per_unit, 4)
                         if per_unit is not None else None,
                         "cost": cost_usd if cost_usd else cost_cad,

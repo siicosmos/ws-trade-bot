@@ -1328,7 +1328,21 @@ def test_stock_holdings_mapping(monkeypatch):
                     "security": {
                         "securityType": "STOCK",
                         "stock": {"symbol": "AAPL", "name": "Apple"},
-                        "quoteV2": {"price": "170.00"},
+                        "quoteV2": {"price": "170.00",
+                                     "currency": "USD"},
+                    },
+                },
+                {   # Canadian exchange listing - quotes in CAD
+                    "quantity": "100",
+                    "bookValue": {"amount": "3100.00", "currency": "CAD"},
+                    "marketBookValue": {"amount": "3500.00",
+                                         "currency": "CAD"},
+                    "marketAveragePrice": {"amount": "35.00"},
+                    "security": {
+                        "securityType": "STOCK",
+                        "stock": {"symbol": "RY", "name": "RBC"},
+                        "quoteV2": {"price": "35.50",
+                                     "currency": "CAD"},
                     },
                 },
                 {   # currency position - excluded from holdings
@@ -1367,7 +1381,7 @@ def test_stock_holdings_mapping(monkeypatch):
     monkeypatch.setattr(acct, "_resolve", lambda: [("RRSP", "a1")])
 
     rows = acct.stock_holdings()["RRSP"]
-    assert len(rows) == 1
+    assert len(rows) == 2
     aapl = rows[0]
     assert aapl["kind"] == "stock"
     assert aapl["underlying"] == "AAPL"
@@ -1378,6 +1392,16 @@ def test_stock_holdings_mapping(monkeypatch):
     assert aapl["cost_cad"] == 2000.0
     assert aapl["market_value"] == 1700.0
     assert aapl["pct_return"] == 13.3
+    assert aapl["currency"] == "USD"
+    ry = rows[1]
+    assert ry["underlying"] == "RY"
+    assert ry["currency"] == "CAD"
+    assert ry["avg_premium"] == 35.0
+    assert ry["current_price"] == 35.5
+    assert ry["cost_usd"] == 3500.0         # market (CAD) book
+    assert ry["cost_cad"] == 3100.0
+    assert ry["market_value"] == 3550.0
+    assert ry["pct_return"] == 1.4          # CAD-vs-CAD ratio
 
 
 def test_positions_include_stocks(monkeypatch):

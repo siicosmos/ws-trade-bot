@@ -293,7 +293,12 @@ async function loadPositions() {
   for (const p of rows) {
     const ret = p.pct_return ?? null;
     const retColor = ret === null ? "var(--muted)" : ret >= 0 ? "var(--green)" : "var(--red)";
-    const avgTotal = (p.qty || 0) * (p.avg_premium || 0) * 100;
+    const isStock = p.kind === "stock";
+    const cur = isStock
+      ? (p.currency === "USD" ? " usd" : p.currency === "CAD" ? " cad" : "")
+      : "";
+    const mult = isStock ? 1 : 100;
+    const avgTotal = (p.qty || 0) * (p.avg_premium || 0) * mult;
     const mv = p.market_value;
     let pl = null;
     if (mv != null && p.cost_usd != null) {
@@ -302,7 +307,7 @@ async function loadPositions() {
     const retMain = ret === null ? "—" : (ret > 0 ? "+" : "") + ret + "%";
     const plSpan = pl === null ? "" :
       '<span class="subv">(' + (pl > 0 ? "+$" : pl < 0 ? "-$" : "$") +
-      Math.abs(pl).toLocaleString("en-CA", { maximumFractionDigits: 2 }) + ")</span>";
+      Math.abs(pl).toLocaleString("en-CA", { maximumFractionDigits: 2 }) + (isStock ? cur : "") + ")</span>";
     html += "<tr><td>" + esc(p.account) + (
       p.source === "ws"
         ? ' <span class="tag ignored mini" title="live from Wealthsimple">ws</span>'
@@ -315,17 +320,22 @@ async function loadPositions() {
         dteBadge(p.expiry)) + "</td>" +
       '<td class=num>' + (p.short ? "-" + p.qty : p.qty) + (p.short ? ' <span class="tag skip mini" title="short position">short</span>' : (p.spread ? ' <span class="tag ignored mini" title="multi-leg spread">spread</span>' : "")) + "</td>" +
       '<td class=num>' + (p.avg_premium != null
-        ? (p.spread ? fmtSigned(avgTotal) : "$" + avgTotal.toLocaleString("en-CA", { maximumFractionDigits: 2 })) +
-          '<span class="subv">(' + (p.spread ? fmtSigned(p.avg_premium) : "$" + p.avg_premium) + ")</span>"
+        ? (p.spread ? fmtSigned(avgTotal) : "$" + avgTotal.toLocaleString("en-CA", { maximumFractionDigits: 2 }) + cur) +
+          '<span class="subv">(' + (p.spread ? fmtSigned(p.avg_premium) : "$" + p.avg_premium + cur) + ")</span>"
         : "—") + "</td>" +
       '<td class=num>' + (p.current_price != null
-        ? (p.spread ? fmtSigned(p.current_price) : "$" + p.current_price) + (mv != null
+        ? (p.spread ? fmtSigned(p.current_price) : "$" + p.current_price + cur) + (mv != null
           ? '<span class="subv">(' + (p.short || (p.spread && mv < 0) ? "-$" : "$") +
-            Math.abs(mv).toLocaleString("en-CA", { maximumFractionDigits: 2 }) + ")</span>"
+            Math.abs(mv).toLocaleString("en-CA", { maximumFractionDigits: 2 }) + (isStock ? cur : "") + ")</span>"
           : "")
         : "—") + "</td>" +
       '<td class=num style="color:' + retColor + '">' + retMain + plSpan + "</td>" +
-      '<td class=num>' + (p.cost_usd != null ? (p.spread ? fmtSigned(p.cost_usd) : fmtMoney(p.cost_usd)) + (p.cost_cad != null ? '<span class="subv">(' + (p.spread ? fmtSigned(p.cost_cad) : fmtMoney(p.cost_cad)) + ')</span>' : "") : '<span class="subv">(' + fmtMoney(avgTotal) + ")</span>") + "</td></tr>";
+      '<td class=num>' + (isStock
+        ? (p.cost_usd != null ? "$" + p.cost_usd.toLocaleString("en-CA", { maximumFractionDigits: 2 }) + cur : "—") +
+          (p.currency === "CAD" || p.cost_cad == null
+            ? ""
+            : '<span class="subv">(' + fmtMoney(p.cost_cad) + ')</span>')
+        : (p.cost_usd != null ? (p.spread ? fmtSigned(p.cost_usd) : fmtMoney(p.cost_usd)) + (p.cost_cad != null ? '<span class="subv">(' + (p.spread ? fmtSigned(p.cost_cad) : fmtMoney(p.cost_cad)) + ')</span>' : "") : '<span class="subv">(' + fmtMoney(avgTotal) + ")</span>")) + "</td></tr>";
   }
   el.innerHTML = html + "</table>";
 }
