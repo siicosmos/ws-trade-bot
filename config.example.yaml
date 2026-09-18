@@ -38,6 +38,10 @@ reader:
                              # whatever channel is open in Discord
   max_items: 40              # how many on-screen messages to read per pass
   auth_token: ""             # MUST match pipeline.auth_token
+  auto_scroll: true          # snap the Discord message pane to the
+                             # bottom so live alerts stay readable
+                             # (Discord only exposes the scrolled-in
+                             # messages to the reader)
   channels:                  # allowlist: only these channels are read
     - test-alerts            # (substring match, empty list = any channel)
     - player-alerts          # NEVER include your webhook output channel

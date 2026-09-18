@@ -405,9 +405,13 @@ def create_app(cfg, store: Store, risk, executor, account=None,
         data = request.get_json(silent=True) or {}
         text = data.get("text", "")
         author = data.get("author", "")
+        try:
+            ts = float(data.get("ts")) if data.get("ts") else None
+        except (TypeError, ValueError):
+            ts = None
         result = process_alert(
             text, author, cfg, store, risk, executor, account,
-            channel=str(data.get("channel") or ""),
+            channel=str(data.get("channel") or ""), ts=ts,
         )
         return jsonify(result)
 

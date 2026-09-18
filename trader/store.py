@@ -126,13 +126,18 @@ class Store:
             return row is not None
 
     def record_signal(self, message_key: str, author: str, text: str, parsed: bool,
-                      correction: bool = False, channel: str = ""):
+                      correction: bool = False, channel: str = "",
+                      ts_epoch=None):
+        ts = (
+            datetime.fromtimestamp(ts_epoch).isoformat(timespec="seconds")
+            if ts_epoch else self._now()
+        )
         with self._lock, self._conn:
             self._conn.execute(
                 "INSERT OR IGNORE INTO signals "
                 "(message_key, ts, author, text, parsed, correction, channel) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (message_key, self._now(), author, text[:2000], int(parsed),
+                (message_key, ts, author, text[:2000], int(parsed),
                  int(correction), channel[:80]),
             )
 

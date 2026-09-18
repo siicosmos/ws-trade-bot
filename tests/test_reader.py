@@ -836,3 +836,63 @@ def test_restart_notice_includes_commit(monkeypatch, tmp_path):
         f["name"]: f["value"] for f in sent["embeds"][0]["fields"]
     }
     assert "commits" not in fields
+
+
+def test_snap_to_bottom_scrolls_only_when_needed():
+    import discord_reader as dr
+
+    class Pattern:
+        def __init__(self, visible, pct):
+            self._visible = visible
+            self._pct = pct
+            self.called = None
+
+        @property
+        def VerticalViewSize(self):
+            return self._visible
+
+        @property
+        def VerticalScrollPercent(self):
+            return self._pct
+
+        def SetScrollPercent(self, h, v):
+            self.called = v
+
+    class Container:
+        def __init__(self, pattern):
+            self._pattern = pattern
+
+        def GetScrollPattern(self):
+            return self._pattern
+
+    # mid-scroll pane: snaps to 100
+    p = Pattern(30, 40)
+    logs = []
+    dr.snap_to_bottom(Container(p), log_fn=logs.append)
+    assert p.called == 100
+    assert logs and "scrolling to latest" in logs[0]
+
+    # already at the bottom: no scroll
+    p2 = Pattern(30, 100)
+    dr.snap_to_bottom(Container(p2))
+    assert p2.called is None
+
+    # fully visible (no scrollbar): no scroll
+    p3 = Pattern(100, 0)
+    dr.snap_to_bottom(Container(p3))
+    assert p3.called is None
+
+
+def test_store_keeps_message_time():
+    import time as time_mod
+
+    from trader.store import Store
+
+    store = Store(":memory:")
+    epoch = time_mod.time() - 3600  # an hour ago
+    store.record_signal("k", "a", "text", True, ts_epoch=epoch)
+    row = store.recent_signals()[0]
+    from datetime import datetime
+
+    expect = datetime.fromtimestamp(epoch).isoformat(timespec="seconds")
+    assert row["ts"] == expect

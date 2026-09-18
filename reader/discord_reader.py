@@ -600,6 +600,37 @@ def post_message(url, text, token="", ts=None, verify=True, channel=""):
         return False
 
 
+def _uia_prop(obj, name):
+    value = getattr(obj, name)
+    return value() if callable(value) else value
+
+
+def snap_to_bottom(container, log_fn=None):
+    """Discord virtualizes the message list: only the scrolled-in
+    viewport exists in the accessibility tree, so a pane left higher
+    up hides the newest alerts. Snap it to the bottom."""
+    try:
+        pattern = container.GetScrollPattern()
+    except Exception:
+        return
+    if not pattern:
+        return
+    try:
+        visible = _uia_prop(pattern, "VerticalViewSize")
+        if visible is not None and visible >= 100:
+            return
+        pct = _uia_prop(pattern, "VerticalScrollPercent")
+        if pct is None or pct < 98:
+            pattern.SetScrollPercent(-1, 100)
+            if log_fn:
+                log_fn(
+                    f"pane at {pct if pct is not None else '?'}% - "
+                    f"scrolling to latest"
+                )
+    except Exception:
+        pass
+
+
 def heartbeat_status(allowed, title_channel):
     """What to tell the server while no message pane is attached.
 
@@ -725,6 +756,7 @@ def main():
     )
     pipeline_url = cfg.get("pipeline_url", "http://localhost:8080/alert")
     marker = str(cfg.get("channel_marker", ""))
+    auto_scroll = bool(cfg.get("auto_scroll", True))
     poll_interval = float(cfg.get("poll_interval", 0.5))
     max_items = int(cfg.get("max_items", 40))
     channels = sorted(
@@ -802,6 +834,7 @@ def main():
     empty_polls = 0
     last_stale_log = 0.0
     sync_counter = 99
+    scroll_counter = 0
 
     while True:
         if time.time() - last_clock_check > 600:
@@ -957,6 +990,13 @@ def main():
                     continue
                 poll_interval = new_poll
                 max_items = new_max
+
+            scroll_counter += 1
+            if auto_scroll and scroll_counter % 10 == 0:
+                snap_to_bottom(
+                    container,
+                    log_fn=lambda msg: log(msg),
+                )
 
             msgs = current_messages(container, max_items, day_floor)
             summary = (

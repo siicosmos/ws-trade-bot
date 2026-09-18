@@ -36,6 +36,7 @@ def get_settings(cfg) -> dict:
         trading[k] = getattr(cfg.trading, k)
     trading["size_tiers"] = cfg.trading.size_tiers
     reader = {k: getattr(cfg.reader, k) for k in EDITABLE_READER}
+    reader["auto_scroll"] = cfg.reader.auto_scroll
     for k in EDITABLE_READER_LISTS:
         reader[k] = getattr(cfg.reader, k)
     accounts = [
@@ -230,6 +231,11 @@ def apply_settings(cfg, payload: dict, config_path=None) -> tuple:
                 acct.enabled = bool(entry["enabled"])
                 applied[f"accounts.{label}.enabled"] = acct.enabled
 
+    reader_payload = payload.get("reader") or {}
+    if "auto_scroll" in reader_payload:
+        cfg.reader.auto_scroll = bool(reader_payload["auto_scroll"])
+        applied["reader.auto_scroll"] = cfg.reader.auto_scroll
+
     quotes_payload = payload.get("quotes") or {}
     if "enabled" in quotes_payload:
         cfg.quotes.enabled = bool(quotes_payload["enabled"])
@@ -338,6 +344,7 @@ def _persist(cfg, config_path):
         reader[key] = getattr(cfg.reader, key)
     for key in EDITABLE_READER_LISTS:
         reader[key] = getattr(cfg.reader, key)
+    reader["auto_scroll"] = cfg.reader.auto_scroll
 
     dc = raw.setdefault("discord", {})
     for field in (

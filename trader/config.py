@@ -100,6 +100,7 @@ class ReaderConfig:
     max_items: int = 40
     auth_token: str = ""
     channels: list = field(default_factory=list)
+    auto_scroll: bool = True
 
 
 @dataclass
@@ -287,6 +288,9 @@ def load_config(path: str) -> Config:
                 for c in (raw.get("reader") or {}).get("channels") or []
                 if str(c).strip()
             ],
+            auto_scroll=bool(
+                _get(raw.get("reader") or {}, "auto_scroll", True)
+            ),
         ),
         quotes=QuotesConfig(
             enabled=bool(_get(raw.get("quotes") or {}, "enabled", False)),
