@@ -10,8 +10,18 @@ trading:
   order_type: market
   limit_offset_pct: 0.5
   position_size_cad: 100
+  default_contracts: 2
+  contracts_by_size:
+    lotto: 1
+    tiny: 1
+    small: 2
+    medium: 3
+    big: 5
+    full: 5
+  skip_underlyings:
+    - SPX
   max_trades_per_day: 5
-  cooldown_seconds: 300
+  cooldown_seconds: 60
   dedupe_window_minutes: 10
   ticker_whitelist: []
   sell_only_if_held: true

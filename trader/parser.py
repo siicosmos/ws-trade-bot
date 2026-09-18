@@ -1,5 +1,6 @@
 import re
 from dataclasses import dataclass, field
+from datetime import date
 from typing import List, Optional
 
 
@@ -7,21 +8,77 @@ from typing import List, Optional
 class Alert:
     action: str
     ticker: str
+    kind: str = "stock"
+    underlying: str = ""
+    expiry: Optional[str] = None
+    strike: Optional[float] = None
+    right: Optional[str] = None
+    premium: Optional[float] = None
+    scale: Optional[float] = None
+    size: Optional[str] = None
     entry: Optional[float] = None
     stop_loss: Optional[float] = None
     take_profit: Optional[float] = None
     raw: str = ""
 
+    def contract_key(self) -> str:
+        if self.kind != "option":
+            return self.ticker
+        return f"{self.underlying}-{self.expiry}-{self.strike:g}-{self.right}"
+
+    def dedupe_key(self) -> str:
+        if self.kind == "option":
+            return (
+                f"OPT|{self.underlying}|{self.expiry}|{self.strike:g}|"
+                f"{self.right}|{self.action}|{self.premium}"
+            )
+        return f"STK|{self.ticker}|{self.action}|{self.entry}"
+
     def to_dict(self):
         return {
+            "kind": self.kind,
             "action": self.action,
             "ticker": self.ticker,
+            "underlying": self.underlying,
+            "expiry": self.expiry,
+            "strike": self.strike,
+            "right": self.right,
+            "premium": self.premium,
+            "scale": self.scale,
+            "size": self.size,
             "entry": self.entry,
             "stop_loss": self.stop_loss,
             "take_profit": self.take_profit,
             "raw": self.raw[:500],
         }
 
+
+OPT_BUY_RE = re.compile(
+    r"\bBOUGHT(?:\s+MORE)?\s+"
+    r"(?:(?P<expiry>0DTE|\d{1,2}/\d{1,2})\s+)?"
+    r"(?P<underlying>[A-Z]{2,5})\s+"
+    r"(?P<strike>\d+(?:\.\d+)?)\s*(?P<right>[cCpP])\b"
+    r"(?:\s*@\s*(?P<premium>\d*\.?\d+))?"
+)
+
+OPT_SELL_RE = re.compile(
+    r"\b(?P<verb>ALL\s+OUT|SOLD(?:\s+MOST)?)\s+"
+    r"(?:(?P<frac>[1-9]/[2-9])\s+)?"
+    r"(?:(?P<expiry>0DTE|\d{1,2}/\d{1,2})\s+)?"
+    r"(?P<underlying>[A-Z]{2,5})\s+"
+    r"(?P<strike>\d+(?:\.\d+)?)\s*(?P<right>[cCpP])\b"
+    r"(?:\s*@\s*(?P<premium>\d*\.?\d+))?"
+)
+
+STOCK_SERVICE_RE = re.compile(
+    r"\b(?P<verb>BOUGHT|SOLD|ALL\s+OUT)\s+"
+    r"(?P<underlying>[A-Z]{2,5})\s+shares\b"
+    r"(?:\s*@\s*(?P<price>\d*\.?\d+))?"
+)
+
+SIZE_RE = re.compile(
+    r"\b(?P<size>tiny|small|lotto|medium|big|full|micro)\s+size\b", re.I
+)
 
 STOPWORDS = {
     "BUY", "SELL", "SL", "TP", "PT", "LONG", "SHORT", "EXIT", "CLOSE",
@@ -32,25 +89,25 @@ STOPWORDS = {
 }
 
 BUY_RE = re.compile(
-    r"\b(buys?|buying|long|bull(?:ish)?|accumulate|entry|grab|load(?:ing)?)\b",
+    r"\b(bought|buys?|buying|long|bull(?:ish)?|accumulate|entry|grab|load(?:ing)?)\b",
     re.I,
 )
 SELL_RE = re.compile(
-    r"\b(sells?|selling|short(?:ing)?|bear(?:ish)?|exit|close[sd]?|dump(?:ing)?)\b",
+    r"\b(sold|sells?|selling|short(?:ing)?|bear(?:ish)?|exit|close[sd]?|dump(?:ing)?|all\s+out)\b",
     re.I,
 )
 TICKER_CASH_RE = re.compile(r"\$([A-Za-z][A-Za-z0-9]{0,4})")
 TICKER_RE = re.compile(r"\b([A-Z]{2,5})\b")
 ENTRY_RE = re.compile(
-    r"(?:entry|enter(?:ing)?|in\s*at|avg\.?|@)\s*[:\$]?\s*(\d+(?:\.\d+)?)",
+    r"(?:entry|enter(?:ing)?|in\s*at|avg\.?|@)\s*[:\$]?\s*(\d*\.?\d+)",
     re.I,
 )
 STOP_RE = re.compile(
-    r"(?:\bsl\b|stop\s*loss|stop)\s*[:@\$]?\s*(\d+(?:\.\d+)?)",
+    r"(?:\bsl\b|stop\s*loss|stop)\s*[:@\$]?\s*(\d*\.?\d+)",
     re.I,
 )
 TP_RE = re.compile(
-    r"(?:\btp\b|\bpt\b|targets?|take\s*profit(?:\s*at)?)\s*[:@\$]?\s*(\d+(?:\.\d+)?)",
+    r"(?:\btp\b|\bpt\b|targets?|take\s*profit(?:\s*at)?)\s*[:@\$]?\s*(\d*\.?\d+)",
     re.I,
 )
 
@@ -64,14 +121,58 @@ def _num(value):
         return None
 
 
-def _extract_ticker(text: str) -> Optional[str]:
-    m = TICKER_CASH_RE.search(text)
-    if m:
-        return m.group(1).upper()
-    for cand in TICKER_RE.findall(text):
-        if cand not in STOPWORDS:
-            return cand
-    return None
+def _resolve_expiry(raw_expiry: Optional[str]) -> Optional[str]:
+    today = date.today()
+    if not raw_expiry or raw_expiry.upper() == "0DTE":
+        return today.isoformat()
+    try:
+        month, day = raw_expiry.split("/")
+        exp = date(today.year, int(month), int(day))
+    except ValueError:
+        return None
+    if exp < today:
+        try:
+            exp = date(today.year + 1, int(month), int(day))
+        except ValueError:
+            return None
+    return exp.isoformat()
+
+
+def _scale_from_verb(verb: str, frac: Optional[str]) -> Optional[float]:
+    if verb.startswith("ALL"):
+        return 1.0
+    if "MOST" in verb:
+        return 0.75
+    if frac:
+        num, den = frac.split("/")
+        return float(num) / float(den)
+    return 1.0
+
+
+def _option_alert(match, action: str, raw: str, size: Optional[str]) -> Optional[Alert]:
+    underlying = match.group("underlying").upper()
+    expiry = _resolve_expiry(match.group("expiry"))
+    if expiry is None:
+        return None
+    strike = _num(match.group("strike"))
+    right = match.group("right").upper()
+    premium = _num(match.group("premium"))
+    scale = None
+    if action == "SELL":
+        scale = _scale_from_verb(match.group("verb"), match.group("frac"))
+    return Alert(
+        action=action,
+        ticker=underlying,
+        kind="option",
+        underlying=underlying,
+        expiry=expiry,
+        strike=strike,
+        right=right,
+        premium=premium,
+        scale=scale,
+        size=size,
+        raw=raw,
+    )
 
 
 def parse_alert(text: str, custom_patterns: Optional[List[str]] = None) -> Optional[Alert]:
@@ -98,10 +199,51 @@ def parse_alert(text: str, custom_patterns: Optional[List[str]] = None) -> Optio
             raw=text,
         )
 
+    size_m = SIZE_RE.search(text)
+    size = size_m.group("size").lower() if size_m else None
+
+    m = OPT_BUY_RE.search(text)
+    if m:
+        alert = _option_alert(m, "BUY", text, size)
+        if alert:
+            return alert
+
+    m = OPT_SELL_RE.search(text)
+    if m:
+        alert = _option_alert(m, "SELL", text, size)
+        if alert:
+            return alert
+
+    m = STOCK_SERVICE_RE.search(text)
+    if m:
+        verb = re.sub(r"\s+", " ", m.group("verb").upper())
+        action = "SELL" if verb in ("SOLD", "ALL OUT") else "BUY"
+        underlying = m.group("underlying").upper()
+        price = _num(m.group("price"))
+        return Alert(
+            action=action,
+            ticker=underlying,
+            kind="stock",
+            underlying=underlying,
+            scale=_scale_from_verb(verb, None) if action == "SELL" else None,
+            entry=price,
+            premium=price,
+            size=size,
+            raw=text,
+        )
+
     if not BUY_RE.search(text) and not SELL_RE.search(text):
         return None
 
-    ticker = _extract_ticker(text)
+    ticker_match = TICKER_CASH_RE.search(text)
+    if ticker_match:
+        ticker = ticker_match.group(1).upper()
+    else:
+        ticker = None
+        for cand in TICKER_RE.findall(text):
+            if cand not in STOPWORDS:
+                ticker = cand
+                break
     if not ticker:
         return None
 

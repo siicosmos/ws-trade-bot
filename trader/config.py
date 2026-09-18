@@ -22,8 +22,11 @@ class TradingConfig:
     order_type: str = "market"
     limit_offset_pct: float = 0.5
     position_size_cad: float = 100.0
+    default_contracts: int = 2
+    contracts_by_size: dict = field(default_factory=dict)
+    skip_underlyings: List[str] = field(default_factory=list)
     max_trades_per_day: int = 5
-    cooldown_seconds: int = 300
+    cooldown_seconds: int = 60
     dedupe_window_minutes: int = 10
     ticker_whitelist: List[str] = field(default_factory=list)
     sell_only_if_held: bool = True
@@ -73,8 +76,13 @@ def load_config(path: str) -> Config:
         order_type=str(_get(trading_raw, "order_type", "market")).lower(),
         limit_offset_pct=float(_get(trading_raw, "limit_offset_pct", 0.5)),
         position_size_cad=float(_get(trading_raw, "position_size_cad", 100.0)),
+        default_contracts=int(_get(trading_raw, "default_contracts", 2)),
+        contracts_by_size=dict(_get(trading_raw, "contracts_by_size", {})),
+        skip_underlyings=[
+            t.upper() for t in _get(trading_raw, "skip_underlyings", [])
+        ],
         max_trades_per_day=int(_get(trading_raw, "max_trades_per_day", 5)),
-        cooldown_seconds=int(_get(trading_raw, "cooldown_seconds", 300)),
+        cooldown_seconds=int(_get(trading_raw, "cooldown_seconds", 60)),
         dedupe_window_minutes=int(
             _get(trading_raw, "dedupe_window_minutes", 10)
         ),

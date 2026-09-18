@@ -35,8 +35,23 @@ class Store:
                     detail TEXT,
                     message_key TEXT
                 );
+                CREATE TABLE IF NOT EXISTS positions (
+                    mode TEXT NOT NULL,
+                    contract_key TEXT NOT NULL,
+                    underlying TEXT NOT NULL,
+                    expiry TEXT,
+                    strike REAL,
+                    right TEXT,
+                    qty INTEGER NOT NULL DEFAULT 0,
+                    updated_ts TEXT,
+                    PRIMARY KEY (mode, contract_key)
+                );
                 """
             )
+            try:
+                self._conn.execute("ALTER TABLE trades ADD COLUMN dedupe_key TEXT")
+            except sqlite3.OperationalError:
+                pass
 
     @staticmethod
     def _now():
@@ -63,29 +78,29 @@ class Store:
         ).isoformat(timespec="seconds")
         with self._lock, self._conn:
             row = self._conn.execute(
-                "SELECT COUNT(*) FROM trades WHERE ts >= ? AND mode = ? AND status = 'executed'",
+                "SELECT COUNT(*) FROM trades WHERE ts >= ? AND mode = ? "
+                "AND status = 'executed' AND action = 'BUY'",
                 (midnight, mode),
             ).fetchone()
             return row[0] if row else 0
 
-    def last_trade_time(self) -> str:
+    def last_buy_time(self) -> str:
         with self._lock, self._conn:
             row = self._conn.execute(
-                "SELECT ts FROM trades ORDER BY id DESC LIMIT 1"
+                "SELECT ts FROM trades WHERE action = 'BUY' AND status = 'executed' "
+                "ORDER BY id DESC LIMIT 1"
             ).fetchone()
             return row[0] if row else None
 
-    def recent_trade(
-        self, ticker: str, action: str, window_minutes: int
-    ):
+    def recent_trade(self, dedupe_key: str, window_minutes: int):
         cutoff = (
             datetime.now(timezone.utc) - timedelta(minutes=window_minutes)
         ).isoformat(timespec="seconds")
         with self._lock, self._conn:
             return self._conn.execute(
-                "SELECT * FROM trades WHERE ticker = ? AND action = ? AND ts >= ? "
+                "SELECT 1 FROM trades WHERE dedupe_key = ? AND ts >= ? "
                 "AND status = 'executed' LIMIT 1",
-                (ticker, action, cutoff),
+                (dedupe_key, cutoff),
             ).fetchone()
 
     def record_trade(
@@ -103,11 +118,33 @@ class Store:
         with self._lock, self._conn:
             self._conn.execute(
                 "INSERT INTO trades (ts, mode, action, ticker, qty, price, entry, "
-                "stop_loss, take_profit, status, detail, message_key) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "stop_loss, take_profit, status, detail, message_key, dedupe_key) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     self._now(), mode, action, ticker, qty, price,
                     alert.entry, alert.stop_loss, alert.take_profit,
-                    status, detail, message_key,
+                    status, detail, message_key, alert.dedupe_key(),
+                ),
+            )
+
+    def get_position(self, mode: str, contract_key: str) -> int:
+        with self._lock, self._conn:
+            row = self._conn.execute(
+                "SELECT qty FROM positions WHERE mode = ? AND contract_key = ?",
+                (mode, contract_key),
+            ).fetchone()
+            return int(row[0]) if row else 0
+
+    def apply_position(self, mode: str, alert, delta: int):
+        with self._lock, self._conn:
+            self._conn.execute(
+                "INSERT INTO positions (mode, contract_key, underlying, expiry, "
+                "strike, right, qty, updated_ts) VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(mode, contract_key) DO UPDATE SET "
+                "qty = MAX(0, positions.qty + excluded.qty), "
+                "updated_ts = excluded.updated_ts",
+                (
+                    mode, alert.contract_key(), alert.underlying, alert.expiry,
+                    alert.strike, alert.right, delta, self._now(),
                 ),
             )

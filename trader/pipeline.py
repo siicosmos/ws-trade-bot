@@ -36,7 +36,7 @@ def process_alert(text: str, author: str, cfg, store, risk: RiskEngine, executor
         return {"status": "blocked", "reason": reason, "alert": alert.to_dict()}
 
     try:
-        result: ExecutionResult = executor.execute(alert, cfg)
+        result: ExecutionResult = executor.execute(alert, cfg, store)
     except Exception as e:
         store.record_trade(
             executor.mode, alert.action, alert.ticker, 0, None,
