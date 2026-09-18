@@ -191,6 +191,56 @@ def probe_schema(account):
     except Exception:
         edges = []
     lines = [f"app document: ok, {len(edges)} positions"]
+
+    # account types (drives the registered-plan margin gating)
+    try:
+        for a in (ws.get_accounts() or []):
+            lines.append(
+                f"account {a.get('id', '?')}: "
+                f"type={a.get('unifiedAccountType')}, "
+                f"status={a.get('status')}, "
+                f"nickname={a.get('nickname')}"
+            )
+    except Exception as e:
+        lines.append(f"get_accounts failed: {str(e)[:200]}")
+
+    # per-account positions: margins may only populate per account
+    resolve_fn = getattr(account, "_resolve", None)
+    if callable(resolve_fn):
+        for label, account_id in resolve_fn():
+            if not account_id:
+                continue
+            try:
+                variables2 = app_positions_variables(ws, [account_id])
+                result2 = ws.graphql_query(
+                    "FetchIdentityPositions",
+                    FETCH_IDENTITY_POSITIONS,
+                    variables2,
+                )
+                nodes = (
+                    ((result2.get("data") or {}).get("identity") or {})
+                    .get("financials") or {}
+                ).get("current", {}).get("positions", {}).get(
+                    "edges", []
+                )
+            except Exception as e:
+                lines.append(
+                    f"account {label} ({account_id}) failed: "
+                    f"{str(e)[:120]}"
+                )
+                continue
+            for e2 in nodes:
+                node = e2.get("node") or {}
+                sec = node.get("security") or {}
+                od = sec.get("optionDetails") or {}
+                sym = (sec.get("stock") or {}).get("symbol") or "?"
+                margin = node.get("marginRequirement") or {}
+                lines.append(
+                    f"  {label} {sym}"
+                    f"{od.get('strikePrice', '') if od else ''}: "
+                    f"margin={margin.get('amount', '-')} "
+                    f"{margin.get('currency', '')}".rstrip()
+                )
     for e in edges[:8]:
         node = e.get("node") or {}
         sec = node.get("security") or {}
