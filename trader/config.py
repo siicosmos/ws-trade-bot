@@ -184,12 +184,10 @@ def load_config(path: str) -> Config:
         mode = "notify"
 
     raw_tiers = _get(trading_raw, "size_tiers", None)
+    size_tiers = _default_size_tiers()
     if raw_tiers:
-        size_tiers = {
-            str(k).lower(): _norm_tier(v) for k, v in raw_tiers.items()
-        }
-    else:
-        size_tiers = _default_size_tiers()
+        for tier_name, tier_raw in raw_tiers.items():
+            size_tiers[str(tier_name).lower()] = _norm_tier(tier_raw)
 
     trading = TradingConfig(
         mode=mode,

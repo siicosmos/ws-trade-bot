@@ -622,3 +622,37 @@ def test_persist_preserves_blank_lines_and_order(tmp_path):
     assert "cooldown_seconds: 99" in text
     assert "\n\n" in text, text
     assert "频道-one" in text
+
+
+def test_size_tiers_merge_with_defaults(tmp_path):
+    from trader.config import load_config
+    from trader.settings import apply_settings
+
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(
+        "trading:\n"
+        "  mode: notify\n"
+        "  size_tiers:\n"
+        "    medium:\n"
+        "      risk_pct_max: 4\n"
+        "      contracts_min: 1\n"
+        "      contracts_max: 4\n",
+        encoding="utf-8",
+    )
+    cfg = load_config(str(cfg_path))
+    tiers = cfg.trading.size_tiers
+    assert set(tiers) == {
+        "lotto", "micro", "tiny", "small", "medium", "large", "big", "full"
+    }, set(tiers)
+    assert tiers["medium"]["risk_pct_max"] == 4
+    assert tiers["medium"]["contracts_max"] == 4
+    assert tiers["big"]["risk_pct_max"] == 10
+
+    applied, errors = apply_settings(
+        cfg, {"trading": {"cooldown_seconds": 99}}, str(cfg_path)
+    )
+    assert not errors, errors
+    text = cfg_path.read_text(encoding="utf-8")
+    for name in ("micro", "big", "full"):
+        assert f"\n    {name}:" in text, name
+    assert "risk_pct_max: 4" in text
