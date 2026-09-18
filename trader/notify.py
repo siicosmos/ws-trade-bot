@@ -44,6 +44,8 @@ def notify_alert(webhook_url: str, alert, sizing=None, correction=False):
             title += f" exp {alert.expiry}"
         if alert.premium:
             title += f" @ ${alert.premium:g}"
+        if alert.gain_pct is not None:
+            title += f" {alert.gain_pct:+g}%"
         fields = {
             "type": alert.action,
             "underlying": alert.underlying,
@@ -58,6 +60,8 @@ def notify_alert(webhook_url: str, alert, sizing=None, correction=False):
         title = f"{alert.action} {alert.ticker}"
         if alert.entry:
             title += f" @ ${alert.entry:g}"
+        if alert.gain_pct is not None:
+            title += f" {alert.gain_pct:+g}%"
         fields = {
             "type": alert.action,
             "ticker": alert.ticker,

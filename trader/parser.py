@@ -15,6 +15,7 @@ class Alert:
     right: Optional[str] = None
     premium: Optional[float] = None
     scale: Optional[float] = None
+    gain_pct: Optional[float] = None
     size: Optional[str] = None
     entry: Optional[float] = None
     stop_loss: Optional[float] = None
@@ -45,6 +46,7 @@ class Alert:
             "right": self.right,
             "premium": self.premium,
             "scale": self.scale,
+            "gain_pct": self.gain_pct,
             "size": self.size,
             "entry": self.entry,
             "stop_loss": self.stop_loss,
@@ -110,6 +112,18 @@ TP_RE = re.compile(
     r"(?:\btp\b|\bpt\b|targets?|take\s*profit(?:\s*at)?)\s*[:@\$]?\s*(\d*\.?\d+)",
     re.I,
 )
+
+GAIN_RE = re.compile(r"([+-]\s?\d{1,3}(?:\.\d+)?)\s*%")
+
+
+def _gain(text: str) -> Optional[float]:
+    m = GAIN_RE.search(text or "")
+    if not m:
+        return None
+    try:
+        return float(m.group(1).replace(" ", ""))
+    except ValueError:
+        return None
 
 
 CORRECTION_RE = re.compile(
@@ -207,6 +221,7 @@ def _option_alert(match, action: str, raw: str, size: Optional[str]) -> Optional
         right=right,
         premium=premium,
         scale=scale,
+        gain_pct=_gain(raw),
         size=size,
         raw=raw,
     )
@@ -267,6 +282,7 @@ def parse_alert(text: str, custom_patterns: Optional[List[str]] = None) -> Optio
             scale=_scale_from_verb(verb, None) if action == "SELL" else None,
             entry=price,
             premium=price,
+            gain_pct=_gain(text),
             size=size,
             raw=text,
         )
@@ -294,5 +310,6 @@ def parse_alert(text: str, custom_patterns: Optional[List[str]] = None) -> Optio
         entry=_num(ENTRY_RE.search(text).group(1)) if ENTRY_RE.search(text) else None,
         stop_loss=_num(STOP_RE.search(text).group(1)) if STOP_RE.search(text) else None,
         take_profit=_num(TP_RE.search(text).group(1)) if TP_RE.search(text) else None,
+        gain_pct=_gain(text),
         raw=text,
     )

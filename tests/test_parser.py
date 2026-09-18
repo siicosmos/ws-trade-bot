@@ -200,3 +200,14 @@ def test_format_scale():
     assert format_scale(0.75) == "3/4"
     assert format_scale(1.0) == "all"
     assert format_scale(0.4) == 0.4
+
+
+def test_gain_pct_parsed():
+    a = parse_alert("SOLD 1/3 08/26 AVGO 352.5c @ 1.55 +20% SCALED")
+    assert a.gain_pct == 20.0
+    b = parse_alert("SOLD 1/4 0DTE SPY 759c @ 2.0 runners FREE")
+    assert b.gain_pct is None
+    c = parse_alert("SOLD 1/2 0DTE SPY 759c @ 1.2 -10% cut")
+    assert c.gain_pct == -10.0
+    d = parse_alert("BOUGHT 0DTE SPX 7645c @ .65 tiny size")
+    assert d.gain_pct is None
