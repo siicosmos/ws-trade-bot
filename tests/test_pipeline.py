@@ -897,6 +897,8 @@ def test_open_option_positions_filters_and_maps(monkeypatch, tmp_path):
     acct._stale = {}
     acct._pos_cache = None
     acct._pos_cache_ts = 0.0
+    acct._raw_cache = None
+    acct._raw_ts = 0.0
     acct._fx_quote = None
     acct._fx_quote_ts = 0.0
     acct._cache = None
@@ -1057,6 +1059,8 @@ def test_short_option_position_displayed(monkeypatch):
     acct._stale = {}
     acct._pos_cache = None
     acct._pos_cache_ts = 0.0
+    acct._raw_cache = None
+    acct._raw_ts = 0.0
     acct._fx_quote = None
     acct._fx_quote_ts = 0.0
     acct._usd_cache = None
@@ -1119,6 +1123,8 @@ def test_debit_spread_grouping(monkeypatch):
     acct._stale = {}
     acct._pos_cache = None
     acct._pos_cache_ts = 0.0
+    acct._raw_cache = None
+    acct._raw_ts = 0.0
     acct._fx_quote = None
     acct._fx_quote_ts = 0.0
     acct._usd_cache = None
@@ -1185,6 +1191,8 @@ def test_credit_spread_risk_uses_width(monkeypatch):
     acct._stale = {}
     acct._pos_cache = None
     acct._pos_cache_ts = 0.0
+    acct._raw_cache = None
+    acct._raw_ts = 0.0
     acct._fx_quote = 1.4
     acct._fx_quote_ts = 0.0
     acct._usd_cache = None
@@ -1286,6 +1294,8 @@ def test_funding_balances_mapping(monkeypatch):
     acct._stale = {}
     acct._pos_cache = None
     acct._pos_cache_ts = 0.0
+    acct._raw_cache = None
+    acct._raw_ts = 0.0
     acct._fx_quote = None
     acct._fx_quote_ts = 0.0
     acct._usd_cache = None
@@ -1301,3 +1311,95 @@ def test_funding_balances_mapping(monkeypatch):
         {"currency": "CAD", "amount": 1500.0},
         {"currency": "USD", "amount": 250.0},
     ]
+
+
+def test_stock_holdings_mapping(monkeypatch):
+    from trader.account import WealthsimpleAccount
+
+    class FakeWS:
+        def get_positions(self, account_ids=None, **kw):
+            return [
+                {   # US stock
+                    "quantity": "10",
+                    "bookValue": {"amount": "2000.00", "currency": "CAD"},
+                    "marketBookValue": {"amount": "1500.00",
+                                         "currency": "USD"},
+                    "marketAveragePrice": {"amount": "150.00"},
+                    "security": {
+                        "securityType": "STOCK",
+                        "stock": {"symbol": "AAPL", "name": "Apple"},
+                        "quoteV2": {"price": "170.00"},
+                    },
+                },
+                {   # currency position - excluded from holdings
+                    "quantity": "120",
+                    "security": {
+                        "securityType": "CURRENCY",
+                        "stock": {"symbol": "USD"},
+                        "quoteV2": {"price": "1.36"},
+                    },
+                },
+            ]
+
+    class FakeCfg:
+        class wealthsimple:
+            positions_refresh_seconds = 30
+            values_refresh_seconds = 60
+
+    acct = WealthsimpleAccount.__new__(WealthsimpleAccount)
+    acct.cfg = FakeCfg()
+    acct.cache_seconds = 900
+    acct._ws = FakeWS()
+    acct._resolved = None
+    acct._stale = {}
+    acct._raw_cache = None
+    acct._raw_ts = 0.0
+    acct._pos_cache = None
+    acct._pos_cache_ts = 0.0
+    acct._fx_quote = None
+    acct._fx_quote_ts = 0.0
+    acct._usd_cache = None
+    acct._usd_cache_ts = 0.0
+    acct._funding_cache = None
+    acct._funding_ts = 0.0
+    acct._cache = None
+    acct._cache_ts = 0.0
+    monkeypatch.setattr(acct, "_resolve", lambda: [("RRSP", "a1")])
+
+    rows = acct.stock_holdings()["RRSP"]
+    assert len(rows) == 1
+    aapl = rows[0]
+    assert aapl["kind"] == "stock"
+    assert aapl["underlying"] == "AAPL"
+    assert aapl["qty"] == 10
+    assert aapl["avg_premium"] == 150.0     # USD per share
+    assert aapl["current_price"] == 170.0
+    assert aapl["cost_usd"] == 1500.0
+    assert aapl["cost_cad"] == 2000.0
+    assert aapl["market_value"] == 1700.0
+    assert aapl["pct_return"] == 13.3
+
+
+def test_positions_include_stocks(monkeypatch):
+    app, store, account = _make_app(mode="paper")
+    client = app.test_client()
+    account.open_option_positions = lambda: {
+        "RRSP": {"positions": [], "fx": 1.36, "usd_cash": None},
+    }
+    account.stock_holdings = lambda: {
+        "RRSP": [
+            {
+                "contract_key": "AAPL", "underlying": "AAPL",
+                "expiry": None, "strike": None, "right": None,
+                "qty": 10, "short": False, "kind": "stock",
+                "avg_premium": 150.0, "cost": 1500.0,
+                "cost_usd": 1500.0, "cost_cad": 2000.0,
+                "current_price": 170.0, "market_value": 1700.0,
+                "pct_return": 13.3,
+            }
+        ],
+    }
+    rows = client.get("/api/positions").get_json()
+    stocks = [r for r in rows if r.get("kind") == "stock"]
+    assert stocks and stocks[0]["underlying"] == "AAPL"
+    assert stocks[0]["source"] == "ws"

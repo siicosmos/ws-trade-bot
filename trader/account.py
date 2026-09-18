@@ -236,26 +236,18 @@ class WealthsimpleAccount:
             pass
         return None
 
-    def open_option_positions(self, max_age_seconds=None):
-        """Real open option positions per account label.
-
-        Returns {label: {"positions": [...], "fx": float|None,
-        "usd_cash": float|None}} with amounts split by currency
-        (US options quote in USD, the account books in CAD), or
-        {label: None} for accounts that could not be fetched so
-        callers can fall back to tracked positions. Cached for a
-        few minutes.
-        """
+    def _positions_raw(self, max_age_seconds=None):
+        """Raw get_positions per account label, cached briefly."""
         if max_age_seconds is None:
             max_age_seconds = getattr(
                 self.cfg.wealthsimple, "positions_refresh_seconds", 30
             )
         now = time.time()
         if (
-            self._pos_cache is not None
-            and now - self._pos_cache_ts < max_age_seconds
+            self._raw_cache is not None
+            and now - self._raw_ts < max_age_seconds
         ):
-            return self._pos_cache
+            return self._raw_cache
         try:
             ws = self._client()
         except Exception:
@@ -266,8 +258,113 @@ class WealthsimpleAccount:
                 out[label] = None
                 continue
             try:
-                positions = ws.get_positions(account_ids=[account_id])
+                out[label] = ws.get_positions(account_ids=[account_id]) or []
             except Exception:
+                out[label] = None
+        self._raw_cache = out
+        self._raw_ts = now
+        return out
+
+    def stock_holdings(self, max_age_seconds=None):
+        """Non-option holdings (stocks/ETFs) per account label.
+
+        Same shape and currency handling as option positions: the
+        market-currency amounts in cost_usd/current_price, the CAD
+        book value in cost_cad. Currency positions (cash) are
+        excluded - they surface in the funding balances.
+        """
+        raw = self._positions_raw(max_age_seconds)
+        if raw is None:
+            return None
+        out = {}
+        for label, positions in raw.items():
+            if positions is None:
+                out[label] = None
+                continue
+            rows = []
+            for p in positions:
+                sec = p.get("security") or {}
+                if sec.get("optionDetails"):
+                    continue
+                if (sec.get("securityType") or "").upper() == "CURRENCY":
+                    continue
+                stock = sec.get("stock") or {}
+                symbol = str(stock.get("symbol") or "").strip()
+                if not symbol:
+                    continue
+                try:
+                    qty = float(p.get("quantity") or 0)
+                except (TypeError, ValueError):
+                    qty = 0
+                direction = str(
+                    p.get("positionDirection") or ""
+                ).upper()
+                is_short = direction == "SHORT" or qty < 0
+                qty = abs(qty)
+                if qty <= 0:
+                    continue
+                book = _amount(p.get("bookValue"))
+                market_book = _amount(p.get("marketBookValue"))
+                cost_cad = abs(book)
+                cost_usd = abs(market_book)
+                quote = _quote_price(sec.get("quoteV2"))
+                avg = _amount(p.get("marketAveragePrice"))
+                per_unit = avg if avg else (
+                    cost_usd / qty if cost_usd else None
+                )
+                market_value = qty * quote if quote else None
+                pct_return = None
+                if market_value and cost_usd:
+                    if is_short:
+                        pct_return = round(
+                            (cost_usd - market_value) / cost_usd * 100, 1
+                        )
+                    else:
+                        pct_return = round(
+                            (market_value / cost_usd - 1) * 100, 1
+                        )
+                rows.append(
+                    {
+                        "contract_key": symbol,
+                        "underlying": symbol,
+                        "expiry": None,
+                        "strike": None,
+                        "right": None,
+                        "qty": qty,
+                        "short": is_short,
+                        "kind": "stock",
+                        "avg_premium": round(per_unit, 4)
+                        if per_unit is not None else None,
+                        "cost": cost_usd if cost_usd else cost_cad,
+                        "cost_usd": cost_usd,
+                        "cost_cad": cost_cad,
+                        "current_price": quote or None,
+                        "market_value": (
+                            round(market_value, 2)
+                            if market_value else None
+                        ),
+                        "pct_return": pct_return,
+                    }
+                )
+            out[label] = rows
+        return out
+
+    def open_option_positions(self, max_age_seconds=None):
+        """Real open option positions per account label.
+
+        Returns {label: {"positions": [...], "fx": float|None,
+        "usd_cash": float|None}} with amounts split by currency
+        (US options quote in USD, the account books in CAD), or
+        {label: None} for accounts that could not be fetched so
+        callers can fall back to tracked positions. Cached for a
+        few minutes.
+        """
+        raw = self._positions_raw(max_age_seconds)
+        if raw is None:
+            return None
+        out = {}
+        for label, positions in raw.items():
+            if positions is None:
                 out[label] = None
                 continue
             rows = []
@@ -452,8 +549,6 @@ class WealthsimpleAccount:
                 "fx": fx,
                 "usd_cash": usd_cash,
             }
-        self._pos_cache = out
-        self._pos_cache_ts = now
         return out
 
     def _try_fetch(self):

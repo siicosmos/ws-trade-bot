@@ -368,7 +368,7 @@ def notify_restart(webhook_url, reason, commits=""):
                                 {
                                     "name": "commits",
                                     "value": str(commits)[:1000] or "-",
-                                    "inline": False,
+                                    "inline": True,
                                 }
                             ]
                             if commits

@@ -191,6 +191,14 @@ def create_app(cfg, store: Store, risk, executor, account=None,
         except Exception:
             return None
 
+    def _real_stocks():
+        if account is None or not hasattr(account, "stock_holdings"):
+            return None
+        try:
+            return account.stock_holdings()
+        except Exception:
+            return None
+
     def _account_summaries():
         values = {}
         if account is not None:
@@ -324,18 +332,31 @@ def create_app(cfg, store: Store, risk, executor, account=None,
     @app.get("/api/positions")
     def api_positions():
         rows = [dict(r) for r in store.list_positions(mode)]
+        for r in rows:
+            r.setdefault("kind", "option")
         real = _real_positions() or {}
-        if real:
+        stocks = _real_stocks() or {}
+        fetched = {
+            label for label, r in list(real.items()) + list(stocks.items())
+            if r is not None
+        }
+        if fetched:
             # live Wealthsimple positions replace tracked ones for the
             # accounts we could fetch (manual trades included)
-            replaced = {
-                label for label, r in real.items() if r is not None
-            }
-            rows = [r for r in rows if r["account"] not in replaced]
+            rows = [r for r in rows if r["account"] not in fetched]
             for label, live in real.items():
                 if not live:
                     continue
                 for r in live["positions"]:
+                    row = dict(r)
+                    row["account"] = label
+                    row["source"] = "ws"
+                    row.setdefault("kind", "option")
+                    rows.append(row)
+            for label, live in stocks.items():
+                if not live:
+                    continue
+                for r in live:
                     row = dict(r)
                     row["account"] = label
                     row["source"] = "ws"

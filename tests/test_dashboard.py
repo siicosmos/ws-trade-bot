@@ -250,3 +250,13 @@ def test_dual_timestamps_rendered():
     assert "parsed ' + fmtTime(s.received_ts)" in js
     assert "function fmtIso(" in js
     assert "d.getHours()" in js and "d.getMinutes()" in js
+
+
+def test_stock_kind_cell():
+    import trader.dashboard as dash
+
+    js = re.findall(r"<script>(.*?)</script>",
+                    dash.DASHBOARD_HTML, re.S)[0]
+    # stocks render their own compact cell (symbol + stock label)
+    assert 'p.kind === "stock"' in js
+    assert '>stock</span>' in js

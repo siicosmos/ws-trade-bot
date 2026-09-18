@@ -307,11 +307,12 @@ async function loadPositions() {
       p.source === "ws"
         ? ' <span class="tag ignored mini" title="live from Wealthsimple">ws</span>'
         : ""
-    ) + "</td><td><span style=\"font-weight:600\">" +
-      esc(p.underlying || "") + " " + esc(p.strike || "") + esc(p.right || "") +
-      '</span><br><span style="font-size:11px;color:var(--muted)">' +
-      esc(String(p.expiry || "").slice(0, 10)) + "</span> " +
-      dteBadge(p.expiry) + "</td>" +
+    ) + "</td><td>" + (p.kind === "stock"
+      ? '<span style="font-weight:600">' + esc(p.underlying || "") + '</span><br><span style="font-size:11px;color:var(--muted)">stock</span>'
+      : '<span style="font-weight:600">' + esc(p.underlying || "") + " " + esc(p.strike || "") + esc(p.right || "") +
+        '</span><br><span style="font-size:11px;color:var(--muted)">' +
+        esc(String(p.expiry || "").slice(0, 10)) + "</span> " +
+        dteBadge(p.expiry)) + "</td>" +
       '<td class=num>' + (p.short ? "-" + p.qty : p.qty) + (p.short ? ' <span class="tag skip mini" title="short position">short</span>' : (p.spread ? ' <span class="tag ignored mini" title="multi-leg spread">spread</span>' : "")) + "</td>" +
       '<td class=num>' + (p.avg_premium != null
         ? (p.spread ? fmtSigned(avgTotal) : "$" + avgTotal.toLocaleString("en-CA", { maximumFractionDigits: 2 })) +
