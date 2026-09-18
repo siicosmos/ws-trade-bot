@@ -3,7 +3,6 @@ __pycache__/
 .venv/
 config.yaml
 trades.db
-reader/reader_config.json
 reader/discord_tree.txt
 *.db
 .env

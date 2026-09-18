@@ -1,16 +1,36 @@
-import json
+import os
+import sys
 import time
 
-import requests
 import psutil
+import requests
 import uiautomation as auto
 
 from inspect_discord import find_discord_window
 
 
-def load_config(path="reader_config.json"):
-    with open(path, "r") as f:
-        return json.load(f)
+def find_config_path():
+    here = os.path.dirname(os.path.abspath(__file__))
+    candidates = (
+        os.path.join(here, "..", "config.yaml"),
+        os.path.join(here, "config.yaml"),
+    )
+    for path in candidates:
+        if os.path.exists(path):
+            return os.path.abspath(path)
+    return None
+
+
+def load_config():
+    import yaml
+
+    path = find_config_path()
+    if path is None:
+        print("config.yaml not found - copy config.example.yaml to config.yaml")
+        sys.exit(1)
+    with open(path, "r", encoding="utf-8") as f:
+        raw = yaml.safe_load(f) or {}
+    return raw.get("reader") or {}
 
 
 def find_message_container(window, marker):
