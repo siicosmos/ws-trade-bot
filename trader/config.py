@@ -188,6 +188,7 @@ def load_config(path: str) -> Config:
         pipeline=PipelineConfig(
             host=str(_get(pipeline_raw, "host", "0.0.0.0")),
             port=int(_get(pipeline_raw, "port", 8080)),
+            auth_token=str(_get(pipeline_raw, "auth_token", "")),
         ),
         discord=DiscordConfig(webhook_url=webhook),
         trading=trading,
