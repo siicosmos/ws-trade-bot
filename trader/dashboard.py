@@ -55,9 +55,9 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
     font-variant-numeric: tabular-nums;
   }
   #clock {
-    color: #7ee0ff; font-size: 16px; font-weight: 700; margin-left: 8px;
+    color: #7ee0ff; font-size: 13px; font-weight: 700; margin-left: auto;
     border: 1px solid var(--border); border-radius: 6px;
-    padding: 2px 9px; background: var(--panel);
+    padding: 2px 7px; background: var(--panel);
     font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
     font-variant-numeric: tabular-nums;
     text-shadow: 0 0 10px rgba(88, 166, 255, 0.55);
@@ -124,13 +124,14 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   <div class="headrow">
     <h1 style="margin:0">WS Trade Bot</h1>
     <span id="mode" class="badge notify">notify</span>
-    <span id="timebox"><span id="updated">data refreshed</span><span id="clock"></span></span>
+    <span id="timebox"><span id="clock"></span></span>
   </div>
   <div style="display:flex;flex-basis:100%;gap:18px;flex-wrap:wrap;color:var(--muted);font-size:12px;align-items:center">
     <span id="reader"></span>
     <span id="git"></span>
     <span id="stops"></span>
-    <a href="/logout" id="logout" style="margin-left:auto">log out</a>
+    <span id="updated" style="margin-left:auto">data refreshed</span>
+    <a href="/logout" id="logout">log out</a>
   </div>
 </header>
 

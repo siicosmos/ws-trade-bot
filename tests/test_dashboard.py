@@ -31,7 +31,7 @@ def test_clock_has_no_inline_style_override():
     css = re.search(r"#clock \{(.*?)\}", dash.DASHBOARD_HTML, re.S)
     assert css
     block = css.group(1)
-    assert "font-size: 16px" in block
+    assert "font-size: 13px" in block
     assert "#7ee0ff" in block
     assert "text-shadow" in block
 
@@ -44,14 +44,15 @@ def test_header_rows_and_mobile_wrap():
     row = re.search(r'<div class="headrow">(.*?)</div>', html, re.S)
     assert row
     row_html = row.group(1)
-    for needle in ("<h1", 'id="mode"', 'id="timebox"', 'id="updated"',
-                   'id="clock"'):
+    for needle in ("<h1", 'id="mode"', 'id="timebox"', 'id="clock"'):
         assert needle in row_html, needle
+    assert 'id="updated"' not in row_html
     assert 'href="/logout"' not in row_html
-    # row 2: status lines with logout at the far right
-    assert 'id="logout" style="margin-left:auto"' in html
+    # row 2: status lines, refreshed label right-aligned, logout corner
+    assert 'id="updated" style="margin-left:auto"' in html
+    assert 'id="logout"' in html
     # refresh label renders before the first data cycle
-    assert '<span id="updated">data refreshed</span>' in html
+    assert '<span id="updated" style="margin-left:auto">data refreshed</span>' in html
     # phones: timebox keeps the right corner instead of wrapping mid-pair
     media = re.search(r"@media \(max-width: 620px\) \{(.*?)\}", html, re.S)
     assert media
