@@ -1319,12 +1319,14 @@ def test_stock_holdings_mapping(monkeypatch):
     class FakeWS:
         def get_positions(self, account_ids=None, **kw):
             return [
-                {   # US stock
+                {   # US stock - native average is authoritative, the
+                    # fx-converted marketBookValue (1600) must NOT win
                     "quantity": "10",
                     "bookValue": {"amount": "2000.00", "currency": "CAD"},
-                    "marketBookValue": {"amount": "1500.00",
+                    "marketBookValue": {"amount": "1600.00",
                                          "currency": "USD"},
-                    "marketAveragePrice": {"amount": "999.00"},
+                    "averagePrice": {"amount": "150.00",
+                                      "currency": "USD"},
                     "security": {
                         "securityType": "STOCK",
                         "stock": {"symbol": "AAPL", "name": "Apple"},
@@ -1335,9 +1337,10 @@ def test_stock_holdings_mapping(monkeypatch):
                 {   # Canadian exchange listing - quotes in CAD
                     "quantity": "100",
                     "bookValue": {"amount": "3100.00", "currency": "CAD"},
-                    "marketBookValue": {"amount": "3500.00",
+                    "marketBookValue": {"amount": "3100.00",
                                          "currency": "CAD"},
-                    "marketAveragePrice": {"amount": "99.00"},
+                    "averagePrice": {"amount": "31.00",
+                                      "currency": "CAD"},
                     "security": {
                         "securityType": "STOCK",
                         "stock": {"symbol": "RY", "name": "RBC"},
@@ -1396,12 +1399,12 @@ def test_stock_holdings_mapping(monkeypatch):
     ry = rows[1]
     assert ry["underlying"] == "RY"
     assert ry["currency"] == "CAD"
-    assert ry["avg_premium"] == 35.0
+    assert ry["avg_premium"] == 31.0
     assert ry["current_price"] == 35.5
-    assert ry["cost_usd"] == 3500.0         # market (CAD) book
+    assert ry["cost_usd"] == 3100.0         # qty x native average
     assert ry["cost_cad"] == 3100.0
     assert ry["market_value"] == 3550.0
-    assert ry["pct_return"] == 1.4          # CAD-vs-CAD ratio
+    assert ry["pct_return"] == 14.5         # CAD-vs-CAD ratio
 
 
 def test_positions_include_stocks(monkeypatch):

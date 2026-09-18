@@ -307,16 +307,31 @@ class WealthsimpleAccount:
                 book = _amount(p.get("bookValue"))
                 market_book = _amount(p.get("marketBookValue"))
                 cost_cad = abs(book)
-                cost_usd = abs(market_book)
                 quote = _quote_price(sec.get("quoteV2"))
                 currency = str(
                     (sec.get("quoteV2") or {}).get("currency") or ""
                 ).upper() or None
-                # marketAveragePrice is unreliable for stocks - derive
-                # the per-unit cost from the total book value
-                per_unit = (
-                    cost_usd / qty if cost_usd else None
-                )
+                # raw averagePrice is the native per-unit cost; the
+                # currency-override variants (marketAveragePrice,
+                # marketBookValue) convert at today's fx and skew the
+                # average. Ignore a cross-currency average (would need
+                # purchase-date fx).
+                avg_obj = p.get("averagePrice") or {}
+                per_unit = abs(_amount(avg_obj))
+                avg_cur = str(
+                    avg_obj.get("currency") or ""
+                ).upper() or None
+                if (
+                    per_unit
+                    and avg_cur
+                    and currency
+                    and avg_cur != currency
+                ):
+                    per_unit = None
+                if not per_unit and market_book:
+                    per_unit = abs(market_book) / qty
+                # native total cost from the true average
+                cost_usd = qty * per_unit if per_unit else None
                 market_value = qty * quote if quote else None
                 pct_return = None
                 if market_value and cost_usd:
