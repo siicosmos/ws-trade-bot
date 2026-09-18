@@ -202,7 +202,11 @@ def run_notify_phase():
         check("duplicate message ignored", resp["status"] == "ignored")
 
         trades = requests.get(f"{_current_base()}/api/trades", timeout=5).json()
-        check("notify mode records no trades", trades == [])
+        check(
+            "notify mode records a notified trade",
+            bool(trades) and trades[0]["status"] == "notified"
+            and trades[0]["mode"] == "notify",
+        )
         positions = requests.get(f"{_current_base()}/api/positions", timeout=5).json()
         check("notify mode opens no positions", positions == [])
     finally:
