@@ -13,13 +13,13 @@ trading:
   risk_per_trade_pct: 5
   max_contracts_per_trade: 10
   max_open_risk_pct: 30
-  size_risk_multiplier:
+  size_risk_pct:
     lotto: 0.5
-    tiny: 0.5
-    small: 0.75
-    medium: 1.0
-    big: 1.0
-    full: 1.0
+    tiny: 1
+    small: 1.5
+    medium: 4.5
+    big: 9
+    full: 9
   paper_account_value: 10000
   skip_underlyings:
     - SPX
@@ -34,12 +34,10 @@ wealthsimple:
   accounts:
     - account_id: "YOUR_RRSP_ACCOUNT_ID"
       label: "RRSP"
-      risk_per_trade_pct: 3
       max_contracts_per_trade: 20
       paper_value: 50000
     - account_id: "YOUR_PERSONAL_ACCOUNT_ID"
       label: "Personal"
-      risk_per_trade_pct: 5
       paper_value: 2000
   exchange_hint: ""
 

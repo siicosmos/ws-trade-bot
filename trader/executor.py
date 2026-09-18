@@ -14,7 +14,11 @@ class ExecutionResult:
     breakdown: dict = field(default_factory=dict)
 
 
-def effective_risk_pct(acct, cfg) -> float:
+def effective_risk_pct(acct, cfg, alert=None) -> float:
+    if alert and alert.size:
+        pct = (cfg.trading.size_risk_pct or {}).get(alert.size)
+        if pct is not None:
+            return float(pct)
     if acct and acct.risk_per_trade_pct is not None:
         return float(acct.risk_per_trade_pct)
     return cfg.trading.risk_per_trade_pct
@@ -29,10 +33,7 @@ def effective_contract_cap(acct, cfg) -> int:
 def contracts_for(alert, cfg, account_value: float, price, acct=None) -> int:
     if not price or price <= 0 or not account_value or account_value <= 0:
         return 0
-    multiplier = 1.0
-    if alert.size:
-        multiplier = (cfg.trading.size_risk_multiplier or {}).get(alert.size, 1.0)
-    budget = account_value * (effective_risk_pct(acct, cfg) / 100.0) * multiplier
+    budget = account_value * (effective_risk_pct(acct, cfg, alert) / 100.0)
     cost_per_contract = float(price) * 100
     qty = int(budget // cost_per_contract)
     cap = effective_contract_cap(acct, cfg)
@@ -54,18 +55,11 @@ def account_sizing(alert, cfg, account) -> list:
                 value = account.value(label)
             except Exception:
                 value = None
-        risk_pct = effective_risk_pct(acct, cfg)
+        risk_pct = effective_risk_pct(acct, cfg, alert)
         budget = value * (risk_pct / 100.0) if value else None
         contracts = None
         if budget is not None and price:
-            multiplier = 1.0
-            if alert.size:
-                multiplier = (cfg.trading.size_risk_multiplier or {}).get(
-                    alert.size, 1.0
-                )
-            contracts = int(
-                (budget * multiplier) // (float(price) * 100)
-            )
+            contracts = int(budget // (float(price) * 100))
             cap = effective_contract_cap(acct, cfg)
             if cap and cap > 0:
                 contracts = min(contracts, cap)

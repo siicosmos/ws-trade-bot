@@ -26,6 +26,18 @@ class WSAccountConfig:
     enabled: bool = True
 
 
+def _default_size_risk_pct() -> dict:
+    return {
+        "lotto": 0.5,
+        "micro": 0.5,
+        "tiny": 1.0,
+        "small": 1.5,
+        "medium": 4.5,
+        "big": 9.0,
+        "full": 9.0,
+    }
+
+
 @dataclass
 class TradingConfig:
     mode: str = "notify"
@@ -34,9 +46,9 @@ class TradingConfig:
     limit_offset_pct: float = 0.5
     position_size_cad: float = 100.0
     risk_per_trade_pct: float = 5.0
+    size_risk_pct: dict = field(default_factory=_default_size_risk_pct)
     max_contracts_per_trade: int = 10
     max_open_risk_pct: float = 30.0
-    size_risk_multiplier: dict = field(default_factory=dict)
     paper_account_value: float = 10000.0
     skip_underlyings: List[str] = field(default_factory=list)
     max_trades_per_day: int = 5
@@ -135,7 +147,8 @@ def load_config(path: str) -> Config:
             _get(trading_raw, "max_contracts_per_trade", 10)
         ),
         max_open_risk_pct=float(_get(trading_raw, "max_open_risk_pct", 30.0)),
-        size_risk_multiplier=dict(_get(trading_raw, "size_risk_multiplier", {})),
+        size_risk_pct=dict(_get(trading_raw, "size_risk_pct", {}))
+        or _default_size_risk_pct(),
         paper_account_value=float(
             _get(trading_raw, "paper_account_value", 10000.0)
         ),

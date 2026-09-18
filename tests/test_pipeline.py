@@ -75,11 +75,9 @@ def test_contracts_for_sizing():
     assert contracts_for(parse_alert("BOUGHT 0DTE SPY 759c @ 1.5"), cfg, 10000, 1.5) == 3
     assert contracts_for(parse_alert("BOUGHT 0DTE SPY 759c @ .65"), cfg, 10000, 0.65) == 7
     assert contracts_for(parse_alert("BOUGHT 0DTE SPY 759c @ 99"), cfg, 10000, 99.0) == 0
-    cfg2, _, _, _ = _setup(
-        paper_account_value=10000, risk_per_trade_pct=5,
-        size_risk_multiplier={"tiny": 0.5},
-    )
-    assert contracts_for(parse_alert("BOUGHT 0DTE SPY 759c @ 1.5 @everyone tiny size"), cfg2, 10000, 1.5) == 1
+    assert contracts_for(parse_alert("BOUGHT 0DTE SPY 759c @ 1.5 @everyone small size"), cfg, 10000, 1.5) == 1
+    assert contracts_for(parse_alert("BOUGHT 0DTE SPY 759c @ 1.5 @everyone lotto size"), cfg, 10000, 1.5) == 0
+    assert contracts_for(parse_alert("BOUGHT 0DTE SPY 759c @ 1.5 @everyone medium size"), cfg, 10000, 1.5) == 3
     cfg3, _, _, _ = _setup(max_contracts_per_trade=2)
     assert contracts_for(parse_alert("BOUGHT 0DTE SPY 759c @ 1.5"), cfg3, 100000, 0.5) == 2
 
@@ -91,6 +89,8 @@ def test_contracts_for_per_account_overrides():
     alert = parse_alert("BOUGHT 0DTE SPY 759c @ 1.5")
     assert contracts_for(alert, cfg, 50000, 1.5, big) == 10
     assert contracts_for(alert, cfg, 2000, 1.5, small) == 1
+    sized = parse_alert("BOUGHT 0DTE SPY 759c @ 1.5 @everyone small size")
+    assert contracts_for(sized, cfg, 50000, 1.5, big) == 5
     capped = WSAccountConfig(account_id="x", label="x", max_contracts_per_trade=2)
     assert contracts_for(alert, cfg, 50000, 1.5, capped) == 2
 
@@ -155,22 +155,22 @@ def test_multi_account_paper_execution():
     risk = RiskEngine(cfg, store, account)
     ex = PaperExecutor(cfg, store, account)
 
-    buy = parse_alert("BOUGHT 0DTE SPY 759c @ 1.5 @everyone small size")
+    buy = parse_alert("BOUGHT 0DTE SPY 759c @ 1.5 @everyone medium size")
     res = ex.execute(buy, cfg, store)
     assert res.ok
     assert res.breakdown["RRSP"] == "10x @ 1.5"
-    assert res.breakdown["Personal"] == "1x @ 1.5"
-    assert res.qty == 11
+    assert res.breakdown["Personal"] == "0 (risk budget too small)"
+    assert res.qty == 10
     assert store.get_position("paper", buy.contract_key(), "RRSP") == 10
-    assert store.get_position("paper", buy.contract_key(), "Personal") == 1
+    assert store.get_position("paper", buy.contract_key(), "Personal") == 0
     assert store.paper_equity("RRSP") == 50000 - 10 * 150
-    assert store.paper_equity("Personal") == 2000 - 150
+    assert store.paper_equity("Personal") == 2000
 
     sell = parse_alert("SOLD 1/4 0DTE SPY 759c @ 1.95 @everyone")
     res = ex.execute(sell, cfg, store)
     assert res.ok
     assert res.breakdown["RRSP"] == "3/10x @ 1.95"
-    assert res.breakdown["Personal"] == "1/1x @ 1.95"
+    assert res.breakdown["Personal"] == "no position"
     assert store.get_position("paper", buy.contract_key(), "RRSP") == 7
     assert store.get_position("paper", buy.contract_key(), "Personal") == 0
 
@@ -191,9 +191,10 @@ def test_multi_account_open_risk_cap_skips_only_that_account():
     account = PaperAccount(cfg, store)
     ex = PaperExecutor(cfg, store, account)
 
-    buy = parse_alert("BOUGHT 0DTE SPY 759c @ 1.5 @everyone small size")
+    buy = parse_alert("BOUGHT 0DTE SPY 759c @ 1.5 @everyone big size")
     res = ex.execute(buy, cfg, store)
     assert res.ok
+    assert res.breakdown["Personal"] == "1x @ 1.5"
 
     tiny = parse_alert("BOUGHT 0DTE SPY 800c @ .5 @everyone")
     tiny.underlying = "SPY"
@@ -214,19 +215,18 @@ def test_account_sizing_rows():
                         risk_per_trade_pct=10, paper_value=2000),
     ]
     store = _fresh_store()
-    cfg = ConfigStub(TradingConfig(mode="notify", risk_per_trade_pct=5,
-                                   size_risk_multiplier={"small": 0.75}),
+    cfg = ConfigStub(TradingConfig(mode="notify", risk_per_trade_pct=5),
                      accounts=accounts)
     account = PaperAccount(cfg, store)
     alert = parse_alert("BOUGHT 0DTE SPY 759c @ 1.5 @everyone small size")
     rows = account_sizing(alert, cfg, account)
     by_label = {r["label"]: r for r in rows}
     assert by_label["RRSP"]["value"] == 50000
-    assert by_label["RRSP"]["risk_pct"] == 3
-    assert by_label["RRSP"]["contracts"] == 7
+    assert by_label["RRSP"]["risk_pct"] == 1.5
+    assert by_label["RRSP"]["contracts"] == 5
     assert by_label["Personal"]["value"] == 2000
-    assert by_label["Personal"]["risk_pct"] == 10
-    assert by_label["Personal"]["contracts"] == 1
+    assert by_label["Personal"]["risk_pct"] == 1.5
+    assert by_label["Personal"]["contracts"] == 0
 
 
 def test_pipeline_dry_run_option_flow():
@@ -266,7 +266,8 @@ def test_notify_mode_forwards_without_trading():
     assert store.open_risk("paper") == 0
     assert store.list_positions("paper") == []
     assert res["sizing"][0]["label"] == "default"
-    assert res["sizing"][0]["contracts"] == 3
+    assert res["sizing"][0]["risk_pct"] == 1.5
+    assert res["sizing"][0]["contracts"] == 1
 
 
 def test_notify_mode_sell_alert():
