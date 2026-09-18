@@ -1,6 +1,6 @@
 import hashlib
 
-from .executor import ExecutionResult
+from .executor import ExecutionResult, account_sizing
 from .notify import notify_alert, notify_discord
 from .parser import parse_alert
 from .risk import RiskEngine
@@ -11,7 +11,9 @@ def _message_key(text: str, author: str = "") -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-def process_alert(text: str, author: str, cfg, store, risk: RiskEngine, executor) -> dict:
+def process_alert(
+    text, author, cfg, store, risk: RiskEngine, executor, account=None
+) -> dict:
     if not text or not text.strip():
         return {"status": "ignored", "reason": "empty message"}
 
@@ -26,8 +28,13 @@ def process_alert(text: str, author: str, cfg, store, risk: RiskEngine, executor
         return {"status": "ignored", "reason": "no actionable signal"}
 
     if cfg.trading.mode == "notify":
-        notify_alert(cfg.discord.webhook_url, alert)
-        return {"status": "notified", "alert": alert.to_dict()}
+        sizing = account_sizing(alert, cfg, account) if account else []
+        notify_alert(cfg.discord.webhook_url, alert, sizing)
+        return {
+            "status": "notified",
+            "alert": alert.to_dict(),
+            "sizing": sizing,
+        }
 
     if executor is None:
         return {"status": "error", "reason": "no executor configured"}

@@ -31,7 +31,16 @@ trading:
   place_stop_loss: false
 
 wealthsimple:
-  account_id: ""
+  accounts:
+    - account_id: "YOUR_RRSP_ACCOUNT_ID"
+      label: "RRSP"
+      risk_per_trade_pct: 3
+      max_contracts_per_trade: 20
+      paper_value: 50000
+    - account_id: "YOUR_PERSONAL_ACCOUNT_ID"
+      label: "Personal"
+      risk_per_trade_pct: 10
+      paper_value: 2000
   exchange_hint: ""
 
 parser:

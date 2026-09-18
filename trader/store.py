@@ -37,6 +37,7 @@ class Store:
                 );
                 CREATE TABLE IF NOT EXISTS positions (
                     mode TEXT NOT NULL,
+                    account TEXT NOT NULL DEFAULT 'default',
                     contract_key TEXT NOT NULL,
                     underlying TEXT NOT NULL,
                     expiry TEXT,
@@ -44,7 +45,8 @@ class Store:
                     right TEXT,
                     qty INTEGER NOT NULL DEFAULT 0,
                     updated_ts TEXT,
-                    PRIMARY KEY (mode, contract_key)
+                    avg_premium REAL,
+                    PRIMARY KEY (mode, account, contract_key)
                 );
                 CREATE TABLE IF NOT EXISTS meta (
                     key TEXT PRIMARY KEY,
@@ -52,14 +54,42 @@ class Store:
                 );
                 """
             )
-            for stmt in (
-                "ALTER TABLE trades ADD COLUMN dedupe_key TEXT",
-                "ALTER TABLE positions ADD COLUMN avg_premium REAL",
-            ):
-                try:
-                    self._conn.execute(stmt)
-                except sqlite3.OperationalError:
-                    pass
+            try:
+                self._conn.execute("ALTER TABLE trades ADD COLUMN dedupe_key TEXT")
+            except sqlite3.OperationalError:
+                pass
+
+            cols = [
+                r[1] for r in self._conn.execute("PRAGMA table_info(positions)")
+            ]
+            if "account" not in cols and cols:
+                self._conn.executescript(
+                    """
+                    BEGIN;
+                    CREATE TABLE positions_new (
+                        mode TEXT NOT NULL,
+                        account TEXT NOT NULL DEFAULT 'default',
+                        contract_key TEXT NOT NULL,
+                        underlying TEXT NOT NULL,
+                        expiry TEXT,
+                        strike REAL,
+                        right TEXT,
+                        qty INTEGER NOT NULL DEFAULT 0,
+                        updated_ts TEXT,
+                        avg_premium REAL,
+                        PRIMARY KEY (mode, account, contract_key)
+                    );
+                    INSERT INTO positions_new
+                        (mode, account, contract_key, underlying, expiry, strike,
+                         right, qty, updated_ts, avg_premium)
+                    SELECT mode, 'default', contract_key, underlying, expiry,
+                           strike, right, qty, updated_ts, avg_premium
+                    FROM positions;
+                    DROP TABLE positions;
+                    ALTER TABLE positions_new RENAME TO positions;
+                    COMMIT;
+                    """
+                )
 
     @staticmethod
     def _now():
@@ -135,33 +165,40 @@ class Store:
                 ),
             )
 
-    def get_position(self, mode: str, contract_key: str) -> int:
+    def get_position(self, mode: str, contract_key: str, account="default") -> int:
         with self._lock, self._conn:
             row = self._conn.execute(
-                "SELECT qty FROM positions WHERE mode = ? AND contract_key = ?",
-                (mode, contract_key),
+                "SELECT qty FROM positions WHERE mode = ? AND account = ? "
+                "AND contract_key = ?",
+                (mode, account, contract_key),
             ).fetchone()
             return int(row[0]) if row else 0
 
-    def list_positions(self, mode: str):
+    def list_positions(self, mode: str, account=None):
+        query = (
+            "SELECT account, contract_key, underlying, expiry, strike, right, qty, "
+            "avg_premium FROM positions WHERE mode = ? AND qty > 0"
+        )
+        params = [mode]
+        if account is not None:
+            query += " AND account = ?"
+            params.append(account)
+        query += " ORDER BY account, updated_ts DESC"
         with self._lock, self._conn:
-            rows = self._conn.execute(
-                "SELECT contract_key, underlying, expiry, strike, right, qty, "
-                "avg_premium FROM positions WHERE mode = ? AND qty > 0 "
-                "ORDER BY updated_ts DESC",
-                (mode,),
-            ).fetchall()
-        keys = ["contract_key", "underlying", "expiry", "strike", "right",
-                "qty", "avg_premium"]
+            rows = self._conn.execute(query, params).fetchall()
+        keys = ["account", "contract_key", "underlying", "expiry", "strike",
+                "right", "qty", "avg_premium"]
         return [dict(zip(keys, r)) for r in rows]
 
-    def apply_position(self, mode: str, alert, delta: int, premium=None):
+    def apply_position(
+        self, mode: str, alert, delta: int, premium=None, account="default"
+    ):
         key = alert.contract_key()
         with self._lock, self._conn:
             row = self._conn.execute(
                 "SELECT qty, avg_premium FROM positions "
-                "WHERE mode = ? AND contract_key = ?",
-                (mode, key),
+                "WHERE mode = ? AND account = ? AND contract_key = ?",
+                (mode, account, key),
             ).fetchone()
             if row is None:
                 old_qty, old_avg = 0, None
@@ -172,47 +209,54 @@ class Store:
             new_avg = old_avg
             if delta > 0 and premium is not None:
                 total_old = old_qty * (old_avg or 0.0)
-                new_avg = (total_old + delta * premium) / new_qty if new_qty else old_avg
+                new_avg = (
+                    (total_old + delta * premium) / new_qty if new_qty else old_avg
+                )
 
             self._conn.execute(
-                "INSERT INTO positions (mode, contract_key, underlying, expiry, "
-                "strike, right, qty, updated_ts, avg_premium) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
-                "ON CONFLICT(mode, contract_key) DO UPDATE SET "
+                "INSERT INTO positions (mode, account, contract_key, underlying, "
+                "expiry, strike, right, qty, updated_ts, avg_premium) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(mode, account, contract_key) DO UPDATE SET "
                 "qty = excluded.qty, updated_ts = excluded.updated_ts, "
                 "avg_premium = excluded.avg_premium",
                 (
-                    mode, key, alert.underlying, alert.expiry, alert.strike,
-                    alert.right, new_qty, self._now(), new_avg,
+                    mode, account, key, alert.underlying, alert.expiry,
+                    alert.strike, alert.right, new_qty, self._now(), new_avg,
                 ),
             )
 
-    def open_risk(self, mode: str) -> float:
+    def open_risk(self, mode: str, account=None) -> float:
+        query = (
+            "SELECT SUM(qty * COALESCE(avg_premium, 0) * 100) "
+            "FROM positions WHERE mode = ? AND qty > 0"
+        )
+        params = [mode]
+        if account is not None:
+            query += " AND account = ?"
+            params.append(account)
         with self._lock, self._conn:
-            row = self._conn.execute(
-                "SELECT SUM(qty * COALESCE(avg_premium, 0) * 100) "
-                "FROM positions WHERE mode = ? AND qty > 0",
-                (mode,),
-            ).fetchone()
+            row = self._conn.execute(query, params).fetchone()
         return float(row[0]) if row and row[0] is not None else 0.0
 
-    def paper_equity(self):
+    def paper_equity(self, label: str = "default"):
         with self._lock, self._conn:
             row = self._conn.execute(
-                "SELECT value FROM meta WHERE key = 'paper_equity'"
+                "SELECT value FROM meta WHERE key = ?",
+                (f"paper_equity:{label}",),
             ).fetchone()
             return float(row[0]) if row else None
 
-    def set_paper_equity(self, value: float):
+    def set_paper_equity(self, value: float, label: str = "default"):
         with self._lock, self._conn:
             self._conn.execute(
-                "INSERT INTO meta (key, value) VALUES ('paper_equity', ?) "
+                "INSERT INTO meta (key, value) VALUES (?, ?) "
                 "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-                (str(value),),
+                (f"paper_equity:{label}", str(value)),
             )
 
-    def adjust_paper_equity(self, delta: float):
-        current = self.paper_equity()
+    def adjust_paper_equity(self, delta: float, label: str = "default"):
+        current = self.paper_equity(label)
         if current is None:
             return
-        self.set_paper_equity(current + delta)
+        self.set_paper_equity(current + delta, label)

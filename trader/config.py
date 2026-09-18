@@ -1,6 +1,6 @@
 import os
 from dataclasses import dataclass, field
-from typing import List
+from typing import List, Optional
 
 import yaml
 
@@ -14,6 +14,16 @@ class PipelineConfig:
 @dataclass
 class DiscordConfig:
     webhook_url: str = ""
+
+
+@dataclass
+class WSAccountConfig:
+    account_id: str = ""
+    label: str = ""
+    risk_per_trade_pct: Optional[float] = None
+    max_contracts_per_trade: Optional[int] = None
+    paper_value: Optional[float] = None
+    enabled: bool = True
 
 
 @dataclass
@@ -39,7 +49,7 @@ class TradingConfig:
 
 @dataclass
 class WealthsimpleConfig:
-    account_id: str = ""
+    accounts: List[WSAccountConfig] = field(default_factory=list)
     exchange_hint: str = ""
 
 
@@ -60,6 +70,41 @@ class Config:
 def _get(d, key, default):
     value = d.get(key, default)
     return default if value is None else value
+
+
+def _opt_float(d, key):
+    value = d.get(key)
+    return None if value is None else float(value)
+
+
+def _opt_int(d, key):
+    value = d.get(key)
+    return None if value is None else int(value)
+
+
+def _load_accounts(ws_raw: dict) -> List[WSAccountConfig]:
+    accounts = []
+    for entry in ws_raw.get("accounts") or []:
+        if isinstance(entry, str):
+            accounts.append(WSAccountConfig(account_id=entry))
+            continue
+        accounts.append(
+            WSAccountConfig(
+                account_id=str(entry.get("account_id", "")),
+                label=str(entry.get("label", "")),
+                risk_per_trade_pct=_opt_float(entry, "risk_per_trade_pct"),
+                max_contracts_per_trade=_opt_int(
+                    entry, "max_contracts_per_trade"
+                ),
+                paper_value=_opt_float(entry, "paper_value"),
+                enabled=bool(entry.get("enabled", True)),
+            )
+        )
+    if not accounts:
+        single = str(ws_raw.get("account_id", "") or "")
+        if single:
+            accounts.append(WSAccountConfig(account_id=single, label="default"))
+    return accounts
 
 
 def load_config(path: str) -> Config:
@@ -117,7 +162,7 @@ def load_config(path: str) -> Config:
         discord=DiscordConfig(webhook_url=webhook),
         trading=trading,
         wealthsimple=WealthsimpleConfig(
-            account_id=str(_get(ws_raw, "account_id", "")),
+            accounts=_load_accounts(ws_raw),
             exchange_hint=str(_get(ws_raw, "exchange_hint", "")),
         ),
         parser=ParserConfig(

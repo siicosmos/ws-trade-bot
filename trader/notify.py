@@ -19,7 +19,7 @@ def notify_discord(webhook_url: str, title: str, fields: dict, ok: bool = True):
         pass
 
 
-def notify_alert(webhook_url: str, alert):
+def notify_alert(webhook_url: str, alert, sizing=None):
     if not webhook_url:
         return
 
@@ -50,6 +50,26 @@ def notify_alert(webhook_url: str, alert):
         }
 
     fields = {k: v for k, v in fields.items() if v not in (None, "")}
+
+    for row in sizing or []:
+        label = row.get("label", "?")
+        value = row.get("value")
+        contracts = row.get("contracts")
+        if value is not None and contracts is not None:
+            fields[f"{label} sizing"] = (
+                f"{contracts} contracts "
+                f"(${row.get('budget') or 0:,.0f} risk @ "
+                f"{row.get('risk_pct')}%)"
+                if contracts > 0
+                else f"too small (budget ${row.get('budget') or 0:,.0f})"
+            )
+        elif value is not None:
+            fields[f"{label} sizing"] = (
+                f"${value:,.0f} (no price to size against)"
+            )
+        else:
+            fields[f"{label} sizing"] = "value unavailable"
+
     if alert.raw:
         fields["message"] = alert.raw[:200]
 

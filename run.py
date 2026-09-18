@@ -27,11 +27,23 @@ def main():
     elif mode == "live":
         account = WealthsimpleAccount(cfg)
         executor = WealthsimpleExecutor(cfg, account)
-    elif not cfg.discord.webhook_url:
-        print(
-            "WARNING: notify mode but discord.webhook_url is not set - "
-            "alerts will not reach your phone"
-        )
+    else:
+        if not cfg.discord.webhook_url:
+            print(
+                "WARNING: notify mode but discord.webhook_url is not set - "
+                "alerts will not reach your phone"
+            )
+        try:
+            account = WealthsimpleAccount(cfg)
+            account.values()
+            print("sizing alerts will use live Wealthsimple account values")
+        except Exception:
+            account = PaperAccount(cfg, store)
+            print(
+                "note: Wealthsimple values unavailable "
+                "(run scripts/ws_login.py) - "
+                "using paper values for sizing alerts"
+            )
 
     risk = RiskEngine(cfg, store, account)
 
