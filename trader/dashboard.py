@@ -83,7 +83,7 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   }
   .cur-toggle:hover { color: var(--text); border-color: var(--muted); }
   .card .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .8px; margin-bottom: 6px; }
-  .card .value { font-size: 30px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .card .value { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
   .riskbar { height: 6px; background: #21262d; border-radius: 3px; margin-top: 12px; overflow: hidden; }
   .riskbar > div { height: 100%; border-radius: 3px; background: var(--green); transition: width .4s; }
   .card .sub { color: var(--muted); font-size: 12px; margin-top: 8px; display: flex; justify-content: space-between; }
