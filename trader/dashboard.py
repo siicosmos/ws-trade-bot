@@ -453,8 +453,10 @@ setInterval(tickClock, 1000);
 
 
 def LOGIN_HTML(error=None):
+    import html
+
     message = (
-        f'<p style="color:#f85149;margin:0 0 14px">{error}</p>'
+        f'<p style="color:#f85149;margin:0 0 14px">{html.escape(str(error))}</p>'
         if error else ""
     )
     return f"""<!DOCTYPE html>

@@ -41,3 +41,16 @@ def test_quiet_filter_keeps_meaningful_lines():
     assert f.filter(_record(
         '127.0.0.1 - - [18/Sep/2026 07:15:10] "POST /api/settings HTTP/1.1" 200 -'
     ))
+
+
+def test_expose_script_scoped_to_private_profile():
+    import os
+
+    path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "scripts", "expose_dashboard.ps1",
+    )
+    with open(path) as f:
+        script = f.read()
+    assert "-Profile Private" in script
+    assert "https://" in script

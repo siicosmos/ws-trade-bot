@@ -19,3 +19,63 @@ def test_dashboard_script_strings_terminated():
             code = _strip_complete_strings(line)
             assert '"' not in code, f"unterminated string: {line}"
             assert "'" not in code, f"unterminated string: {line}"
+
+
+def test_clock_has_no_inline_style_override():
+    # an inline style once silently beat the #clock rule, freezing it at 12px
+    import re
+    import trader.dashboard as dash
+
+    m = re.search(r'<span id="clock"[^>]*>', dash.DASHBOARD_HTML)
+    assert m and "style" not in m.group(0)
+    css = re.search(r"#clock \{(.*?)\}", dash.DASHBOARD_HTML, re.S)
+    assert css
+    block = css.group(1)
+    assert "font-size: 20px" in block
+    assert "#7ee0ff" in block
+    assert "text-shadow" in block
+
+
+def test_header_rows_and_mobile_wrap():
+    import trader.dashboard as dash
+
+    html = dash.DASHBOARD_HTML
+    # row 1: title, mode badge, timebox (age + clock), logout
+    row = re.search(r'<div class="headrow">(.*?)</div>', html, re.S)
+    assert row
+    row_html = row.group(1)
+    for needle in ("<h1", 'id="mode"', 'id="timebox"', 'id="updated"',
+                   'id="clock"', 'href="/logout"'):
+        assert needle in row_html, needle
+    # phones: timebox drops below the title row instead of wrapping mid-pair
+    media = re.search(r"@media \(max-width: 620px\) \{(.*?)\}", html, re.S)
+    assert media
+    assert "#timebox" in media.group(1)
+
+
+def test_pageshow_rechecks_auth_after_back_button():
+    import trader.dashboard as dash
+
+    js = re.findall(r"<script>(.*?)</script>",
+                   dash.DASHBOARD_HTML, re.S)[0]
+    handler = js[js.index("pageshow"):js.index("pageshow") + 400]
+    assert "/api/summary" in handler
+    assert "/login" in handler
+
+
+def test_settings_list_inputs_span_full_row():
+    # narrow grid cells clipped the whitelist / skip-underlyings hints
+    import trader.dashboard as dash
+
+    js = re.findall(r"<script>(.*?)</script>",
+                   dash.DASHBOARD_HTML, re.S)[0]
+    assert '["ticker_whitelist"' in js
+    assert "grid-column:1/-1" in js
+
+
+def test_login_page_rejects_injection():
+    import trader.dashboard as dash
+
+    rendered = dash.LOGIN_HTML('<script>alert(1)</script>')
+    assert "<script>alert(1)</script>" not in rendered
+    assert "&lt;script&gt;" in rendered
