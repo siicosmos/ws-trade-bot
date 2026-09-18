@@ -1,8 +1,8 @@
 import hashlib
 
 from .executor import ExecutionResult, account_sizing
-from .notify import notify_alert, notify_discord
-from .parser import parse_alert
+from .notify import notify_alert, notify_correction, notify_discord
+from .parser import is_correction, parse_alert
 from .risk import RiskEngine
 
 
@@ -22,9 +22,15 @@ def process_alert(
         return {"status": "ignored", "reason": "duplicate message"}
 
     alert = parse_alert(text, cfg.parser.custom_patterns)
-    store.record_signal(key, author, text, alert is not None)
+    correction = is_correction(text)
+    store.record_signal(
+        key, author, text, alert is not None, correction=correction
+    )
 
     if alert is None:
+        if correction:
+            notify_correction(cfg.discord.webhook_url, text)
+            return {"status": "correction", "alert": None}
         return {"status": "ignored", "reason": "no actionable signal"}
 
     if cfg.trading.mode == "notify":
@@ -33,11 +39,13 @@ def process_alert(
             if account and alert.action == "BUY"
             else []
         )
-        notify_alert(cfg.discord.webhook_url, alert, sizing)
+        notify_alert(cfg.discord.webhook_url, alert, sizing,
+                     correction=correction)
         return {
             "status": "notified",
             "alert": alert.to_dict(),
             "sizing": sizing,
+            "correction": correction,
         }
 
     if executor is None:
@@ -74,16 +82,19 @@ def process_alert(
         result.detail, key,
     )
 
+    fields = {
+        "result": result.detail,
+        "qty": result.qty,
+        "entry": alert.entry or "-",
+        "stop": alert.stop_loss or "-",
+        "target": alert.take_profit or "-",
+    }
+    if correction:
+        fields["note"] = "ADMIN CORRECTION - may supersede the previous alert"
     notify_discord(
         cfg.discord.webhook_url,
         f"[{executor.mode.upper()}] {alert.action} {alert.ticker}",
-        {
-            "result": result.detail,
-            "qty": result.qty,
-            "entry": alert.entry or "-",
-            "stop": alert.stop_loss or "-",
-            "target": alert.take_profit or "-",
-        },
+        fields,
         ok=result.ok,
     )
 
@@ -91,4 +102,5 @@ def process_alert(
         "status": "executed" if result.ok else "skipped",
         "detail": result.detail,
         "alert": alert.to_dict(),
+        "correction": correction,
     }

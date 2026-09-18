@@ -158,3 +158,28 @@ def test_generic_dollar_ticker():
 
 def test_no_action_returns_none():
     assert parse_alert("market looking choppy today, stay safe") is None
+
+
+def test_is_correction_positive():
+    from trader.parser import is_correction
+    samples = [
+        "Typo on the last alert, it was 760c not 7645c",
+        "CORRECTION: entry should have been 759c",
+        "ignore last alert",
+        "Disregard previous entry",
+        "Edit: stop loss should be 245",
+    ]
+    for s in samples:
+        assert is_correction(s), s
+
+
+def test_is_correction_negative():
+    from trader.parser import is_correction
+    samples = [
+        "BOUGHT 0DTE SPX 7585c @ .7 @everyone HERO or ZERO",
+        "SOLD 1/4 0DTE SPX 7585c @ 2.0 runners FREE",
+        "executed 2.15 ^",
+        "market looking choppy today",
+    ]
+    for s in samples:
+        assert not is_correction(s), s

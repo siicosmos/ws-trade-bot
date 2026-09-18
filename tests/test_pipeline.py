@@ -588,3 +588,42 @@ def test_load_env_tokens_missing_file():
     import trader.ws_tokens as wt
 
     assert wt.load_env_tokens(path="/nonexistent/ws_tokens.env") is False
+
+
+def test_notify_mode_forwards_correction():
+    cfg, store, account, risk = _setup(mode="notify")
+    res = process_alert(
+        "Typo on the last alert, it was 760c not 7645c", "",
+        cfg, store, risk, None, account,
+    )
+    assert res["status"] == "correction"
+    signals = store.recent_signals(10)
+    assert signals[0]["parsed"] == 0
+    assert signals[0]["correction"] == 1
+    assert store.trades_today("paper") == 0
+
+
+def test_actionable_correction_still_executes():
+    cfg, store, account, risk = _setup(cooldown_seconds=0)
+    ex = PaperExecutor(cfg, store, account)
+    buy = parse_alert("BOUGHT 0DTE SPY 759c @ 1.5 @everyone small size")
+    assert ex.execute(buy, cfg, store).ok
+    res = process_alert(
+        "CORRECTION: ALL OUT 0DTE SPY 759c @ 2.0 @everyone", "",
+        cfg, store, risk, ex, account,
+    )
+    assert res["status"] == "executed"
+    assert res["correction"] is True
+    signals = store.recent_signals(10)
+    assert signals[0]["parsed"] == 1
+    assert signals[0]["correction"] == 1
+
+
+def test_notify_mode_alert_with_correction_flag():
+    cfg, store, account, risk = _setup(mode="notify")
+    res = process_alert(
+        "CORRECTION: ALL OUT 0DTE SPY 759c @ 2.0 @everyone", "",
+        cfg, store, risk, None, account,
+    )
+    assert res["status"] == "notified"
+    assert res["correction"] is True

@@ -1,10 +1,12 @@
 import requests
 
 
-def notify_discord(webhook_url: str, title: str, fields: dict, ok: bool = True):
+def notify_discord(webhook_url: str, title: str, fields: dict, ok: bool = True,
+                  color=None):
     if not webhook_url:
         return
-    color = 3066993 if ok else 15158332
+    if color is None:
+        color = 3066993 if ok else 15158332
     embed = {
         "title": title,
         "color": color,
@@ -19,7 +21,18 @@ def notify_discord(webhook_url: str, title: str, fields: dict, ok: bool = True):
         pass
 
 
-def notify_alert(webhook_url: str, alert, sizing=None):
+def notify_correction(webhook_url: str, text: str):
+    if not webhook_url:
+        return
+    notify_discord(
+        webhook_url,
+        "CORRECTION from admin - check channel",
+        {"message": (text or "")[:300]},
+        color=15105570,
+    )
+
+
+def notify_alert(webhook_url: str, alert, sizing=None, correction=False):
     if not webhook_url:
         return
 
@@ -50,6 +63,8 @@ def notify_alert(webhook_url: str, alert, sizing=None):
         }
 
     fields = {k: v for k, v in fields.items() if v not in (None, "")}
+    if correction:
+        fields["note"] = "ADMIN CORRECTION - may supersede the previous alert"
 
     for row in sizing or []:
         label = row.get("label", "?")

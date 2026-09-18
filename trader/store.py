@@ -19,7 +19,8 @@ class Store:
                     ts TEXT NOT NULL,
                     author TEXT,
                     text TEXT,
-                    parsed INTEGER NOT NULL DEFAULT 0
+                    parsed INTEGER NOT NULL DEFAULT 0,
+                    correction INTEGER NOT NULL DEFAULT 0
                 );
                 CREATE TABLE IF NOT EXISTS trades (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -57,6 +58,13 @@ class Store:
             )
             try:
                 self._conn.execute("ALTER TABLE trades ADD COLUMN dedupe_key TEXT")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                self._conn.execute(
+                    "ALTER TABLE signals ADD COLUMN correction "
+                    "INTEGER NOT NULL DEFAULT 0"
+                )
             except sqlite3.OperationalError:
                 pass
             for col in ("realized", "peak_bid"):
@@ -110,12 +118,15 @@ class Store:
             ).fetchone()
             return row is not None
 
-    def record_signal(self, message_key: str, author: str, text: str, parsed: bool):
+    def record_signal(self, message_key: str, author: str, text: str, parsed: bool,
+                      correction: bool = False):
         with self._lock, self._conn:
             self._conn.execute(
-                "INSERT OR IGNORE INTO signals (message_key, ts, author, text, parsed) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (message_key, self._now(), author, text[:2000], int(parsed)),
+                "INSERT OR IGNORE INTO signals "
+                "(message_key, ts, author, text, parsed, correction) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (message_key, self._now(), author, text[:2000], int(parsed),
+                 int(correction)),
             )
 
     def trades_today(self, mode: str) -> int:
@@ -321,11 +332,11 @@ class Store:
     def recent_signals(self, limit=50):
         with self._lock, self._conn:
             rows = self._conn.execute(
-                "SELECT ts, text, parsed FROM signals "
+                "SELECT ts, text, parsed, correction FROM signals "
                 "ORDER BY rowid DESC LIMIT ?",
                 (limit,),
             ).fetchall()
-        keys = ["ts", "text", "parsed"]
+        keys = ["ts", "text", "parsed", "correction"]
         return [dict(zip(keys, r)) for r in rows]
 
     def get_cached_value(self, label: str):

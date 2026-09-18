@@ -112,6 +112,23 @@ TP_RE = re.compile(
 )
 
 
+CORRECTION_RE = re.compile(
+    r"\b(typos?\b|corrections?\b|correct(?:ed|ing|ion)?\b|"
+    r"ignore\s+(?:that|last|previous|the|it)|disregard\b|"
+    r"scratch\s+(?:that|it|last)|mistake\b|"
+    r"meant\b|should\s+(?:be|have\s+been)|instead\s+of|"
+    r"wrong\s+(?:strike|price|ticker|entry|level|alert|expiry|contract)|"
+    r"edit:|fix:|cancel(?:ed|ling|s)?\b|not\s+\d)",
+    re.I,
+)
+
+
+def is_correction(text: str) -> bool:
+    if not text:
+        return False
+    return bool(CORRECTION_RE.search(text))
+
+
 def _num(value):
     if value is None:
         return None

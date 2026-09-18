@@ -168,6 +168,16 @@ def run_notify_phase():
         code, resp = post_alert("executed 2.15 ^")
         check("fill confirmation ignored", resp["status"] == "ignored")
 
+        code, resp = post_alert("Typo on the last alert, it was 760c not 759c")
+        check("correction forwarded without trading", code == 200 and resp["status"] == "correction", str(resp))
+
+        signals = requests.get(f"{_current_base()}/api/signals", timeout=5).json()
+        corr = [s for s in signals if s.get("correction")]
+        check("signals flag correction rows", len(corr) == 1 and corr[0]["parsed"] == 0, str(signals[:2]))
+
+        code, resp = post_alert("CORRECTION: SOLD 1/2 0DTE SPY 759c @ 2.0 @everyone")
+        check("actionable correction notified with flag", resp["status"] == "notified" and resp.get("correction") is True, str(resp))
+
         code, resp = post_alert("BOUGHT 0DTE SPY 759c @ 1.5 @everyone small size")
         check("duplicate message ignored", resp["status"] == "ignored")
 
