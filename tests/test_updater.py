@@ -122,3 +122,73 @@ def test_update_record_roundtrip(tmp_path):
     assert record["ts"] > 0
     up._record_update("auto")
     assert up.last_pull()["how"] == "auto"
+
+
+def test_seed_record_from_reflog(tmp_path):
+    origin = tmp_path / "origin.git"
+    subprocess.run(
+        ["git", "init", "--bare", str(origin)],
+        capture_output=True, check=True,
+    )
+    env = {
+        **os.environ,
+        "GIT_AUTHOR_NAME": "t",
+        "GIT_AUTHOR_EMAIL": "t@t",
+        "GIT_COMMITTER_NAME": "t",
+        "GIT_COMMITTER_EMAIL": "t@t",
+    }
+    work = tmp_path / "work"
+    subprocess.run(
+        ["git", "clone", str(origin), str(work)],
+        capture_output=True, check=True,
+    )
+    (work / "f.txt").write_text("1")
+    subprocess.run(
+        ["git", "add", "-A"], cwd=work, env=env,
+        capture_output=True, check=True,
+    )
+    subprocess.run(
+        ["git", "commit", "-m", "a"], cwd=work, env=env,
+        capture_output=True, check=True,
+    )
+    subprocess.run(
+        ["git", "push", "-u", "origin", "HEAD"], cwd=work, env=env,
+        capture_output=True, check=True,
+    )
+
+    other = tmp_path / "other"
+    subprocess.run(
+        ["git", "clone", str(origin), str(other)],
+        capture_output=True, check=True,
+    )
+    (other / "f.txt").write_text("2")
+    subprocess.run(
+        ["git", "add", "-A"], cwd=other, env=env,
+        capture_output=True, check=True,
+    )
+    subprocess.run(
+        ["git", "commit", "-m", "b"], cwd=other, env=env,
+        capture_output=True, check=True,
+    )
+    subprocess.run(
+        ["git", "push"], cwd=other, env=env, capture_output=True, check=True,
+    )
+    subprocess.run(
+        ["git", "pull"], cwd=work, env=env, capture_output=True, check=True,
+    )
+
+    up = AutoUpdater(_cfg(), str(work), "")
+    seeded = up.last_pull()
+    assert seeded is not None
+    assert seeded["how"] == "pull"
+    assert seeded["commit"]
+    assert seeded["ts"] > 0
+
+
+def test_seed_skipped_without_pull_reflog(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init"], cwd=repo, capture_output=True, check=True)
+    _commit(repo, "a")
+    up = AutoUpdater(_cfg(), str(repo), "")
+    assert up.last_pull() is None

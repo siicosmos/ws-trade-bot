@@ -78,7 +78,7 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 <h2>Open Positions</h2>
 <div id="positions"></div>
 
-<h2>Settings <button id="settings-save" onclick="saveSettings()" style="float:right;background:#238636;color:#fff;border:0;border-radius:6px;padding:4px 14px;font-weight:600;cursor:pointer">Save</button></h2>
+<h2>Settings <button id="settings-toggle" onclick="toggleSettings()" style="background:#21262d;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 14px;font-size:12px;cursor:pointer">Show</button> <button id="settings-save" onclick="saveSettings()" style="float:right;background:#238636;color:#fff;border:0;border-radius:6px;padding:4px 14px;font-weight:600;cursor:pointer">Save</button></h2>
 <div id="settings" class="card"></div>
 
 <h2>Recent Alerts <button id="toggle-ignored" onclick="toggleIgnored()" style="float:right;background:#21262d;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 14px;font-size:12px;cursor:pointer">Hide ignored</button></h2>
@@ -166,6 +166,19 @@ async function loadPositions() {
   el.innerHTML = html + "</table>";
 }
 
+let settingsOpen = localStorage.getItem("ws_settings_open") === "1";
+
+function applySettingsVisibility() {
+  document.getElementById("settings").style.display = settingsOpen ? "" : "none";
+  document.getElementById("settings-toggle").textContent = settingsOpen ? "Hide" : "Show";
+}
+
+function toggleSettings() {
+  settingsOpen = !settingsOpen;
+  localStorage.setItem("ws_settings_open", settingsOpen ? "1" : "0");
+  applySettingsVisibility();
+}
+
 let showIgnored = true;
 
 function toggleIgnored() {
@@ -207,7 +220,8 @@ async function loadGitStatus() {
   if (s.head) text += " @ " + s.head;
   text += " (" + checked;
   if (s.last_pull && s.last_pull.ts) {
-    text += " · last pull " + s.last_pull.how + " " +
+    const how = s.last_pull.how === "pull" ? "" : s.last_pull.how + " ";
+    text += " · last pull " + how +
       fmtAge(Math.round(Date.now() / 1000 - s.last_pull.ts));
   }
   text += ")";
@@ -370,6 +384,7 @@ async function load() {
   } catch (e) { /* handled in api() */ }
 }
 
+applySettingsVisibility();
 load();
 setInterval(load, 5000);
 function tickClock() {

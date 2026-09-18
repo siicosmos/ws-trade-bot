@@ -29,6 +29,7 @@ class AutoUpdater:
         r = _git(self.root, "rev-parse", "--abbrev-ref", "HEAD")
         if r.returncode == 0:
             self.branch = r.stdout.strip()
+        self._seed_record_if_missing()
 
     def start(self):
         if self._thread is None:
@@ -71,6 +72,34 @@ class AutoUpdater:
         except (OSError, ValueError):
             pass
         return None
+
+    def _seed_record_if_missing(self):
+        if self.last_pull() is not None:
+            return
+        try:
+            r = _git(
+                self.root, "reflog", "-1",
+                "--format=%gs|%ct", "HEAD",
+            )
+            if r.returncode != 0:
+                return
+            msg, _, ts = r.stdout.strip().partition("|")
+            if "pull" not in msg.lower() or not ts.isdigit():
+                return
+            new = self._head()
+            with open(
+                os.path.join(self.root, UPDATE_RECORD), "w"
+            ) as f:
+                json.dump(
+                    {
+                        "how": "pull",
+                        "commit": new[:8] if new else "?",
+                        "ts": int(ts),
+                    },
+                    f,
+                )
+        except (OSError, ValueError):
+            pass
 
     def _restart_for_local_change(self):
         new = self._head()
