@@ -59,6 +59,11 @@ class TradingConfig:
     size_tiers: dict = field(default_factory=_default_size_tiers)
     max_contracts_per_trade: int = 10
     max_open_risk_pct: float = 30.0
+    stop_loss_pct: float = 25.0
+    trailing_stop_pct: float = 0.0
+    stop_check_seconds: int = 30
+    max_consecutive_losses: int = 2
+    min_dte_days: int = 0
     paper_account_value: float = 10000.0
     skip_underlyings: List[str] = field(default_factory=list)
     max_trades_per_day: int = 5
@@ -165,6 +170,13 @@ def load_config(path: str) -> Config:
             _get(trading_raw, "max_contracts_per_trade", 10)
         ),
         max_open_risk_pct=float(_get(trading_raw, "max_open_risk_pct", 30.0)),
+        stop_loss_pct=float(_get(trading_raw, "stop_loss_pct", 25.0)),
+        trailing_stop_pct=float(_get(trading_raw, "trailing_stop_pct", 0.0)),
+        stop_check_seconds=int(_get(trading_raw, "stop_check_seconds", 30)),
+        max_consecutive_losses=int(
+            _get(trading_raw, "max_consecutive_losses", 2)
+        ),
+        min_dte_days=int(_get(trading_raw, "min_dte_days", 0)),
         size_tiers=size_tiers,
         paper_account_value=float(
             _get(trading_raw, "paper_account_value", 10000.0)

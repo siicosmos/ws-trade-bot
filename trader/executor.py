@@ -267,7 +267,10 @@ class PaperExecutor:
                 breakdown[label] = "no position"
                 continue
             qty = sell_quantity(held, alert.scale)
-            store.apply_position(self.mode, alert, -qty, account=label)
+            store.apply_position(
+                    self.mode, alert, -qty,
+                    premium=alert.entry, account=label
+                )
             if alert.premium:
                 store.adjust_paper_equity(qty * alert.premium * 100, label)
             breakdown[label] = f"{qty}/{held}x @ {alert.premium}"
@@ -324,7 +327,10 @@ class PaperExecutor:
                 breakdown[label] = "no position"
                 continue
             qty = sell_quantity(held, alert.scale)
-            store.apply_position(self.mode, alert, -qty, account=label)
+            store.apply_position(
+                    self.mode, alert, -qty,
+                    premium=alert.entry, account=label
+                )
             if alert.entry:
                 store.adjust_paper_equity(qty * alert.entry, label)
             breakdown[label] = f"{qty}/{held} @ {alert.entry}"
@@ -509,7 +515,10 @@ class WealthsimpleExecutor:
                 order = ws.sell_option(
                     account_id, opt["id"], qty, float(limit)
                 )
-                store.apply_position(self.mode, alert, -qty, account=label)
+                store.apply_position(
+                    self.mode, alert, -qty,
+                    premium=float(limit), account=label
+                )
                 breakdown[label] = f"{qty}/{held}x @ {limit}"
                 total += qty
                 order_ids.append(str(order.get("orderId") or ""))

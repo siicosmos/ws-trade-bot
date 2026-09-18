@@ -59,6 +59,13 @@ class Store:
                 self._conn.execute("ALTER TABLE trades ADD COLUMN dedupe_key TEXT")
             except sqlite3.OperationalError:
                 pass
+            for col in ("realized", "peak_bid"):
+                try:
+                    self._conn.execute(
+                        f"ALTER TABLE positions ADD COLUMN {col} REAL"
+                    )
+                except sqlite3.OperationalError:
+                    pass
 
             cols = [
                 r[1] for r in self._conn.execute("PRAGMA table_info(positions)")
@@ -177,8 +184,9 @@ class Store:
 
     def list_positions(self, mode: str, account=None):
         query = (
-            "SELECT account, contract_key, underlying, expiry, strike, right, qty, "
-            "avg_premium FROM positions WHERE mode = ? AND qty > 0"
+            "SELECT account, contract_key, underlying, expiry, strike, right, "
+            "qty, avg_premium, realized, peak_bid "
+            "FROM positions WHERE mode = ? AND qty > 0"
         )
         params = [mode]
         if account is not None:
@@ -188,7 +196,7 @@ class Store:
         with self._lock, self._conn:
             rows = self._conn.execute(query, params).fetchall()
         keys = ["account", "contract_key", "underlying", "expiry", "strike",
-                "right", "qty", "avg_premium"]
+                "right", "qty", "avg_premium", "realized", "peak_bid"]
         return [dict(zip(keys, r)) for r in rows]
 
     def apply_position(
@@ -197,34 +205,93 @@ class Store:
         key = alert.contract_key()
         with self._lock, self._conn:
             row = self._conn.execute(
-                "SELECT qty, avg_premium FROM positions "
+                "SELECT qty, avg_premium, realized FROM positions "
                 "WHERE mode = ? AND account = ? AND contract_key = ?",
                 (mode, account, key),
             ).fetchone()
             if row is None:
-                old_qty, old_avg = 0, None
+                old_qty, old_avg, old_realized = 0, None, 0.0
             else:
-                old_qty, old_avg = int(row[0]), row[1]
+                old_qty, old_avg, old_realized = int(row[0]), row[1], row[2] or 0.0
 
             new_qty = max(0, old_qty + delta)
             new_avg = old_avg
+            realized = old_realized
             if delta > 0 and premium is not None:
                 total_old = old_qty * (old_avg or 0.0)
                 new_avg = (
                     (total_old + delta * premium) / new_qty if new_qty else old_avg
                 )
+            elif delta < 0 and premium is not None and old_avg:
+                realized = old_realized + (-delta) * (premium - old_avg) * 100
 
             self._conn.execute(
                 "INSERT INTO positions (mode, account, contract_key, underlying, "
-                "expiry, strike, right, qty, updated_ts, avg_premium) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "expiry, strike, right, qty, updated_ts, avg_premium, realized) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT(mode, account, contract_key) DO UPDATE SET "
                 "qty = excluded.qty, updated_ts = excluded.updated_ts, "
-                "avg_premium = excluded.avg_premium",
+                "avg_premium = excluded.avg_premium, realized = excluded.realized",
                 (
                     mode, account, key, alert.underlying, alert.expiry,
                     alert.strike, alert.right, new_qty, self._now(), new_avg,
+                    realized,
                 ),
+            )
+
+            if old_qty > 0 and new_qty == 0:
+                self._record_close(mode, realized)
+
+    def _record_close(self, mode: str, realized: float):
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        streak = self._get_streak_unlocked(mode)
+        if streak["date"] != today:
+            streak = {"count": 0, "date": today}
+        if realized < 0:
+            streak["count"] += 1
+        else:
+            streak["count"] = 0
+        with self._conn:
+            self._conn.execute(
+                "INSERT INTO meta (key, value) VALUES (?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (
+                    f"loss_streak:{mode}",
+                    json.dumps(streak),
+                ),
+            )
+
+    def _get_streak_unlocked(self, mode: str) -> dict:
+        row = self._conn.execute(
+            "SELECT value FROM meta WHERE key = ?",
+            (f"loss_streak:{mode}",),
+        ).fetchone()
+        if not row:
+            return {"count": 0, "date": ""}
+        try:
+            data = json.loads(row[0])
+            return data if isinstance(data, dict) else {"count": 0, "date": ""}
+        except (ValueError, TypeError):
+            return {"count": 0, "date": ""}
+
+    def _get_streak(self, mode: str) -> dict:
+        with self._lock:
+            return self._get_streak_unlocked(mode)
+
+    def loss_streak(self, mode: str) -> int:
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        streak = self._get_streak(mode)
+        if streak["date"] != today:
+            return 0
+        return int(streak.get("count") or 0)
+
+    def update_peak_bid(self, mode, contract_key, bid, account="default"):
+        with self._lock, self._conn:
+            self._conn.execute(
+                "UPDATE positions SET peak_bid = MAX("
+                "COALESCE(peak_bid, COALESCE(avg_premium, 0)), ?) "
+                "WHERE mode = ? AND account = ? AND contract_key = ?",
+                (bid, mode, account, contract_key),
             )
 
     def open_risk(self, mode: str, account=None) -> float:

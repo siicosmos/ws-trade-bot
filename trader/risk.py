@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from .store import Store
 
@@ -32,6 +32,31 @@ class RiskEngine:
                             f"cooldown active "
                             f"({int(t.cooldown_seconds - elapsed)}s left)"
                         )
+
+            if t.max_consecutive_losses > 0:
+                streak = self.store.loss_streak(mode)
+                if streak >= t.max_consecutive_losses:
+                    return False, (
+                        f"loss-streak breaker: {streak} consecutive losing "
+                        f"trades - buys resume tomorrow"
+                    )
+
+            if (
+                t.min_dte_days > 0
+                and alert.kind == "option"
+                and alert.expiry
+            ):
+                try:
+                    days = (
+                        date.fromisoformat(alert.expiry) - date.today()
+                    ).days
+                except ValueError:
+                    days = 0
+                if days < t.min_dte_days:
+                    return False, (
+                        f"expiry {alert.expiry} is {days} DTE, "
+                        f"below min_dte_days ({t.min_dte_days})"
+                    )
 
         if t.dedupe_window_minutes > 0 and self.store.recent_trade(
             alert.dedupe_key(), t.dedupe_window_minutes

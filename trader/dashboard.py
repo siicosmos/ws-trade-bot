@@ -65,6 +65,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 <header>
   <h1>WS Trade Bot</h1>
   <span id="mode" class="badge notify">notify</span>
+  <span id="stops" style="color:var(--muted);font-size:12px"></span>
   <span id="updated"></span>
 </header>
 
@@ -110,6 +111,13 @@ async function loadSummary() {
   const modeEl = document.getElementById("mode");
   modeEl.textContent = data.mode;
   modeEl.className = "badge " + data.mode;
+  if (data.stops) {
+    const s = data.stops;
+    const streak = s.consecutive_losses + "/" + s.max_consecutive_losses;
+    document.getElementById("stops").textContent =
+      "stops " + s.stop_loss_pct + "% · loss streak " + streak +
+      (s.trailing_stop_pct > 0 ? " · trail " + s.trailing_stop_pct + "%" : "");
+  }
   const el = document.getElementById("accounts");
   el.innerHTML = "";
   for (const a of data.accounts) {

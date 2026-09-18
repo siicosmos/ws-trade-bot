@@ -42,6 +42,11 @@ trading:
       contracts_max: 10
   max_contracts_per_trade: 10
   max_open_risk_pct: 30
+  stop_loss_pct: 25
+  trailing_stop_pct: 0
+  stop_check_seconds: 30
+  max_consecutive_losses: 2
+  min_dte_days: 0
   paper_account_value: 10000
   skip_underlyings:
     - SPX

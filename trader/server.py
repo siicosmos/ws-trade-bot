@@ -85,7 +85,19 @@ def create_app(cfg, store: Store, risk, executor, account=None) -> Flask:
         accounts, err = _account_summaries()
         if err:
             return jsonify({"error": err}), 502
-        return jsonify({"mode": mode, "accounts": accounts})
+        t = cfg.trading
+        return jsonify(
+            {
+                "mode": mode,
+                "accounts": accounts,
+                "stops": {
+                    "stop_loss_pct": t.stop_loss_pct,
+                    "trailing_stop_pct": t.trailing_stop_pct,
+                    "consecutive_losses": store.loss_streak(mode),
+                    "max_consecutive_losses": t.max_consecutive_losses,
+                },
+            }
+        )
 
     @app.get("/api/positions")
     def api_positions():

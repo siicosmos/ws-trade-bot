@@ -61,6 +61,25 @@ def main():
 
     risk = RiskEngine(cfg, store, account)
 
+    if mode in ("paper", "live") and cfg.trading.stop_loss_pct > 0:
+        from trader.stops import StopMonitor, make_quote_resolver
+
+        quote_fn = make_quote_resolver(cfg, account)
+        if quote_fn is not None:
+            monitor = StopMonitor(
+                cfg, store, executor, quote_fn, cfg.discord.webhook_url
+            )
+            monitor.start()
+            trail = (
+                f", trailing {cfg.trading.trailing_stop_pct}%"
+                if cfg.trading.trailing_stop_pct > 0
+                else ""
+            )
+            print(
+                f"stop monitor active: {cfg.trading.stop_loss_pct}% stop{trail}, "
+                f"checked every {cfg.trading.stop_check_seconds}s"
+            )
+
     app = create_app(cfg, store, risk, executor, account)
     print(f"pipeline running in {mode.upper()} mode on {cfg.pipeline.host}:{cfg.pipeline.port}")
     print(f"dashboard: http://127.0.0.1:{cfg.pipeline.port}/")
