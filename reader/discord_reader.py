@@ -91,11 +91,17 @@ LOG_PASTE_RE = re.compile(
 )
 
 
+META_LEAD_RE = re.compile(
+    r"^(?:\S{1,24}\s+)?\d{1,2}:\d{2}\s*(?:AM|PM)\b", re.I
+)
+
+
 def strip_ui_noise(text):
     if not text:
         return text
     text = UI_NOISE_RE.sub(" ", text)
     text = TS_PREFIX_RE.sub("", text)
+    text = META_LEAD_RE.sub("", text)
     return re.sub(r"\s{2,}", " ", text).strip()
 
 
@@ -128,8 +134,18 @@ def parse_message_time(text):
         return None
 
 
+def meta_time(text):
+    m = TS_PREFIX_RE.match(text)
+    if m:
+        return parse_message_time(text[: m.end()])
+    m = META_LEAD_RE.match(text)
+    if m:
+        return parse_message_time(m.group(0))
+    return None
+
+
 def is_recent_message(text, max_age_minutes=10):
-    ts = parse_message_time(text)
+    ts = meta_time(text)
     if ts is None:
         return True
     age = (datetime.now() - ts).total_seconds() / 60
@@ -142,6 +158,10 @@ def looks_like_message(text):
     if CHROME_RE.search(text) or LOG_PASTE_RE.search(text):
         return False
     return True
+
+
+def log(msg):
+    log(f"{time.strftime('%H:%M:%S')} {msg}")
 
 
 def find_config_path():
@@ -161,7 +181,7 @@ def load_config():
 
     path = find_config_path()
     if path is None:
-        print("config.yaml not found - copy config.example.yaml to config.yaml")
+        log("config.yaml not found - copy config.example.yaml to config.yaml")
         sys.exit(1)
     with open(path, "r", encoding="utf-8") as f:
         raw = yaml.safe_load(f) or {}
@@ -332,9 +352,11 @@ def current_messages(container, max_items=40):
                 text = (item.Name or "").strip()
             except UIAError:
                 text = ""
-        text = strip_ui_noise(text)
-        if text and looks_like_message(text):
-            texts.append(text)
+        if not text or not looks_like_message(text):
+            continue
+        if not is_recent_message(text):
+            continue
+        texts.append(strip_ui_noise(text))
     return texts
 
 
@@ -357,9 +379,9 @@ def post_message(url, text, token=""):
             url, json={"text": text, "author": "", "ts": time.time()},
             headers=headers, timeout=10,
         )
-        print(f"-> {resp.status_code} {text[:80]}")
+        log(f"-> {resp.status_code} {text[:80]}")
     except requests.RequestException as e:
-        print(f"post failed: {e}")
+        log(f"post failed: {e}")
 
 
 def sync_with_server(base_url, auth_token, channel, ok):
@@ -459,20 +481,20 @@ def main():
     last_head_check = time.time()
 
     tail = []
-    print("looking for Discord window...")
+    log("looking for Discord window...")
     window = None
     while window is None:
         window = find_discord_window()
         if window is None:
             time.sleep(2)
 
-    print(f"watching window {window.Name!r} (poll every {poll_interval}s)")
+    log(f"watching window {window.Name!r} (poll every {poll_interval}s)")
     if marker:
-        print(f"channel marker: {marker!r}")
+        log(f"channel marker: {marker!r}")
     else:
-        print("channel marker empty - following whatever channel is open")
+        log("channel marker empty - following whatever channel is open")
     if channels:
-        print(f"allowed channels: {channels}")
+        log(f"allowed channels: {channels}")
 
     container = None
     current_channel = None
@@ -489,7 +511,7 @@ def main():
             last_head_check = time.time()
             head = git_head(repo_root())
             if head and start_head and head != start_head:
-                print("repo updated on disk - restarting reader for new code")
+                log("repo updated on disk - restarting reader for new code")
                 os._exit(77)
 
         try:
@@ -521,7 +543,7 @@ def main():
                         container = None
             if not allowed:
                 if announced_channel is not None:
-                    print(
+                    log(
                         f"channel {title_channel!r} not in allowed "
                         f"channels {channels} - waiting"
                     )
@@ -547,13 +569,13 @@ def main():
                     if allowed and (
                         wait_attempts == 1 or wait_attempts % 6 == 0
                     ):
-                        print(
+                        log(
                             f"no message pane found "
                             f"(title channel: {title_channel!r}) - "
                             f"{len(diag)} candidates scanned:"
                         )
                         for ctype, cname, score in diag[-8:]:
-                            print(
+                            log(
                                 f"  [{ctype}] name={cname!r} score={score}"
                             )
                     resp = sync_with_server(
@@ -565,7 +587,7 @@ def main():
                         )
                     )
                     if changed:
-                        print(
+                        log(
                             f"channel config -> marker={marker!r} "
                             f"channels={channels}"
                         )
@@ -586,9 +608,9 @@ def main():
                 if name != announced_channel:
                     tail = []
                     if announced_channel is None:
-                        print(f"watching channel: {current_channel!r}")
+                        log(f"watching channel: {current_channel!r}")
                     else:
-                        print(f"channel switched: {current_channel!r}")
+                        log(f"channel switched: {current_channel!r}")
                     announced_channel = name
 
             msgs = current_messages(container, max_items)
@@ -602,10 +624,7 @@ def main():
             empty_polls = 0
 
             if resync:
-                fresh = [
-                    t for t in msgs[-5:]
-                    if t not in seen and is_recent_message(t)
-                ]
+                fresh = [t for t in msgs[-5:] if t not in seen]
                 resync = False
             else:
                 fresh = new_messages(msgs, tail)
@@ -621,7 +640,7 @@ def main():
             elif msgs != tail:
                 tail = msgs
         except UIAError as e:
-            print(f"UIA error: {e}")
+            log(f"UIA error: {e}")
             container = None
             current_channel = None
             try:
@@ -629,7 +648,7 @@ def main():
             except UIAError:
                 window = None
             if window is None:
-                print("Discord window lost; waiting...")
+                log("Discord window lost; waiting...")
                 while window is None:
                     time.sleep(2)
                     try:
@@ -652,7 +671,7 @@ def main():
                 marker = new_marker
                 channels = new_channels
                 container = None
-                print(
+                log(
                     f"channel config -> marker={marker!r} "
                     f"channels={channels}"
                 )
@@ -666,4 +685,4 @@ if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        print("reader stopped")
+        log("reader stopped")

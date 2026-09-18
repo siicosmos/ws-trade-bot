@@ -347,3 +347,39 @@ def test_strip_ui_noise_author_prefix():
         "BOUGHT 08/26 AVGO 352"
     )
     assert dr.strip_ui_noise(raw) == "BOUGHT 08/26 AVGO 352"
+
+
+def test_meta_time_leading_only():
+    from datetime import datetime
+    ts = dr.meta_time(
+        "DoubleL 1:11 AM 1:11 AM Friday, September 18, 2026 1:11 AM "
+        "BOUGHT 08/26 AVGO 352"
+    )
+    assert ts is not None and ts.year == 2026
+    now = datetime.now()
+    ts2 = dr.meta_time(
+        f"DoubleL {now.strftime('%I:%M %p')} fresh message"
+    )
+    assert ts2 is not None and ts2.date() == now.date()
+    assert dr.meta_time("BOUGHT 0DTE SPX 7645c @ .65") is None
+    assert dr.meta_time(
+        "remember to target 4:00 PM on the close"
+    ) is None
+
+
+def test_current_messages_drops_old_by_meta(monkeypatch):
+    from datetime import datetime
+    container = _fake_ctrl(
+        name="test-alerts",
+        children=[
+            _item(text="DoubleL 11:30 PM December 25, 2020 11:30 PM old"),
+            _item(
+                text=f"DoubleL {datetime.now().strftime('%I:%M %p')} "
+                "BOUGHT 0DTE SPX 7645c @ .65"
+            ),
+        ],
+    )
+    monkeypatch.setattr(dr, "item_text", lambda it: it.text)
+    assert dr.current_messages(container) == [
+        f"BOUGHT 0DTE SPX 7645c @ .65"
+    ]
