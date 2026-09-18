@@ -13,16 +13,16 @@ sys.modules.setdefault("inspect_discord", MagicMock())
 import discord_reader as dr  # noqa: E402
 
 
-def _fake_ctrl(name="", children=None):
+def _fake_ctrl(name="", children=None, control_type=None):
     return types.SimpleNamespace(
-        ControlType=dr.auto.ControlType.ListControl,
+        ControlType=control_type or dr.auto.ControlType.ListControl,
         Name=name,
         GetChildren=lambda: list(children or []),
     )
 
 
-def _item(text):
-    return types.SimpleNamespace(text=text)
+def _item(text="", name=""):
+    return types.SimpleNamespace(text=text, Name=name)
 
 
 def test_looks_like_message_rejects_observed_chrome():
@@ -54,6 +54,13 @@ def test_message_likeness():
     assert dr.message_likeness("创建频道") == -1
 
 
+def test_channel_from_title():
+    title = "⁠test-message | my-trade-alert-server - Discord"
+    assert dr.channel_from_title(title) == "test-message"
+    assert dr.channel_from_title("") == ""
+    assert dr.channel_from_title("no separator") == ""
+
+
 def test_new_messages_seeds_silently():
     assert dr.new_messages(["a", "b", "c"], []) == []
 
@@ -64,13 +71,15 @@ def test_new_messages_detects_fresh():
 
 
 def test_find_message_container_prefers_message_pane(monkeypatch):
-    chrome = _fake_ctrl(name="服务器", children=[_item("创建频道")])
-    members = _fake_ctrl(name="成员列表", children=[_item("DoubleL"), _item("Cheddar Flow")])
+    chrome = _fake_ctrl(name="服务器", children=[_item(text="创建频道")])
+    members = _fake_ctrl(
+        name="成员列表", children=[_item(text="DoubleL"), _item(text="Cheddar Flow")]
+    )
     msgs = _fake_ctrl(
         name="test-alerts",
         children=[
-            _item("DoubleL 00:13 BOUGHT 0DTE SPX 7645c @ .65 tiny size"),
-            _item("DoubleL 00:14 123"),
+            _item(text="DoubleL 00:13 BOUGHT 0DTE SPX 7645c @ .65 tiny size"),
+            _item(text="DoubleL 00:14 123"),
         ],
     )
     monkeypatch.setattr(
@@ -81,8 +90,56 @@ def test_find_message_container_prefers_message_pane(monkeypatch):
     assert dr.find_message_container(object(), "") is msgs
 
 
+def test_find_message_container_accepts_pane_type(monkeypatch):
+    msgs = _fake_ctrl(
+        name="test-message",
+        control_type=dr.auto.ControlType.PaneControl,
+        children=[
+            _item(text="DoubleL 00:13 BOUGHT 0DTE SPX 7645c @ .65 tiny size"),
+        ],
+    )
+    monkeypatch.setattr(dr.auto, "WalkControl", lambda *a, **k: [(msgs, 2)])
+    monkeypatch.setattr(dr, "item_text", lambda it: it.text)
+    assert dr.find_message_container(object(), "") is msgs
+
+
+def test_find_message_container_scores_item_names(monkeypatch):
+    msgs = _fake_ctrl(
+        name="test-message",
+        children=[_item(name="DoubleL, 今天 00:13"), _item(name="Liam, 今天 00:14")],
+    )
+    monkeypatch.setattr(dr.auto, "WalkControl", lambda *a, **k: [(msgs, 2)])
+    monkeypatch.setattr(dr, "item_text", lambda it: it.text)
+    assert dr.find_message_container(object(), "") is msgs
+
+
+def test_find_message_container_title_bonus(monkeypatch):
+    other = _fake_ctrl(
+        name="",
+        children=[
+            _item(text="word word word digit 1"),
+            _item(text="word word word digit 2"),
+        ],
+    )
+    msgs = _fake_ctrl(
+        name="test-message",
+        children=[_item(text="DoubleL 00:13 BOUGHT 0DTE SPX 7645c")],
+    )
+    monkeypatch.setattr(
+        dr.auto, "WalkControl", lambda *a, **k: [(other, 1), (msgs, 2)]
+    )
+    monkeypatch.setattr(dr, "item_text", lambda it: it.text)
+    assert dr.find_message_container(object(), "", "test-message") is msgs
+
+
 def test_find_message_container_rejects_all_chrome(monkeypatch):
-    chrome = _fake_ctrl(name="服务器", children=[_item("创建频道"), _item("SPX Plays 社区服务器 任何人都可以加入该服务器。")])
+    chrome = _fake_ctrl(
+        name="服务器",
+        children=[
+            _item(text="创建频道"),
+            _item(text="SPX Plays 社区服务器 任何人都可以加入该服务器。"),
+        ],
+    )
     monkeypatch.setattr(dr.auto, "WalkControl", lambda *a, **k: [(chrome, 1)])
     monkeypatch.setattr(dr, "item_text", lambda it: it.text)
     assert dr.find_message_container(object(), "") is None
@@ -92,15 +149,30 @@ def test_current_messages_filters_chrome(monkeypatch):
     container = _fake_ctrl(
         name="test-alerts",
         children=[
-            _item("创建频道"),
-            _item("BOUGHT 0DTE SPX 7645c @ .65 tiny size"),
-            _item("123"),
+            _item(text="创建频道"),
+            _item(text="BOUGHT 0DTE SPX 7645c @ .65 tiny size"),
+            _item(text="123"),
         ],
     )
     monkeypatch.setattr(dr, "item_text", lambda it: it.text)
     assert dr.current_messages(container) == [
         "BOUGHT 0DTE SPX 7645c @ .65 tiny size",
         "123",
+    ]
+
+
+def test_current_messages_falls_back_to_item_name(monkeypatch):
+    container = _fake_ctrl(
+        name="test-message",
+        children=[
+            _item(name="DoubleL, 今天 00:13"),
+            _item(name="Liam, 今天 00:14"),
+        ],
+    )
+    monkeypatch.setattr(dr, "item_text", lambda it: it.text)
+    assert dr.current_messages(container) == [
+        "DoubleL, 今天 00:13",
+        "Liam, 今天 00:14",
     ]
 
 

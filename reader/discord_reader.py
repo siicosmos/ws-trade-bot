@@ -78,29 +78,55 @@ def message_likeness(text):
     return 0
 
 
-def container_score(ctrl, sample=8):
-    try:
-        items = message_items(ctrl)[:sample]
-    except auto.COMError:
-        return 0
+def clean_channel(name):
+    if not name:
+        return ""
+    return "".join(ch for ch in name if ch.isprintable()).strip()
+
+
+def channel_from_title(title):
+    if not title or "|" not in title:
+        return ""
+    return clean_channel(title.split("|")[0])
+
+
+def container_score(ctrl):
     score = 0
-    for item in items:
-        try:
-            text = item_text(item)
-        except auto.COMError:
-            continue
+    for text in child_texts(ctrl):
         if message_likeness(text) > 0:
             score += 1
     return score
 
 
-def find_message_container(window, marker):
+def child_texts(ctrl, sample=10):
+    texts = []
+    for item in message_items(ctrl)[:sample]:
+        try:
+            name = (item.Name or "").strip()
+        except auto.COMError:
+            name = ""
+        try:
+            text = item_text(item)
+        except auto.COMError:
+            text = ""
+        if name:
+            texts.append(name)
+        if text and text != name:
+            texts.append(text)
+    return texts
+
+
+def find_message_container(window, marker, title_channel=""):
     candidates = []
     for ctrl, depth in auto.WalkControl(window, includeTop=False, maxDepth=14):
         try:
             if ctrl.ControlType not in (
                 auto.ControlType.ListControl,
                 auto.ControlType.DocumentControl,
+                auto.ControlType.PaneControl,
+                auto.ControlType.GroupControl,
+                auto.ControlType.TableControl,
+                auto.ControlType.CustomControl,
             ):
                 continue
             name = ctrl.Name or ""
@@ -112,6 +138,12 @@ def find_message_container(window, marker):
     best_score = 0
     for ctrl in candidates:
         score = container_score(ctrl)
+        if (
+            score > 0
+            and title_channel
+            and title_channel.lower() in (ctrl.Name or "").lower()
+        ):
+            score += 3
         if score > 0 and score >= best_score:
             best = ctrl
             best_score = score
@@ -140,6 +172,11 @@ def current_messages(container, max_items=40):
     texts = []
     for item in message_items(container)[-max_items:]:
         text = item_text(item)
+        if not text:
+            try:
+                text = (item.Name or "").strip()
+            except auto.COMError:
+                text = ""
         if text and looks_like_message(text):
             texts.append(text)
     return texts
@@ -259,8 +296,26 @@ def main():
 
     while True:
         try:
+            try:
+                title_channel = channel_from_title(window.Name)
+            except auto.COMError:
+                title_channel = ""
+            if (
+                not marker
+                and title_channel
+                and announced_channel is not None
+                and title_channel != announced_channel
+            ):
+                container = None
+                tail = []
+                current_channel = title_channel
+                print(f"channel switched: {title_channel!r}")
+                announced_channel = title_channel
+
             if container is None:
-                container = find_message_container(window, marker)
+                container = find_message_container(
+                    window, marker, title_channel
+                )
                 if container is None:
                     if not announced_wait:
                         print(
@@ -281,9 +336,11 @@ def main():
                 announced_wait = False
 
             try:
-                name = (container.Name or "")[:80]
+                name = clean_channel((container.Name or "")[:80])
             except auto.COMError:
                 name = ""
+            if not name:
+                name = title_channel
             if name:
                 current_channel = name
                 if name != announced_channel:

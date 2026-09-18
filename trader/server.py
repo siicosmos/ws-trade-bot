@@ -1,3 +1,4 @@
+import logging
 import time
 
 from flask import Flask, Response, jsonify, request
@@ -6,10 +7,39 @@ from .dashboard import DASHBOARD_HTML
 from .pipeline import process_alert
 from .store import Store
 
+QUIET_PATHS = (
+    "/health",
+    "/favicon.ico",
+    "/api/reader_status",
+    "/api/summary",
+    "/api/positions",
+    "/api/signals",
+    "/api/trades",
+    "/api/update_status",
+)
+
+
+class QuietPathsFilter(logging.Filter):
+    def filter(self, record):
+        try:
+            msg = record.getMessage()
+        except Exception:
+            return True
+        return not any(f" {path} HTTP" in msg for path in QUIET_PATHS)
+
+
+def install_quiet_filter():
+    werkzeug = logging.getLogger("werkzeug")
+    if not any(
+        isinstance(f, QuietPathsFilter) for f in werkzeug.filters
+    ):
+        werkzeug.addFilter(QuietPathsFilter())
+
 
 def create_app(cfg, store: Store, risk, executor, account=None,
                  config_path=None) -> Flask:
     app = Flask(__name__)
+    install_quiet_filter()
     mode = cfg.trading.mode
     app.reader_state = {
         "channel": None,
