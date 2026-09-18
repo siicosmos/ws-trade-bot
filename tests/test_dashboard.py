@@ -48,11 +48,11 @@ def test_header_rows_and_mobile_wrap():
         assert needle in row_html, needle
     assert 'id="updated"' not in row_html
     assert 'href="/logout"' not in row_html
-    # row 2: status lines, refreshed label right-aligned, logout corner
-    assert 'id="updated" style="margin-left:auto"' in html
+    # row 2: refreshed label rides the watching line, logout at corner
+    assert '<span id="updated">data refreshed</span>' in html
+    assert 'id="logout" style="margin-left:auto"' in html
     assert 'id="logout"' in html
     # refresh label renders before the first data cycle
-    assert '<span id="updated" style="margin-left:auto">data refreshed</span>' in html
     # phones: timebox keeps the right corner instead of wrapping mid-pair
     media = re.search(r"@media \(max-width: 620px\) \{(.*?)\}", html, re.S)
     assert media

@@ -326,6 +326,79 @@ class WealthsimpleAccount:
                 )
             if fx:
                 self._fx_hint = fx
+            # multi-leg positions (spreads) collapse into one row:
+            # net cost, combined market value, and risk that reflects
+            # the defined-loss structure instead of raw leg sums
+            groups = {}
+            for r in rows:
+                key = (r["underlying"], r["expiry"], r["right"])
+                groups.setdefault(key, []).append(r)
+            combined = []
+            for key, legs in groups.items():
+                if len(legs) == 1:
+                    leg = legs[0]
+                    leg["risk_cad"] = (
+                        None if leg["short"] else leg["cost_cad"]
+                    )
+                    combined.append(leg)
+                    continue
+                legs.sort(key=lambda r: float(r["strike"]))
+
+                def signed(leg, field):
+                    value = leg.get(field) or 0
+                    return -value if leg["short"] else value
+
+                net_cost_usd = sum(signed(l, "cost_usd") for l in legs)
+                net_cost_cad = sum(signed(l, "cost_cad") for l in legs)
+                net_mv_usd = sum(signed(l, "market_value") for l in legs)
+                qty_set = {abs(l["qty"]) for l in legs}
+                qty = qty_set.pop() if len(qty_set) == 1 else max(qty_set)
+                strikes = sorted(float(l["strike"]) for l in legs)
+                underlying, expiry, right = key
+                width = (strikes[-1] - strikes[0]) * 100 * qty
+                leg_fx = None
+                for l in legs:
+                    if l["cost_usd"] and l["cost_cad"]:
+                        leg_fx = abs(l["cost_cad"]) / abs(l["cost_usd"])
+                        break
+                if leg_fx is None:
+                    leg_fx = self._usd_cad_quote()
+                if net_cost_usd >= 0:
+                    risk_usd = net_cost_usd             # debit spread
+                else:
+                    risk_usd = max(0.0, width - abs(net_cost_usd))
+                profit = net_mv_usd - net_cost_usd
+                per_unit = net_cost_usd / (qty * 100) if qty else None
+                cur_unit = net_mv_usd / (qty * 100) if qty else None
+                combined.append(
+                    {
+                        "contract_key": (
+                            f"{underlying} {strikes[0]:g}/"
+                            f"{strikes[-1]:g}{right}"
+                        ),
+                        "underlying": underlying,
+                        "expiry": expiry,
+                        "strike": f"{strikes[0]:g}/{strikes[-1]:g}",
+                        "right": right,
+                        "qty": qty,
+                        "short": False,
+                        "spread": True,
+                        "avg_premium": round(per_unit, 4)
+                        if per_unit is not None else None,
+                        "cost": net_cost_usd,
+                        "cost_usd": net_cost_usd,
+                        "cost_cad": net_cost_cad,
+                        "risk_cad": round(risk_usd * leg_fx, 2)
+                        if (leg_fx and risk_usd) else None,
+                        "current_price": round(cur_unit, 4)
+                        if cur_unit is not None else None,
+                        "market_value": round(net_mv_usd, 2),
+                        "pct_return": round(profit / risk_usd * 100, 1)
+                        if risk_usd else None,
+                    }
+                )
+            rows = combined
+
             if fx is None:
                 fx = self._usd_cad_quote()
             out[label] = {

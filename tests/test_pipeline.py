@@ -1073,3 +1073,127 @@ def test_short_option_position_displayed(monkeypatch):
     assert short["current_price"] == 1.20
     # credit 120 vs buyback 120 -> 0%
     assert short["pct_return"] == 0.0
+
+
+def test_debit_spread_grouping(monkeypatch):
+    from trader.account import WealthsimpleAccount
+
+    def leg(strike, qty, book_usd, mv_quote, direction):
+        return {
+            "quantity": str(qty),
+            "positionDirection": direction,
+            "bookValue": {"amount": str(book_usd * 1.3636)},
+            "marketBookValue": {"amount": str(book_usd)},
+            "security": {
+                "securityType": "OPTION",
+                "stock": {"symbol": "SPY"},
+                "optionDetails": {
+                    "strikePrice": str(strike),
+                    "optionType": "CALL",
+                    "expiryDate": "2026-09-25",
+                    "multiplier": "100",
+                    "underlyingSecurity": {"stock": {"symbol": "SPY"}},
+                },
+                "quoteV2": {"price": str(mv_quote)},
+            },
+        }
+
+    class FakeWS:
+        def get_positions(self, account_ids=None, **kw):
+            return [
+                leg(753, 1, 120, 1.50, "LONG"),    # long 753C, cost $120
+                leg(758, 1, 55, 0.90, "SHORT"),    # short 758C, credit $55
+            ]
+
+    class FakeCfg:
+        class wealthsimple:
+            positions_refresh_seconds = 30
+            values_refresh_seconds = 60
+
+    acct = WealthsimpleAccount.__new__(WealthsimpleAccount)
+    acct.cfg = FakeCfg()
+    acct._ws = FakeWS()
+    acct._resolved = None
+    acct._stale = {}
+    acct._pos_cache = None
+    acct._pos_cache_ts = 0.0
+    acct._fx_quote = None
+    acct._fx_quote_ts = 0.0
+    acct._usd_cache = None
+    acct._usd_cache_ts = 0.0
+    acct._cache = None
+    acct._cache_ts = 0.0
+    monkeypatch.setattr(acct, "_resolve", lambda: [("RRSP", "a1")])
+
+    data = acct.open_option_positions()["RRSP"]
+    rows = data["positions"]
+    assert len(rows) == 1                    # legs collapse into one row
+    spread = rows[0]
+    assert spread["spread"] is True
+    assert spread["contract_key"] == "SPY 753/758C"
+    assert spread["qty"] == 1
+    assert spread["cost_usd"] == 65.0        # 120 debit - 55 credit
+    # net mv: long 150 - short 90 = 60 -> +7.69% on the 65 debit
+    assert spread["market_value"] == 60.0
+    assert spread["pct_return"] == -7.7
+    assert spread["risk_cad"] == round(65 * 1.3636, 2)
+
+
+def test_credit_spread_risk_uses_width(monkeypatch):
+    # short 750P for 0.55 credit, long 745P for 0.20 -> width 500,
+    # max loss = 500 - 35 credit = 465 per 1x
+    from trader.account import WealthsimpleAccount
+
+    def leg(strike, direction, book_usd, quote):
+        return {
+            "quantity": "1",
+            "positionDirection": direction,
+            "bookValue": {"amount": str(book_usd * 1.4)},
+            "marketBookValue": {"amount": str(book_usd)},
+            "security": {
+                "securityType": "OPTION",
+                "stock": {"symbol": "SPY"},
+                "optionDetails": {
+                    "strikePrice": str(strike),
+                    "optionType": "PUT",
+                    "expiryDate": "2026-10-16",
+                    "multiplier": "100",
+                    "underlyingSecurity": {"stock": {"symbol": "SPY"}},
+                },
+                "quoteV2": {"price": str(quote)},
+            },
+        }
+
+    class FakeWS:
+        def get_positions(self, account_ids=None, **kw):
+            return [
+                leg(750, "SHORT", 55, 0.40),
+                leg(745, "LONG", 20, 0.15),
+            ]
+
+    class FakeCfg:
+        class wealthsimple:
+            positions_refresh_seconds = 30
+            values_refresh_seconds = 60
+
+    acct = WealthsimpleAccount.__new__(WealthsimpleAccount)
+    acct.cfg = FakeCfg()
+    acct._ws = FakeWS()
+    acct._resolved = None
+    acct._stale = {}
+    acct._pos_cache = None
+    acct._pos_cache_ts = 0.0
+    acct._fx_quote = 1.4
+    acct._fx_quote_ts = 0.0
+    acct._usd_cache = None
+    acct._usd_cache_ts = 0.0
+    acct._cache = None
+    acct._cache_ts = 0.0
+    monkeypatch.setattr(acct, "_resolve", lambda: [("RRSP", "a1")])
+
+    spread = acct.open_option_positions()["RRSP"]["positions"][0]
+    assert spread["spread"] is True
+    assert spread["contract_key"] == "SPY 745/750P"
+    assert spread["cost_usd"] == -35.0       # net credit
+    # max loss = width 500 - credit 35
+    assert spread["risk_cad"] == round(465 * 1.4, 2)

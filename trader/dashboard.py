@@ -128,10 +128,10 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   </div>
   <div style="display:flex;flex-basis:100%;gap:18px;flex-wrap:wrap;color:var(--muted);font-size:12px;align-items:center">
     <span id="reader"></span>
+    <span id="updated">data refreshed</span>
     <span id="git"></span>
     <span id="stops"></span>
-    <span id="updated" style="margin-left:auto">data refreshed</span>
-    <a href="/logout" id="logout">log out</a>
+    <a href="/logout" id="logout" style="margin-left:auto">log out</a>
   </div>
 </header>
 
@@ -154,6 +154,11 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   <button id="settings-save">Save</button>
 </div>
 <script>
+function fmtSigned(v) {
+  return (v < 0 ? "-$" : "$") + Math.abs(v).toLocaleString("en-CA",
+    { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 function dteBadge(expiry) {
   if (!expiry) return "";
   const parts = String(expiry).slice(0, 10).split("-");
@@ -286,19 +291,19 @@ async function loadPositions() {
       esc(p.underlying || "") + " " + esc(p.strike || "") + esc(p.right || "") +
       '</span><br><span style="font-size:11px;color:var(--muted)">' +
       esc(p.expiry || "") + "</span> " + dteBadge(p.expiry) + "</td>" +
-      '<td class=num>' + (p.short ? "-" + p.qty : p.qty) + (p.short ? ' <span class="tag skip mini" title="short position">short</span>' : "") + "</td>" +
+      '<td class=num>' + (p.short ? "-" + p.qty : p.qty) + (p.short ? ' <span class="tag skip mini" title="short position">short</span>' : (p.spread ? ' <span class="tag ignored mini" title="multi-leg spread">spread</span>' : "")) + "</td>" +
       '<td class=num>' + (p.avg_premium != null
-        ? "$" + avgTotal.toLocaleString("en-CA", { maximumFractionDigits: 2 }) +
-          '<span class="subv">($' + p.avg_premium + ")</span>"
+        ? (p.spread ? fmtSigned(avgTotal) : "$" + avgTotal.toLocaleString("en-CA", { maximumFractionDigits: 2 })) +
+          '<span class="subv">(' + (p.spread ? fmtSigned(p.avg_premium) : "$" + p.avg_premium) + ")</span>"
         : "—") + "</td>" +
       '<td class=num>' + (p.current_price != null
-        ? "$" + p.current_price + (mv != null
-          ? '<span class="subv">(' + (p.short ? "-$" : "$") +
-            mv.toLocaleString("en-CA", { maximumFractionDigits: 2 }) + ")</span>"
+        ? (p.spread ? fmtSigned(p.current_price) : "$" + p.current_price) + (mv != null
+          ? '<span class="subv">(' + (p.short || (p.spread && mv < 0) ? "-$" : "$") +
+            Math.abs(mv).toLocaleString("en-CA", { maximumFractionDigits: 2 }) + ")</span>"
           : "")
         : "—") + "</td>" +
       '<td class=num style="color:' + retColor + '">' + retMain + plSpan + "</td>" +
-      '<td class=num>' + (p.cost_usd != null ? fmtMoney(p.cost_usd) + (p.cost_cad ? '<span class="subv">(' + fmtMoney(p.cost_cad) + ')</span>' : "") : '<span class="subv">(' + fmtMoney(avgTotal) + ")</span>") + "</td></tr>";
+      '<td class=num>' + (p.cost_usd != null ? (p.spread ? fmtSigned(p.cost_usd) : fmtMoney(p.cost_usd)) + (p.cost_cad != null ? '<span class="subv">(' + (p.spread ? fmtSigned(p.cost_cad) : fmtMoney(p.cost_cad)) + ')</span>' : "") : '<span class="subv">(' + fmtMoney(avgTotal) + ")</span>") + "</td></tr>";
   }
   el.innerHTML = html + "</table>";
 }
