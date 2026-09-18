@@ -1453,3 +1453,29 @@ def test_positions_via_real_init(monkeypatch):
         "T": {"positions": [], "fx": None, "usd_cash": None}
     }
     assert acct.stock_holdings() == {"T": []}
+
+
+def test_summary_allocation_values():
+    app, store, account = _make_app()
+    client = app.test_client()
+    account.open_option_positions = lambda: {
+        "Personal": {
+            "positions": [
+                {"market_value": 100.0, "risk_cad": 120.0,
+                 "cost_cad": 130.0, "short": False},
+            ],
+            "fx": 1.25,
+        },
+    }
+    account.stock_holdings = lambda: {
+        "Personal": [
+            {"market_value": 800.0, "currency": "USD"},
+            {"market_value": 500.0, "currency": "CAD"},
+        ],
+    }
+    summary = client.get("/api/summary").get_json()
+    row = next(a for a in summary["accounts"] if a["label"] == "Personal")
+    # usd stock 800 * 1.25 + cad stock 500
+    assert row["stock_value"] == 1500.0
+    # option mv 100 * 1.25
+    assert row["option_value"] == 125.0

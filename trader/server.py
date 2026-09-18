@@ -208,6 +208,7 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                 return None, str(e)
         t = cfg.trading
         real = _real_positions() or {}
+        stocks = _real_stocks() or {}
         shared_fx = None
         for live in real.values():
             if live and live.get("fx"):
@@ -264,6 +265,21 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                 usd_value = None
             stale_fn = getattr(account, "stale_age", None)
             value_age = stale_fn(label) if callable(stale_fn) else None
+            conv_fx = fx or 1.0
+            stock_value = None
+            sk = stocks.get(label)
+            if sk:
+                stock_value = round(sum(
+                    (r.get("market_value") or 0)
+                    * (conv_fx if r.get("currency") == "USD" else 1)
+                    for r in sk
+                ), 2)
+            option_value = None
+            if live is not None:
+                option_value = round(sum(
+                    abs(r.get("market_value") or 0) * conv_fx
+                    for r in live["positions"]
+                ), 2)
             out.append(
                 {
                     "label": label,
@@ -274,6 +290,8 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                     "cash_cad": cash_cad,
                     "cash_usd": cash_usd,
                     "open_risk": open_risk,
+                    "stock_value": stock_value,
+                    "option_value": option_value,
                     "open_risk_pct": (
                         round(open_risk / value * 100, 2)
                         if value and value > 0

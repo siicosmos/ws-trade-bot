@@ -138,6 +138,9 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 <h2>Open Positions</h2>
 <div id="positions"></div>
 
+<h2>Stock Holdings</h2>
+<div id="stock-positions"></div>
+
 <h2>Recent Alerts <button id="toggle-ignored" onclick="toggleIgnored()" style="float:right;background:#21262d;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 14px;font-size:12px;cursor:pointer">Hide ignored</button></h2>
 <div id="signals"></div>
 
@@ -280,15 +283,30 @@ async function loadSummary() {
                 Math.abs(a.cash_usd).toLocaleString("en-CA", {minimumFractionDigits: 2, maximumFractionDigits: 2}) + '</span>')
             : '') + '</span>' +
           '<span>buying power</span></div>'
-        : '');
+        : '') + allocBar(a);
     el.appendChild(card);
   }
 }
 
+function allocBar(a) {
+  if (!(a.stock_value || a.option_value) || !a.value) return "";
+  const sp = Math.min(100, a.stock_value / a.value * 100);
+  const op = Math.min(100, a.option_value / a.value * 100);
+  return '<div class="riskbar"><div style="width:' + sp + '%;background:#4493f8"></div>' +
+    '<div style="width:' + op + '%;background:#ab7df6"></div></div>' +
+    '<div class="sub"><span style="color:#4493f8">stocks ' + (a.stock_value ? (a.stock_value / a.value * 100).toFixed(1) : 0) + '%</span>' +
+    '<span style="color:#ab7df6">options ' + (a.option_value ? (a.option_value / a.value * 100).toFixed(1) : 0) + '%</span></div>';
+}
+
 async function loadPositions() {
   const rows = await api("/api/positions");
-  const el = document.getElementById("positions");
-  if (!rows.length) { el.innerHTML = '<div class="empty">no open positions</div>'; return; }
+  renderPositionsInto("positions", rows.filter(r => r.kind !== "stock"), "no open positions");
+  renderPositionsInto("stock-positions", rows.filter(r => r.kind === "stock"), "no stock holdings");
+}
+
+function renderPositionsInto(elId, rows, emptyText) {
+  const el = document.getElementById(elId);
+  if (!rows.length) { el.innerHTML = '<div class="empty">' + emptyText + '</div>'; return; }
   let html = '<table class="pos"><tr><th>Account</th><th>Contract</th><th class=num>Qty</th><th class=num>Avg $</th><th class=num>Price $</th><th class=num>Return</th><th class=num>Total Cost $</th></tr>';
   for (const p of rows) {
     const ret = p.pct_return ?? null;

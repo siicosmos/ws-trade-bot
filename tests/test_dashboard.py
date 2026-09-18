@@ -271,3 +271,16 @@ def test_stock_currency_display():
     # label usd amounts only - cad tickers need no suffix
     assert "isStock ? 1 : 100" in js
     assert 'isStock && p.currency === "USD" ? " usd"' in js
+
+
+def test_stock_section_and_alloc_bar():
+    import trader.dashboard as dash
+
+    js = re.findall(r"<script>(.*?)</script>",
+                    dash.DASHBOARD_HTML, re.S)[0]
+    # stock holdings render into their own section
+    assert 'id="stock-positions"' in dash.DASHBOARD_HTML
+    assert 'rows.filter(r => r.kind === "stock")' in js
+    # allocation bar: stocks blue, options purple
+    assert "function allocBar" in js
+    assert "#4493f8" in js and "#ab7df6" in js
