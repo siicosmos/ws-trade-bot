@@ -145,3 +145,18 @@ def test_git_status_wording():
     assert 'result === "not checked yet"' in js
     assert 's.last_pull.how === "auto" || s.last_pull.how === "manual"' in js
     assert '" · last " + how + "pull "' in js
+
+
+def test_settings_form_not_clobbered_while_editing():
+    # the 5s refresh re-rendered the settings form and wiped edits
+    # before the user could save them
+    import trader.dashboard as dash
+
+    js = re.findall(r"<script>(.*?)</script>", dash.DASHBOARD_HTML, re.S)[0]
+    assert "let settingsDirty = false;" in js
+    assert "if (settingsDirty) return;" in js
+    # edits mark the form dirty
+    assert "settingsDirty = true;" in js
+    # a successful save clears it and re-renders with persisted values
+    assert "settingsDirty = false;" in js
+    assert "await loadSettings();" in js

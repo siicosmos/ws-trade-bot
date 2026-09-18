@@ -311,9 +311,14 @@ async function loadTrades() {
 
 let lastSettings = null;
 
+let settingsDirty = false;
+
 async function loadSettings() {
   const s = await api("/api/settings");
   lastSettings = s;
+  // leave the form alone while the user has unsaved edits - the
+  // periodic refresh used to wipe them mid-typing
+  if (settingsDirty) return;
   const el = document.getElementById("settings");
   let html = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px">';
   const t = s.trading;
@@ -392,6 +397,10 @@ async function loadSettings() {
     autoGrow(t);
     t.addEventListener("input", function() { autoGrow(t); });
   });
+  el.querySelectorAll("input,select,textarea").forEach(function(i) {
+    i.addEventListener("input", function() { settingsDirty = true; });
+    i.addEventListener("change", function() { settingsDirty = true; });
+  });
 }
 
 async function saveSettings() {
@@ -447,6 +456,8 @@ async function saveSettings() {
   } else {
     document.getElementById("settings-save").textContent = "Saved";
     setTimeout(() => document.getElementById("settings-save").textContent = "Save", 1500);
+    settingsDirty = false;
+    await loadSettings();
     load();
   }
 }
