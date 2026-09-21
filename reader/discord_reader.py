@@ -535,16 +535,38 @@ def message_items(container):
 
 
 def item_text(item):
+    """Message text from the item's text controls.
+
+    Button subtrees are skipped: reaction chips (emoji + count)
+    are buttons, and their text leaking into the message makes the
+    same message look new again when someone reacts to it.
+    """
     parts = []
-    try:
-        walker = auto.WalkControl(item, includeTop=False, maxDepth=12)
-        for ctrl, depth in walker:
+
+    def walk(ctrl, depth):
+        if depth > 12:
+            return
+        try:
+            children = ctrl.GetChildren()
+        except (UIAError, AttributeError):
+            return
+        for child in children:
             try:
-                if ctrl.ControlType == auto.ControlType.TextControl and ctrl.Name:
-                    parts.append(ctrl.Name.strip())
-            except UIAError:
+                ctype = child.ControlType
+            except (UIAError, AttributeError):
                 continue
-    except UIAError:
+            if ctype == auto.ControlType.ButtonControl:
+                continue
+            try:
+                if ctype == auto.ControlType.TextControl and child.Name:
+                    parts.append(child.Name.strip())
+            except (UIAError, AttributeError):
+                continue
+            walk(child, depth + 1)
+
+    try:
+        walk(item, 0)
+    except (UIAError, AttributeError):
         pass
     return " ".join(parts).strip()
 

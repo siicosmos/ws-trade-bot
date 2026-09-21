@@ -1,4 +1,5 @@
 import json
+import re
 import sqlite3
 import threading
 from datetime import datetime, timedelta, timezone
@@ -363,6 +364,37 @@ class Store:
         keys = ["ts", "mode", "action", "ticker", "qty", "price", "status",
                 "detail"]
         return [dict(zip(keys, r)) for r in rows]
+
+    def has_recent_prefix(self, text, within_seconds=300, limit=50):
+        """True when a recent signal's text is a prefix of this one
+        (or vice versa) - discord re-renders a message when someone
+        reacts to it, appending the reaction to the text we read.
+        """
+        norm = re.sub(r"\s+", " ", str(text or "")).strip()
+        if not norm:
+            return False
+        cutoff = datetime.now(timezone.utc) - timedelta(
+            seconds=within_seconds
+        )
+        with self._lock, self._conn:
+            rows = self._conn.execute(
+                "SELECT ts, text FROM signals "
+                "ORDER BY rowid DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        for ts, other in rows:
+            try:
+                when = datetime.fromisoformat(ts)
+            except (TypeError, ValueError):
+                continue
+            if when < cutoff:
+                continue
+            norm_other = re.sub(r"\s+", " ", str(other or "")).strip()
+            if len(norm_other) < 12 or norm_other == norm:
+                continue   # too short to be a reaction re-read
+            if norm.startswith(norm_other) or norm_other.startswith(norm):
+                return True
+        return False
 
     def recent_signals(self, limit=50):
         with self._lock, self._conn:

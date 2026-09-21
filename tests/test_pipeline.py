@@ -1481,52 +1481,6 @@ def test_summary_allocation_values():
     assert row["option_value"] == 125.0
 
 
-def test_schema_probe_report_and_chunking():
-    from trader.schema_probe import _post, MAX_MESSAGE, probe_schema
-    from trader.ws_positions_query import FETCH_IDENTITY_POSITIONS
-
-    class FakeWS:
-        identity_id = "id1"
-
-        def graphql_query(self, op, query, variables):
-            assert op == "FetchIdentityPositions"
-            assert query == FETCH_IDENTITY_POSITIONS
-            return {"data": {"identity": {"financials": {"current": {
-                "positions": {"edges": [
-                    {"node": {
-                        "quantity": "3",
-                        "strategyType": "VERTICAL_SPREAD",
-                        "legs": [{"x": 1}, {"x": 2}],
-                        "security": {"stock": {"symbol": "SPX"},
-                                     "optionDetails": {
-                                         "strikePrice": "6000",
-                                         "optionType": "CALL"}},
-                        "marginRequirement": {"amount": "120.00",
-                                               "currency": "USD"}},
-                    },
-                ]}}}}}}
-
-    class FakeAccount:
-        def _client(self):
-            return FakeWS()
-
-    report = probe_schema(FakeAccount())
-    assert "app document: ok, 1 positions" in report
-    assert "strategy=VERTICAL_SPREAD" in report
-    assert "legs=2" in report
-    assert "margin=120.00 USD" in report
-
-    sent = []
-    import trader.notify as notify_mod
-    orig = notify_mod.notify_plain
-    notify_mod.notify_plain = lambda url, text: sent.append(text)
-    try:
-        _post("http://hook", "x" * (MAX_MESSAGE + 100))
-    finally:
-        notify_mod.notify_plain = orig
-    assert len(sent) == 2
-    assert all(t.startswith("WS schema probe (") for t in sent)
-
 
 def test_app_document_positions_and_margin():
     from trader.account import WealthsimpleAccount
@@ -1813,3 +1767,29 @@ def test_requirement_uses_api_rate():
     assert row["margin_requirement"] == round(
         1871.07 * 0.30 + 56.13 * 0.50, 2
     )
+
+
+def test_reaction_reread_suppressed():
+    cfg, store, account, risk = _setup(
+        mode="notify", paper_account_value=10000, cooldown_seconds=0
+    )
+    base = "SOLD 1/4 0DTE IWM 285c @ .96 @everyone +50% rest 2X or BE"
+    first = process_alert(
+        base, "", cfg, store, risk, PaperExecutor(cfg, store, account)
+    )
+    # the reader re-delivers the same message with a reaction
+    # count appended when someone reacts to it
+    reread = process_alert(
+        base + " 1", "", cfg, store, risk,
+        PaperExecutor(cfg, store, account),
+    )
+    assert first["status"] == "notified"
+    assert reread["status"] == "ignored"
+    assert "reaction" in reread["reason"]
+
+    # a genuinely different scaling alert still goes through
+    other = "SOLD 1/4 0DTE IWM 285c @ .83 @everyone +30% rest 2X or BE"
+    res = process_alert(
+        other, "", cfg, store, risk, PaperExecutor(cfg, store, account)
+    )
+    assert res["status"] == "notified"

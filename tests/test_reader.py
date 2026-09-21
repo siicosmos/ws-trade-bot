@@ -926,3 +926,39 @@ def test_snap_falls_back_to_end_key(monkeypatch):
     dr.snap_to_bottom(NoScroll(), log_fn=logs.append)
     assert NoScroll.focused
     assert sent == ["{End}"]
+
+
+def test_item_text_skips_reaction_buttons():
+    from unittest.mock import MagicMock
+    import discord_reader as dr
+
+    def node(name="", ctype=None, children=None):
+        m = MagicMock()
+        m.Name = name
+        m.ControlType = (
+            ctype if ctype is not None
+            else dr.auto.ControlType.TextControl
+        )
+        m.GetChildren.return_value = children or []
+        return m
+
+    message = node(
+        name="message",
+        children=[
+            node(name="Liam 11:06"),
+            node(
+                name="SOLD 1/4 0DTE IWM 285c @ .96 @everyone +50% "
+                     "rest 2X or BE",
+            ),
+            node(
+                name="reaction",
+                ctype=dr.auto.ControlType.ButtonControl,
+                children=[node(name="1")],
+            ),
+        ],
+    )
+    text = dr.item_text(message)
+    assert "SOLD 1/4" in text
+    assert "rest 2X or BE" in text
+    # the reaction count must not leak into the message text
+    assert "BE 1" not in text and not text.rstrip().endswith("1")

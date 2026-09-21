@@ -28,6 +28,11 @@ def process_alert(
     key = _message_key(text, author)
     if (alert is not None or correction) and store.seen_signal(key):
         return {"status": "ignored", "reason": "duplicate message"}
+    if store.has_recent_prefix(text):
+        return {
+            "status": "ignored",
+            "reason": "duplicate message (reaction re-read)",
+        }
     store.record_signal(
         key, author, text, alert is not None, correction=correction,
         channel=channel, ts_epoch=ts, parsed_epoch=parsed_ts,

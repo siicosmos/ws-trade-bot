@@ -119,13 +119,6 @@ def main():
         )
     )
     app.ws_updater = updater
-    if hasattr(account, "_client"):
-        from trader.schema_probe import start_background_probe
-
-        start_background_probe(
-            account,
-            cfg.discord.update_webhook_url or cfg.discord.webhook_url,
-        )
     scheme = "https" if cfg.pipeline.tls_cert and cfg.pipeline.tls_key else "http"
     ssl_context = None
     if scheme == "https":
