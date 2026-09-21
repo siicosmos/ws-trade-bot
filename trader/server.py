@@ -320,13 +320,24 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                 overrides = getattr(
                     cfg.wealthsimple, "margin_rate_overrides", {}
                 ) or {}
+                rate_fn = getattr(account, "security_margin_rate", None)
                 req = 0.0
                 for r in (sk or []):
                     mv = r.get("market_value") or 0
                     if r.get("currency") == "USD":
                         mv *= conv_fx
                     sym = str(r.get("underlying") or "")
-                    rate = float(overrides.get(sym, default_rate))
+                    rate = None
+                    if callable(rate_fn) and r.get("security_id"):
+                        try:
+                            rate = rate_fn(r["security_id"])
+                        except Exception:
+                            rate = None
+                    if rate is None:
+                        # configured fallback (30% like the WS page)
+                        rate = float(
+                            overrides.get(sym, default_rate)
+                        )
                     req += mv * rate
                 if live is not None:
                     for r in live["positions"]:

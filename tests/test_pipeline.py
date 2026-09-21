@@ -1745,3 +1745,71 @@ def test_registered_label_suppresses_margin():
     assert row["margin_requirement"] is None
     assert row["margin_available"] is None
 
+
+
+def test_security_margin_rate_from_api():
+    from trader.account import WealthsimpleAccount
+    from trader.ws_security_query import FETCH_SECURITY
+
+    calls = []
+
+    class FakeWS:
+        def graphql_query(self, op, query, variables):
+            assert op == "FetchSecurity"
+            assert query == FETCH_SECURITY
+            calls.append(variables["securityId"])
+            # percent-style value exercises the normalization
+            return {"data": {"security": {"marginRates": {
+                "clientMarginRate": "30"}}}}
+
+    class FakeCfg:
+        class wealthsimple:
+            positions_refresh_seconds = 30
+            values_refresh_seconds = 60
+
+    acct = WealthsimpleAccount(FakeCfg())
+    acct._ws = FakeWS()
+    assert acct.security_margin_rate("sec-1") == 0.30
+    # cached - no second api call
+    assert acct.security_margin_rate("sec-1") == 0.30
+    assert calls == ["sec-1"]
+
+    class NoMarginWS:
+        def graphql_query(self, op, query, variables):
+            return {"data": {"security": {"marginRates": None}}}
+
+    acct._ws = NoMarginWS()
+    acct._margin_rates = {}
+    assert acct.security_margin_rate("sec-2") is None
+
+
+def test_requirement_uses_api_rate():
+    app, store, account = _make_app()
+    client = app.test_client()
+    account.open_option_positions = lambda: {
+        "Personal": {"positions": [], "fx": 1.25, "usd_cash": None},
+    }
+    account.stock_holdings = lambda: {
+        "Personal": [
+            {"market_value": 1871.07, "currency": "CAD",
+             "underlying": "ZWC", "security_id": "sec-zwc"},
+            {"market_value": 56.13, "currency": "CAD",
+             "underlying": "VDY", "security_id": "sec-vdy"},
+        ],
+    }
+    account.funding_balances = lambda: {
+        "Personal": [{"currency": "CAD", "amount": 0.30}],
+    }
+    account.values = lambda: {"Personal": 1720.02}
+    account.account_type_map = lambda: {"pers": "PERSONAL"}
+    account._resolve = lambda: [("Personal", "pers")]
+
+    rates = {"sec-zwc": 0.30, "sec-vdy": 0.50}
+    account.security_margin_rate = lambda sid: rates.get(sid)
+
+    summary = client.get("/api/summary").get_json()
+    row = next(a for a in summary["accounts"] if a["label"] == "Personal")
+    # 1871.07 * 0.30 + 56.13 * 0.50 (api rate beats the default)
+    assert row["margin_requirement"] == round(
+        1871.07 * 0.30 + 56.13 * 0.50, 2
+    )

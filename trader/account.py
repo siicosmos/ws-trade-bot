@@ -96,6 +96,7 @@ class WealthsimpleAccount:
         self._funding_cache = None
         self._funding_ts = 0.0
         self._type_map = None
+        self._margin_rates = {}
 
     def _client(self):
         if self._ws is None:
@@ -103,6 +104,45 @@ class WealthsimpleAccount:
 
             self._ws = WealthsimpleV2()
         return self._ws
+
+    def security_margin_rate(self, security_id):
+        """Per-security margin rate via the app's FetchSecurity
+        document, cached for 12h. Returns None when unavailable -
+        callers fall back to their configured default.
+        """
+        if not security_id:
+            return None
+        rates = getattr(self, "_margin_rates", None)
+        if rates is None:
+            rates = self._margin_rates = {}
+        cached = rates.get(security_id)
+        now = time.time()
+        if cached and now - cached[1] < 12 * 3600:
+            return cached[0]
+        rate = None
+        try:
+            ws = self._client()
+            from trader.ws_security_query import (
+                FETCH_SECURITY, security_variables,
+            )
+
+            result = ws.graphql_query(
+                "FetchSecurity",
+                FETCH_SECURITY,
+                security_variables(security_id),
+            )
+            raw = (
+                ((result.get("data") or {}).get("security") or {})
+                .get("marginRates") or {}
+            ).get("clientMarginRate")
+            if raw is not None:
+                rate = float(raw)
+                if rate > 1:      # tolerate percent-style values
+                    rate = rate / 100.0
+        except Exception:
+            rate = None
+        rates[security_id] = (rate, now)
+        return rate
 
     def account_type_map(self):
         """{account_id: unifiedAccountType}, cached (types are static).
@@ -401,6 +441,7 @@ class WealthsimpleAccount:
                     {
                         "contract_key": symbol,
                         "underlying": symbol,
+                        "security_id": sec.get("id"),
                         "expiry": None,
                         "strike": None,
                         "right": None,
