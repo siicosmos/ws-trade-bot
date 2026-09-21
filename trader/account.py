@@ -16,6 +16,17 @@ def _amount(node) -> float:
         return 0.0
 
 
+def _amount_opt(node):
+    """Amount of a {amount, currency} field, None when absent -
+    distinguishes a missing value from a real zero."""
+    if not node:
+        return None
+    try:
+        return float(node.get("amount"))
+    except (TypeError, ValueError):
+        return None
+
+
 def _quote_price(node) -> float:
     """Price of a quoteV2 field ({price, ...}), 0 when absent."""
     if not node:
@@ -403,7 +414,8 @@ class WealthsimpleAccount:
                 cost_cad = abs(book)
                 quote = _quote_price(sec.get("quoteV2"))
                 currency = str(
-                    (sec.get("quoteV2") or {}).get("currency") or ""
+                    (sec.get("quoteV2") or {}).get("currency")
+                    or sec.get("currency") or ""
                 ).upper() or None
                 # raw averagePrice is the native per-unit cost; the
                 # currency-override variants (marketAveragePrice,
@@ -426,7 +438,13 @@ class WealthsimpleAccount:
                     per_unit = abs(market_book) / qty
                 # native total cost from the true average
                 cost_usd = qty * per_unit if per_unit else None
-                market_value = qty * quote if quote else None
+                # the node's own totalValue beats qty x quote - a
+                # missing quote must not zero the holding out
+                total = _amount_opt(p.get("totalValue"))
+                market_value = (
+                    abs(total) if total is not None
+                    else (qty * quote if quote else None)
+                )
                 pct_return = None
                 if market_value and cost_usd:
                     if is_short:
@@ -460,7 +478,7 @@ class WealthsimpleAccount:
                             if market_value else None
                         ),
                         "pct_return": pct_return,
-                        "margin_req_amount": _amount(
+                        "margin_req_amount": _amount_opt(
                             p.get("marginRequirement")
                         ),
                         "margin_req_currency": (
@@ -512,7 +530,7 @@ class WealthsimpleAccount:
                     continue
 
                 margin = p.get("marginRequirement") or {}
-                margin_amount = _amount(margin)
+                margin_amount = _amount_opt(margin)
                 margin_currency = margin.get("currency")
 
                 legs_data = p.get("legs") or []
@@ -530,7 +548,7 @@ class WealthsimpleAccount:
                     # signed: credit spreads carry negative net books
                     cost_cad = book
                     cost_usd = market_book
-                    market_value = _amount(p.get("totalValue"))
+                    market_value = _amount_opt(p.get("totalValue"))
                     strikes = []
                     expiry = None
                     right = ""
@@ -672,7 +690,11 @@ class WealthsimpleAccount:
                     )
                     else "P"
                 )
-                market_value = qty * quote * multiplier if quote else None
+                total = _amount_opt(p.get("totalValue"))
+                market_value = (
+                    abs(total) if total is not None
+                    else (qty * quote * multiplier if quote else None)
+                )
                 pct_return = None
                 if market_value and cost_usd:
                     if is_short:

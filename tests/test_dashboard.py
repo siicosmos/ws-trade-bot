@@ -309,8 +309,10 @@ def test_hide_value_eye_toggle():
     # currency flip is per card too
     assert "flipCardCurrency" in js
     assert 'localStorage.getItem("ws_card_currency")' in js
-    # hidden cash keeps the label but drops the amounts
-    assert '(hidden ? "••••••" : (a.cash_cad != null' in js
+    # hidden cash keeps the label but drops the amounts; negative
+    # (loan) balances show as zero - the loan lives in margin used
+    assert "fmtMoney(Math.max(0, a.cash_cad))" in js
+    assert "fmtMoney(Math.max(0, a.cash_usd))" in js
     # approx symbol removed from value lines
     assert "≈" not in js
 
@@ -324,3 +326,18 @@ def test_margin_requirement_line():
     assert "margin available " in js
     assert "max buying power " in js
     assert 'esc(p.strategy_type || "multi-leg spread")' in js
+
+
+def test_margin_lines_show_currencies():
+    import trader.dashboard as dash
+
+    js = re.findall(r"<script>(.*?)</script>",
+                    dash.DASHBOARD_HTML, re.S)[0]
+    assert 'fmtMoney(a.margin_used || 0) + " cad"' in js
+    assert 'fmtMoney(a.margin_requirement) + " cad"' in js
+    assert 'fmtMoney(a.margin_available) + " cad"' in js
+    assert 'fmtMoney(a.max_buying_power || 0) + " cad"' in js
+    # per-currency loan breakdown follows the total
+    assert "margin_used_usd" in js and "margin_used_cad" in js
+    # risk carries its display currency
+    assert '(showUsd ? "usd" : "cad")' in js

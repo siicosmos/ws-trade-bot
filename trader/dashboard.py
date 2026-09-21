@@ -273,21 +273,23 @@ async function loadSummary() {
             ? ' <span style="font-size:13px;color:var(--muted)">$' + a.usd_value.toLocaleString("en-CA", {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' USD</span>'
             : (cur === "usd" ? ' <span style="font-size:12px;color:var(--yellow)">fx unavailable</span>' : '')))) + '</div>' +
       '<div class="riskbar"><div style="width:' + pct + '%;background:' + color + '"></div></div>' +
-      '<div class="sub"><span style="color:' + color + (pct >= (a.max_open_risk_pct || 30) ? ';font-weight:700' : '') + '">open risk ' + fmtMoney(risk) + ' (' + (a.open_risk_pct ?? 0) + '%)</span>' +
+      '<div class="sub"><span style="color:' + color + (pct >= (a.max_open_risk_pct || 30) ? ';font-weight:700' : '') + '">open risk ' + fmtMoney(risk) + " " + (showUsd ? "usd" : "cad") + ' (' + (a.open_risk_pct ?? 0) + '%)</span>' +
       '<span>cap ' + (a.max_open_risk_pct) + '%</span></div>' +
       ((a.margin_requirement != null && !isNaN(a.margin_requirement))
-        ? '<div class="sub"><span>margin used ' + (hidden ? "••••••" : fmtMoney(a.margin_used || 0)) + '</span><span>requirement ' + (hidden ? "••••••" : fmtMoney(a.margin_requirement)) + '</span></div>' +
-          '<div class="sub"><span>margin available ' + (hidden ? "••••••" : fmtMoney(a.margin_available)) + '</span><span>max buying power ' + (hidden ? "••••••" : fmtMoney(a.max_buying_power || 0)) + '</span></div>'
+        ? '<div class="sub"><span>margin used ' + (hidden ? "••••••" : fmtMoney(a.margin_used || 0) + " cad") +
+          (hidden ? '' :
+            ((a.margin_used_usd || 0) > 0 ? ' · usd ' + fmtMoney(a.margin_used_usd) : '') +
+            ((a.margin_used_cad || 0) > 0 ? ' · cad ' + fmtMoney(a.margin_used_cad) : '')) +
+          '</span><span>requirement ' + (hidden ? "••••••" : fmtMoney(a.margin_requirement) + " cad") + '</span></div>' +
+          '<div class="sub"><span>margin available ' + (hidden ? "••••••" : fmtMoney(a.margin_available) + " cad") + '</span><span>max buying power ' + (hidden ? "••••••" : fmtMoney(a.max_buying_power || 0) + " cad") + '</span></div>'
         : '') +
       ((a.cash_cad != null || a.cash_usd != null)
-        ? '<div class="sub"><span>cash ' + (hidden ? "••••••" : (a.cash_cad != null ? fmtMoney(a.cash_cad) : "—")) +
-          (!hidden && a.cash_usd != null
-            ? (a.cash_usd >= 0
-              ? ' · $' + a.cash_usd.toLocaleString("en-CA", {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' usd'
-              : ' · <span style="color:var(--yellow)">usd margin used $' +
-                Math.abs(a.cash_usd).toLocaleString("en-CA", {minimumFractionDigits: 2, maximumFractionDigits: 2}) + '</span>')
-            : '') + '</span>' +
-          '<span>buying power</span></div>'
+        ? '<div class="sub"><span>cash ' + (hidden ? "••••••" :
+            (a.cash_cad != null ? fmtMoney(Math.max(0, a.cash_cad)) + " cad" : "—") +
+            (a.cash_usd != null
+              ? ' · ' + fmtMoney(Math.max(0, a.cash_usd)) + " usd"
+              : '')) + '</span>' +
+          '<span>available</span></div>'
         : '') + allocBar(a);
     el.appendChild(card);
   }

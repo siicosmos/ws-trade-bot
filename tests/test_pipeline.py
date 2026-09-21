@@ -1325,6 +1325,7 @@ def test_stock_holdings_mapping(monkeypatch):
                     "bookValue": {"amount": "2000.00", "currency": "CAD"},
                     "marketBookValue": {"amount": "1600.00",
                                          "currency": "USD"},
+                    "totalValue": {"amount": "1700.00", "currency": "USD"},
                     "averagePrice": {"amount": "150.00",
                                       "currency": "USD"},
                     "security": {
@@ -1339,6 +1340,7 @@ def test_stock_holdings_mapping(monkeypatch):
                     "bookValue": {"amount": "3100.00", "currency": "CAD"},
                     "marketBookValue": {"amount": "3100.00",
                                          "currency": "CAD"},
+                    "totalValue": {"amount": "3550.00", "currency": "CAD"},
                     "averagePrice": {"amount": "31.00",
                                       "currency": "CAD"},
                     "security": {
@@ -1346,6 +1348,21 @@ def test_stock_holdings_mapping(monkeypatch):
                         "stock": {"symbol": "RY", "name": "RBC"},
                         "quoteV2": {"price": "35.50",
                                      "currency": "CAD"},
+                    },
+                },
+                {   # no quote at all - value from the node itself,
+                    # currency from the security listing
+                    "quantity": "20",
+                    "bookValue": {"amount": "2900.00", "currency": "CAD"},
+                    "marketBookValue": {"amount": "2300.00",
+                                         "currency": "USD"},
+                    "totalValue": {"amount": "2400.00", "currency": "USD"},
+                    "averagePrice": {"amount": "115.00",
+                                      "currency": "USD"},
+                    "security": {
+                        "securityType": "STOCK",
+                        "currency": "USD",
+                        "stock": {"symbol": "FOTO", "name": "Fotona"},
                     },
                 },
                 {   # currency position - excluded from holdings
@@ -1384,7 +1401,7 @@ def test_stock_holdings_mapping(monkeypatch):
     monkeypatch.setattr(acct, "_resolve", lambda: [("RRSP", "a1")])
 
     rows = acct.stock_holdings()["RRSP"]
-    assert len(rows) == 2
+    assert len(rows) == 3
     aapl = rows[0]
     assert aapl["kind"] == "stock"
     assert aapl["underlying"] == "AAPL"
@@ -1396,6 +1413,12 @@ def test_stock_holdings_mapping(monkeypatch):
     assert aapl["market_value"] == 1700.0
     assert aapl["pct_return"] == 13.3
     assert aapl["currency"] == "USD"
+    foto = rows[2]
+    assert foto["underlying"] == "FOTO"
+    assert foto["currency"] == "USD"          # from the security
+    assert foto["market_value"] == 2400.0     # node totalValue
+    assert foto["current_price"] is None     # no quote available
+
     ry = rows[1]
     assert ry["underlying"] == "RY"
     assert ry["currency"] == "CAD"

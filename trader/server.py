@@ -307,6 +307,8 @@ def create_app(cfg, store: Store, risk, executor, account=None,
             margin_used = None
             margin_available = None
             max_buying_power = None
+            used_cad_raw = 0.0
+            used_usd_raw = 0.0
             if not _registered_plan() and value:
                 # computed per the WS margin page: requirement is
                 # the maintenance rate over holdings (rate per
@@ -350,14 +352,18 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                             )
                 margin_req = round(req, 2)
                 used = 0.0
+                used_cad_raw = 0.0
+                used_usd_raw = 0.0
                 if funding and funding.get(label):
                     for b in funding[label]:
                         amt = b.get("amount")
                         if amt is not None and amt < 0:
-                            used += -amt * (
-                                conv_fx
-                                if b.get("currency") == "USD" else 1
-                            )
+                            if b.get("currency") == "USD":
+                                used_usd_raw += -amt
+                                used += -amt * conv_fx
+                            else:
+                                used_cad_raw += -amt
+                                used += -amt
                 margin_used = round(used, 2)
                 # NLV already nets the loan as negative cash, so
                 # availability is simply equity minus requirement
@@ -381,6 +387,10 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                     "option_value": option_value,
                     "margin_requirement": margin_req,
                     "margin_used": margin_used,
+                    "margin_used_cad": round(used_cad_raw, 2)
+                    if used_cad_raw else 0.0,
+                    "margin_used_usd": round(used_usd_raw, 2)
+                    if used_usd_raw else 0.0,
                     "margin_available": margin_available,
                     "max_buying_power": max_buying_power,
                     "open_risk_pct": (
