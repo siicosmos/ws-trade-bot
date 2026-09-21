@@ -1531,6 +1531,27 @@ def test_app_document_positions_and_margin():
         ],
         "security": {},
     }
+    expired_node = {
+        "quantity": "-1",
+        "positionDirection": "SHORT",
+        "bookValue": {"amount": "-25.00", "currency": "CAD"},
+        "marketBookValue": {"amount": "-18.00", "currency": "USD"},
+        "strategyType": "VERTICAL_SPREAD",
+        "legs": [
+            {"security": {"optionDetails": {
+                "strikePrice": "7.5", "optionType": "PUT",
+                "expiryDate": "2026-09-18",
+                "underlyingSecurity": {"stock": {"symbol": "BFLY"}},
+            }},
+             "totalValue": {"amount": "0.00", "currency": "USD"}},
+            {"security": {"optionDetails": {
+                "strikePrice": "5", "optionType": "PUT",
+            }},
+             "totalValue": None},
+        ],
+        "security": {},
+    }
+
     single_node = {
         "quantity": "10",
         "bookValue": {"amount": "2000.00", "currency": "CAD"},
@@ -1554,6 +1575,7 @@ def test_app_document_positions_and_margin():
             return {"data": {"identity": {"financials": {
                 "current": {"positions": {"edges": [
                     {"node": dict(spread_node)},
+                    {"node": dict(expired_node)},
                     {"node": dict(single_node)},
                 ]}}}}}}
 
@@ -1586,13 +1608,14 @@ def test_app_document_positions_and_margin():
     with mock.patch.object(acct, "_resolve",
                            lambda: [("T", "a1")]):
         raw = acct._positions_raw()
-    assert raw == {"T": [spread_node, single_node]}
+    assert raw == {"T": [spread_node, expired_node, single_node]}
 
     opts = acct.open_option_positions()["T"]
-    assert len(opts["positions"]) == 1
+    assert len(opts["positions"]) == 2
     sp = opts["positions"][0]
     assert sp["strategy_type"] == "VERTICAL_SPREAD"
     assert sp["spread"] is True
+    assert sp["short"] is True            # net-short credit spread
     assert sp["qty"] == 2
     assert sp["cost_usd"] == -75.0        # credit: signed net
     assert sp["market_value"] == -50.0
@@ -1603,6 +1626,12 @@ def test_app_document_positions_and_margin():
     assert sp["risk_cad"] == round(55.0 * (100.0 / 75.0), 2)
     assert sp["margin_req_amount"] == 55.0
     assert sp["margin_req_currency"] == "USD"
+
+    expired = opts["positions"][1]
+    assert expired["short"] is True
+    assert expired["qty"] == 1
+    assert expired["market_value"] == 0.0       # legs settled to 0
+    assert expired["pct_return"] == 100.0       # full credit kept
 
     stocks = acct.stock_holdings()["T"]
     assert len(stocks) == 1

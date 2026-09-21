@@ -341,3 +341,17 @@ def test_margin_lines_show_currencies():
     assert "margin_used_usd" in js and "margin_used_cad" in js
     # risk carries its display currency
     assert '(showUsd ? "usd" : "cad")' in js
+
+
+def test_avg_single_value_and_signed_cost():
+    import trader.dashboard as dash
+
+    js = re.findall(r"<script>(.*?)</script>",
+                    dash.DASHBOARD_HTML, re.S)[0]
+    # avg is one number: per-share for legs, per-contract for spreads
+    assert 'Math.abs(p.avg_premium * 100)' in js
+    assert "subv\">(\" + fmtSigned(p.avg_premium)" not in js
+    # short option rows show the credit as a negative cost
+    assert '(p.short ? "-" : "") + fmtMoney(p.cost_usd)' in js
+    # short and spread tags coexist
+    assert '(p.spread ? \' <span class="tag ignored mini" title="\'' in js

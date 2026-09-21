@@ -346,15 +346,14 @@ function renderPositionsInto(elId, rows, emptyText) {
         '</span><br><span style="font-size:11px;color:var(--muted)">' +
         esc(String(p.expiry || "").slice(0, 10)) + "</span> " +
         dteBadge(p.expiry)) + "</td>" +
-      '<td class=num>' + (p.short ? "-" + p.qty : p.qty) + (p.short ? ' <span class="tag skip mini" title="short position">short</span>' : (p.spread ? ' <span class="tag ignored mini" title="' + esc(p.strategy_type || "multi-leg spread") + '">spread</span>' : "")) + "</td>" +
-      '<td class=num>' + (isStock
-        ? (p.avg_premium != null
-            ? "$" + p.avg_premium.toLocaleString("en-CA", { maximumFractionDigits: 2 }) + cur
-            : "—")
-        : (p.avg_premium != null
-        ? (p.spread ? fmtSigned(avgTotal) : "$" + avgTotal.toLocaleString("en-CA", { maximumFractionDigits: 2 })) +
-          '<span class="subv">(' + (p.spread ? fmtSigned(p.avg_premium) : "$" + p.avg_premium) + ")</span>"
-        : "—")) + "</td>" +
+      '<td class=num>' + (p.short ? "-" + p.qty : p.qty) + (p.short ? ' <span class="tag skip mini" title="short position">short</span>' : "") + (p.spread ? ' <span class="tag ignored mini" title="' + esc(p.strategy_type || "multi-leg spread") + '">spread</span>' : "") + "</td>" +
+      '<td class=num>' + (p.avg_premium == null
+        ? "—"
+        : (isStock
+          ? "$" + p.avg_premium.toLocaleString("en-CA", { maximumFractionDigits: 2 }) + cur
+          : (p.spread
+            ? "$" + Math.abs(p.avg_premium * 100).toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+            : "$" + p.avg_premium.toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })))) + "</td>" +
       '<td class=num>' + (isStock
         ? (p.current_price != null
             ? "$" + p.current_price.toLocaleString("en-CA", { maximumFractionDigits: 2 }) + cur
@@ -371,7 +370,7 @@ function renderPositionsInto(elId, rows, emptyText) {
           (p.currency === "CAD" || p.cost_cad == null
             ? ""
             : '<span class="subv">(' + fmtMoney(p.cost_cad) + ')</span>')
-        : (p.cost_usd != null ? (p.spread ? fmtSigned(p.cost_usd) : fmtMoney(p.cost_usd)) + (p.cost_cad != null ? '<span class="subv">(' + (p.spread ? fmtSigned(p.cost_cad) : fmtMoney(p.cost_cad)) + ')</span>' : "") : '<span class="subv">(' + fmtMoney(avgTotal) + ")</span>")) + "</td></tr>";
+        : (p.cost_usd != null ? (p.spread ? fmtSigned(p.cost_usd) : (p.short ? "-" : "") + fmtMoney(p.cost_usd)) + (p.cost_cad != null ? '<span class="subv">(' + (p.spread ? fmtSigned(p.cost_cad) : fmtMoney(p.cost_cad)) + ')</span>' : "") : '<span class="subv">(' + fmtMoney(avgTotal) + ")</span>")) + "</td></tr>";
   }
   el.innerHTML = html + "</table>";
 }

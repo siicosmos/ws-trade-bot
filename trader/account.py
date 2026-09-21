@@ -533,6 +533,9 @@ class WealthsimpleAccount:
                 margin_amount = _amount_opt(margin)
                 margin_currency = margin.get("currency")
 
+                direction = str(
+                    p.get("positionDirection") or ""
+                ).upper()
                 legs_data = p.get("legs") or []
                 strategy_type = str(
                     p.get("strategyType") or ""
@@ -542,13 +545,29 @@ class WealthsimpleAccount:
                     # node - build the spread row directly from the
                     # node-level net values instead of re-grouping
                     try:
-                        qty = abs(float(p.get("quantity") or 0))
+                        raw_qty = float(p.get("quantity") or 0)
                     except (TypeError, ValueError):
-                        qty = 0
+                        raw_qty = 0
+                    qty = abs(raw_qty)
+                    net_short = (
+                        direction == "SHORT" or raw_qty < 0
+                    )
                     # signed: credit spreads carry negative net books
                     cost_cad = book
                     cost_usd = market_book
                     market_value = _amount_opt(p.get("totalValue"))
+                    if market_value is None:
+                        # expired positions can drop the node value -
+                        # fall back to the legs' own totals
+                        legs_total = None
+                        for leg in legs_data:
+                            lt = _amount_opt(leg.get("totalValue"))
+                            if lt is not None:
+                                legs_total = (
+                                    lt if legs_total is None
+                                    else legs_total + lt
+                                )
+                        market_value = legs_total
                     strikes = []
                     expiry = None
                     right = ""
@@ -630,7 +649,7 @@ class WealthsimpleAccount:
                             ),
                             "right": right or None,
                             "qty": qty,
-                            "short": False,
+                            "short": net_short,
                             "spread": True,
                             "strategy_type": strategy_type,
                             "avg_premium": round(per_unit, 4)
@@ -643,7 +662,7 @@ class WealthsimpleAccount:
                             "current_price": None,
                             "market_value": (
                                 round(market_value, 2)
-                                if market_value else None
+                                if market_value is not None else None
                             ),
                             "pct_return": market_pct,
                             "margin_req_amount": margin_amount,
