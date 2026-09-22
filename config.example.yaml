@@ -6,6 +6,10 @@
 # ---------------------------------------------------------------------------
 paper:
   enabled: false
+  # mirror your own real fills (activity feed) into the paper
+  # ledger at their actual execution prices
+  mirror: true
+  mirror_interval_seconds: 60
 
 # ---------------------------------------------------------------------------
 # pipeline - the web server that runs the dashboard and receives alerts

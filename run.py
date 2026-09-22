@@ -73,6 +73,17 @@ def main():
             paper_ledger = PaperLedger(cfg, store, account)
             executor = PaperExecutor(cfg, store, paper_ledger)
             print("paper trading enabled alongside notify")
+            if cfg.paper.mirror:
+                from trader.mirror import start_mirror_thread
+
+                start_mirror_thread(
+                    cfg, store, account, paper_ledger,
+                    cfg.paper.mirror_interval_seconds,
+                )
+                print(
+                    "mirroring real trades into the paper ledger "
+                    f"every {cfg.paper.mirror_interval_seconds}s"
+                )
         try:
             account = WealthsimpleAccount(cfg, store)
             account.values()

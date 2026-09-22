@@ -75,10 +75,6 @@ def tier_plan(alert, cfg, account_value, price, acct=None) -> dict:
     }
 
 
-def raw_contracts_for(alert, cfg, account_value, price, acct=None) -> int:
-    return tier_plan(alert, cfg, account_value, price, acct)["affordable"]
-
-
 def contracts_for(alert, cfg, account_value: float, price, acct=None) -> int:
     return tier_plan(alert, cfg, account_value, price, acct)["qty"]
 

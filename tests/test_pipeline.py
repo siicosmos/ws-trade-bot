@@ -1,6 +1,7 @@
 import os
 import sys
 import tempfile
+import time
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -895,8 +896,6 @@ def test_open_option_positions_filters_and_maps(monkeypatch, tmp_path):
     acct._ws = FakeWS(_ws_position_fixture())
     acct._resolved = None
     acct._stale = {}
-    acct._pos_cache = None
-    acct._pos_cache_ts = 0.0
     acct._raw_cache = None
     acct._raw_ts = 0.0
     acct._fx_quote = None
@@ -1057,8 +1056,6 @@ def test_short_option_position_displayed(monkeypatch):
     acct._ws = FakeWS()
     acct._resolved = None
     acct._stale = {}
-    acct._pos_cache = None
-    acct._pos_cache_ts = 0.0
     acct._raw_cache = None
     acct._raw_ts = 0.0
     acct._fx_quote = None
@@ -1121,8 +1118,6 @@ def test_debit_spread_grouping(monkeypatch):
     acct._ws = FakeWS()
     acct._resolved = None
     acct._stale = {}
-    acct._pos_cache = None
-    acct._pos_cache_ts = 0.0
     acct._raw_cache = None
     acct._raw_ts = 0.0
     acct._fx_quote = None
@@ -1189,8 +1184,6 @@ def test_credit_spread_risk_uses_width(monkeypatch):
     acct._ws = FakeWS()
     acct._resolved = None
     acct._stale = {}
-    acct._pos_cache = None
-    acct._pos_cache_ts = 0.0
     acct._raw_cache = None
     acct._raw_ts = 0.0
     acct._fx_quote = 1.4
@@ -1292,8 +1285,6 @@ def test_funding_balances_mapping(monkeypatch):
     acct._ws = FakeWS()
     acct._resolved = None
     acct._stale = {}
-    acct._pos_cache = None
-    acct._pos_cache_ts = 0.0
     acct._raw_cache = None
     acct._raw_ts = 0.0
     acct._fx_quote = None
@@ -1388,8 +1379,6 @@ def test_stock_holdings_mapping(monkeypatch):
     acct._stale = {}
     acct._raw_cache = None
     acct._raw_ts = 0.0
-    acct._pos_cache = None
-    acct._pos_cache_ts = 0.0
     acct._fx_quote = None
     acct._fx_quote_ts = 0.0
     acct._usd_cache = None
@@ -1594,8 +1583,6 @@ def test_app_document_positions_and_margin():
     acct._stale = {}
     acct._raw_cache = None
     acct._raw_ts = 0.0
-    acct._pos_cache = None
-    acct._pos_cache_ts = 0.0
     acct._fx_quote = None
     acct._fx_quote_ts = 0.0
     acct._usd_cache = None
@@ -1896,8 +1883,6 @@ def test_expired_credit_spread_full_return(monkeypatch):
     acct._ws = FakeWS()
     acct._resolved = None
     acct._stale = {}
-    acct._pos_cache = None
-    acct._pos_cache_ts = 0.0
     acct._raw_cache = None
     acct._raw_ts = 0.0
     acct._fx_quote = 1.4
@@ -2179,8 +2164,6 @@ def test_condor_combines_verticals():
     acct._ws = FakeWS()
     acct._resolved = None
     acct._stale = {}
-    acct._pos_cache = None
-    acct._pos_cache_ts = 0.0
     acct._raw_cache = None
     acct._raw_ts = 0.0
     acct._fx_quote = 1.4
@@ -2291,8 +2274,6 @@ def test_paper_seeding_and_ledger(monkeypatch):
     acct._stale = {}
     acct._raw_cache = None
     acct._raw_ts = 0.0
-    acct._pos_cache = None
-    acct._pos_cache_ts = 0.0
     acct._fx_quote = 1.4
     acct._fx_quote_ts = 0.0
     acct._usd_cache = None
@@ -2392,8 +2373,6 @@ def test_positions_mapping_cached_per_raw_generation(monkeypatch):
     acct._ws = FakeWS()
     acct._resolved = None
     acct._stale = {}
-    acct._pos_cache = None
-    acct._pos_cache_ts = 0.0
     acct._raw_cache = None
     acct._raw_ts = 0.0
     acct._fx_quote = None
@@ -2458,3 +2437,107 @@ def test_positions_cache_invalidates_on_writes():
     assert store.list_positions("paper", "Personal")[0]["qty"] == 2
     store.apply_position("paper", alert, 1, premium=1.5, account="Personal")
     assert store.list_positions("paper", "Personal")[0]["qty"] == 3
+
+
+def _mirror_ws_account(activities):
+    from trader.account import WealthsimpleAccount
+
+    class FakeClient:
+        def get_activities(self, **kw):
+            return {"edges": [{"node": a} for a in activities]}
+
+    class FakeWSAccount:
+        def __init__(self):
+            self._client_obj = FakeClient()
+
+        def _client(self):
+            return self._client_obj
+
+        def _resolve(self):
+            return [("Personal", "pers")]
+
+    return FakeWSAccount()
+
+
+def test_mirror_real_trades_applies_fills():
+    from trader.mirror import MirrorShim, mirror_real_trades
+    from trader.account import PaperLedger
+
+    store = _fresh_store()
+    # a seeded ledger holding 2 of the contract being sold
+    shim = MirrorShim(
+        kind="option", underlying="SPX", expiry="2026-09-25",
+        strike=6000, right="C", action="BUY", premium=1.0,
+        entry=1.0, ts="t",
+    )
+    store.apply_position("paper", shim, 2, premium=1.0,
+                         account="Personal")
+    store.set_paper_equity(500.0, "Personal")
+    store.meta_set("paper_seed:Personal", time.time())
+
+    acts = [
+        {   # real fill: bought 1 more at 1.10 (total 110 usd)
+            "canonicalId": "a1", "type": "BUY", "status": "COMPLETED",
+            "assetSymbol": "SPX", "strikePrice": "6000",
+            "contractType": "CALL", "expiryDate": "2026-09-25",
+            "assetQuantity": "1", "amount": "110.00",
+            "currency": "USD", "occurredAt": "2026-09-22T15:00:00Z",
+        },
+        {   # real fill: sold 1 at 1.50 (total 150 usd)
+            "canonicalId": "a2", "type": "SELL", "status": "COMPLETED",
+            "assetSymbol": "SPX", "strikePrice": "6000",
+            "contractType": "CALL", "expiryDate": "2026-09-25",
+            "assetQuantity": "1", "amount": "150.00",
+            "currency": "USD", "occurredAt": "2026-09-22T15:05:00Z",
+        },
+        {   # cancelled - ignored
+            "canonicalId": "a3", "type": "BUY", "status": "CANCELLED",
+            "assetSymbol": "SPX", "strikePrice": "6000",
+            "contractType": "CALL", "expiryDate": "2026-09-25",
+            "assetQuantity": "1", "amount": "1.00",
+            "currency": "USD", "occurredAt": "2026-09-22T15:06:00Z",
+        },
+    ]
+    ws = _mirror_ws_account(acts)
+    ledger = PaperLedger(cfg=None, store=store, ws_account=None)
+    ledger.fx = lambda: 1.4
+
+    applied = mirror_real_trades(None, store, ws, ledger)
+    assert len(applied) == 2
+    # position: 2 + 1 - 1 = 2
+    assert store.get_position(
+        "paper", "SPX-2026-09-25-6000-C", "Personal"
+    ) == 2
+    # cash: 500 - 110x1.4 + 150x1.4
+    assert store.paper_equity("Personal") == 500 - 154 + 210
+    trades = [t for t in store.recent_trades(10)
+              if "mirrored" in str(t.get("detail", ""))]
+    assert len(trades) == 2
+
+    # a second run dedupes - nothing new applies
+    assert mirror_real_trades(None, store, ws, ledger) == []
+    assert store.get_position(
+        "paper", "SPX-2026-09-25-6000-C", "Personal"
+    ) == 2
+
+
+def test_mirror_skips_unheld_sells():
+    from trader.mirror import mirror_real_trades
+    from trader.account import PaperLedger
+
+    store = _fresh_store()
+    store.meta_set("paper_seed:Personal", time.time())
+    acts = [
+        {   # real sell of a contract the paper ledger never held
+            "canonicalId": "s1", "type": "SELL", "status": "COMPLETED",
+            "assetSymbol": "BFLY", "strikePrice": "7.5",
+            "contractType": "PUT", "expiryDate": "2026-09-18",
+            "assetQuantity": "1", "amount": "55.00",
+            "currency": "USD", "occurredAt": "2026-09-22T15:00:00Z",
+        },
+    ]
+    ws = _mirror_ws_account(acts)
+    ledger = PaperLedger(cfg=None, store=store, ws_account=None)
+    assert mirror_real_trades(None, store, ws, ledger) == []
+    trades = store.recent_trades(5)
+    assert not any("mirrored" in str(t.get("detail", "")) for t in trades)

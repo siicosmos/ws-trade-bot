@@ -323,8 +323,6 @@ class WealthsimpleAccount:
         self._ws = None
         self._resolved = None
         self._stale = {}
-        self._pos_cache = None
-        self._pos_cache_ts = 0.0
         self._raw_cache = None
         self._raw_ts = 0.0
         self._map_cache = None

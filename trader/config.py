@@ -98,6 +98,10 @@ class PaperConfig:
     # from their live values and positions, then alerts execute
     # against the paper ledger
     enabled: bool = False
+    # mirror the user's own real fills (from the activity feed)
+    # into the paper ledger at their execution prices
+    mirror: bool = True
+    mirror_interval_seconds: int = 60
 
 
 @dataclass
@@ -286,6 +290,11 @@ def load_config(path: str) -> Config:
         ),
         paper=PaperConfig(
             enabled=bool(_get(raw.get("paper") or {}, "enabled", False)),
+            mirror=bool(_get(raw.get("paper") or {}, "mirror", True)),
+            mirror_interval_seconds=int(
+                _get(raw.get("paper") or {},
+                     "mirror_interval_seconds", 60)
+            ),
         ),
         auto_update=AutoUpdateConfig(
             enabled=bool(_get(raw.get("auto_update") or {}, "enabled", True)),

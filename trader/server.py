@@ -522,19 +522,6 @@ def create_app(cfg, store: Store, risk, executor, account=None,
         _summary_cache["accounts"] = out
         return out, None
 
-    @app.get("/account")
-    def account_view():
-        accounts, err = _account_summaries()
-        if err:
-            return jsonify({"error": err}), 502
-        return jsonify(
-            {
-                "mode": mode,
-                "accounts": {a["label"]: a for a in accounts},
-                "positions": store.list_positions(mode),
-            }
-        )
-
     @app.get("/api/summary")
     def api_summary():
         accounts, err = _account_summaries()
