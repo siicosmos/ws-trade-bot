@@ -111,7 +111,16 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   .tag.error { color: var(--red); background: #f8514922; }
   .tag.info { color: var(--blue); background: #1f6feb22; }
   .msg { max-width: 420px; white-space: normal; word-break: break-word; color: var(--text); }
-  .detail { max-width: 360px; white-space: normal; word-break: break-word; color: var(--muted); font-size: 12px; }
+  .detail { white-space: normal; word-break: break-word; color: var(--muted); font-size: 12px; }
+  .tlog { table-layout: fixed; }
+  .tlog th:nth-child(1), .tlog td:nth-child(1) { width: 7%; }   /* time */
+  .tlog th:nth-child(2), .tlog td:nth-child(2) { width: 6%; }   /* mode */
+  .tlog th:nth-child(3), .tlog td:nth-child(3) { width: 7%; }   /* action */
+  .tlog th:nth-child(4), .tlog td:nth-child(4) { width: 5%; }   /* qty */
+  .tlog th:nth-child(5), .tlog td:nth-child(5) { width: 9%; }   /* ticker */
+  .tlog th:nth-child(6), .tlog td:nth-child(6) { width: 6%; }   /* price */
+  .tlog th:nth-child(7), .tlog td:nth-child(7) { width: 8%; }   /* status */
+  .tlog th:nth-child(8), .tlog td:nth-child(8) { width: 52%; }  /* detail */
   .empty { color: var(--muted); font-size: 13px; padding: 14px; text-align: center; background: var(--panel); border-radius: 8px; }
   .num { text-align: right; }
   .subv { display: block; font-size: 11px; color: var(--muted); }
@@ -511,7 +520,7 @@ async function loadTrades() {
   const rows = await api("/api/trades");
   const el = document.getElementById("trades");
   if (!rows.length) { el.innerHTML = '<div class="empty">no trades yet</div>'; return; }
-  let html = "<table><tr><th>Time</th><th>Mode</th><th>Action</th><th class=num>Qty</th><th>Ticker</th><th class=num>Price</th><th>Status</th><th>Detail</th></tr>";
+  let html = "<table class=\"tlog\"><tr><th>Time</th><th>Mode</th><th>Action</th><th class=num>Qty</th><th>Ticker</th><th class=num>Price</th><th>Status</th><th>Detail</th></tr>";
   for (const t of rows) {
     const actionTag = t.action === "BUY" ? "buy" : "sell";
     let statusTag = "ignored";
