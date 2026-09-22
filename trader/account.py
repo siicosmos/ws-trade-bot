@@ -180,10 +180,26 @@ class PaperLedger:
                 return hint
         return 1.0
 
+    def _start_value(self, label):
+        for acct in effective_accounts(self.cfg):
+            if (
+                account_label(acct) == label
+                and acct.paper_value is not None
+            ):
+                return float(acct.paper_value)
+        return float(
+            getattr(
+                self.cfg.trading, "paper_account_value", 10000
+            )
+        )
+
     def value(self, label: str = "default") -> float:
         cash = self.store.paper_equity(label)
         if cash is None:
-            return 0.0
+            # never seeded (no live data) - fall back to the
+            # configured paper start value like the classic ledger
+            cash = self._start_value(label)
+            self.store.set_paper_equity(cash, label)
         quotes = self._quotes()
         fx = self.fx()
         total = cash

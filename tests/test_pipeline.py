@@ -2711,3 +2711,42 @@ def test_paper_positions_endpoint():
     # disabled -> empty
     cfg.paper.enabled = False
     assert client.get("/api/paper-positions").get_json() == {}
+
+
+def test_paper_ledger_falls_back_to_config_values():
+    from trader.account import PaperLedger
+
+    store = _fresh_store()
+    ledger = PaperLedger(cfg=None, store=store, ws_account=None)
+    ledger.cfg = ConfigStub(
+        TradingConfig(mode="paper", paper_account_value=10000),
+        accounts=[
+            WSAccountConfig(account_id="rrsp", label="RRSP",
+                            paper_value=50000),
+        ],
+    )
+    assert ledger.value("RRSP") == 50000.0
+    assert store.paper_equity("RRSP") == 50000.0
+    assert ledger.value("unknown") == 10000.0
+
+
+def test_summary_paper_flag_in_paper_mode():
+    accounts = [
+        WSAccountConfig(account_id="pers", label="Personal",
+                        paper_value=2000),
+    ]
+    store = _fresh_store()
+    cfg = ConfigStub(
+        TradingConfig(mode="paper", risk_per_trade_pct=5),
+        accounts=accounts,
+    )
+    cfg.paper = type("Paper", (), {"enabled": False})()
+    account = PaperAccount(cfg, store)
+    risk = RiskEngine(cfg, store, account)
+    app = __import__(
+        "trader.server", fromlist=["create_app"]
+    ).create_app(cfg, store, risk, PaperExecutor(cfg, store, account),
+                 account)
+    summary = app.test_client().get("/api/summary").get_json()
+    # paper badge shows in paper mode even without paper.enabled
+    assert summary["paper"] is True

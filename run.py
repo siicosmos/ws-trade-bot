@@ -54,20 +54,21 @@ def main():
     executor = None
     paper_ledger = None
 
-    if mode == "paper":
-        account = PaperAccount(cfg, store)
-        executor = PaperExecutor(cfg, store, account)
-    elif mode == "live":
+    if mode == "live":
         account = WealthsimpleAccount(cfg, store)
         executor = WealthsimpleExecutor(cfg, account)
     else:
-        if not cfg.discord.webhook_url:
+        # notify and paper share one pipeline: parse, record and
+        # (notify only) push alerts to the phone. paper mode is
+        # the quiet variant - simulated execution without the
+        # notifications
+        if mode == "notify" and not cfg.discord.webhook_url:
             print(
                 "WARNING: notify mode but discord.webhook_url is not set - "
                 "alerts will not reach your phone"
             )
         account = WealthsimpleAccount(cfg, store)
-        if cfg.paper.enabled:
+        if mode == "paper" or cfg.paper.enabled:
             from trader.account import PaperLedger, seed_paper_accounts
 
             seeded = seed_paper_accounts(cfg, store, account)
@@ -78,7 +79,11 @@ def main():
                 )
             paper_ledger = PaperLedger(cfg, store, account)
             executor = PaperExecutor(cfg, store, paper_ledger)
-            print("paper trading enabled alongside notify")
+            print(
+                "paper trading "
+                + ("(quiet mode)" if mode == "paper"
+                   else "enabled alongside notify")
+            )
             if cfg.paper.mirror:
                 from trader.mirror import start_mirror_thread
 
@@ -91,7 +96,6 @@ def main():
                     f"every {cfg.paper.mirror_interval_seconds}s"
                 )
         try:
-            account = WealthsimpleAccount(cfg, store)
             account.values()
             stale = None
             stale_fn = getattr(account, "stale_age", None)

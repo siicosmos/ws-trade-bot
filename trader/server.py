@@ -540,7 +540,7 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                 "paper": bool(
                     getattr(
                         getattr(cfg, "paper", None), "enabled", False
-                    )
+                    ) or mode == "paper",
                 ),
                 "accounts": accounts,
                 "reader": reader,

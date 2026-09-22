@@ -1,8 +1,13 @@
 # ---------------------------------------------------------------------------
-# Paper trading: runs alongside notify mode. Each account is seeded
-# once from its live value and positions; alerts then execute against
-# the simulated ledger (sells of unheld contracts are ignored) and a
-# paper card appears under the real account card.
+# Execution model - two axes:
+#   trading.mode: notify (no execution, alerts to your phone) |
+#                 paper (simulated execution, quiet) | live (real orders)
+#   paper.enabled below: adds simulated execution to notify mode,
+#                 i.e. notify + paper.enabled == paper mode, but with
+#                 phone notifications. Both seed each account once
+#                 from its live value and positions; sells of unheld
+#                 contracts are ignored, and a paper card appears
+#                 under the real account card.
 # ---------------------------------------------------------------------------
 paper:
   enabled: false
