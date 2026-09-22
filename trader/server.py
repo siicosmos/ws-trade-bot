@@ -282,6 +282,18 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                     for r in live["positions"]
                 ), 2)
 
+            # allocation base: gross assets, independent of how the
+            # loan is reported - holdings plus positive cash only
+            alloc_base = None
+            if (stock_value or 0) or (option_value or 0):
+                pos_cash = max(cash_cad or 0.0, 0.0)
+                if cash_usd and cash_usd > 0:
+                    pos_cash += cash_usd * conv_fx
+                alloc_base = round(
+                    (stock_value or 0) + (option_value or 0)
+                    + pos_cash, 2
+                )
+
             def _registered_plan():
                 type_map_fn = getattr(account, "account_type_map", None)
                 resolve_fn = getattr(account, "_resolve", None)
@@ -436,6 +448,7 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                     "open_risk": open_risk,
                     "stock_value": stock_value,
                     "option_value": option_value,
+                    "alloc_base": alloc_base,
                     "margin_requirement": margin_req,
                     "margin_breakdown": req_parts,
                     "margin_used": margin_used,

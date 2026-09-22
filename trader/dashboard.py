@@ -323,10 +323,10 @@ function marginUsageBar(a) {
 
 function allocBar(a) {
   if (!(a.stock_value || a.option_value) || !a.value) return "";
-  // margin accounts hold more than their net equity - the gross
-  // portfolio value is the allocation base
-  const base = (a.portfolio_value != null && !isNaN(a.portfolio_value))
-    ? a.portfolio_value : a.value;
+  // base on gross assets (holdings + positive cash) so borrowed
+  // funds never push the percentages past 100
+  const base = (a.alloc_base != null && !isNaN(a.alloc_base))
+    ? a.alloc_base : a.value;
   const sp = Math.min(100, a.stock_value / base * 100);
   const op = Math.min(100, a.option_value / base * 100);
   return '<div class="riskbar"><div style="width:' + sp + '%;background:#4493f8"></div>' +

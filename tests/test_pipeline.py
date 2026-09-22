@@ -2054,3 +2054,38 @@ def test_sell_strike_mismatch_detected():
     assert ok["status"] == "notified"
     last = store.recent_trades(1)[0]
     assert "differs from" not in str(last.get("detail", ""))
+
+
+def test_allocation_base_is_gross_assets():
+    app, store, account = _make_app()
+    client = app.test_client()
+    account.open_option_positions = lambda: {
+        "Personal": {
+            "positions": [
+                {"market_value": 100.0, "risk_cad": 120.0,
+                 "cost_cad": 130.0, "short": False, "spread": True,
+                 "strike": "6000/6005", "qty": 1},
+            ],
+            "fx": 1.25,
+        },
+    }
+    account.stock_holdings = lambda: {
+        "Personal": [
+            {"market_value": 800.0, "currency": "USD"},
+            {"market_value": 500.0, "currency": "CAD"},
+        ],
+    }
+    account.funding_balances = lambda: {
+        "Personal": [
+            # a loan must not enter the allocation base
+            {"currency": "CAD", "amount": 0.30},
+            {"currency": "USD", "amount": -114.29},
+        ],
+    }
+    account.values = lambda: {"Personal": 1767.30}
+    account.account_type_map = lambda: {"pers": "PERSONAL"}
+    account._resolve = lambda: [("Personal", "pers")]
+    summary = client.get("/api/summary").get_json()
+    row = next(a for a in summary["accounts"] if a["label"] == "Personal")
+    # stocks 1500 + option 125 + cash 0.30 - no loan
+    assert row["alloc_base"] == round(1500 + 125 + 0.30, 2)
