@@ -112,15 +112,7 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   .tag.info { color: var(--blue); background: #1f6feb22; }
   .msg { max-width: 420px; white-space: normal; word-break: break-word; color: var(--text); }
   .detail { white-space: normal; word-break: break-word; color: var(--muted); font-size: 12px; }
-  .tlog { table-layout: fixed; }
-  .tlog th:nth-child(1), .tlog td:nth-child(1) { width: 7%; }   /* time */
-  .tlog th:nth-child(2), .tlog td:nth-child(2) { width: 6%; }   /* mode */
-  .tlog th:nth-child(3), .tlog td:nth-child(3) { width: 7%; }   /* action */
-  .tlog th:nth-child(4), .tlog td:nth-child(4) { width: 5%; }   /* qty */
-  .tlog th:nth-child(5), .tlog td:nth-child(5) { width: 9%; }   /* ticker */
-  .tlog th:nth-child(6), .tlog td:nth-child(6) { width: 6%; }   /* price */
-  .tlog th:nth-child(7), .tlog td:nth-child(7) { width: 8%; }   /* status */
-  .tlog th:nth-child(8), .tlog td:nth-child(8) { width: 52%; }  /* detail */
+  .tlog th:not(:last-child), .tlog td:not(:last-child) { white-space: nowrap; }
   .empty { color: var(--muted); font-size: 13px; padding: 14px; text-align: center; background: var(--panel); border-radius: 8px; }
   .num { text-align: right; }
   .subv { display: block; font-size: 11px; color: var(--muted); }
