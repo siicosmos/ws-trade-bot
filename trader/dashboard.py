@@ -321,6 +321,15 @@ function marginUsageBar(a) {
     '<div class="sub"><span style="color:' + color + '">margin used ' + pct.toFixed(1) + '%</span><span>utilization</span></div>';
 }
 
+function stratTag(s) {
+  s = (s || "").toLowerCase();
+  if (s.includes("iron condor")) return s.includes("broken") ? "BW condor" : "condor";
+  if (s.includes("iron butterfly")) return "iron fly";
+  if (s.includes("butterfly")) return s.includes("broken") ? "BWB" : "fly";
+  if (s.includes("ratio")) return "ratio";
+  return "spread";
+}
+
 function allocBar(a) {
   if (!(a.stock_value || a.option_value) || !a.value) return "";
   // base on gross assets (holdings + positive cash) so borrowed
@@ -376,7 +385,7 @@ function renderPositionsInto(elId, rows, emptyText) {
         '</span><br><span style="font-size:11px;color:var(--muted)">' +
         esc(String(p.expiry || "").slice(0, 10)) + "</span> " +
         dteBadge(p.expiry)) + "</td>" +
-      '<td class=num>' + (p.short ? "-" + p.qty : p.qty) + (p.short ? ' <span class="tag skip mini" title="short position">short</span>' : "") + (p.spread ? ' <span class="tag ignored mini" title="' + esc(p.strategy_type || "multi-leg spread") + '">spread</span>' : "") + "</td>" +
+      '<td class=num>' + (p.short ? "-" + p.qty : p.qty) + (p.short ? ' <span class="tag skip mini" title="short position">short</span>' : "") + (p.spread ? ' <span class="tag ignored mini" title="' + esc(p.strategy_type || "multi-leg spread") + '">' + stratTag(p.strategy_type) + '</span>' : "") + "</td>" +
       '<td class=num>' + (p.avg_premium == null
         ? "—"
         : (isStock

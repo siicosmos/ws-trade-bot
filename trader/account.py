@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from typing import List
 
 from .config import WSAccountConfig
+from .strategies import classify_legs
 from .ws_tokens import persist_env_tokens
 
 
@@ -599,6 +600,38 @@ class WealthsimpleAccount:
                              .get("stock") or {}).get("symbol")
                         )
                     strikes.sort()
+                    # name the structure from its legs when we can
+                    # (richer than WS's raw VERTICAL_SPREAD tag)
+                    leg_infos = []
+                    for leg in legs_data:
+                        lod = (leg.get("security") or {}).get(
+                            "optionDetails"
+                        ) or {}
+                        if not lod:
+                            continue
+                        try:
+                            lqty = abs(float(leg.get("quantity") or qty))
+                        except (TypeError, ValueError):
+                            lqty = qty
+                        lshort = str(
+                            leg.get("positionDirection") or ""
+                        ).upper() == "SHORT"
+                        leg_infos.append(
+                            {
+                                "strike": lod.get("strikePrice"),
+                                "right": (
+                                    "C" if str(
+                                        lod.get("optionType") or ""
+                                    ).upper().startswith("CALL")
+                                    else "P"
+                                ),
+                                "short": lshort,
+                                "qty": lqty,
+                            }
+                        )
+                    named = classify_legs(leg_infos) or {}
+                    if named.get("name"):
+                        strategy_type = named["name"]
                     leg_fx = (
                         cost_cad / cost_usd
                         if cost_usd and cost_cad else None
@@ -757,20 +790,139 @@ class WealthsimpleAccount:
                 )
             if fx:
                 self._fx_hint = fx
-            # multi-leg positions (spreads) collapse into one row:
-            # net cost, combined market value, and risk that reflects
-            # the defined-loss structure instead of raw leg sums
+            # multi-leg positions collapse into one row per strategy:
+            # verticals, butterflies, condors and iron butterflies
+            # are named from their legs and risked by structure
+            def _strategy_row(underlying, expiry, legs):
+                def signed(leg, field):
+                    value = leg.get(field) or 0
+                    return -value if leg["short"] else value
+
+                net_cost_usd = sum(
+                    signed(l, "cost_usd") for l in legs
+                )
+                net_cost_cad = sum(
+                    signed(l, "cost_cad") for l in legs
+                )
+                net_mv_usd = sum(
+                    signed(l, "market_value") for l in legs
+                )
+                qty_set = {abs(l["qty"]) for l in legs}
+                qty = (
+                    qty_set.pop() if len(qty_set) == 1
+                    else max(qty_set)
+                )
+                leg_fx = None
+                for l in legs:
+                    if l["cost_usd"] and l["cost_cad"]:
+                        leg_fx = (
+                            abs(l["cost_cad"])
+                            / abs(l["cost_usd"])
+                        )
+                        break
+                if leg_fx is None:
+                    leg_fx = self._usd_cad_quote()
+
+                info = classify_legs(
+                    [
+                        {
+                            "strike": l["strike"],
+                            "right": l["right"],
+                            "short": l["short"],
+                            "qty": l["qty"],
+                        }
+                        for l in legs
+                    ]
+                )
+                strikes = sorted(
+                    float(l["strike"]) for l in legs
+                )
+                if info is None:
+                    info = {
+                        "name": None, "kind": "vertical",
+                        "qty": qty,
+                        "strikes": strikes,
+                        "width": strikes[-1] - strikes[0],
+                        "debit": None,
+                    }
+                qty = info.get("qty") or qty
+                width = (info.get("width") or 0) * 100 * qty
+                if info.get("kind") in (
+                    "condor", "iron_fly", "butterfly"
+                ):
+                    # defined-risk multi-wing structures: debit is
+                    # the max loss when bought, otherwise the
+                    # widest wing minus the credit
+                    if net_cost_usd >= 0:
+                        risk_usd = net_cost_usd
+                    else:
+                        risk_usd = max(
+                            0.0, width - abs(net_cost_usd)
+                        )
+                elif net_cost_usd >= 0:
+                    risk_usd = net_cost_usd     # debit vertical
+                else:
+                    risk_usd = max(
+                        0.0, width - abs(net_cost_usd)
+                    )
+                profit = net_mv_usd - net_cost_usd
+                per_unit = (
+                    net_cost_usd / (qty * 100) if qty else None
+                )
+                cur_unit = (
+                    net_mv_usd / (qty * 100) if qty else None
+                )
+                rights = {l["right"] for l in legs}
+                right = (
+                    next(iter(rights)) if len(rights) == 1 else None
+                )
+                strike_str = "/".join(
+                    f"{s:g}" for s in info.get("strikes") or strikes
+                )
+                return {
+                    "contract_key": (
+                        f"{underlying} {strike_str}"
+                        f"{right or 'C/P'}"
+                    ),
+                    "underlying": underlying,
+                    "expiry": expiry,
+                    "strike": strike_str,
+                    "right": right,
+                    "qty": qty,
+                    # net-short (credit) structures are sold - show
+                    # the negative quantity and direction
+                    "short": net_cost_usd < 0,
+                    "spread": True,
+                    "strategy_type": info.get("name"),
+                    "avg_premium": round(per_unit, 4)
+                    if per_unit is not None else None,
+                    "cost": net_cost_usd,
+                    "cost_usd": net_cost_usd,
+                    "cost_cad": net_cost_cad,
+                    "risk_cad": round(risk_usd * leg_fx, 2)
+                    if (leg_fx and risk_usd) else None,
+                    "current_price": round(cur_unit, 4)
+                    if cur_unit is not None else None,
+                    "market_value": round(net_mv_usd, 2),
+                    # return on the premium: an expired credit
+                    # structure keeps its full credit (+100%)
+                    "pct_return": round(
+                        profit / abs(net_cost_usd) * 100, 1
+                    )
+                    if net_cost_usd else None,
+                }
+
             groups = {}
             for r in rows:
                 if r.get("strategy_type"):
                     # already combined by WS - keep node-level values
                     continue
-                key = (r["underlying"], r["expiry"], r["right"])
+                key = (r["underlying"], r["expiry"])
                 groups.setdefault(key, []).append(r)
             combined = [
                 r for r in rows if r.get("strategy_type")
             ]
-            for key, legs in groups.items():
+            for (underlying, expiry), legs in groups.items():
                 if len(legs) == 1:
                     leg = legs[0]
                     leg["risk_cad"] = (
@@ -778,66 +930,17 @@ class WealthsimpleAccount:
                     )
                     combined.append(leg)
                     continue
-                legs.sort(key=lambda r: float(r["strike"]))
-
-                def signed(leg, field):
-                    value = leg.get(field) or 0
-                    return -value if leg["short"] else value
-
-                net_cost_usd = sum(signed(l, "cost_usd") for l in legs)
-                net_cost_cad = sum(signed(l, "cost_cad") for l in legs)
-                net_mv_usd = sum(signed(l, "market_value") for l in legs)
-                qty_set = {abs(l["qty"]) for l in legs}
-                qty = qty_set.pop() if len(qty_set) == 1 else max(qty_set)
-                strikes = sorted(float(l["strike"]) for l in legs)
-                underlying, expiry, right = key
-                width = (strikes[-1] - strikes[0]) * 100 * qty
-                leg_fx = None
-                for l in legs:
-                    if l["cost_usd"] and l["cost_cad"]:
-                        leg_fx = abs(l["cost_cad"]) / abs(l["cost_usd"])
-                        break
-                if leg_fx is None:
-                    leg_fx = self._usd_cad_quote()
-                if net_cost_usd >= 0:
-                    risk_usd = net_cost_usd             # debit spread
-                else:
-                    risk_usd = max(0.0, width - abs(net_cost_usd))
-                profit = net_mv_usd - net_cost_usd
-                per_unit = net_cost_usd / (qty * 100) if qty else None
-                cur_unit = net_mv_usd / (qty * 100) if qty else None
+                if len({l["right"] for l in legs}) > 1:
+                    # mixed call/put legs: condor / iron butterfly
+                    combined.append(
+                        _strategy_row(underlying, expiry, legs)
+                    )
+                    continue
+                legs = sorted(
+                    legs, key=lambda r: float(r["strike"])
+                )
                 combined.append(
-                    {
-                        "contract_key": (
-                            f"{underlying} {strikes[0]:g}/"
-                            f"{strikes[-1]:g}{right}"
-                        ),
-                        "underlying": underlying,
-                        "expiry": expiry,
-                        "strike": f"{strikes[0]:g}/{strikes[-1]:g}",
-                        "right": right,
-                        "qty": qty,
-                        # net-short (credit) spreads are sold - show
-                        # the negative quantity and direction
-                        "short": net_cost_usd < 0,
-                        "spread": True,
-                        "avg_premium": round(per_unit, 4)
-                        if per_unit is not None else None,
-                        "cost": net_cost_usd,
-                        "cost_usd": net_cost_usd,
-                        "cost_cad": net_cost_cad,
-                        "risk_cad": round(risk_usd * leg_fx, 2)
-                        if (leg_fx and risk_usd) else None,
-                        "current_price": round(cur_unit, 4)
-                        if cur_unit is not None else None,
-                        "market_value": round(net_mv_usd, 2),
-                        # return on the premium: an expired credit
-                        # spread keeps its full credit (+100%)
-                        "pct_return": round(
-                            profit / abs(net_cost_usd) * 100, 1
-                        )
-                        if net_cost_usd else None,
-                    }
+                    _strategy_row(underlying, expiry, legs)
                 )
             rows = combined
 

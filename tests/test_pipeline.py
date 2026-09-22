@@ -1520,14 +1520,16 @@ def test_app_document_positions_and_margin():
         "strategyType": "VERTICAL_SPREAD",
         "marginRequirement": {"amount": "55.00", "currency": "USD"},
         "legs": [
-            {"security": {"optionDetails": {
+            {"quantity": "2", "positionDirection": "SHORT",
+             "security": {"optionDetails": {
                 "strikePrice": "6000", "optionType": "CALL",
                 "expiryDate": "2026-09-18",
                 "underlyingSecurity": {"stock": {"symbol": "SPX"}},
             }}},
-            {"security": {"optionDetails": {
+            {"quantity": "2", "positionDirection": "LONG",
+             "security": {"optionDetails": {
                 "strikePrice": "6010", "optionType": "CALL",
-            }}},
+             }}},
         ],
         "security": {},
     }
@@ -1613,7 +1615,7 @@ def test_app_document_positions_and_margin():
     opts = acct.open_option_positions()["T"]
     assert len(opts["positions"]) == 2
     sp = opts["positions"][0]
-    assert sp["strategy_type"] == "VERTICAL_SPREAD"
+    assert sp["strategy_type"] == "call credit spread"
     assert sp["spread"] is True
     assert sp["short"] is True            # net-short credit spread
     assert sp["qty"] == 2
@@ -2089,3 +2091,115 @@ def test_allocation_base_is_gross_assets():
     row = next(a for a in summary["accounts"] if a["label"] == "Personal")
     # stocks 1500 + option 125 + cash 0.30 - no loan
     assert row["alloc_base"] == round(1500 + 125 + 0.30, 2)
+
+
+def test_strategy_classifier_names():
+    from trader.strategies import classify_legs as cl
+
+    def leg(strike, right, short, qty=1):
+        return {"strike": strike, "right": right,
+                "short": short, "qty": qty}
+
+    assert cl([leg(600, "C", False), leg(610, "C", True)])[
+        "name"] == "call debit spread"
+    assert cl([leg(600, "C", True), leg(610, "C", False)])[
+        "name"] == "call credit spread"
+    assert cl([leg(600, "P", False), leg(590, "P", True)])[
+        "name"] == "put debit spread"
+    assert cl([leg(600, "P", True), leg(590, "P", False)])[
+        "name"] == "put credit spread"
+    # long call butterfly: wings long, body short
+    assert cl([leg(590, "C", False), leg(600, "C", True, 2),
+               leg(610, "C", False)])["name"] == "long call butterfly"
+    # short broken wing put butterfly
+    assert cl([leg(590, "P", True), leg(600, "P", False, 2),
+               leg(620, "P", True)])[
+        "name"] == "short put broken wing butterfly"
+    # short iron condor: call credit + put credit
+    assert cl([leg(6100, "C", True), leg(6110, "C", False),
+               leg(5900, "P", True), leg(5890, "P", False)])[
+        "name"] == "short iron condor"
+    # long broken wing iron condor: both debits, unequal widths
+    assert cl([leg(6100, "C", False), leg(6110, "C", True),
+               leg(5900, "P", False), leg(5860, "P", True)])[
+        "name"] == "long broken wing iron condor"
+    # short iron butterfly: shared body strike
+    assert cl([leg(6000, "C", True), leg(6010, "C", False),
+               leg(6000, "P", True), leg(5990, "P", False)])[
+        "name"] == "short iron butterfly"
+    # ratio spread
+    assert cl([leg(600, "C", False), leg(610, "C", True, 2)])[
+        "name"] == "call ratio spread"
+    # unrecognized mix
+    assert cl([leg(600, "C", False), leg(600, "P", False)]) is None
+
+
+def test_condor_combines_verticals():
+    from trader.account import WealthsimpleAccount
+
+    def leg(strike, right, direction, book_usd, mv_quote):
+        return {
+            "quantity": "1",
+            "positionDirection": direction,
+            "bookValue": {"amount": str(book_usd * 1.4)},
+            "marketBookValue": {"amount": str(book_usd)},
+            "totalValue": {"amount": str(mv_quote * 100)},
+            "security": {
+                "securityType": "OPTION",
+                "stock": {"symbol": "SPX"},
+                "optionDetails": {
+                    "strikePrice": str(strike),
+                    "optionType": "CALL" if right == "C" else "PUT",
+                    "expiryDate": "2026-09-25",
+                    "multiplier": "100",
+                    "underlyingSecurity": {"stock": {"symbol": "SPX"}},
+                },
+                "quoteV2": {"price": str(mv_quote)},
+            },
+        }
+
+    class FakeWS:
+        def get_positions(self, account_ids=None, **kw):
+            return [
+                # short call spread + short put spread = condor
+                leg(6100, "C", "SHORT", -180, 1.5),
+                leg(6110, "C", "LONG", 95, 0.8),
+                leg(5900, "P", "SHORT", -150, 1.2),
+                leg(5890, "P", "LONG", 80, 0.6),
+            ]
+
+    class FakeCfg:
+        class wealthsimple:
+            positions_refresh_seconds = 30
+            values_refresh_seconds = 60
+
+    acct = WealthsimpleAccount.__new__(WealthsimpleAccount)
+    acct.cfg = FakeCfg()
+    acct._ws = FakeWS()
+    acct._resolved = None
+    acct._stale = {}
+    acct._pos_cache = None
+    acct._pos_cache_ts = 0.0
+    acct._raw_cache = None
+    acct._raw_ts = 0.0
+    acct._fx_quote = 1.4
+    acct._fx_quote_ts = 0.0
+    acct._usd_cache = None
+    acct._usd_cache_ts = 0.0
+    acct._cache = None
+    acct._cache_ts = 0.0
+    import unittest.mock as mock
+    with mock.patch.object(acct, "_resolve",
+                           lambda: [("T", "a1")]):
+        rows = acct.open_option_positions()["T"]["positions"]
+    assert len(rows) == 1
+    condor = rows[0]
+    assert condor["strategy_type"] == "short iron condor"
+    assert condor["spread"] is True
+    assert condor["short"] is True
+    # credit: -180 + 95 - 150 + 80 = -155
+    assert condor["cost_usd"] == -155.0
+    # risk = max width (10) x 100 - credit
+    assert condor["risk_cad"] == round(
+        (10 * 100 - 155) * 1.4, 2
+    )
