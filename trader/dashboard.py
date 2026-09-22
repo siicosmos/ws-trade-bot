@@ -38,8 +38,10 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   }
   .headrow {
     display: flex; align-items: center; flex-basis: 100%;
-    gap: 10px; flex-wrap: wrap;
+    gap: 10px; white-space: nowrap; overflow: hidden;
   }
+  .headrow #stops, .headrow #reader { overflow: hidden;
+    text-overflow: ellipsis; }
   #logout {
     color: var(--muted); font-size: 12px; text-decoration: none;
     border: 1px solid var(--border); border-radius: 6px;
@@ -131,10 +133,12 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
     <span id="mode" class="badge notify">notify</span>
     <span id="timebox"><span id="clock"></span></span>
   </div>
-  <div style="display:flex;flex-basis:100%;gap:18px;flex-wrap:wrap;color:var(--muted);font-size:12px;align-items:center">
+  <div class="headrow" style="color:var(--muted);font-size:12px;gap:18px">
     <span id="reader"></span>
-    <span id="updated">data refreshed</span>
     <span id="git"></span>
+  </div>
+  <div class="headrow" style="color:var(--muted);font-size:12px;gap:18px">
+    <span id="updated">data refreshed</span>
     <span id="stops"></span>
     <a href="/logout" id="logout" style="margin-left:auto">log out</a>
   </div>
