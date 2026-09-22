@@ -92,7 +92,7 @@ def test_open_risk_percentage_colored_by_cap():
 
     js = re.findall(r"<script>(.*?)</script>",
                     dash.DASHBOARD_HTML, re.S)[0]
-    assert "open risk ' + fmtMoney(risk)" in js
+    assert 'open risk \' + (hidden ? "••••••" : fmtMoney(risk)' in js
     assert "color:' + color" in js
     assert "font-weight:700" in js
 
@@ -366,3 +366,12 @@ def test_portfolio_value_and_tappable_breakdown():
     assert "portfolio value" in js
     assert "toggleMarginBreakdown" in js
     assert 'white-space:pre-line' in js
+
+
+def test_open_risk_and_breakdown_masked():
+    import trader.dashboard as dash
+
+    js = re.findall(r"<script>(.*?)</script>",
+                    dash.DASHBOARD_HTML, re.S)[0]
+    assert 'open risk \' + (hidden ? "••••••"' in js
+    assert '(hidden ? "" : esc((a.margin_breakdown' in js
