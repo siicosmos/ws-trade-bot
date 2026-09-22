@@ -104,7 +104,8 @@ class PaperLedger:
         """{contract_key: price} from live positions, cached."""
         now = time.time()
         refresh = getattr(
-            self.cfg.wealthsimple, "positions_refresh_seconds", 30
+            getattr(self.cfg, "wealthsimple", None),
+            "positions_refresh_seconds", 30,
         )
         if (
             self._quote_cache is not None
@@ -201,6 +202,45 @@ class PaperLedger:
                 * (fx if quote.get("usd") else 1.0)
             )
         return round(total, 2)
+
+    def positions(self, label):
+        """Detailed paper holdings: live-priced rows with P&L
+        against the (fx-converted) cost basis."""
+        quotes = self._quotes()
+        fx = self.fx()
+        rows = []
+        for pos in self.store.list_positions("paper", label):
+            quote = quotes.get(pos["contract_key"])
+            is_option = pos.get("right") not in (None, "", "?")
+            if quote is None:
+                price = pos.get("avg_premium") or 0.0
+                usd = is_option
+            else:
+                price = quote["price"]
+                usd = quote.get("usd", is_option)
+            mult = 100 if is_option else 1
+            value = (pos["qty"] or 0) * price * mult * (
+                fx if usd else 1.0
+            )
+            cost = (
+                (pos["qty"] or 0) * (pos.get("avg_premium") or 0.0)
+                * mult * (fx if usd else 1.0)
+            )
+            pnl = (
+                round((value / cost - 1) * 100, 1)
+                if cost else None
+            )
+            rows.append(
+                {
+                    "contract_key": pos["contract_key"],
+                    "underlying": pos.get("underlying"),
+                    "qty": pos["qty"],
+                    "avg": round(pos.get("avg_premium") or 0.0, 4),
+                    "value": round(value, 2),
+                    "pnl": pnl,
+                }
+            )
+        return rows
 
     def values(self) -> dict:
         return {

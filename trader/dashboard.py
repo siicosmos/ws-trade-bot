@@ -154,10 +154,10 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 <h2>Stock Holdings <button id="toggle-stocks" onclick="toggleStocks()" style="float:right;background:#21262d;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 14px;font-size:12px;cursor:pointer">Show holdings</button></h2>
 <div id="stock-positions"></div>
 
-<h2>Recent Alerts <button id="toggle-ignored" onclick="toggleIgnored()" style="float:right;background:#21262d;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 14px;font-size:12px;cursor:pointer">Hide ignored</button></h2>
+<h2>Recent Alerts <span style="float:right"><button id="toggle-alerts" onclick="toggleAlerts()" style="background:#21262d;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 14px;font-size:12px;cursor:pointer">Hide</button> <button id="toggle-ignored" onclick="toggleIgnored()" style="background:#21262d;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 14px;font-size:12px;cursor:pointer">Hide ignored</button></span></h2>
 <div id="signals"></div>
 
-<h2>Trade Log</h2>
+<h2>Trade Log <button id="toggle-trades" onclick="toggleTrades()" style="float:right;background:#21262d;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 14px;font-size:12px;cursor:pointer">Hide</button></h2>
 <div id="trades"></div>
 
 <h2>Settings <button id="settings-toggle" onclick="toggleSettings()" style="background:#21262d;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 14px;font-size:12px;cursor:pointer">Show</button></h2>
@@ -237,8 +237,27 @@ function fmtTime(ts) {
     pad(d.getHours()) + ":" + pad(d.getMinutes());
 }
 
+let paperOpen = localStorage.getItem("ws_paper_open") || "";
+let paperPositions = null;
+
+function togglePaper(label) {
+  paperOpen = paperOpen === label ? "" : label;
+  localStorage.setItem("ws_paper_open", paperOpen);
+  loadSummary();
+}
+
+async function loadPaperPositions() {
+  if (!paperOpen) { paperPositions = null; return; }
+  try {
+    paperPositions = await api("/api/paper-positions");
+  } catch (e) {
+    paperPositions = null;
+  }
+}
+
 async function loadSummary() {
   const data = await api("/api/summary");
+  await loadPaperPositions();
   const modeEl = document.getElementById("mode");
   modeEl.textContent = data.mode;
   modeEl.className = "badge " + data.mode;
@@ -319,8 +338,11 @@ async function loadSummary() {
         : pnl >= 0 ? "var(--green)" : "var(--red)";
       const pc = document.createElement("div");
       pc.className = "card papercard";
+      const open = paperOpen === a.label;
+      const rows = (paperPositions || {})[a.label] || [];
       pc.innerHTML =
-        '<div class="label">paper · ' + esc(a.label) + '</div>' +
+        '<div class="label" style="cursor:pointer" onclick="togglePaper(\'' + esc(a.label) + '\')">paper · ' + esc(a.label) +
+        (rows.length || open ? ' ▾' : '') + '</div>' +
         '<div class="value" style="font-size:20px">' + (hidden ? "••••••" : fmtMoney(a.paper_value) + " cad") +
         (pnl == null ? '' :
           ' <span style="font-size:13px;color:' + pnlColor + '">' +
@@ -328,7 +350,17 @@ async function loadSummary() {
           (pnlPct != null ? " (" + (pnl >= 0 ? "+" : "") + pnlPct.toFixed(1) + "%)" : "") + '</span>') +
         '</div>' +
         '<div class="sub"><span>seeded ' + (hidden ? "••••••" : (a.paper_initial != null ? fmtMoney(a.paper_initial) + " cad" : "—")) + '</span>' +
-        '<span>simulated</span></div>';
+        '<span>' + rows.length + ' positions</span></div>' +
+        (open && rows.length ?
+          '<table class="pos" style="margin-top:10px;font-size:12px"><tr><th>Contract</th><th class=num>Qty</th><th class=num>Avg $</th><th class=num>Value</th><th class=num>Return</th></tr>' +
+          rows.map(function(r) {
+            const rc = r.pnl == null ? "var(--muted)" : r.pnl >= 0 ? "var(--green)" : "var(--red)";
+            return '<tr><td>' + esc(r.contract_key) + '</td>' +
+              '<td class=num>' + r.qty + '</td>' +
+              '<td class=num>' + (r.avg != null ? "$" + r.avg : "—") + '</td>' +
+              '<td class=num>' + (hidden ? "••••••" : fmtMoney(r.value)) + '</td>' +
+              '<td class=num style="color:' + rc + '">' + (r.pnl == null ? "—" : (r.pnl >= 0 ? "+" : "") + r.pnl + "%") + '</td></tr>';
+          }).join("") + '</table>' : '');
       wrap.appendChild(pc);
     }
     el.appendChild(wrap);
@@ -485,6 +517,23 @@ function toggleCardHidden(label) {
 }
 
 let showStocks = localStorage.getItem("ws_show_stocks") === "1";
+let showAlerts = localStorage.getItem("ws_alerts_open") !== "0";
+let showTrades = localStorage.getItem("ws_trades_open") !== "0";
+
+function toggleAlerts() {
+  showAlerts = !showAlerts;
+  localStorage.setItem("ws_alerts_open", showAlerts ? "1" : "0");
+  document.getElementById("toggle-alerts").textContent = showAlerts ? "Hide" : "Show";
+  document.getElementById("signals").style.display = showAlerts ? "" : "none";
+  document.getElementById("toggle-ignored").style.display = showAlerts ? "" : "none";
+}
+
+function toggleTrades() {
+  showTrades = !showTrades;
+  localStorage.setItem("ws_trades_open", showTrades ? "1" : "0");
+  document.getElementById("toggle-trades").textContent = showTrades ? "Hide" : "Show";
+  document.getElementById("trades").style.display = showTrades ? "" : "none";
+}
 
 function toggleStocks() {
   showStocks = !showStocks;

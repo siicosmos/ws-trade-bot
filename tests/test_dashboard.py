@@ -385,3 +385,18 @@ def test_margin_usage_bar():
     assert "function marginUsageBar" in js
     assert 'pct >= 80 ? "#f85149" : pct >= 50 ? "#d29922" : "#3fb950"' in js
     assert "marginUsageBar(a);" in js
+
+
+def test_section_toggles_and_paper_detail():
+    import trader.dashboard as dash
+
+    js = re.findall(r"<script>(.*?)</script>",
+                    dash.DASHBOARD_HTML, re.S)[0]
+    # alerts and trades sections collapse, persisted
+    assert 'localStorage.getItem("ws_alerts_open") !== "0"' in js
+    assert 'localStorage.getItem("ws_trades_open") !== "0"' in js
+    assert "function toggleAlerts" in js and "function toggleTrades" in js
+    # paper card expands with its holdings
+    assert "function togglePaper" in js
+    assert "/api/paper-positions" in js
+    assert "ws_paper_open" in js

@@ -2621,3 +2621,93 @@ def test_summary_includes_paper_when_enabled():
     assert all(
         a["paper_value"] is None for a in summary["accounts"]
     )
+
+
+def test_paper_positions_detail():
+    from trader.account import PaperLedger
+    from trader.mirror import MirrorShim
+
+    store = _fresh_store()
+    shim = MirrorShim(
+        kind="option", underlying="SPX", expiry="2026-09-25",
+        strike=6000, right="C", action="BUY", premium=1.0,
+        entry=1.0, ts="t",
+    )
+    store.apply_position("paper", shim, 2, premium=1.0,
+                         account="Personal")
+    store.set_paper_equity(500.0, "Personal")
+
+    class FakeWS:
+        def _positions_raw(self):
+            return {"Personal": [{
+                "quantity": "2",
+                "security": {
+                    "stock": {"symbol": "SPX"},
+                    "optionDetails": {
+                        "strikePrice": "6000", "optionType": "CALL",
+                        "expiryDate": "2026-09-25",
+                    },
+                    "quoteV2": {"price": "1.5", "currency": "USD"},
+                },
+            }]}
+
+        def open_option_positions(self):
+            return {"Personal": {"positions": [], "fx": 1.4,
+                                 "usd_cash": None}}
+
+    ledger = PaperLedger(cfg=None, store=store, ws_account=FakeWS())
+    rows = ledger.positions("Personal")
+    assert len(rows) == 1
+    r = rows[0]
+    assert r["contract_key"] == "SPX-2026-09-25-6000-C"
+    assert r["qty"] == 2
+    assert r["avg"] == 1.0
+    # live quote 1.5 usd x 100 x 2 x fx 1.4
+    assert r["value"] == round(2 * 1.5 * 100 * 1.4, 2)
+    # cost 2 x 1.0 x 100 x 1.4 -> +50%
+    assert r["pnl"] == 50.0
+
+
+def test_paper_positions_endpoint():
+    accounts = [
+        WSAccountConfig(account_id="pers", label="Personal",
+                        paper_value=2000),
+    ]
+    store = _fresh_store()
+    cfg = ConfigStub(
+        TradingConfig(mode="notify", risk_per_trade_pct=5),
+        accounts=accounts,
+    )
+    cfg.paper = type("Paper", (), {"enabled": True})()
+    account = PaperAccount(cfg, store)
+    risk = RiskEngine(cfg, store, account)
+
+    class Ledger:
+        def values(self):
+            return {"Personal": 2000.0}
+
+        def fx(self):
+            return 1.4
+
+        def positions(self, label):
+            return [{
+                "contract_key": "SPX-2026-09-25-6000-C",
+                "underlying": "SPX", "qty": 2, "avg": 1.0,
+                "value": 420.0, "pnl": 50.0,
+            }]
+
+    class FakePaperExecutor:
+        mode = "paper"
+        account = Ledger()
+
+    app = __import__(
+        "trader.server", fromlist=["create_app"]
+    ).create_app(cfg, store, risk, FakePaperExecutor(), account)
+    client = app.test_client()
+    data = client.get("/api/paper-positions").get_json()
+    assert data["Personal"][0]["contract_key"] == (
+        "SPX-2026-09-25-6000-C"
+    )
+    # disabled -> empty
+    cfg.paper.enabled = False
+    assert client.get("/api/paper-positions").get_json() == {}

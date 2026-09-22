@@ -548,6 +548,24 @@ def create_app(cfg, store: Store, risk, executor, account=None,
             }
         )
 
+    @app.get("/api/paper-positions")
+    def api_paper_positions():
+        if not getattr(
+            getattr(cfg, "paper", None), "enabled", False
+        ):
+            return jsonify({})
+        ledger = getattr(executor, "account", None)
+        positions_fn = getattr(ledger, "positions", None)
+        if not callable(positions_fn):
+            return jsonify({})
+        out = {}
+        try:
+            for label in (ledger.values() or {}):
+                out[label] = positions_fn(label)
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+        return jsonify(out)
+
     @app.get("/api/positions")
     def api_positions():
         rows = [dict(r) for r in store.list_positions(mode)]
