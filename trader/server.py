@@ -310,6 +310,7 @@ def create_app(cfg, store: Store, risk, executor, account=None,
             used_cad_raw = 0.0
             used_usd_raw = 0.0
             req_parts = []
+            portfolio_value = None
             if not _registered_plan() and value:
                 # computed per the WS margin page: requirement is
                 # the maintenance rate over holdings (rate per
@@ -389,6 +390,8 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                     if margin_available and margin_available > 0
                     else 0.0
                 )
+                # gross holdings: equity plus the loan against them
+                portfolio_value = round(value + margin_used, 2)
             out.append(
                 {
                     "label": label,
@@ -410,6 +413,7 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                     if used_usd_raw else 0.0,
                     "margin_available": margin_available,
                     "max_buying_power": max_buying_power,
+                    "portfolio_value": portfolio_value,
                     "open_risk_pct": (
                         round(open_risk / value * 100, 2)
                         if value and value > 0

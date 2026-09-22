@@ -356,3 +356,13 @@ def test_avg_single_value_and_signed_cost():
     assert '(p.short ? "-" : "") + fmtMoney(p.cost_usd)' in js
     # short and spread tags coexist
     assert '(p.spread ? \' <span class="tag ignored mini" title="\'' in js
+
+
+def test_portfolio_value_and_tappable_breakdown():
+    import trader.dashboard as dash
+
+    js = re.findall(r"<script>(.*?)</script>",
+                    dash.DASHBOARD_HTML, re.S)[0]
+    assert "portfolio value" in js
+    assert "toggleMarginBreakdown" in js
+    assert 'white-space:pre-line' in js

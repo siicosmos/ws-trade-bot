@@ -247,6 +247,7 @@ async function loadSummary() {
   }
   const el = document.getElementById("accounts");
   el.innerHTML = "";
+  let cardIdx = 0;
   for (const a of data.accounts) {
     const cur = cardCurrency[a.label] || "cad";
     const hidden = !!cardHidden[a.label];
@@ -280,8 +281,11 @@ async function loadSummary() {
           (hidden ? '' :
             ' · usd ' + fmtMoney(a.margin_used_usd || 0) +
             ' · cad ' + fmtMoney(a.margin_used_cad || 0)) +
-          '</span><span title="' + esc((a.margin_breakdown || []).join("\n")) + '">margin requirement ' + (hidden ? "••••••" : fmtMoney(a.margin_requirement) + " cad") + '</span></div>' +
-          '<div class="sub"><span>margin available ' + (hidden ? "••••••" : fmtMoney(a.margin_available) + " cad") + '</span><span>max buying power ' + (hidden ? "••••••" : fmtMoney(a.max_buying_power || 0) + " cad") + '</span></div>'
+          '</span><span style="cursor:pointer" onclick="toggleMarginBreakdown(' + cardIdx + ', \'' + esc(a.label) + '\')">margin requirement ' + (hidden ? "••••••" : fmtMoney(a.margin_requirement) + " cad") + ' ▾</span></div>' +
+          '<div id="mbd-' + cardIdx + '" class="sub" style="display:' + (mbdOpen === a.label ? "block" : "none") + ';color:var(--muted);font-size:11px;white-space:pre-line">' + esc((a.margin_breakdown || []).join("\n")) + '</div>' +
+          '<div class="sub"><span>margin available ' + (hidden ? "••••••" : fmtMoney(a.margin_available) + " cad") +
+          (a.portfolio_value != null && !hidden ? ' · portfolio value ' + fmtMoney(a.portfolio_value) + " cad" : '') +
+          '</span><span>max buying power ' + (hidden ? "••••••" : fmtMoney(a.max_buying_power || 0) + " cad") + '</span></div>'
         : '') +
       ((a.cash_cad != null || a.cash_usd != null)
         ? '<div class="sub"><span>cash ' + (hidden ? "••••••" :
@@ -292,6 +296,7 @@ async function loadSummary() {
           '<span>available</span></div>'
         : '') + allocBar(a);
     el.appendChild(card);
+    cardIdx += 1;
   }
 }
 
@@ -396,6 +401,13 @@ let lastRefresh = null;
 let showIgnored = true;
 
 let cardCurrency = JSON.parse(localStorage.getItem("ws_card_currency") || "{}");
+let mbdOpen = null;
+
+function toggleMarginBreakdown(i, label) {
+  mbdOpen = mbdOpen === label ? null : label;
+  const el = document.getElementById("mbd-" + i);
+  if (el) el.style.display = mbdOpen === label ? "block" : "none";
+}
 let cardHidden = JSON.parse(localStorage.getItem("ws_card_hidden") || "{}");
 
 const EYE_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>';
