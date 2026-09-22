@@ -348,9 +348,41 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                         f"{sym} {mv:.2f} x {rate:.0%} = "
                         f"{mv * rate:.2f}"
                     )
+                def _spread_width_cad(r):
+                    # WS charges spreads the full width without
+                    # netting the premium
+                    try:
+                        s1, s2 = str(
+                            r.get("strike") or ""
+                        ).split("/")
+                        width = (
+                            abs(float(s2) - float(s1))
+                            * 100 * (r.get("qty") or 0)
+                        )
+                        return width * conv_fx if width else None
+                    except (ValueError, AttributeError):
+                        return None
+
                 if live is not None:
                     for r in live["positions"]:
-                        if r.get("short"):
+                        if r.get("spread"):
+                            part = _spread_width_cad(r)
+                            if part is None:
+                                if r.get("short"):
+                                    part = (
+                                        (r.get("risk_cad") or 0)
+                                        + abs(r.get("cost_cad") or 0)
+                                    )
+                                else:
+                                    part = abs(
+                                        r.get("market_value") or 0
+                                    ) * conv_fx
+                            req += part
+                            req_parts.append(
+                                f"{r.get('underlying', '?')} spread "
+                                f"width {part:.2f}"
+                            )
+                        elif r.get("short"):
                             part = r.get("risk_cad") or 0
                             req += part
                             req_parts.append(

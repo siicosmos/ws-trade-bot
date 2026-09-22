@@ -1940,3 +1940,36 @@ def test_margin_requirement_breakdown():
     assert row["margin_requirement"] == round(0.3 * 4265.9, 2)
     assert any("ZWC" in p and "30%" in p for p in row["margin_breakdown"])
     assert any("VDY" in p for p in row["margin_breakdown"])
+
+
+def test_spread_requirement_uses_full_width():
+    app, store, account = _make_app()
+    client = app.test_client()
+    account.open_option_positions = lambda: {
+        "Personal": {
+            "positions": [
+                # 5-point wide credit spread, 18 credit, settled
+                {"underlying": "SPX", "spread": True, "short": True,
+                 "strike": "6100/6105", "qty": 1,
+                 "risk_cad": round(482 * 1.403, 2),
+                 "cost_cad": round(-18 * 1.403, 2),
+                 "market_value": 0.0},
+            ],
+            "fx": 1.403,
+        },
+    }
+    account.stock_holdings = lambda: {"Personal": []}
+    account.funding_balances = lambda: {
+        "Personal": [{"currency": "USD", "amount": -114.29}],
+    }
+    account.values = lambda: {"Personal": 1767.30}
+    account.account_type_map = lambda: {"pers": "PERSONAL"}
+    account._resolve = lambda: [("Personal", "pers")]
+    summary = client.get("/api/summary").get_json()
+    row = next(a for a in summary["accounts"] if a["label"] == "Personal")
+    # full width: 5 x 100 x 1 x 1.403 - not width minus the credit
+    assert row["margin_requirement"] == round(5 * 100 * 1.403, 2)
+    assert row["margin_available"] == round(
+        1767.30 - round(5 * 100 * 1.403, 2), 2
+    )
+    assert any("width" in p for p in row["margin_breakdown"])
