@@ -2570,3 +2570,54 @@ def test_loghook_file_and_rotation(tmp_path):
     finally:
         sys.stdout, sys.stderr = saved_out, saved_err
     assert "via install" in open(path).read()
+
+
+def test_summary_includes_paper_when_enabled():
+    accounts = [
+        WSAccountConfig(account_id="rrsp", label="RRSP",
+                        paper_value=50000),
+        WSAccountConfig(account_id="pers", label="Personal",
+                        paper_value=2000),
+    ]
+    store = _fresh_store()
+    cfg = ConfigStub(
+        TradingConfig(mode="notify", risk_per_trade_pct=5),
+        accounts=accounts,
+    )
+    cfg.paper = type(
+        "Paper", (),
+        {"enabled": True, "mirror": True,
+         "mirror_interval_seconds": 60},
+    )()
+    account = PaperAccount(cfg, store)
+    risk = RiskEngine(cfg, store, account)
+
+    class Ledger:
+        def values(self):
+            return {"RRSP": 50000.0, "Personal": 2000.0}
+
+        def fx(self):
+            return 1.4
+
+    class FakePaperExecutor:
+        mode = "paper"
+        account = Ledger()
+
+    app = __import__(
+        "trader.server", fromlist=["create_app"]
+    ).create_app(
+        cfg, store, risk, FakePaperExecutor(), account
+    )
+    client = app.test_client()
+    summary = client.get("/api/summary").get_json()
+    rows = {a["label"]: a for a in summary["accounts"]}
+    assert rows["RRSP"]["paper_value"] == 50000.0
+    assert rows["Personal"]["paper_value"] == 2000.0
+
+    # card hides cleanly when paper is switched off
+    cfg.paper.enabled = False
+    app._summary_cache["ts"] = 0.0
+    summary = client.get("/api/summary").get_json()
+    assert all(
+        a["paper_value"] is None for a in summary["accounts"]
+    )
