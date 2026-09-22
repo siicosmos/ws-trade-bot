@@ -200,7 +200,9 @@ def create_app(cfg, store: Store, risk, executor, account=None,
         except Exception:
             return None
 
-    _summary_cache = {"ts": 0.0, "accounts": None}
+    _summary_cache = {
+        "ts": 0.0, "accounts": None, "ver": -1,
+    }
     app._summary_cache = _summary_cache
 
     def _account_summaries():
@@ -208,6 +210,7 @@ def create_app(cfg, store: Store, risk, executor, account=None,
         # computed summaries between position/value refreshes
         if (
             _summary_cache["accounts"] is not None
+            and _summary_cache["ver"] == store.data_version()
             and time.time() - _summary_cache["ts"] < 2.5
         ):
             return _summary_cache["accounts"], None
@@ -515,6 +518,7 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                 }
             )
         _summary_cache["ts"] = time.time()
+        _summary_cache["ver"] = store.data_version()
         _summary_cache["accounts"] = out
         return out, None
 

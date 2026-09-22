@@ -13,6 +13,9 @@ class Store:
         # trades are served from memory
         self._positions_version = 0
         self._positions_cache = {}
+        # data version: bumped on any write that feeds the
+        # dashboard summaries, so caches invalidate immediately
+        self._data_version = 0
         try:
             self._conn.execute("PRAGMA journal_mode=WAL")
             self._conn.execute("PRAGMA synchronous=NORMAL")
@@ -156,6 +159,7 @@ class Store:
     def record_signal(self, message_key: str, author: str, text: str, parsed: bool,
                       correction: bool = False, channel: str = "",
                       ts_epoch=None, parsed_epoch=None):
+        self._touch()
         # both stored in UTC: the alert's own (Discord-displayed) time
         # and the moment the reader parsed and passed it down
         ts = (
@@ -228,6 +232,7 @@ class Store:
         detail: str,
         message_key: str = None,
     ):
+        self._touch()
         with self._lock, self._conn:
             self._conn.execute(
                 "INSERT INTO trades (ts, mode, action, ticker, qty, price, entry, "
@@ -310,6 +315,7 @@ class Store:
             else:
                 old_qty, old_avg, old_realized = int(row[0]), row[1], row[2] or 0.0
 
+            self._touch()
             self._positions_version += 1
             self._positions_cache.clear()
             new_qty = max(0, old_qty + delta)
@@ -384,6 +390,7 @@ class Store:
         return int(streak.get("count") or 0)
 
     def update_peak_bid(self, mode, contract_key, bid, account="default"):
+        self._touch()
         self._positions_version += 1
         self._positions_cache.clear()
         with self._lock, self._conn:
@@ -485,6 +492,13 @@ class Store:
                 (f"ws_value:{label}", payload),
             )
 
+    def data_version(self) -> int:
+        """Bumped on every write that can change dashboard data."""
+        return self._data_version
+
+    def _touch(self):
+        self._data_version += 1
+
     def meta_get(self, key: str, default=None):
         with self._lock, self._conn:
             row = self._conn.execute(
@@ -506,6 +520,7 @@ class Store:
     ):
         """Insert a seeded position row (used to mirror live
         holdings into the paper ledger)."""
+        self._touch()
         self._positions_version += 1
         self._positions_cache.clear()
         with self._lock, self._conn:
@@ -532,6 +547,7 @@ class Store:
             return float(row[0]) if row else None
 
     def set_paper_equity(self, value: float, label: str = "default"):
+        self._touch()
         with self._lock, self._conn:
             self._conn.execute(
                 "INSERT INTO meta (key, value) VALUES (?, ?) "
