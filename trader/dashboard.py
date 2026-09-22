@@ -276,7 +276,7 @@ async function loadSummary() {
       '<div class="sub"><span style="color:' + color + (pct >= (a.max_open_risk_pct || 30) ? ';font-weight:700' : '') + '">open risk ' + fmtMoney(risk) + " " + (showUsd ? "usd" : "cad") + ' (' + (a.open_risk_pct ?? 0) + '%)</span>' +
       '<span>cap ' + (a.max_open_risk_pct) + '%</span></div>' +
       ((a.margin_requirement != null && !isNaN(a.margin_requirement))
-        ? '<div class="sub"><span>margin used ' + (hidden ? "••••••" : fmtMoney(a.margin_used || 0) + " cad") +
+        ? '<div class="sub"><span>total margin used ' + (hidden ? "••••••" : fmtMoney(a.margin_used || 0) + " cad") +
           (hidden ? '' :
             ((a.margin_used_usd || 0) > 0 ? ' · usd ' + fmtMoney(a.margin_used_usd) : '') +
             ((a.margin_used_cad || 0) > 0 ? ' · cad ' + fmtMoney(a.margin_used_cad) : '')) +

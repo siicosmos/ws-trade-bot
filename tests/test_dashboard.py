@@ -334,6 +334,7 @@ def test_margin_lines_show_currencies():
     js = re.findall(r"<script>(.*?)</script>",
                     dash.DASHBOARD_HTML, re.S)[0]
     assert 'fmtMoney(a.margin_used || 0) + " cad"' in js
+    assert "total margin used " in js
     assert 'fmtMoney(a.margin_requirement) + " cad"' in js
     assert 'fmtMoney(a.margin_available) + " cad"' in js
     assert 'fmtMoney(a.max_buying_power || 0) + " cad"' in js
