@@ -151,16 +151,16 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 <h2>Open Positions</h2>
 <div id="positions"></div>
 
-<h2>Stock Holdings <button id="toggle-stocks" onclick="toggleStocks()" style="float:right;background:#21262d;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 14px;font-size:12px;cursor:pointer">Show holdings</button></h2>
+<h2 style="display:flex;justify-content:space-between;align-items:center"><span>Stock Holdings</span><button id="toggle-stocks" onclick="toggleStocks()" style="background:#21262d;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 14px;font-size:12px;cursor:pointer">Show holdings</button></h2>
 <div id="stock-positions"></div>
 
-<h2>Recent Alerts <span style="float:right"><button id="toggle-alerts" onclick="toggleAlerts()" style="background:#21262d;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 14px;font-size:12px;cursor:pointer">Hide</button> <button id="toggle-ignored" onclick="toggleIgnored()" style="background:#21262d;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 14px;font-size:12px;cursor:pointer">Hide ignored</button></span></h2>
+<h2 style="display:flex;justify-content:space-between;align-items:center"><span>Recent Alerts</span><span><button id="toggle-alerts" onclick="toggleAlerts()" style="background:#21262d;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 14px;font-size:12px;cursor:pointer">Hide</button> <button id="toggle-ignored" onclick="toggleIgnored()" style="background:#21262d;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 14px;font-size:12px;cursor:pointer">Hide ignored</button></span></h2>
 <div id="signals"></div>
 
-<h2>Trade Log <button id="toggle-trades" onclick="toggleTrades()" style="float:right;background:#21262d;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 14px;font-size:12px;cursor:pointer">Hide</button></h2>
+<h2 style="display:flex;justify-content:space-between;align-items:center"><span>Trade Log</span><button id="toggle-trades" onclick="toggleTrades()" style="background:#21262d;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 14px;font-size:12px;cursor:pointer">Hide</button></h2>
 <div id="trades"></div>
 
-<h2>Settings <button id="settings-toggle" onclick="toggleSettings()" style="background:#21262d;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 14px;font-size:12px;cursor:pointer">Show</button></h2>
+<h2 style="display:flex;justify-content:space-between;align-items:center"><span>Settings</span><button id="settings-toggle" onclick="toggleSettings()" style="background:#21262d;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 14px;font-size:12px;cursor:pointer">Show</button></h2>
 <div id="settings" class="card"></div>
 
 <div id="settings-float">
@@ -661,7 +661,10 @@ async function loadSettings() {
   // periodic refresh used to wipe them mid-typing
   if (settingsDirty) return;
   const el = document.getElementById("settings");
-  let html = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px">';
+  let html = '<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-bottom:12px">' +
+    '<label style="color:var(--muted);font-size:12px"><input id="set-paper-enabled" type="checkbox"' + (s.paper && s.paper.enabled ? " checked" : "") + '> paper trading (seeds from live accounts, restart to apply)</label>' +
+    '<label style="color:var(--muted);font-size:12px"><input id="set-paper-mirror" type="checkbox"' + (s.paper && s.paper.mirror ? " checked" : "") + '> mirror my real fills into paper</label></div>' +
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px">';
   const t = s.trading;
   const labels = {
     risk_per_trade_pct: "default risk %", max_contracts_per_trade: "max contracts",
@@ -733,9 +736,7 @@ async function loadSettings() {
     '<label style="color:var(--muted);font-size:12px">account values every <input id="set-ws-values" type="number" value="' + (s.wealthsimple ? s.wealthsimple.values_refresh_seconds : 60) + '" style="width:70px;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:13px">s</label>' +
     '<label style="color:var(--muted);font-size:12px"><input id="set-quotes-enabled" type="checkbox"' + (s.quotes.enabled ? " checked" : "") + '> live option quotes (stop monitor)</label>' +
     '<label style="color:var(--muted);font-size:12px">quotes: <select id="set-quotes-provider" style="background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:13px"><option value="ws"' + (s.quotes.provider === "ws" ? " selected" : "") + '>ws</option><option value="moomoo"' + (s.quotes.provider === "moomoo" ? " selected" : "") + '>moomoo</option></select></label>' +
-    '<div style="flex-basis:100%;height:1px;background:var(--border);margin:4px 0"></div>' +
-    '<label style="color:var(--muted);font-size:12px"><input id="set-paper-enabled" type="checkbox"' + (s.paper && s.paper.enabled ? " checked" : "") + '> paper trading (seeds from live accounts, restart to apply)</label>' +
-    '<label style="color:var(--muted);font-size:12px"><input id="set-paper-mirror" type="checkbox"' + (s.paper && s.paper.mirror ? " checked" : "") + '> mirror my real fills into paper</label></div>';
+    '<label style="color:var(--muted);font-size:12px">quotes: <select id="set-quotes-provider" style="background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:13px"><option value="ws"' + (s.quotes.provider === "ws" ? " selected" : "") + '>ws</option><option value="moomoo"' + (s.quotes.provider === "moomoo" ? " selected" : "") + '>moomoo</option></select></label></div>';
   el.innerHTML = html;
   el.querySelectorAll("textarea").forEach(function(t) {
     autoGrow(t);
