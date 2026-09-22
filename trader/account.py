@@ -817,7 +817,9 @@ class WealthsimpleAccount:
                         "strike": f"{strikes[0]:g}/{strikes[-1]:g}",
                         "right": right,
                         "qty": qty,
-                        "short": False,
+                        # net-short (credit) spreads are sold - show
+                        # the negative quantity and direction
+                        "short": net_cost_usd < 0,
                         "spread": True,
                         "avg_premium": round(per_unit, 4)
                         if per_unit is not None else None,
@@ -829,8 +831,12 @@ class WealthsimpleAccount:
                         "current_price": round(cur_unit, 4)
                         if cur_unit is not None else None,
                         "market_value": round(net_mv_usd, 2),
-                        "pct_return": round(profit / risk_usd * 100, 1)
-                        if risk_usd else None,
+                        # return on the premium: an expired credit
+                        # spread keeps its full credit (+100%)
+                        "pct_return": round(
+                            profit / abs(net_cost_usd) * 100, 1
+                        )
+                        if net_cost_usd else None,
                     }
                 )
             rows = combined

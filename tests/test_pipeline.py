@@ -1845,3 +1845,69 @@ def test_reaction_reread_suppressed():
         other, "", cfg, store, risk, PaperExecutor(cfg, store, account)
     )
     assert res["status"] == "notified"
+
+
+def test_expired_credit_spread_full_return(monkeypatch):
+    # credit spread legged in as separate positions (no strategyType),
+    # expired worthless: quotes settled to zero and the full credit
+    # is kept - qty shows negative and return reads +100%
+    from trader.account import WealthsimpleAccount
+
+    def leg(strike, direction, book_usd, quote):
+        return {
+            "quantity": "1",
+            "positionDirection": direction,
+            "bookValue": {"amount": str(book_usd * 1.4)},
+            "marketBookValue": {"amount": str(book_usd)},
+            "totalValue": {"amount": str(quote * 100)},
+            "security": {
+                "securityType": "OPTION",
+                "stock": {"symbol": "SPX"},
+                "optionDetails": {
+                    "strikePrice": str(strike),
+                    "optionType": "PUT",
+                    "expiryDate": "2026-09-18",
+                    "multiplier": "100",
+                    "underlyingSecurity": {"stock": {"symbol": "SPX"}},
+                },
+                "quoteV2": {"price": str(quote)},
+            },
+        }
+
+    class FakeWS:
+        def get_positions(self, account_ids=None, **kw):
+            return [
+                # short 6100P for 1.80, long 6050P for 0.95
+                # -> 0.85 credit, now expired at zero
+                leg(6100, "SHORT", -180, 0.0),
+                leg(6050, "LONG", 95, 0.0),
+            ]
+
+    class FakeCfg:
+        class wealthsimple:
+            positions_refresh_seconds = 30
+            values_refresh_seconds = 60
+
+    acct = WealthsimpleAccount.__new__(WealthsimpleAccount)
+    acct.cfg = FakeCfg()
+    acct._ws = FakeWS()
+    acct._resolved = None
+    acct._stale = {}
+    acct._pos_cache = None
+    acct._pos_cache_ts = 0.0
+    acct._raw_cache = None
+    acct._raw_ts = 0.0
+    acct._fx_quote = 1.4
+    acct._fx_quote_ts = 0.0
+    acct._usd_cache = None
+    acct._usd_cache_ts = 0.0
+    acct._cache = None
+    acct._cache_ts = 0.0
+    monkeypatch.setattr(acct, "_resolve", lambda: [("RRSP", "a1")])
+
+    spread = acct.open_option_positions()["RRSP"]["positions"][0]
+    assert spread["spread"] is True
+    assert spread["short"] is True          # net-short credit spread
+    assert spread["market_value"] == 0.0    # settled to zero
+    assert spread["cost_usd"] == -85.0      # credit received
+    assert spread["pct_return"] == 100.0     # full credit kept
