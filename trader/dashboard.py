@@ -278,8 +278,8 @@ async function loadSummary() {
       ((a.margin_requirement != null && !isNaN(a.margin_requirement))
         ? '<div class="sub"><span>total margin used ' + (hidden ? "••••••" : fmtMoney(a.margin_used || 0) + " cad") +
           (hidden ? '' :
-            ((a.margin_used_usd || 0) > 0 ? ' · usd ' + fmtMoney(a.margin_used_usd) : '') +
-            ((a.margin_used_cad || 0) > 0 ? ' · cad ' + fmtMoney(a.margin_used_cad) : '')) +
+            ' · usd ' + fmtMoney(a.margin_used_usd || 0) +
+            ' · cad ' + fmtMoney(a.margin_used_cad || 0)) +
           '</span><span>requirement ' + (hidden ? "••••••" : fmtMoney(a.margin_requirement) + " cad") + '</span></div>' +
           '<div class="sub"><span>margin available ' + (hidden ? "••••••" : fmtMoney(a.margin_available) + " cad") + '</span><span>max buying power ' + (hidden ? "••••••" : fmtMoney(a.max_buying_power || 0) + " cad") + '</span></div>'
         : '') +
