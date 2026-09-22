@@ -88,6 +88,170 @@ def _load_secret_key(config_path):
     return key
 
 
+def _paper_card_metrics(
+    ledger, store, cfg, label, value, registered, conv_fx
+):
+    """Margin-style card metrics for a paper account, computed
+    with the same model as the real cards: long options at 100%,
+    spreads at full wing width, stocks at their margin rate,
+    margin used being negative ledger cash."""
+    cash = store.paper_equity(label)
+    rows = []
+    pos_fn = getattr(ledger, "positions", None)
+    if callable(pos_fn):
+        try:
+            rows = pos_fn(label) or []
+        except Exception:
+            rows = []
+    by_key = {r["contract_key"]: r for r in rows}
+    stock_value = round(sum(
+        (r.get("value") or 0)
+        for r in rows if r.get("kind") == "stock"
+    ), 2)
+    option_value = round(sum(
+        abs(r.get("value") or 0)
+        for r in rows if r.get("kind") == "option"
+    ), 2)
+    pos_cash = max(cash or 0.0, 0.0)
+    alloc_base = round(
+        stock_value + option_value + pos_cash, 2
+    ) or None
+
+    out = {
+        "paper_cash": cash,
+        "paper_stock_value": stock_value or None,
+        "paper_option_value": option_value or None,
+        "paper_alloc_base": alloc_base,
+    }
+
+    # open risk from the paper trade log
+    try:
+        open_risk = store.open_risk("paper", label)
+    except Exception:
+        open_risk = 0.0
+    out["paper_open_risk"] = open_risk
+    out["paper_open_risk_pct"] = (
+        round(open_risk / value * 100, 2)
+        if value and value > 0 else 0.0
+    )
+
+    if registered or not value:
+        out.update(
+            {
+                "paper_margin_requirement": None,
+                "paper_margin_breakdown": [],
+                "paper_margin_used": None,
+                "paper_margin_available": None,
+                "paper_max_buying_power": None,
+                "paper_portfolio_value": None,
+            }
+        )
+        return out
+
+    default_rate = getattr(
+        cfg.wealthsimple, "stock_margin_rate", 0.30
+    )
+    overrides = getattr(
+        cfg.wealthsimple, "margin_rate_overrides", {}
+    ) or {}
+
+    req = 0.0
+    parts = []
+    for r in rows:
+        if r.get("kind") != "stock":
+            continue
+        sym = str(r.get("underlying") or "")
+        mv = r.get("value") or 0
+        rate = float(overrides.get(sym, default_rate))
+        req += mv * rate
+        parts.append(
+            f"{sym} {mv:.2f} x {rate:.0%} = {mv * rate:.2f}"
+        )
+
+    # option legs grouped per underlying+expiry, classified into
+    # structures so spreads charge their wing width
+    groups = {}
+    for pos in store.list_positions("paper", label):
+        if not pos.get("right"):
+            continue
+        key = (pos.get("underlying"), pos.get("expiry"))
+        groups.setdefault(key, []).append(pos)
+    from .strategies import classify_legs
+
+    for (sym, _expiry), legs in groups.items():
+        shaped = []
+        for leg in legs:
+            try:
+                qty = float(leg["qty"] or 0)
+            except (TypeError, ValueError):
+                continue
+            if not qty:
+                continue
+            shaped.append(
+                {
+                    "strike": leg.get("strike"),
+                    "right": leg.get("right"),
+                    "short": qty < 0,
+                    "qty": abs(qty),
+                }
+            )
+        if not shaped:
+            continue
+        info = classify_legs(shaped)
+        if info and info.get("kind") in (
+            "vertical", "butterfly", "condor",
+            "iron fly", "ratio",
+        ):
+            qty = info.get("qty") or 0
+            width = info.get("width") or 0
+            # usd underlyings charge their width in cad
+            usd = any(
+                (by_key.get(l.get("contract_key")) or {})
+                .get("usd")
+                for l in legs
+            )
+            part = width * 100 * qty * (
+                conv_fx if usd else 1.0
+            )
+            req += part
+            parts.append(
+                f"{sym} {info.get('name', 'spread')} "
+                f"{qty:g}x width {width:g} = {part:.2f}"
+            )
+        else:
+            # long (or unpaired) legs carry their full value
+            for leg in legs:
+                row = by_key.get(leg.get("contract_key"))
+                if row is None:
+                    continue
+                mv = abs(row.get("value") or 0)
+                req += mv
+                tag = "short" if (leg["qty"] or 0) < 0 else "long"
+                parts.append(
+                    f"{sym} {leg.get('contract_key', '?')} "
+                    f"{tag} {mv:.2f} = {mv:.2f}"
+                )
+
+    margin_req = round(req, 2)
+    used = max(0.0, -(cash or 0.0))
+    margin_available = round(value - margin_req, 2)
+    out.update(
+        {
+            "paper_margin_requirement": margin_req,
+            "paper_margin_breakdown": parts,
+            "paper_margin_used": round(used, 2),
+            "paper_margin_available": margin_available,
+            "paper_max_buying_power": (
+                round(margin_available / default_rate, 2)
+                if margin_available and margin_available > 0
+                else 0.0
+            ),
+            "paper_portfolio_value": round(value + used, 2),
+        }
+    )
+    return out
+
+
 def create_app(cfg, store: Store, risk, executor, account=None,
                  config_path=None) -> Flask:
     app = Flask(__name__)
@@ -251,6 +415,7 @@ def create_app(cfg, store: Store, risk, executor, account=None,
         # paper ledger values when paper trading runs alongside
         paper_values = {}
         paper_initials = {}
+        _paper_ledger = None
         if getattr(
             getattr(cfg, "paper", None), "enabled", False
         ):
@@ -261,6 +426,7 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                     paper_values = vals_fn() or {}
                 except Exception:
                     paper_values = {}
+            _paper_ledger = ledger
             for lbl in (paper_values or {}):
                 init = store.meta_get(f"paper_initial:{lbl}")
                 if init is not None:
@@ -491,6 +657,12 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                     "margin_breakdown": req_parts,
                     "paper_value": paper_values.get(label),
                     "paper_initial": paper_initials.get(label),
+                    "paper_usd_value": (
+                        round(paper_values[label] / conv_fx, 2)
+                        if label in paper_values
+                        and paper_values.get(label) is not None
+                        and conv_fx else None
+                    ),
                     "paper_pnl": (
                         round(
                             paper_values[label]
@@ -498,6 +670,17 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                         )
                         if label in paper_values
                         and label in paper_initials else None
+                    ),
+                    **(
+                        _paper_card_metrics(
+                            _paper_ledger, store, cfg, label,
+                            paper_values[label],
+                            _registered_plan(), conv_fx,
+                        )
+                        if label in paper_values
+                        and paper_values.get(label) is not None
+                        and _paper_ledger is not None
+                        else {}
                     ),
                     "margin_used": margin_used,
                     "margin_used_cad": round(used_cad_raw, 2)

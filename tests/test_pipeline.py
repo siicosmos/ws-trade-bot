@@ -2953,3 +2953,92 @@ def test_paper_seeding_without_mirror_is_cash_only():
     assert store.paper_equity("T") == 3360.0
     ledger = PaperLedger(Cfg(), store, Acct())
     assert ledger.value("T") == 3360.0
+
+
+def test_paper_card_margin_metrics():
+    from types import SimpleNamespace
+
+    from trader.account import PaperLedger
+    from trader.config import TradingConfig, WSAccountConfig
+
+    accounts = [
+        WSAccountConfig(account_id="m1", label="Margin",
+                        paper_value=10000),
+        WSAccountConfig(account_id="r1", label="RRSP",
+                        paper_value=5000),
+    ]
+    store = _fresh_store()
+    cfg = ConfigStub(
+        TradingConfig(mode="notify", risk_per_trade_pct=5),
+        accounts=accounts,
+    )
+    cfg.paper = SimpleNamespace(enabled=True)
+
+    # a long call plus a stock in Margin - paper holdings are
+    # long-only (short legs settle to cash)
+    store.set_paper_equity(20000.0, "Margin")
+    store.seed_position("paper", "Margin", "SPX-2026-09-25-6000-C",
+                         "SPX", "2026-09-25", 6000.0, "C", 1, 5.0)
+    store.seed_position("paper", "Margin", "ZWC", "ZWC",
+                         None, None, None, 100, 32.0)
+    store.meta_set("paper_seed:Margin", "1")
+    store.meta_set("paper_initial:Margin", "10000")
+
+    store.set_paper_equity(4000.0, "RRSP")
+    store.seed_position("paper", "RRSP", "AAPL", "AAPL",
+                       None, None, None, 10, 200.0)
+    store.meta_set("paper_seed:RRSP", "1")
+    store.meta_set("paper_initial:RRSP", "5000")
+
+    ledger = PaperLedger(cfg, store, None)
+
+    class FakeWS:
+        def values(self):
+            return {"Margin": 25000.0, "RRSP": 6000.0}
+
+        def _positions_raw(self):
+            return {}
+
+        def _resolve(self):
+            return [("Margin", "m1"), ("RRSP", "r1")]
+
+    risk = RiskEngine(cfg, store, FakeWS())
+    app = __import__(
+        "trader.server", fromlist=["create_app"]
+    ).create_app(
+        cfg, store, risk,
+        SimpleNamespace(account=ledger), FakeWS(),
+    )
+    res = app.test_client().get("/api/summary")
+    assert res.status_code == 200
+    accs = {
+        a["label"]: a for a in res.get_json()["accounts"]
+    }
+    m = accs["Margin"]
+
+    # long option 500 at 100% + stock 3200 x 30%
+    assert m["paper_margin_requirement"] == round(
+        500.0 + 3200 * 0.30, 2
+    )
+    assert m["paper_stock_value"] == 3200.0
+    assert m["paper_margin_used"] == 0.0
+    assert m["paper_cash"] == 20000.0
+    # nlv: cash + long option + stock
+    nlv = round(20000 + 500 + 3200, 2)
+    assert m["paper_value"] == nlv
+    assert m["paper_margin_available"] == round(
+        nlv - m["paper_margin_requirement"], 2
+    )
+    assert m["paper_max_buying_power"] == round(
+        m["paper_margin_available"] / 0.30, 2
+    )
+    assert m["paper_portfolio_value"] == nlv
+    assert any(
+        "SPX" in p and "long" in p
+        for p in m["paper_margin_breakdown"]
+    )
+    # registered paper card: no margin metrics, just cash
+    r = accs["RRSP"]
+    assert r["paper_margin_requirement"] is None
+    assert r["paper_cash"] == 4000.0
+    assert r["paper_stock_value"] == 2000.0

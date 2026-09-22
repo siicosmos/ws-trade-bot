@@ -285,6 +285,14 @@ try {
 } catch (e) { paperOpen = []; }
 let paperPositions = null;
 
+let pmbdOpen = null;
+
+function togglePaperBreakdown(i, label) {
+  const el = document.getElementById("pmbd-" + i);
+  pmbdOpen = (pmbdOpen === label) ? null : label;
+  if (el) el.style.display = (el.style.display === "none") ? "block" : "none";
+}
+
 let modalAction = null;
 
 function openModal(title, text, actionLabel, action) {
@@ -436,9 +444,27 @@ async function loadSummary() {
           ' <span style="font-size:13px;color:' + pnlColor + '">' +
           (pnl >= 0 ? "+" : "") + fmtMoney(pnl) +
           (pnlPct != null ? " (" + (pnl >= 0 ? "+" : "") + pnlPct.toFixed(1) + "%)" : "") + '</span>') +
+        (a.paper_usd_value && !hidden ? ' <span style="font-size:12px;color:var(--muted)">$' + a.paper_usd_value.toLocaleString("en-CA", {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' USD</span>' : '') +
         '</div>' +
+        '<div class="riskbar"><div style="width:' + Math.min(100, Math.round(a.paper_open_risk_pct || 0)) + '%;background:#3fb950"></div></div>' +
+        '<div class="sub"><span>open risk ' + (hidden ? "••••••" : fmtMoney(a.paper_open_risk || 0) + " cad") + ' (' + (a.paper_open_risk_pct ?? 0) + '%)</span>' +
+        '<span>paper</span></div>' +
+        ((a.paper_margin_requirement != null && !isNaN(a.paper_margin_requirement))
+          ? '<div class="sub"><span>total margin used ' + (hidden ? "••••••" : fmtMoney(a.paper_margin_used || 0) + " cad") +
+            (hidden || !(a.paper_margin_used > 0) ? '' : ' · ledger loan') +
+            '</span><span style="cursor:pointer" onclick="togglePaperBreakdown(' + cardIdx + ', \'' + esc(a.label) + '\')">margin requirement ' + (hidden ? "••••••" : fmtMoney(a.paper_margin_requirement) + " cad") + ' ▾</span></div>' +
+          '<div id="pmbd-' + cardIdx + '" class="sub" style="display:' + (pmbdOpen === a.label ? "block" : "none") + ';color:var(--muted);font-size:11px;white-space:pre-line">' + (hidden ? "" : esc((a.paper_margin_breakdown || []).join("\n"))) + '</div>' +
+          '<div class="sub"><span>margin available ' + (hidden ? "••••••" : fmtMoney(a.paper_margin_available) + " cad") +
+            (a.paper_portfolio_value != null && !hidden ? ' · portfolio value ' + fmtMoney(a.paper_portfolio_value) + " cad" : '') +
+            '</span><span>max buying power ' + (hidden ? "••••••" : fmtMoney(a.paper_max_buying_power || 0) + " cad") + '</span></div>'
+          : '') +
+        ((a.paper_cash != null)
+          ? '<div class="sub"><span>cash ' + (hidden ? "••••••" : fmtMoney(Math.max(0, a.paper_cash)) + " cad") + '</span>' +
+            '<span>available</span></div>'
+          : '') +
         '<div class="sub"><span>seeded ' + (hidden ? "••••••" : (a.paper_initial != null ? fmtMoney(a.paper_initial) + " cad" : "—")) + '</span>' +
         '<span>' + rows.length + ' positions</span></div>' +
+        paperAllocBar(a) + paperMarginUsageBar(a) +
         (open ? (rows.length ?
           '<table class="pos" style="margin-top:10px;font-size:12px"><tr><th>Holding</th><th class=num>Qty</th><th class=num>Avg $</th><th class=num>Value</th><th class=num>Return</th></tr>' +
           rows.map(function(r) {
@@ -454,6 +480,28 @@ async function loadSummary() {
     el.appendChild(wrap);
     cardIdx += 1;
   }
+}
+
+function paperAllocBar(a) {
+  if (!(a.paper_stock_value || a.paper_option_value)) return "";
+  const base = (a.paper_alloc_base != null && !isNaN(a.paper_alloc_base))
+    ? a.paper_alloc_base : a.paper_value;
+  const sp = Math.min(100, (a.paper_stock_value || 0) / base * 100);
+  const op = Math.min(100, (a.paper_option_value || 0) / base * 100);
+  return '<div class="riskbar"><div style="width:' + sp + '%;background:#4493f8"></div>' +
+    '<div style="width:' + op + '%;background:#ab7df6"></div></div>' +
+    '<div class="sub"><span style="color:#4493f8">stocks ' + (a.paper_stock_value ? (a.paper_stock_value / base * 100).toFixed(1) : 0) + '%</span>' +
+    '<span style="color:#ab7df6">options ' + (a.paper_option_value ? (a.paper_option_value / base * 100).toFixed(1) : 0) + '%</span></div>';
+}
+
+function paperMarginUsageBar(a) {
+  if (a.paper_margin_available == null || isNaN(a.paper_margin_available)) return "";
+  const used = a.paper_margin_used || 0;
+  const total = used + a.paper_margin_available;
+  const pct = total > 0 ? Math.min(100, used / total * 100) : 0;
+  const color = pct >= 80 ? "#f85149" : pct >= 50 ? "#d29922" : "#3fb950";
+  return '<div class="riskbar"><div style="width:' + pct + '%;background:' + color + '"></div></div>' +
+    '<div class="sub"><span style="color:' + color + '">margin used ' + pct.toFixed(1) + '%</span><span>utilization</span></div>';
 }
 
 function marginUsageBar(a) {
