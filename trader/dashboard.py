@@ -113,6 +113,12 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   .msg { max-width: 420px; white-space: normal; word-break: break-word; color: var(--text); }
   .detail { white-space: normal; word-break: break-word; color: var(--muted); font-size: 12px; }
   .tlog th:not(:last-child), .tlog td:not(:last-child) { white-space: nowrap; }
+  #trades { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  #trades .tlog { min-width: 560px; }
+  @media (max-width: 640px) {
+    .tlog th:nth-child(2), .tlog td:nth-child(2) { display: none; }
+    .tlog { min-width: 460px; font-size: 12px; }
+  }
   .empty { color: var(--muted); font-size: 13px; padding: 14px; text-align: center; background: var(--panel); border-radius: 8px; }
   .num { text-align: right; }
   .subv { display: block; font-size: 11px; color: var(--muted); }
