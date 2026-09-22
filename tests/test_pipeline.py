@@ -2867,3 +2867,57 @@ def test_paper_positions_include_kind():
              for r in ledger.positions("Personal")}
     assert kinds["SPX-2026-09-25-6000-C"] == "option"
     assert kinds["ZWC"] == "stock"
+
+
+def test_clean_start_script(tmp_path):
+    import sqlite3
+    import subprocess
+    import sys as _sys
+    import trader.store as trader_store
+
+    tmp = tmp_path
+    db = str(tmp / "trades.db")
+
+    store = trader_store.Store(db)
+    store.record_signal("k1", "author", "BOUGHT 09/25 COIN 210c",
+                        parsed=True)
+    store.record_signal("k2", "author", " chatter", parsed=False)
+    from trader.parser import parse_alert
+    alert = parse_alert("BOUGHT 09/25 COIN 210c @ 2.0")
+    store.record_trade(
+        "paper", alert.action, alert.ticker, 1, 2.0, alert,
+        "executed", "t",
+    )
+    store.seed_position(
+        "paper", "Personal", "COIN-2026-09-25-210-C", "COIN",
+        "2026-09-25", 210.0, "C", 1, 2.0,
+    )
+    store.meta_set("paper_seed:Personal", "1")
+
+    # fake logs next to the db
+    (tmp / "pipeline.log").write_text("old line\n")
+    (tmp / "pipeline.log.1").write_text("old archive\n")
+    (tmp / "reader.log").write_text("old reader line\n")
+
+    repo = os.path.dirname(os.path.dirname(
+        os.path.abspath(trader_store.__file__)))
+    script = os.path.join(repo, "scripts", "clean_start.py")
+    env = dict(os.environ)
+    res = subprocess.run(
+        [_sys.executable, script, "--db", db, "--yes"],
+        capture_output=True, text=True, env=env, timeout=60,
+    )
+    assert res.returncode == 0, res.stderr
+
+    conn = sqlite3.connect(db)
+    assert conn.execute("SELECT COUNT(*) FROM signals").fetchone()[0] == 0
+    assert conn.execute("SELECT COUNT(*) FROM trades").fetchone()[0] == 0
+    # paper state survives the clean start
+    assert conn.execute(
+        "SELECT COUNT(*) FROM positions"
+    ).fetchone()[0] == 1
+    conn.close()
+    assert not (tmp / "pipeline.log").exists()
+    assert not (tmp / "pipeline.log.1").exists()
+    assert not (tmp / "reader.log").exists()
+    assert "clean slate" in res.stdout

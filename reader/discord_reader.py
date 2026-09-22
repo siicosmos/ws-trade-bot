@@ -277,6 +277,8 @@ def _append_reader_log(line):
     path = READER_LOG or os.path.join(repo_root(), "reader.log")
     try:
         if os.path.exists(path) and os.path.getsize(path) > READER_LOG_MAX:
+            if os.path.exists(path + ".1"):
+                os.replace(path + ".1", path + ".2")
             os.replace(path, path + ".1")
         with open(path, "a", encoding="utf-8") as f:
             f.write(line.rstrip("\n") + "\n")
