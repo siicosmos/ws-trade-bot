@@ -2018,3 +2018,39 @@ def test_update_relevance_gating(monkeypatch, tmp_path):
     monkeypatch.setattr(up, "_git", fake_git3)
     assert up.git_changed_files(root, "a", "b") is None
     assert up.files_match(None, up.PIPELINE_RESTART_FILES) is False
+
+
+def test_sell_strike_mismatch_detected():
+    cfg, store, account, risk = _setup(
+        mode="notify", paper_account_value=10000, cooldown_seconds=0
+    )
+    from trader.pipeline import process_alert
+
+    buy = process_alert(
+        "BOUGHT 09/25 COIN 210c @ 2.0 small size", "",
+        cfg, store, risk, PaperExecutor(cfg, store, account),
+    )
+    assert buy["status"] == "notified"
+
+    sell = process_alert(
+        "SOLD 1/4 09/25 COIN 200c @ 2.42 +20%", "",
+        cfg, store, risk, PaperExecutor(cfg, store, account),
+    )
+    assert sell["status"] == "notified"
+    trades = store.recent_trades(5)
+    mismatch_rows = [
+        t for t in trades
+        if "differs from last buy" in str(t.get("detail", ""))
+    ]
+    assert mismatch_rows, trades
+    assert "200C" in mismatch_rows[0]["detail"]
+    assert "210C" in mismatch_rows[0]["detail"]
+
+    # a matching sell produces no warning
+    ok = process_alert(
+        "SOLD 1/4 09/25 COIN 210c @ 2.42 +20%", "",
+        cfg, store, risk, PaperExecutor(cfg, store, account),
+    )
+    assert ok["status"] == "notified"
+    last = store.recent_trades(1)[0]
+    assert "differs from" not in str(last.get("detail", ""))

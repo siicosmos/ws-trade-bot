@@ -38,6 +38,27 @@ def process_alert(
         channel=channel, ts_epoch=ts, parsed_epoch=parsed_ts,
     )
 
+    mismatch = None
+    if (
+        alert is not None and alert.kind == "option"
+        and alert.action == "SELL" and alert.strike is not None
+        and alert.expiry
+    ):
+        try:
+            prev = store.last_buy_contract(
+                alert.ticker, alert.expiry
+            )
+        except Exception:
+            prev = None
+        if prev and (
+            abs(prev["strike"] - alert.strike) > 1e-9
+            or prev["right"] != alert.right
+        ):
+            mismatch = (
+                f"sell {alert.strike:g}{alert.right} differs from "
+                f"last buy {prev['strike']:g}{prev['right']}"
+            )
+
     if alert is None:
         if correction:
             notify_correction(cfg.discord.webhook_url, text)
@@ -52,7 +73,7 @@ def process_alert(
             else []
         )
         notify_alert(cfg.discord.webhook_url, alert, sizing,
-                     correction=correction)
+                     correction=correction, mismatch=mismatch)
         # notify mode is the dry-run ledger: record what would have
         # been traded so the trade log stays meaningful
         parts = []
@@ -72,6 +93,8 @@ def process_alert(
         detail = "notify mode - " + (
             "; ".join(parts) if parts else "advisory only"
         )
+        if mismatch:
+            detail = "⚠ " + mismatch + " - " + detail
         if correction:
             detail = "correction - " + detail
         store.record_trade(

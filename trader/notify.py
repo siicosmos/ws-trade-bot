@@ -47,7 +47,8 @@ def notify_correction(webhook_url: str, text: str):
     )
 
 
-def notify_alert(webhook_url: str, alert, sizing=None, correction=False):
+def notify_alert(webhook_url: str, alert, sizing=None, correction=False,
+                 mismatch=None):
     if not webhook_url:
         return
 
@@ -80,6 +81,8 @@ def notify_alert(webhook_url: str, alert, sizing=None, correction=False):
             fields["scale"] = format_scale(alert.scale)
         if alert.size:
             fields["size"] = f"**{alert.size}**"
+        if mismatch:
+            fields["⚠ mismatch"] = mismatch
     else:
         emoji = "🟢" if alert.action == "BUY" else "🔴"
         title = f"{emoji} {alert.action} {alert.ticker}"

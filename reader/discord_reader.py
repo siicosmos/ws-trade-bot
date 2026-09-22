@@ -244,6 +244,20 @@ def is_recent_message(text, max_age_minutes=10, floor=None):
     return -5 <= age <= max_age_minutes
 
 
+# Discord's unread divider ("New" / localized) can sit inside a
+# message item's text walk - two adjacent messages then arrive as
+# one delivered text. Split on it and treat each side as its own
+# message.
+DIVIDER_RE = re.compile(
+    r"\s*(?:新的|新訊息|NEW|New messages? below|新着)\s*"
+)
+
+
+def split_divider(text):
+    parts = [p.strip() for p in DIVIDER_RE.split(text or "")]
+    return [p for p in parts if p]
+
+
 def looks_like_message(text):
     if not text:
         return False
@@ -580,11 +594,16 @@ def current_messages(container, max_items=40, floor=None):
                 text = (item.Name or "").strip()
             except UIAError:
                 text = ""
-        if not text or not looks_like_message(text):
+        if not text:
             continue
-        if not is_recent_message(text, floor=floor):
-            continue
-        texts.append((strip_ui_noise(text), meta_time(text)))
+        for part in split_divider(text):
+            if not looks_like_message(part):
+                continue
+            if not is_recent_message(part, floor=floor):
+                continue
+            texts.append(
+                (strip_ui_noise(part), meta_time(part))
+            )
     return texts
 
 

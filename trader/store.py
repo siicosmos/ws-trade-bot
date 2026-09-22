@@ -63,6 +63,16 @@ class Store:
                 self._conn.execute("ALTER TABLE trades ADD COLUMN dedupe_key TEXT")
             except sqlite3.OperationalError:
                 pass
+            for col, decl in (
+                ("strike", "REAL"), ("expiry", "TEXT"),
+                ("opt_right", "TEXT"),
+            ):
+                try:
+                    self._conn.execute(
+                        f"ALTER TABLE trades ADD COLUMN {col} {decl}"
+                    )
+                except sqlite3.OperationalError:
+                    pass
             try:
                 self._conn.execute(
                     "ALTER TABLE signals ADD COLUMN correction "
@@ -211,14 +221,32 @@ class Store:
         with self._lock, self._conn:
             self._conn.execute(
                 "INSERT INTO trades (ts, mode, action, ticker, qty, price, entry, "
-                "stop_loss, take_profit, status, detail, message_key, dedupe_key) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "stop_loss, take_profit, status, detail, message_key, dedupe_key, "
+                "strike, expiry, opt_right) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     self._now(), mode, action, ticker, qty, price,
                     alert.entry, alert.stop_loss, alert.take_profit,
                     status, detail, message_key, alert.dedupe_key(),
+                    getattr(alert, "strike", None),
+                    getattr(alert, "expiry", None),
+                    getattr(alert, "right", None),
                 ),
             )
+
+    def last_buy_contract(self, ticker, expiry):
+        """Strike/right of the most recent BUY for this underlying
+        and expiry, for sell-mismatch detection."""
+        with self._lock, self._conn:
+            row = self._conn.execute(
+                "SELECT strike, opt_right FROM trades "
+                "WHERE action = 'BUY' AND ticker = ? AND expiry = ? "
+                "ORDER BY rowid DESC LIMIT 1",
+                (ticker, expiry),
+            ).fetchone()
+        if not row or row[0] is None:
+            return None
+        return {"strike": row[0], "right": row[1] or "?"}
 
     def get_position(self, mode: str, contract_key: str, account="default") -> int:
         with self._lock, self._conn:

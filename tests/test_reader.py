@@ -962,3 +962,17 @@ def test_item_text_skips_reaction_buttons():
     assert "rest 2X or BE" in text
     # the reaction count must not leak into the message text
     assert "BE 1" not in text and not text.rstrip().endswith("1")
+
+
+def test_divider_splits_merged_messages():
+    import discord_reader as dr
+
+    merged = (
+        "Liam 10:57 SOLD 1/4 09/25 COIN 200c @ 2.42 +20% 新的 "
+        "Liam 11:31 SOLD 1/4 09/25 COIN 200c @ 2.38 +20%"
+    )
+    parts = dr.split_divider(merged)
+    assert len(parts) == 2
+    assert "新的" not in "".join(parts)
+    # a divider-only item yields nothing
+    assert dr.split_divider("新的") == []
