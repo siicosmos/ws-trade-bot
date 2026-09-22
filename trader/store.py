@@ -538,6 +538,25 @@ class Store:
                 ),
             )
 
+    def reset_paper_account(self, label: str = "default"):
+        """Drop a paper account's ledger so it can be re-seeded."""
+        self._touch()
+        self._positions_version += 1
+        self._positions_cache.clear()
+        with self._lock, self._conn:
+            self._conn.execute(
+                "DELETE FROM positions WHERE mode = 'paper' "
+                "AND account = ?", (label,)
+            )
+            for key in (
+                f"paper_seed:{label}", f"paper_initial:{label}",
+                f"paper_equity:{label}",
+                f"mirror:{label}:since", f"mirror:{label}:ids",
+            ):
+                self._conn.execute(
+                    "DELETE FROM meta WHERE key = ?", (key,)
+                )
+
     def paper_equity(self, label: str = "default"):
         with self._lock, self._conn:
             row = self._conn.execute(

@@ -2779,3 +2779,91 @@ def test_notify_flag_gates_alert_notifications(monkeypatch):
         cfg, store, risk, None, account,
     )
     assert sent == ["COIN"]
+
+
+def test_paper_reset_endpoint():
+    accounts = [
+        WSAccountConfig(account_id="pers", label="Personal",
+                        paper_value=2000),
+    ]
+    store = _fresh_store()
+    cfg = ConfigStub(
+        TradingConfig(mode="notify", risk_per_trade_pct=5),
+        accounts=accounts,
+    )
+    cfg.paper = type("Paper", (), {"enabled": True})()
+
+    class FakeWSAccount:
+        def _positions_raw(self):
+            return {"Personal": [{
+                "quantity": "10", "positionDirection": "LONG",
+                "bookValue": {"amount": "2000.00"},
+                "marketBookValue": {"amount": "1500.00",
+                                     "currency": "USD"},
+                "totalValue": {"amount": "1600.00",
+                                "currency": "USD"},
+                "averagePrice": {"amount": "150.00"},
+                "security": {
+                    "securityType": "STOCK",
+                    "stock": {"symbol": "AAPL"},
+                    "quoteV2": {"price": "160.00",
+                                 "currency": "USD"},
+                },
+            }]}
+
+        def _resolve(self):
+            return [("Personal", "pers")]
+
+        def values(self):
+            return {"Personal": 2000.0}
+
+    account = FakeWSAccount()
+    risk = RiskEngine(cfg, store, account)
+    app = __import__(
+        "trader.server", fromlist=["create_app"]
+    ).create_app(cfg, store, risk, None, account)
+    client = app.test_client()
+
+    # seed once
+    from trader.account import seed_paper_accounts
+    assert seed_paper_accounts(cfg, store, account) == ["Personal"]
+    assert store.list_positions("paper", "Personal")
+    assert store.paper_equity("Personal") is not None
+
+    # reset drops the ledger and reseeds from live
+    res = client.post("/api/paper-reset",
+                      json={"label": "Personal"})
+    data = res.get_json()
+    assert res.status_code == 200
+    assert data["status"] == "ok"
+    assert data["reseeded"] is True
+    rows = store.list_positions("paper", "Personal")
+    assert rows and rows[0]["contract_key"] == "AAPL"
+    # a bogus label errors cleanly
+    res = client.post("/api/paper-reset", json={"label": ""})
+    assert res.status_code == 400
+
+
+def test_paper_positions_include_kind():
+    from trader.account import PaperLedger
+    from trader.mirror import MirrorShim
+
+    store = _fresh_store()
+    opt = MirrorShim(
+        kind="option", underlying="SPX", expiry="2026-09-25",
+        strike=6000, right="C", action="BUY", premium=1.0,
+        entry=1.0, ts="t",
+    )
+    stk = MirrorShim(
+        kind="stock", underlying="ZWC", expiry=None, strike=None,
+        right=None, action="BUY", premium=30.0, entry=30.0, ts="t",
+    )
+    store.apply_position("paper", opt, 1, premium=1.0,
+                         account="Personal")
+    store.apply_position("paper", stk, 100, premium=30.0,
+                         account="Personal")
+    ledger = PaperLedger(cfg=None, store=store, ws_account=None)
+    kinds = {r["contract_key"]: r["kind"]
+             for r in ledger.positions("Personal")}
+    assert kinds["SPX-2026-09-25-6000-C"] == "option"
+    assert kinds["ZWC"] == "stock"

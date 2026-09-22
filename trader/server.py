@@ -557,6 +557,30 @@ def create_app(cfg, store: Store, risk, executor, account=None,
             }
         )
 
+    @app.post("/api/paper-reset")
+    def api_paper_reset():
+        if not getattr(
+            getattr(cfg, "paper", None), "enabled", False
+        ) and mode != "paper":
+            return jsonify(
+                {"error": "paper trading is not active"}
+            ), 400
+        payload = request.get_json(silent=True) or {}
+        label = str(payload.get("label") or "").strip()
+        if not label:
+            return jsonify({"error": "label required"}), 400
+        store.reset_paper_account(label)
+        seeded = []
+        if hasattr(account, "_positions_raw"):
+            from .account import seed_paper_accounts
+
+            seeded = seed_paper_accounts(cfg, store, account) or []
+        _summary_cache["ts"] = 0.0
+        return jsonify({
+            "status": "ok", "label": label,
+            "reseeded": label in seeded,
+        })
+
     @app.get("/api/paper-positions")
     def api_paper_positions():
         if not getattr(

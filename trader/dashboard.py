@@ -251,6 +251,20 @@ let paperOpen = JSON.parse(
 );
 let paperPositions = null;
 
+async function resetPaper(label) {
+  if (!confirm("Reset the paper ledger for " + label + "? It will be re-seeded from the live account.")) return;
+  try {
+    const res = await fetch("/api/paper-reset", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ label: label }),
+    });
+    if (res.status === 401) { location.href = "/login"; return; }
+  } catch (e) { /* surfaced by the next refresh */ }
+  paperPositions = null;
+  loadSummary();
+}
+
 function togglePaper(label) {
   paperOpen = paperOpen.indexOf(label) >= 0
     ? paperOpen.filter(function(l) { return l !== label; })
@@ -356,8 +370,9 @@ async function loadSummary() {
       const open = paperOpen.indexOf(a.label) >= 0;
       const rows = (paperPositions || {})[a.label] || [];
       pc.innerHTML =
-        '<div class="label" style="cursor:pointer" onclick="togglePaper(\'' + esc(a.label) + '\')">paper · ' + esc(a.label) +
-        '<span style="float:right">' + (rows.length ? "holdings " + (open ? "▴" : "▾") : "holdings ▾") + '</span></div>' +
+        '<div class="label" style="display:flex;justify-content:space-between;align-items:center">paper · ' + esc(a.label) +
+        '<span><button onclick="togglePaper(\'' + esc(a.label) + '\')" style="background:#21262d;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:2px 10px;font-size:11px;cursor:pointer">' + (rows.length ? "holdings " + (open ? "▴" : "▾") : "holdings ▾") + '</button> ' +
+        '<button onclick="resetPaper(\'' + esc(a.label) + '\')" style="background:#21262d;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:2px 10px;font-size:11px;cursor:pointer">reset</button></span></div>' +
         '<div class="value" style="font-size:20px">' + (hidden ? "••••••" : fmtMoney(a.paper_value) + " cad") +
         (pnl == null ? '' :
           ' <span style="font-size:13px;color:' + pnlColor + '">' +
@@ -367,7 +382,7 @@ async function loadSummary() {
         '<div class="sub"><span>seeded ' + (hidden ? "••••••" : (a.paper_initial != null ? fmtMoney(a.paper_initial) + " cad" : "—")) + '</span>' +
         '<span>' + rows.length + ' positions</span></div>' +
         (open ? (rows.length ?
-          '<table class="pos" style="margin-top:10px;font-size:12px"><tr><th>Contract</th><th class=num>Qty</th><th class=num>Avg $</th><th class=num>Value</th><th class=num>Return</th></tr>' +
+          '<table class="pos" style="margin-top:10px;font-size:12px"><tr><th>Holding</th><th class=num>Qty</th><th class=num>Avg $</th><th class=num>Value</th><th class=num>Return</th></tr>' +
           rows.map(function(r) {
             const rc = r.pnl == null ? "var(--muted)" : r.pnl >= 0 ? "var(--green)" : "var(--red)";
             return '<tr><td>' + esc(r.contract_key) + '</td>' +

@@ -250,6 +250,7 @@ class PaperLedger:
                 {
                     "contract_key": pos["contract_key"],
                     "underlying": pos.get("underlying"),
+                    "kind": "option" if is_option else "stock",
                     "qty": pos["qty"],
                     "avg": round(pos.get("avg_premium") or 0.0, 4),
                     "value": round(value, 2),
