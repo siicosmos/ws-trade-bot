@@ -327,6 +327,7 @@ class WealthsimpleAccount:
         self._pos_cache_ts = 0.0
         self._raw_cache = None
         self._raw_ts = 0.0
+        self._map_cache = None
         self._fx_quote = None
         self._fx_quote_ts = 0.0
         self._usd_cache = None
@@ -606,9 +607,12 @@ class WealthsimpleAccount:
         book value in cost_cad. Currency positions (cash) are
         excluded - they surface in the funding balances.
         """
-        raw = self._positions_raw(max_age_seconds)
-        if raw is None:
+        mapped = self._mapped_positions(max_age_seconds)
+        if mapped is None:
             return None
+        return mapped[1]
+
+    def _map_stocks(self, raw):
         out = {}
         for label, positions in raw.items():
             if positions is None:
@@ -716,6 +720,23 @@ class WealthsimpleAccount:
             out[label] = rows
         return out
 
+    def _mapped_positions(self, max_age_seconds=None):
+        """(options, stocks) for all labels, mapped once per raw
+        fetch generation - the dashboard polls faster than the
+        positions refresh, so the mapping is reused.
+        """
+        raw = self._positions_raw(max_age_seconds)
+        if raw is None:
+            return None
+        cache = getattr(self, "_map_cache", None)
+        raw_ts = getattr(self, "_raw_ts", None)
+        if cache is not None and cache[0] == raw_ts:
+            return cache[1], cache[2]
+        options = self._map_options(raw)
+        stocks = self._map_stocks(raw)
+        self._map_cache = (raw_ts, options, stocks)
+        return options, stocks
+
     def open_option_positions(self, max_age_seconds=None):
         """Real open option positions per account label.
 
@@ -723,12 +744,14 @@ class WealthsimpleAccount:
         "usd_cash": float|None}} with amounts split by currency
         (US options quote in USD, the account books in CAD), or
         {label: None} for accounts that could not be fetched so
-        callers can fall back to tracked positions. Cached for a
-        few minutes.
+        callers can fall back to tracked positions.
         """
-        raw = self._positions_raw(max_age_seconds)
-        if raw is None:
+        mapped = self._mapped_positions(max_age_seconds)
+        if mapped is None:
             return None
+        return mapped[0]
+
+    def _map_options(self, raw):
         out = {}
         for label, positions in raw.items():
             if positions is None:

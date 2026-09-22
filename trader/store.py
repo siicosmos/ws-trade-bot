@@ -9,6 +9,16 @@ class Store:
     def __init__(self, path: str = "trades.db"):
         self._conn = sqlite3.connect(path, check_same_thread=False)
         self._lock = threading.Lock()
+        # positions cache: bumped on every write so reads between
+        # trades are served from memory
+        self._positions_version = 0
+        self._positions_cache = {}
+        try:
+            self._conn.execute("PRAGMA journal_mode=WAL")
+            self._conn.execute("PRAGMA synchronous=NORMAL")
+            self._conn.execute("PRAGMA busy_timeout=5000")
+        except sqlite3.Error:
+            pass
         self._init_schema()
 
     def _init_schema(self):
@@ -258,21 +268,32 @@ class Store:
             return int(row[0]) if row else 0
 
     def list_positions(self, mode: str, account=None):
-        query = (
-            "SELECT account, contract_key, underlying, expiry, strike, right, "
-            "qty, avg_premium, realized, peak_bid "
-            "FROM positions WHERE mode = ? AND qty > 0"
-        )
-        params = [mode]
-        if account is not None:
-            query += " AND account = ?"
-            params.append(account)
-        query += " ORDER BY account, updated_ts DESC"
-        with self._lock, self._conn:
-            rows = self._conn.execute(query, params).fetchall()
-        keys = ["account", "contract_key", "underlying", "expiry", "strike",
-                "right", "qty", "avg_premium", "realized", "peak_bid"]
-        return [dict(zip(keys, r)) for r in rows]
+        keys = ["account", "contract_key", "underlying", "expiry",
+                "strike", "right", "qty", "avg_premium", "realized",
+                "peak_bid"]
+        cache_key = (mode, account)
+        with self._lock:
+            cached = self._positions_cache.get(cache_key)
+            if cached and cached[0] == self._positions_version:
+                return [dict(r) for r in cached[1]]
+            query = (
+                "SELECT account, contract_key, underlying, expiry, "
+                "strike, right, qty, avg_premium, realized, peak_bid "
+                "FROM positions WHERE mode = ? AND qty > 0"
+            )
+            params = [mode]
+            if account is not None:
+                query += " AND account = ?"
+                params.append(account)
+            query += " ORDER BY account, updated_ts DESC"
+            rows = [
+                dict(zip(keys, r))
+                for r in self._conn.execute(query, params).fetchall()
+            ]
+            self._positions_cache[cache_key] = (
+                self._positions_version, rows
+            )
+            return [dict(r) for r in rows]
 
     def apply_position(
         self, mode: str, alert, delta: int, premium=None, account="default"
@@ -289,6 +310,8 @@ class Store:
             else:
                 old_qty, old_avg, old_realized = int(row[0]), row[1], row[2] or 0.0
 
+            self._positions_version += 1
+            self._positions_cache.clear()
             new_qty = max(0, old_qty + delta)
             new_avg = old_avg
             realized = old_realized
@@ -361,6 +384,8 @@ class Store:
         return int(streak.get("count") or 0)
 
     def update_peak_bid(self, mode, contract_key, bid, account="default"):
+        self._positions_version += 1
+        self._positions_cache.clear()
         with self._lock, self._conn:
             self._conn.execute(
                 "UPDATE positions SET peak_bid = MAX("
@@ -481,6 +506,8 @@ class Store:
     ):
         """Insert a seeded position row (used to mirror live
         holdings into the paper ledger)."""
+        self._positions_version += 1
+        self._positions_cache.clear()
         with self._lock, self._conn:
             self._conn.execute(
                 "INSERT INTO positions (mode, account, contract_key, "

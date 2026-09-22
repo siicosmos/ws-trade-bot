@@ -1706,6 +1706,7 @@ def test_registered_account_no_margin(monkeypatch):
     assert row["margin_available"] is None
 
     account.account_type_map = lambda: {"pers": "PERSONAL"}
+    client.application._summary_cache["ts"] = 0.0
     summary = client.get("/api/summary").get_json()
     row = next(a for a in summary["accounts"] if a["label"] == "Personal")
     assert row["margin_requirement"] is not None
@@ -2366,3 +2367,94 @@ def test_notify_plus_paper_executes_and_skips_unheld():
         if t["mode"] == "paper" and t["status"] == "skipped"
     ]
     assert skipped and "no position" in skipped[0]["detail"]
+
+
+def test_positions_mapping_cached_per_raw_generation(monkeypatch):
+    from trader.account import WealthsimpleAccount
+    from tests.test_pipeline import _ws_position_fixture  # noqa
+
+    fetches = []
+
+    class FakeWS:
+        identity_id = None
+
+        def get_positions(self, account_ids=None, **kw):
+            fetches.append(1)
+            return _ws_position_fixture()
+
+    class FakeCfg:
+        class wealthsimple:
+            positions_refresh_seconds = 30
+            values_refresh_seconds = 60
+
+    acct = WealthsimpleAccount.__new__(WealthsimpleAccount)
+    acct.cfg = FakeCfg()
+    acct._ws = FakeWS()
+    acct._resolved = None
+    acct._stale = {}
+    acct._pos_cache = None
+    acct._pos_cache_ts = 0.0
+    acct._raw_cache = None
+    acct._raw_ts = 0.0
+    acct._fx_quote = None
+    acct._fx_quote_ts = 0.0
+    acct._usd_cache = None
+    acct._usd_cache_ts = 0.0
+    acct._cache = None
+    acct._cache_ts = 0.0
+    acct._type_map = None
+    acct._margin_rates = {}
+    monkeypatch.setattr(acct, "_resolve", lambda: [("RRSP", "a1")])
+
+    maps = []
+    orig_options = WealthsimpleAccount._map_options
+    monkeypatch.setattr(
+        WealthsimpleAccount, "_map_options",
+        lambda self, raw: (maps.append(1), orig_options(self, raw))[1],
+    )
+
+    for _ in range(3):
+        opts = acct.open_option_positions()
+        stocks = acct.stock_holdings()
+    # one raw fetch, one mapping pass - the rest served from cache
+    assert len(fetches) == 1
+    assert len(maps) == 1
+    assert opts["RRSP"]["positions"]
+    assert stocks is not None
+
+    # a fresh generation (forced) remaps
+    acct._ws = FakeWS()
+    acct._raw_cache = None
+    acct._raw_ts = 0.0
+    acct.open_option_positions(max_age_seconds=0)
+    assert len(maps) == 2
+
+
+def test_summary_cache_serves_repeated_polls():
+    app, store, account = _make_app()
+    client = app.test_client()
+    calls = []
+    orig = account.values
+    account.values = lambda: (calls.append(1), orig())[1]
+    for _ in range(3):
+        summary = client.get("/api/summary").get_json()
+    assert len(calls) == 1
+    assert summary["accounts"]
+    # invalidation refreshes
+    client.application._summary_cache["ts"] = 0.0
+    client.get("/api/summary")
+    assert len(calls) == 2
+
+
+def test_positions_cache_invalidates_on_writes():
+    app, store, account = _make_app()
+    from trader.parser import parse_alert
+
+    alert = parse_alert("BOUGHT 0DTE SPY 759c @ 1.5 small size")
+    store.apply_position("paper", alert, 2, premium=1.5, account="Personal")
+    first = store.list_positions("paper", "Personal")
+    assert first and first[0]["qty"] == 2
+    # served from cache
+    assert store.list_positions("paper", "Personal")[0]["qty"] == 2
+    store.apply_position("paper", alert, 1, premium=1.5, account="Personal")
+    assert store.list_positions("paper", "Personal")[0]["qty"] == 3

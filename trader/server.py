@@ -200,7 +200,17 @@ def create_app(cfg, store: Store, risk, executor, account=None,
         except Exception:
             return None
 
+    _summary_cache = {"ts": 0.0, "accounts": None}
+    app._summary_cache = _summary_cache
+
     def _account_summaries():
+        # the dashboard polls every few seconds - reuse the
+        # computed summaries between position/value refreshes
+        if (
+            _summary_cache["accounts"] is not None
+            and time.time() - _summary_cache["ts"] < 2.5
+        ):
+            return _summary_cache["accounts"], None
         values = {}
         if account is not None:
             try:
@@ -504,6 +514,8 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                     ),
                 }
             )
+        _summary_cache["ts"] = time.time()
+        _summary_cache["accounts"] = out
         return out, None
 
     @app.get("/account")
@@ -603,6 +615,8 @@ def create_app(cfg, store: Store, risk, executor, account=None,
         applied, errors = apply_settings(cfg, payload, config_path)
         if errors:
             return jsonify({"status": "error", "errors": errors}), 400
+        # settings feed the summaries - drop the cache at once
+        _summary_cache["ts"] = 0.0
         return jsonify(
             {
                 "status": "ok",
