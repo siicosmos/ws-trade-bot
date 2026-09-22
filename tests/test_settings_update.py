@@ -780,3 +780,26 @@ def test_all_webhooks_editable(tmp_path):
         cfg, {"discord": {"webhook_url": "ftp://nope"}}, None
     )
     assert errors2 and "https" in errors2[0]
+
+
+def test_paper_settings_roundtrip(tmp_path):
+    from trader.config import load_config
+    from trader.settings import get_settings, apply_settings
+
+    path = tmp_path / "cfg.yaml"
+    path.write_text("trading:\n  mode: notify\n")
+    cfg = load_config(str(path))
+
+    assert get_settings(cfg)["paper"]["enabled"] is False
+    applied, errors = apply_settings(
+        cfg, {"paper": {"enabled": True, "mirror": False}}, path
+    )
+    assert not errors
+    assert applied["paper.enabled"] is True
+    assert applied["paper.mirror"] is False
+    s = get_settings(cfg)
+    assert s["paper"]["enabled"] is True
+    assert s["paper"]["mirror"] is False
+    cfg2 = load_config(str(path))
+    assert cfg2.paper.enabled is True
+    assert cfg2.paper.mirror is False

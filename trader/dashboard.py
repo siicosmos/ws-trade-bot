@@ -683,7 +683,10 @@ async function loadSettings() {
     '<label style="color:var(--muted);font-size:12px">positions every <input id="set-ws-positions" type="number" value="' + (s.wealthsimple ? s.wealthsimple.positions_refresh_seconds : 30) + '" style="width:70px;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:13px">s</label>' +
     '<label style="color:var(--muted);font-size:12px">account values every <input id="set-ws-values" type="number" value="' + (s.wealthsimple ? s.wealthsimple.values_refresh_seconds : 60) + '" style="width:70px;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:13px">s</label>' +
     '<label style="color:var(--muted);font-size:12px"><input id="set-quotes-enabled" type="checkbox"' + (s.quotes.enabled ? " checked" : "") + '> live option quotes (stop monitor)</label>' +
-    '<label style="color:var(--muted);font-size:12px">quotes: <select id="set-quotes-provider" style="background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:13px"><option value="ws"' + (s.quotes.provider === "ws" ? " selected" : "") + '>ws</option><option value="moomoo"' + (s.quotes.provider === "moomoo" ? " selected" : "") + '>moomoo</option></select></label></div>';
+    '<label style="color:var(--muted);font-size:12px">quotes: <select id="set-quotes-provider" style="background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:13px"><option value="ws"' + (s.quotes.provider === "ws" ? " selected" : "") + '>ws</option><option value="moomoo"' + (s.quotes.provider === "moomoo" ? " selected" : "") + '>moomoo</option></select></label>' +
+    '<div style="flex-basis:100%;height:1px;background:var(--border);margin:4px 0"></div>' +
+    '<label style="color:var(--muted);font-size:12px"><input id="set-paper-enabled" type="checkbox"' + (s.paper && s.paper.enabled ? " checked" : "") + '> paper trading (seeds from live accounts, restart to apply)</label>' +
+    '<label style="color:var(--muted);font-size:12px"><input id="set-paper-mirror" type="checkbox"' + (s.paper && s.paper.mirror ? " checked" : "") + '> mirror my real fills into paper</label></div>';
   el.innerHTML = html;
   el.querySelectorAll("textarea").forEach(function(t) {
     autoGrow(t);
@@ -740,6 +743,7 @@ async function saveSettings() {
     wealthsimple: { positions_refresh_seconds: parseInt(val("set-ws-positions")), values_refresh_seconds: parseInt(val("set-ws-values")) },
     discord: { webhook_url: val("set-discord-webhook_url").trim(), reader_log_webhook_url: val("set-discord-reader_log_webhook_url").trim(), pipeline_log_webhook_url: val("set-discord-pipeline_log_webhook_url").trim(), update_webhook_url: val("set-discord-update_webhook_url").trim() },
     quotes: { enabled: document.getElementById("set-quotes-enabled").checked, provider: val("set-quotes-provider") },
+    paper: { enabled: document.getElementById("set-paper-enabled").checked, mirror: document.getElementById("set-paper-mirror").checked },
   };
   const res = await fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
   const data = await res.json();

@@ -190,6 +190,8 @@ def start_mirror_thread(cfg, store, ws_account, ledger,
     def run():
         while True:
             time.sleep(max(15, int(interval_seconds)))
+            if not getattr(cfg, "paper", None) or not cfg.paper.mirror:
+                continue
             try:
                 applied = mirror_real_trades(
                     cfg, store, ws_account, ledger

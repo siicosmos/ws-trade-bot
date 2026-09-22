@@ -62,6 +62,14 @@ def get_settings(cfg) -> dict:
             "enabled": cfg.quotes.enabled,
             "provider": cfg.quotes.provider,
         },
+        "paper": {
+            "enabled": bool(
+                getattr(getattr(cfg, "paper", None), "enabled", False)
+            ),
+            "mirror": bool(
+                getattr(getattr(cfg, "paper", None), "mirror", True)
+            ),
+        },
         "wealthsimple": {
             "positions_refresh_seconds": (
                 cfg.wealthsimple.positions_refresh_seconds
@@ -236,6 +244,16 @@ def apply_settings(cfg, payload: dict, config_path=None) -> tuple:
         cfg.reader.auto_scroll = bool(reader_payload["auto_scroll"])
         applied["reader.auto_scroll"] = cfg.reader.auto_scroll
 
+    paper_payload = payload.get("paper") or {}
+    paper_cfg = getattr(cfg, "paper", None)
+    if paper_cfg is not None:
+        if "enabled" in paper_payload:
+            paper_cfg.enabled = bool(paper_payload["enabled"])
+            applied["paper.enabled"] = paper_cfg.enabled
+        if "mirror" in paper_payload:
+            paper_cfg.mirror = bool(paper_payload["mirror"])
+            applied["paper.mirror"] = paper_cfg.mirror
+
     quotes_payload = payload.get("quotes") or {}
     if "enabled" in quotes_payload:
         cfg.quotes.enabled = bool(quotes_payload["enabled"])
@@ -338,6 +356,12 @@ def _persist(cfg, config_path):
     quotes = raw.setdefault("quotes", {})
     quotes["enabled"] = cfg.quotes.enabled
     quotes["provider"] = cfg.quotes.provider
+
+    paper_cfg = getattr(cfg, "paper", None)
+    if paper_cfg is not None:
+        paper = raw.setdefault("paper", {})
+        paper["enabled"] = paper_cfg.enabled
+        paper["mirror"] = paper_cfg.mirror
 
     reader = raw.setdefault("reader", {})
     for key in EDITABLE_READER:
