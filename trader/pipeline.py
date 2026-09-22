@@ -22,6 +22,12 @@ def _paper_enabled(cfg):
     )
 
 
+def _notify_enabled(cfg):
+    return bool(
+        getattr(getattr(cfg, "discord", None), "notify", True)
+    )
+
+
 def process_alert(
     text, author, cfg, store, risk: RiskEngine, executor, account=None,
     channel: str = "", ts=None, parsed_ts=None,
@@ -67,9 +73,11 @@ def process_alert(
 
     if alert is None:
         if correction:
-            notify_correction(cfg.discord.webhook_url, text)
+            if _notify_enabled(cfg):
+                notify_correction(cfg.discord.webhook_url, text)
             return {"status": "correction", "alert": None}
-        notify_plain(cfg.discord.webhook_url, text)
+        if _notify_enabled(cfg):
+            notify_plain(cfg.discord.webhook_url, text)
         return {"status": "ignored", "reason": "no actionable signal"}
 
     if cfg.trading.mode == "notify":
@@ -78,8 +86,9 @@ def process_alert(
             if account and alert.action == "BUY"
             else []
         )
-        notify_alert(cfg.discord.webhook_url, alert, sizing,
-                     correction=correction, mismatch=mismatch)
+        if _notify_enabled(cfg):
+            notify_alert(cfg.discord.webhook_url, alert, sizing,
+                         correction=correction, mismatch=mismatch)
         # notify mode is the dry-run ledger: record what would have
         # been traded so the trade log stays meaningful
         parts = []

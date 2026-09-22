@@ -79,6 +79,11 @@ def get_settings(cfg) -> dict:
             ),
         },
         "discord": {
+            "notify": bool(
+                getattr(
+                    getattr(cfg, "discord", None), "notify", True
+                )
+            ),
             "webhook_url": cfg.discord.webhook_url,
             "reader_log_webhook_url": cfg.discord.reader_log_webhook_url,
             "pipeline_log_webhook_url": (
@@ -244,6 +249,11 @@ def apply_settings(cfg, payload: dict, config_path=None) -> tuple:
         cfg.reader.auto_scroll = bool(reader_payload["auto_scroll"])
         applied["reader.auto_scroll"] = cfg.reader.auto_scroll
 
+    discord_notify = (payload.get("discord") or {}).get("notify")
+    if discord_notify is not None:
+        cfg.discord.notify = bool(discord_notify)
+        applied["discord.notify"] = cfg.discord.notify
+
     paper_payload = payload.get("paper") or {}
     paper_cfg = getattr(cfg, "paper", None)
     if paper_cfg is not None:
@@ -362,6 +372,15 @@ def _persist(cfg, config_path):
         paper = raw.setdefault("paper", {})
         paper["enabled"] = paper_cfg.enabled
         paper["mirror"] = paper_cfg.mirror
+    discord_cfg = getattr(cfg, "discord", None)
+    if discord_cfg is not None and "notify" in (
+        raw.get("discord") or {}
+    ):
+        raw["discord"]["notify"] = discord_cfg.notify
+    elif discord_cfg is not None and getattr(
+        discord_cfg, "notify", True
+    ) is False:
+        raw.setdefault("discord", {})["notify"] = False
 
     reader = raw.setdefault("reader", {})
     for key in EDITABLE_READER:

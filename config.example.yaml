@@ -68,6 +68,9 @@ reader:
 # discord - webhooks that send notifications to your private server
 # ---------------------------------------------------------------------------
 discord:
+  # master switch for parsed-alert notifications to the webhook
+  # (the settings "notify" checkbox)
+  notify: true
   webhook_url: "YOUR_PRIVATE_SERVER_WEBHOOK_URL"  # trade alerts to your phone
   reader_log_webhook_url: ""    # reader log lines (optional)
   pipeline_log_webhook_url: ""  # pipeline log lines (optional)

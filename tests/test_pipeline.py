@@ -2750,3 +2750,32 @@ def test_summary_paper_flag_in_paper_mode():
     summary = app.test_client().get("/api/summary").get_json()
     # paper badge shows in paper mode even without paper.enabled
     assert summary["paper"] is True
+
+
+def test_notify_flag_gates_alert_notifications(monkeypatch):
+    import trader.pipeline as pipeline_mod
+    from trader.pipeline import process_alert
+
+    sent = []
+    monkeypatch.setattr(
+        pipeline_mod, "notify_alert",
+        lambda url, alert, sizing=None, correction=False,
+               mismatch=None: sent.append(alert.ticker),
+    )
+    cfg, store, account, risk = _setup(
+        mode="notify", paper_account_value=10000,
+        cooldown_seconds=0,
+    )
+    cfg.discord.notify = False
+    res = process_alert(
+        "BOUGHT 09/25 COIN 210c @ 2.0 small size", "",
+        cfg, store, risk, None, account,
+    )
+    assert res["status"] == "notified"
+    assert sent == []          # quiet
+    cfg.discord.notify = True
+    process_alert(
+        "BOUGHT 09/25 COIN 210c @ 2.1 small size", "",
+        cfg, store, risk, None, account,
+    )
+    assert sent == ["COIN"]

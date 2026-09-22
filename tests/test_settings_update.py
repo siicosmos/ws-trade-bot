@@ -803,3 +803,24 @@ def test_paper_settings_roundtrip(tmp_path):
     cfg2 = load_config(str(path))
     assert cfg2.paper.enabled is True
     assert cfg2.paper.mirror is False
+
+
+def test_discord_notify_toggle(tmp_path):
+    from trader.config import load_config
+    from trader.settings import apply_settings, get_settings
+
+    path = tmp_path / "cfg.yaml"
+    path.write_text(
+        "trading:\n  mode: notify\n"
+        "discord:\n  webhook_url: 'x'\n"
+    )
+    cfg = load_config(str(path))
+    assert get_settings(cfg)["discord"]["notify"] is True
+
+    applied, errors = apply_settings(
+        cfg, {"discord": {"notify": False}}, str(path)
+    )
+    assert not errors
+    assert applied["discord.notify"] is False
+    cfg2 = load_config(str(path))
+    assert cfg2.discord.notify is False

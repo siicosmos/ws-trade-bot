@@ -20,6 +20,9 @@ class DiscordConfig:
     reader_log_webhook_url: str = ""
     pipeline_log_webhook_url: str = ""
     update_webhook_url: str = ""
+    # send parsed alerts to the webhook
+    notify: bool = True
+
 
 
 def _default_size_tiers() -> dict:
@@ -257,6 +260,7 @@ def load_config(path: str) -> Config:
             tls_key=str(_get(pipeline_raw, "tls_key", "")),
         ),
         discord=DiscordConfig(
+        notify=bool(_get(discord_raw, "notify", True)),
             webhook_url=webhook,
             reader_log_webhook_url=str(
                 _get(discord_raw, "reader_log_webhook_url", "")

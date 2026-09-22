@@ -676,15 +676,28 @@ async function loadSettings() {
   // periodic refresh used to wipe them mid-typing
   if (settingsDirty) return;
   const el = document.getElementById("settings");
-  let html = '<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-bottom:12px">' +
-    '<label style="color:var(--muted);font-size:12px"><input id="set-paper-enabled" type="checkbox"' + (s.paper && s.paper.enabled ? " checked" : "") + '> paper trading (seeds from live accounts, restart to apply)</label>' +
-    '<label style="color:var(--muted);font-size:12px"><input id="set-paper-mirror" type="checkbox"' + (s.paper && s.paper.mirror ? " checked" : "") + '> mirror my real fills into paper</label></div>' +
-    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px">';
   const t = s.trading;
+  const quick = {
+    risk_per_trade_pct: "default risk %",
+    max_contracts_per_trade: "max contracts",
+    max_open_risk_pct: "open risk cap %",
+    stop_loss_pct: "stop loss %",
+    trailing_stop_pct: "trailing stop %",
+  };
+  let html = '<div style="border:1px solid var(--border);background:#161b22;border-radius:8px;padding:14px;margin-bottom:14px">' +
+    '<div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;margin-bottom:12px">' +
+    '<span style="color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.8px">quick controls</span>' +
+    '<label style="color:var(--text);font-size:13px;font-weight:600"><input id="set-notify" type="checkbox"' + ((s.discord || {}).notify !== false ? " checked" : "") + '> notify</label>' +
+    '<label style="color:var(--text);font-size:13px;font-weight:600"><input id="set-paper-enabled" type="checkbox"' + (s.paper && s.paper.enabled ? " checked" : "") + '> paper trading</label>' +
+    '<label style="color:var(--text);font-size:13px;font-weight:600"><input id="set-paper-mirror" type="checkbox"' + (s.paper && s.paper.mirror ? " checked" : "") + '> mirror real fills</label></div>' +
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">' +
+    Object.entries(quick).map(([k, label]) =>
+      '<div><label style="color:var(--text);font-size:11px;text-transform:uppercase">' + label + '</label>' +
+      '<input id="set-' + k + '" type="number" step="any" value="' + t[k] + '" style="width:100%;background:#0d1117;color:var(--text);border:1px solid #30363d;border-radius:6px;padding:8px;font-size:15px;font-weight:600"></div>'
+    ).join("") + '</div></div>' +
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px">';
   const labels = {
-    risk_per_trade_pct: "default risk %", max_contracts_per_trade: "max contracts",
-    max_open_risk_pct: "open risk cap %", stop_loss_pct: "stop loss %",
-    trailing_stop_pct: "trailing stop %", stop_check_seconds: "stop check (s)",
+    stop_check_seconds: "stop check (s)",
     max_consecutive_losses: "max losses in row", min_dte_days: "min DTE",
     max_trades_per_day: "max trades/day", cooldown_seconds: "cooldown (s)",
     dedupe_window_minutes: "dedupe (min)",
@@ -808,6 +821,7 @@ async function saveSettings() {
     wealthsimple: { positions_refresh_seconds: parseInt(val("set-ws-positions")), values_refresh_seconds: parseInt(val("set-ws-values")) },
     discord: { webhook_url: val("set-discord-webhook_url").trim(), reader_log_webhook_url: val("set-discord-reader_log_webhook_url").trim(), pipeline_log_webhook_url: val("set-discord-pipeline_log_webhook_url").trim(), update_webhook_url: val("set-discord-update_webhook_url").trim() },
     quotes: { enabled: document.getElementById("set-quotes-enabled").checked, provider: val("set-quotes-provider") },
+    discord: { notify: document.getElementById("set-notify").checked },
     paper: { enabled: document.getElementById("set-paper-enabled").checked, mirror: document.getElementById("set-paper-mirror").checked },
   };
   const res = await fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
