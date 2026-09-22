@@ -12,6 +12,18 @@ def _cfg(interval=600, enabled=False):
     )()
 
 
+def _write(repo, path, text):
+    target = repo / path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(text)
+
+
+def _git_run(repo, *args):
+    subprocess.run(
+        ["git", *args], cwd=repo, capture_output=True, check=True
+    )
+
+
 def _commit(repo, msg):
     env = {
         **os.environ,
@@ -48,13 +60,27 @@ def test_updater_restart_on_local_change(tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()
     subprocess.run(["git", "init"], cwd=repo, capture_output=True, check=True)
+    _write(repo, "trader/server.py", "x")
+    _git_run(repo, "add", "-A")
     _commit(repo, "a")
 
     calls = []
     up = AutoUpdater(_cfg(), str(repo), "", restart=lambda: calls.append(1))
+    _write(repo, "trader/server.py", "y")
+    _git_run(repo, "add", "-A")
     _commit(repo, "b")
     up._restart_for_local_change()
     assert calls == [1]
+
+    # a reader-only change must not restart the pipeline
+    calls.clear()
+    up.start_head = up._head()
+    _write(repo, "reader/discord_reader.py", "z")
+    _git_run(repo, "add", "-A")
+    _commit(repo, "c")
+    up._restart_for_local_change()
+    assert calls == []
+    assert up.start_head == up._head()
     assert "local change" in up.last_result
 
 
@@ -82,7 +108,7 @@ def test_check_once_pulls_and_restarts(tmp_path):
 
     work = tmp_path / "work"
     git(tmp_path, "clone", str(origin), str(work))
-    (work / "f.txt").write_text("1")
+    _write(work, "trader/server.py", "1")
     git(work, "add", "-A")
     git(work, "commit", "-m", "initial")
     git(work, "push", "-u", "origin", "HEAD")
@@ -95,14 +121,14 @@ def test_check_once_pulls_and_restarts(tmp_path):
 
     other = tmp_path / "other"
     git(tmp_path, "clone", str(origin), str(other))
-    (other / "f.txt").write_text("2")
+    _write(other, "trader/server.py", "2")
     git(other, "add", "-A")
     git(other, "commit", "-m", "second")
     git(other, "push")
 
     assert up.check_once() is True, up.last_result
     assert calls == [1]
-    assert (work / "f.txt").read_text() == "2"
+    assert (work / "trader" / "server.py").read_text() == "2"
     remote_head = _git(str(other), "rev-parse", "HEAD").stdout.strip()
     assert _git(str(work), "rev-parse", "HEAD").stdout.strip() == remote_head
 
@@ -142,7 +168,7 @@ def test_seed_record_from_reflog(tmp_path):
         ["git", "clone", str(origin), str(work)],
         capture_output=True, check=True,
     )
-    (work / "f.txt").write_text("1")
+    _write(work, "trader/server.py", "1")
     subprocess.run(
         ["git", "add", "-A"], cwd=work, env=env,
         capture_output=True, check=True,
@@ -161,7 +187,7 @@ def test_seed_record_from_reflog(tmp_path):
         ["git", "clone", str(origin), str(other)],
         capture_output=True, check=True,
     )
-    (other / "f.txt").write_text("2")
+    _write(other, "trader/server.py", "2")
     subprocess.run(
         ["git", "add", "-A"], cwd=other, env=env,
         capture_output=True, check=True,

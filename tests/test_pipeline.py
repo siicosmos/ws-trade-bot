@@ -1973,3 +1973,48 @@ def test_spread_requirement_uses_full_width():
         1767.30 - round(5 * 100 * 1.403, 2), 2
     )
     assert any("width" in p for p in row["margin_breakdown"])
+
+
+def test_update_relevance_gating(monkeypatch, tmp_path):
+    import trader.updater as up
+
+    root = str(tmp_path)
+
+    class FakeResult:
+        def __init__(self, rc=0, out=""):
+            self.returncode = rc
+            self.stdout = out
+
+    calls = {}
+
+    def fake_git(r, *args):
+        calls["args"] = args
+        if args[0] == "diff":
+            return FakeResult(0, "docs/x.md\nreader/discord_reader.py\n")
+        return FakeResult(0, "")
+
+    monkeypatch.setattr(up, "_git", fake_git)
+    # reader changes are not pipeline-relevant
+    files = up.git_changed_files(root, "a", "b")
+    assert files == ["docs/x.md", "reader/discord_reader.py"]
+    assert not up.files_match(files, up.PIPELINE_RESTART_FILES)
+    assert up.files_match(files, up.READER_RESTART_FILES)
+
+    def fake_git2(r, *args):
+        if args[0] == "diff":
+            return FakeResult(0, "trader/server.py\n")
+        return FakeResult(0, "")
+
+    monkeypatch.setattr(up, "_git", fake_git2)
+    files = up.git_changed_files(root, "a", "b")
+    assert up.files_match(files, up.PIPELINE_RESTART_FILES)
+
+    # unknown diff -> treat as relevant
+    def fake_git3(r, *args):
+        if args[0] == "diff":
+            return FakeResult(1, "")
+        return FakeResult(0, "")
+
+    monkeypatch.setattr(up, "_git", fake_git3)
+    assert up.git_changed_files(root, "a", "b") is None
+    assert up.files_match(None, up.PIPELINE_RESTART_FILES) is False

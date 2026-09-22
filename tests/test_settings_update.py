@@ -293,6 +293,8 @@ def test_updater_pulls_and_restarts():
             r.stdout = "ok"
         elif args[0] == "log":
             r.stdout = "abc123 new commit\n"
+        elif args[0] == "diff":
+            r.stdout = "trader/server.py\n"
         else:
             r.stdout = outputs.get(tuple(args[1:]), "aaa\n")
         r.stderr = ""

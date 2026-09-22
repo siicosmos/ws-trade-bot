@@ -787,6 +787,34 @@ def save_seen(seen_at):
         pass
 
 
+READER_RESTART_FILES = ("reader/*", "requirements.txt")
+
+
+def reader_relevant_changes(root, old, new):
+    """True when the commits between old and new touch the reader.
+
+    Unknown diffs count as relevant - never miss a real change.
+    """
+    try:
+        r = subprocess.run(
+            ["git", "diff", "--name-only", f"{old}..{new}"],
+            cwd=root, capture_output=True, text=True, timeout=15,
+        )
+        if r.returncode != 0:
+            return True
+    except (OSError, subprocess.SubprocessError):
+        return True
+    from fnmatch import fnmatch
+
+    for line in r.stdout.splitlines():
+        name = line.strip()
+        if name and any(
+            fnmatch(name, p) for p in READER_RESTART_FILES
+        ):
+            return True
+    return False
+
+
 def git_head(root):
     try:
         r = subprocess.run(
@@ -899,13 +927,19 @@ def main():
             last_head_check = time.time()
             head = git_head(repo_root())
             if head and start_head and head != start_head:
-                log("repo updated on disk - restarting reader for new code")
-                notify_restart(
-                    update_webhook_url,
-                    f"code updated to {head[:8]}",
-                    commits=git_commit_line(repo_root(), head),
-                )
-                os._exit(77)
+                if reader_relevant_changes(repo_root(), start_head, head):
+                    log("repo updated on disk - restarting reader for "
+                        "new code")
+                    notify_restart(
+                        update_webhook_url,
+                        f"code updated to {head[:8]}",
+                        commits=git_commit_line(repo_root(), head),
+                    )
+                    os._exit(77)
+                # the pull only touched files the reader does not
+                # execute - keep the process running
+                log("repo updated (no reader changes) - staying up")
+                start_head = head
 
         try:
             try:

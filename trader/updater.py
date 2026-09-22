@@ -8,6 +8,27 @@ import time
 UPDATE_RECORD = ".last_update.json"
 
 
+PIPELINE_RESTART_FILES = ("trader/*", "run.py", "requirements.txt")
+READER_RESTART_FILES = ("reader/*", "requirements.txt")
+
+
+def git_changed_files(root, old, new):
+    """Files changed between two commits, None when unknown."""
+    try:
+        r = _git(root, "diff", "--name-only", f"{old}..{new}")
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if r.returncode != 0:
+        return None
+    return [line.strip() for line in r.stdout.splitlines() if line.strip()]
+
+
+def files_match(files, patterns):
+    from fnmatch import fnmatch
+
+    return any(fnmatch(f, p) for f in files or [] for p in patterns)
+
+
 def _git(root, *args):
     return subprocess.run(
         ["git", *args], cwd=root, capture_output=True, text=True, timeout=120
@@ -105,6 +126,15 @@ class AutoUpdater:
         new = self._head()
         from .notify import notify_discord
 
+        changed = git_changed_files(self.root, self.start_head, new)
+        if changed is not None and not files_match(
+            changed, PIPELINE_RESTART_FILES
+        ):
+            print("auto-update: local change does not touch the "
+                  "pipeline - not restarting")
+            self.start_head = new
+            return
+
         self._record_update("manual")
 
         commit = ""
@@ -199,6 +229,25 @@ class AutoUpdater:
         self.last_result = f"updated to {new[:8]}"
 
         from .notify import notify_discord
+
+        changed = git_changed_files(self.root, local, new)
+        if changed is not None and not files_match(
+            changed, PIPELINE_RESTART_FILES
+        ):
+            # the pull still updates docs/reader/tests - just not
+            # anything this process executes
+            notify_discord(
+                self.webhook_url,
+                "Pipeline updated (no restart)",
+                {
+                    "reason": f"code updated to {new[:8]} - no "
+                               "pipeline files changed",
+                    "commits": commits[:1000] or "-",
+                },
+                ok=True,
+            )
+            print("auto-update: no pipeline changes - not restarting")
+            return False
 
         notify_discord(
             self.webhook_url,
