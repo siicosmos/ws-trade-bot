@@ -529,7 +529,6 @@ function toggleAlerts() {
   localStorage.setItem("ws_alerts_open", showAlerts ? "1" : "0");
   document.getElementById("toggle-alerts").textContent = showAlerts ? "Hide" : "Show";
   document.getElementById("signals").style.display = showAlerts ? "" : "none";
-  document.getElementById("toggle-ignored").style.display = showAlerts ? "" : "none";
 }
 
 function toggleTrades() {
