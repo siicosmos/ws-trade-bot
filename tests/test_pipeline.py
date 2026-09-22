@@ -1911,3 +1911,32 @@ def test_expired_credit_spread_full_return(monkeypatch):
     assert spread["market_value"] == 0.0    # settled to zero
     assert spread["cost_usd"] == -85.0      # credit received
     assert spread["pct_return"] == 100.0     # full credit kept
+
+
+def test_margin_requirement_breakdown():
+    app, store, account = _make_app()
+    client = app.test_client()
+    account.open_option_positions = lambda: {
+        "Personal": {"positions": [], "fx": 1.25, "usd_cash": None},
+    }
+    account.stock_holdings = lambda: {
+        "Personal": [
+            {"market_value": 4209.00, "currency": "CAD",
+             "underlying": "ZWC", "security_id": "sec-zwc"},
+            {"market_value": 56.90, "currency": "CAD",
+             "underlying": "VDY", "security_id": "sec-vdy"},
+        ],
+    }
+    account.funding_balances = lambda: {
+        "Personal": [{"currency": "CAD", "amount": 0.30}],
+    }
+    account.values = lambda: {"Personal": 1767.30}
+    account.account_type_map = lambda: {"pers": "PERSONAL"}
+    account._resolve = lambda: [("Personal", "pers")]
+    account.security_margin_rate = lambda sid: {"sec-zwc": 0.30,
+                                                "sec-vdy": 0.30}.get(sid)
+    summary = client.get("/api/summary").get_json()
+    row = next(a for a in summary["accounts"] if a["label"] == "Personal")
+    assert row["margin_requirement"] == round(0.3 * 4265.9, 2)
+    assert any("ZWC" in p and "30%" in p for p in row["margin_breakdown"])
+    assert any("VDY" in p for p in row["margin_breakdown"])

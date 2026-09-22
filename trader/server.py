@@ -309,6 +309,7 @@ def create_app(cfg, store: Store, risk, executor, account=None,
             max_buying_power = None
             used_cad_raw = 0.0
             used_usd_raw = 0.0
+            req_parts = []
             if not _registered_plan() and value:
                 # computed per the WS margin page: requirement is
                 # the maintenance rate over holdings (rate per
@@ -324,6 +325,7 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                 ) or {}
                 rate_fn = getattr(account, "security_margin_rate", None)
                 req = 0.0
+                req_parts = []
                 for r in (sk or []):
                     mv = r.get("market_value") or 0
                     if r.get("currency") == "USD":
@@ -341,14 +343,28 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                             overrides.get(sym, default_rate)
                         )
                     req += mv * rate
+                    req_parts.append(
+                        f"{sym} {mv:.2f} x {rate:.0%} = "
+                        f"{mv * rate:.2f}"
+                    )
                 if live is not None:
                     for r in live["positions"]:
                         if r.get("short"):
-                            req += r.get("risk_cad") or 0
+                            part = r.get("risk_cad") or 0
+                            req += part
+                            req_parts.append(
+                                f"{r.get('underlying', '?')} short "
+                                f"risk {part:.2f}"
+                            )
                         else:
-                            req += (
+                            part = (
                                 abs(r.get("market_value") or 0)
                                 * conv_fx
+                            )
+                            req += part
+                            req_parts.append(
+                                f"{r.get('underlying', '?')} option "
+                                f"{part:.2f} x 100%"
                             )
                 margin_req = round(req, 2)
                 used = 0.0
@@ -386,6 +402,7 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                     "stock_value": stock_value,
                     "option_value": option_value,
                     "margin_requirement": margin_req,
+                    "margin_breakdown": req_parts,
                     "margin_used": margin_used,
                     "margin_used_cad": round(used_cad_raw, 2)
                     if used_cad_raw else 0.0,
