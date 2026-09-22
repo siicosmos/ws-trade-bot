@@ -101,6 +101,21 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
     border-top: 1px solid var(--border); padding-top: 20px;
   }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  #modalBackdrop {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,.55); z-index: 100;
+    align-items: center; justify-content: center;
+  }
+  #modalBox {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; padding: 18px; max-width: 340px;
+    width: calc(100% - 40px);
+    box-shadow: 0 8px 30px rgba(0,0,0,.5);
+  }
+  #modalBox .mtitle { font-weight: 600; margin-bottom: 8px; }
+  #modalBox .mtext { color: var(--muted); font-size: 13px;
+    line-height: 1.45; margin-bottom: 16px; }
+  #modalBox .mrow { display: flex; gap: 8px; justify-content: flex-end; }
   .pos { table-layout: fixed; font-size: 12px; }
   .pos th, .pos td { padding: 6px 5px; word-break: break-word; }
   .pos th:nth-child(1), .pos td:nth-child(1) { width: 12%; }
@@ -175,6 +190,18 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 <div id="settings-float">
   <button id="settings-revert">Revert</button>
   <button id="settings-save">Save</button>
+</div>
+<div id="modalBackdrop" onclick="if(event.target===this) closeModal()">
+  <div id="modalBox">
+    <div class="mtitle" id="mTitle"></div>
+    <div class="mtext" id="mText"></div>
+    <div class="mrow">
+      <button onclick="closeModal()"
+        style="background:#21262d;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 14px;font-size:13px;cursor:pointer">cancel</button>
+      <button id="mGo" onclick="var a=modalAction; closeModal(); if(a) a();"
+        style="background:#da3633;color:#fff;border:1px solid #da3633;border-radius:6px;padding:6px 14px;font-size:13px;cursor:pointer">reset</button>
+    </div>
+  </div>
 </div>
 <script>
 function fmtSigned(v) {
@@ -258,24 +285,32 @@ try {
 } catch (e) { paperOpen = []; }
 let paperPositions = null;
 
-let paperResetArmed = null;
+let modalAction = null;
 
-async function resetPaper(label, btn) {
-  // two-tap confirm - native confirm() is unreliable in
-  // mobile webviews
-  if (paperResetArmed !== label) {
-    paperResetArmed = label;
-    if (btn) {
-      btn.textContent = "sure?";
-      setTimeout(function() {
-        paperResetArmed = null;
-        if (btn && btn.isConnected) btn.textContent = "reset";
-      }, 3000);
-    }
-    return;
-  }
-  paperResetArmed = null;
-  if (btn) btn.textContent = "reset";
+function openModal(title, text, actionLabel, action) {
+  modalAction = action;
+  document.getElementById("mTitle").textContent = title;
+  document.getElementById("mText").textContent = text;
+  document.getElementById("mGo").textContent = actionLabel;
+  document.getElementById("modalBackdrop").style.display = "flex";
+}
+
+function closeModal() {
+  document.getElementById("modalBackdrop").style.display = "none";
+  modalAction = null;
+}
+
+async function resetPaper(label) {
+  openModal(
+    "Reset paper ledger",
+    "Reset the paper ledger for " + label + "? It will be " +
+      "re-seeded from the live account.",
+    "reset",
+    async function() { await doPaperReset(label); }
+  );
+}
+
+async function doPaperReset(label) {
   try {
     const res = await fetch("/api/paper-reset", {
       method: "POST",
@@ -395,7 +430,7 @@ async function loadSummary() {
       pc.innerHTML =
         '<div class="label" style="display:flex;justify-content:space-between;align-items:center">paper · ' + esc(a.label) +
         '<span><button onclick="togglePaper(\'' + esc(a.label) + '\')" style="background:#21262d;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:2px 10px;font-size:11px;cursor:pointer">' + (rows.length ? "holdings " + (open ? "▴" : "▾") : "holdings ▾") + '</button> ' +
-        '<button onclick="resetPaper(\'' + esc(a.label) + '\', this)" style="background:#21262d;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:2px 10px;font-size:11px;cursor:pointer">reset</button></span></div>' +
+        '<button onclick="resetPaper(\'' + esc(a.label) + '\')" style="background:#21262d;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:2px 10px;font-size:11px;cursor:pointer">reset</button></span></div>' +
         '<div class="value" style="font-size:20px">' + (hidden ? "••••••" : fmtMoney(a.paper_value) + " cad") +
         (pnl == null ? '' :
           ' <span style="font-size:13px;color:' + pnlColor + '">' +
