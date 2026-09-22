@@ -422,3 +422,14 @@ def test_paper_badge_and_holdings_hint():
     assert "badge.papersim" in js or "papersim" in dash.DASHBOARD_HTML
     assert 'data.paper ? "" : "none"' in js
     assert '"holdings "' in js
+
+
+def test_paper_open_state_migration():
+    import trader.dashboard as dash
+
+    js = re.findall(r"<script>(.*?)</script>",
+                    dash.DASHBOARD_HTML, re.S)[0]
+    # old single-label values (pre-JSON-array) must not crash the
+    # JSON parse
+    assert '_po.startsWith("[")' in js
+    assert "} catch (e) { paperOpen = []; }" in js

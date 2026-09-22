@@ -1029,8 +1029,11 @@ def main():
                     )
                 if container is None:
                     wait_attempts += 1
+                    # first failure, then roughly every 10s, then a
+                    # hint after 30s of not finding the pane
                     if allowed and (
-                        wait_attempts == 1 or wait_attempts % 6 == 0
+                        wait_attempts == 1
+                        or wait_attempts % 20 == 0
                     ):
                         log(
                             f"no message pane found "
@@ -1047,7 +1050,19 @@ def main():
                                 f"  [{ctype}] name={cname!r} score={score}"
                             )
                         if not notable:
-                            log("  (no named candidates)")
+                            log(
+                                "  (no named candidates - the Discord "
+                                "window exposes no message list; is it "
+                                "minimized to tray or showing no "
+                                "channel?)"
+                            )
+                        if wait_attempts >= 60:
+                            log(
+                                "still no message pane after 30s - "
+                                "bring the Discord window to the "
+                                "foreground and open a channel, or "
+                                "restart the reader"
+                            )
                     resp = sync_with_server(
                         base_url, auth_token,
                         *heartbeat_status(allowed, title_channel),

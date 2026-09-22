@@ -246,9 +246,16 @@ function fmtTime(ts) {
     pad(d.getHours()) + ":" + pad(d.getMinutes());
 }
 
-let paperOpen = JSON.parse(
-  localStorage.getItem("ws_paper_open") || "[]"
-);
+let paperOpen = [];
+try {
+  const _po = localStorage.getItem("ws_paper_open");
+  if (_po) {
+    // older versions stored a single plain label, not a JSON array
+    paperOpen = _po.startsWith("[")
+      ? JSON.parse(_po)
+      : [_po];
+  }
+} catch (e) { paperOpen = []; }
 let paperPositions = null;
 
 async function resetPaper(label) {
