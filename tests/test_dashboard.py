@@ -400,3 +400,14 @@ def test_section_toggles_and_paper_detail():
     assert "function togglePaper" in js
     assert "/api/paper-positions" in js
     assert "ws_paper_open" in js
+
+
+def test_section_state_applied_on_load():
+    import trader.dashboard as dash
+
+    js = re.findall(r"<script>(.*?)</script>",
+                    dash.DASHBOARD_HTML, re.S)[0]
+    # persisted hidden state must apply at startup, not only after
+    # the first toggle click
+    assert "function applySectionVisibility" in js
+    assert "applySectionVisibility();" in js

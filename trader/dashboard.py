@@ -524,18 +524,23 @@ let showStocks = localStorage.getItem("ws_show_stocks") === "1";
 let showAlerts = localStorage.getItem("ws_alerts_open") !== "0";
 let showTrades = localStorage.getItem("ws_trades_open") !== "0";
 
+function applySectionVisibility() {
+  document.getElementById("toggle-alerts").textContent = showAlerts ? "Hide" : "Show";
+  document.getElementById("signals").style.display = showAlerts ? "" : "none";
+  document.getElementById("toggle-trades").textContent = showTrades ? "Hide" : "Show";
+  document.getElementById("trades").style.display = showTrades ? "" : "none";
+}
+
 function toggleAlerts() {
   showAlerts = !showAlerts;
   localStorage.setItem("ws_alerts_open", showAlerts ? "1" : "0");
-  document.getElementById("toggle-alerts").textContent = showAlerts ? "Hide" : "Show";
-  document.getElementById("signals").style.display = showAlerts ? "" : "none";
+  applySectionVisibility();
 }
 
 function toggleTrades() {
   showTrades = !showTrades;
   localStorage.setItem("ws_trades_open", showTrades ? "1" : "0");
-  document.getElementById("toggle-trades").textContent = showTrades ? "Hide" : "Show";
-  document.getElementById("trades").style.display = showTrades ? "" : "none";
+  applySectionVisibility();
 }
 
 function toggleStocks() {
@@ -842,6 +847,7 @@ window.addEventListener("pageshow", (e) => {
   }
 });
 
+applySectionVisibility();
 tickClock();
 setInterval(tickClock, 1000);
 </script>
