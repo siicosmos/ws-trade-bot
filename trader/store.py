@@ -460,6 +460,42 @@ class Store:
                 (f"ws_value:{label}", payload),
             )
 
+    def meta_get(self, key: str, default=None):
+        with self._lock, self._conn:
+            row = self._conn.execute(
+                "SELECT value FROM meta WHERE key = ?", (key,)
+            ).fetchone()
+            return row[0] if row else default
+
+    def meta_set(self, key: str, value):
+        with self._lock, self._conn:
+            self._conn.execute(
+                "INSERT INTO meta (key, value) VALUES (?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (key, str(value)),
+            )
+
+    def seed_position(
+        self, mode, account, contract_key, underlying, expiry,
+        strike, right, qty, avg_premium,
+    ):
+        """Insert a seeded position row (used to mirror live
+        holdings into the paper ledger)."""
+        with self._lock, self._conn:
+            self._conn.execute(
+                "INSERT INTO positions (mode, account, contract_key, "
+                "underlying, expiry, strike, right, qty, updated_ts, "
+                "avg_premium, realized, peak_bid) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0) "
+                "ON CONFLICT(mode, account, contract_key) DO UPDATE SET "
+                "qty = excluded.qty, avg_premium = excluded.avg_premium, "
+                "updated_ts = excluded.updated_ts",
+                (
+                    mode, account, contract_key, underlying, expiry,
+                    strike, right, int(qty), self._now(), avg_premium,
+                ),
+            )
+
     def paper_equity(self, label: str = "default"):
         with self._lock, self._conn:
             row = self._conn.execute(

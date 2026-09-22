@@ -62,6 +62,8 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
     text-shadow: 0 0 10px rgba(88, 166, 255, 0.55);
   }
   .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin-bottom: 28px; }
+  .cardcol { display: flex; flex-direction: column; gap: 14px; }
+  .papercard { border-style: dashed; }
   .card {
     background: var(--panel); border: 1px solid var(--border);
     border-radius: 10px; padding: 18px;
@@ -306,7 +308,30 @@ async function loadSummary() {
               : '')) + '</span>' +
           '<span>available</span></div>'
         : '') + allocBar(a) + marginUsageBar(a);
-    el.appendChild(card);
+    const wrap = document.createElement("div");
+    wrap.className = "cardcol";
+    wrap.appendChild(card);
+    if (a.paper_value != null && !isNaN(a.paper_value)) {
+      const pnl = a.paper_pnl;
+      const pnlPct = a.paper_initial
+        ? (pnl / a.paper_initial * 100) : null;
+      const pnlColor = pnl == null ? "var(--muted)"
+        : pnl >= 0 ? "var(--green)" : "var(--red)";
+      const pc = document.createElement("div");
+      pc.className = "card papercard";
+      pc.innerHTML =
+        '<div class="label">paper · ' + esc(a.label) + '</div>' +
+        '<div class="value" style="font-size:20px">' + (hidden ? "••••••" : fmtMoney(a.paper_value) + " cad") +
+        (pnl == null ? '' :
+          ' <span style="font-size:13px;color:' + pnlColor + '">' +
+          (pnl >= 0 ? "+" : "") + fmtMoney(pnl) +
+          (pnlPct != null ? " (" + (pnl >= 0 ? "+" : "") + pnlPct.toFixed(1) + "%)" : "") + '</span>') +
+        '</div>' +
+        '<div class="sub"><span>seeded ' + (hidden ? "••••••" : (a.paper_initial != null ? fmtMoney(a.paper_initial) + " cad" : "—")) + '</span>' +
+        '<span>simulated</span></div>';
+      wrap.appendChild(pc);
+    }
+    el.appendChild(wrap);
     cardIdx += 1;
   }
 }

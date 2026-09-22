@@ -85,6 +85,232 @@ class PaperAccount:
         return float(self.cfg.trading.paper_account_value)
 
 
+class PaperLedger:
+    """Paper accounts seeded from their real counterparts.
+
+    Cash is seeded so the total equals the account's live value;
+    positions mirror the live legs and are marked to market from
+    live quotes when available (cost basis otherwise).
+    """
+
+    def __init__(self, cfg, store, ws_account=None):
+        self.cfg = cfg
+        self.store = store
+        self.ws_account = ws_account
+        self._quote_cache = None
+        self._quote_ts = 0.0
+
+    def _quotes(self):
+        """{contract_key: price} from live positions, cached."""
+        now = time.time()
+        refresh = getattr(
+            self.cfg.wealthsimple, "positions_refresh_seconds", 30
+        )
+        if (
+            self._quote_cache is not None
+            and now - self._quote_ts < refresh
+        ):
+            return self._quote_cache
+        quotes = {}
+        if self.ws_account is not None:
+            try:
+                raw = self.ws_account._positions_raw() or {}
+                for nodes in raw.values():
+                    for p in nodes or []:
+                        sec = p.get("security") or {}
+                        od = sec.get("optionDetails")
+                        price = _quote_price(sec.get("quoteV2"))
+                        if od:
+                            underlying = (
+                                ((od.get("underlyingSecurity") or {})
+                                 .get("stock") or {}).get("symbol")
+                                or (sec.get("stock") or {}).get("symbol")
+                                or ""
+                            )
+                            right = (
+                                "C" if str(
+                                    od.get("optionType") or ""
+                                ).upper().startswith("CALL") else "P"
+                            )
+                            try:
+                                strike = float(od.get("strikePrice"))
+                            except (TypeError, ValueError):
+                                continue
+                            key = (
+                                f"{underlying}-{od.get('expiryDate', '')}"
+                                f"-{strike:g}-{right}"
+                            )
+                        else:
+                            symbol = (
+                                (sec.get("stock") or {}).get("symbol")
+                                or ""
+                            )
+                            if not symbol:
+                                continue
+                            key = symbol
+                        if price:
+                            if od:
+                                usd = True   # option alerts quote USD
+                            else:
+                                usd = str(
+                                    (sec.get("quoteV2") or {})
+                                    .get("currency")
+                                    or sec.get("currency") or ""
+                                ).upper() == "USD"
+                            quotes[key] = {"price": price, "usd": usd}
+            except Exception:
+                pass
+        self._quote_cache = quotes
+        self._quote_ts = now
+        return quotes
+
+    def fx(self) -> float:
+        """USD->CAD rate for booking USD option premiums."""
+        if self.ws_account is not None:
+            try:
+                live = self.ws_account.open_option_positions() or {}
+                for data in live.values():
+                    if data and data.get("fx"):
+                        return data["fx"]
+            except Exception:
+                pass
+            hint = getattr(self.ws_account, "_fx_hint", None)
+            if hint:
+                return hint
+        return 1.0
+
+    def value(self, label: str = "default") -> float:
+        cash = self.store.paper_equity(label)
+        if cash is None:
+            return 0.0
+        quotes = self._quotes()
+        fx = self.fx()
+        total = cash
+        for pos in self.store.list_positions("paper", label):
+            quote = quotes.get(pos["contract_key"])
+            if quote is None:
+                quote = {
+                    "price": pos.get("avg_premium") or 0.0,
+                    "usd": pos.get("right") not in (None, "", "?"),
+                }
+            mult = (
+                100 if pos.get("right") not in (None, "", "?") else 1
+            )
+            total += (
+                (pos["qty"] or 0) * quote["price"] * mult
+                * (fx if quote.get("usd") else 1.0)
+            )
+        return round(total, 2)
+
+    def values(self) -> dict:
+        return {
+            account_label(a): self.value(account_label(a))
+            for a in effective_accounts(self.cfg)
+        }
+
+
+def seed_paper_accounts(cfg, store, ws_account):
+    """Seed each paper account from its live counterpart, once.
+
+    Cash is set so cash + seeded positions equals the live value;
+    short legs are not tracked (their drift stays on the real
+    account) but their value is backed out of the seed.
+    """
+    seeded = []
+    try:
+        values = ws_account.values() or {}
+        raw = ws_account._positions_raw() or {}
+    except Exception:
+        return seeded
+    for label, account_id in ws_account._resolve():
+        if not account_id:
+            continue
+        if store.meta_get(f"paper_seed:{label}"):
+            continue
+        value = values.get(label)
+        if value is None:
+            continue
+        nodes = raw.get(label) or []
+        positions_value = 0.0
+        longs = []
+        for p in nodes:
+            sec = p.get("security") or {}
+            od = sec.get("optionDetails")
+            try:
+                qty = float(p.get("quantity") or 0)
+            except (TypeError, ValueError):
+                continue
+            direction = str(
+                p.get("positionDirection") or ""
+            ).upper()
+            short = direction == "SHORT" or qty < 0
+            qty = abs(qty)
+            mv = _amount_opt(p.get("totalValue")) or 0.0
+            book = _amount_opt(p.get("bookValue"))
+            market_book = _amount_opt(p.get("marketBookValue"))
+            leg_fx = (
+                abs(book) / abs(market_book)
+                if book and market_book else None
+            )
+            if od:
+                underlying = (
+                    ((od.get("underlyingSecurity") or {})
+                     .get("stock") or {}).get("symbol")
+                    or (sec.get("stock") or {}).get("symbol")
+                    or ""
+                )
+                right = (
+                    "C" if str(od.get("optionType") or "")
+                    .upper().startswith("CALL") else "P"
+                )
+                try:
+                    strike = float(od.get("strikePrice"))
+                except (TypeError, ValueError):
+                    continue
+                avg = _amount_opt(p.get("averagePrice"))
+                if avg is None and market_book:
+                    avg = abs(market_book) / (qty * 100) if qty else None
+                # value in CAD for the seed cash
+                conv = leg_fx or 1.0
+                if not short and qty > 0:
+                    positions_value += abs(mv) * conv
+                    longs.append(
+                        (
+                            f"{underlying}-{od.get('expiryDate', '')}"
+                            f"-{strike:g}-{right}",
+                            underlying, od.get("expiryDate", ""),
+                            strike, right, int(qty), avg,
+                        )
+                    )
+            else:
+                symbol = (
+                    (sec.get("stock") or {}).get("symbol") or ""
+                ).strip()
+                if not symbol or qty <= 0:
+                    continue
+                currency = str(
+                    (sec.get("quoteV2") or {}).get("currency")
+                    or sec.get("currency") or ""
+                ).upper()
+                conv = leg_fx or 1.0
+                positions_value += abs(mv) * (
+                    conv if currency == "USD" else 1.0
+                )
+                avg = _amount_opt(p.get("averagePrice"))
+                longs.append(
+                    (symbol, symbol, None, None, None,
+                     int(qty), avg)
+                )
+        cash = round(value - positions_value, 2)
+        store.set_paper_equity(cash, label)
+        for row in longs:
+            store.seed_position("paper", label, *row)
+        store.meta_set(f"paper_seed:{label}", time.time())
+        store.meta_set(f"paper_initial:{label}", value)
+        seeded.append(label)
+    return seeded
+
+
 class WealthsimpleAccount:
     def __init__(self, cfg, store=None, cache_seconds=None):
         self.cfg = cfg

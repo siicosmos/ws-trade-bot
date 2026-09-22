@@ -16,6 +16,12 @@ def _message_key(text: str, author: str = "") -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+def _paper_enabled(cfg):
+    return bool(
+        getattr(getattr(cfg, "paper", None), "enabled", False)
+    )
+
+
 def process_alert(
     text, author, cfg, store, risk: RiskEngine, executor, account=None,
     channel: str = "", ts=None, parsed_ts=None,
@@ -97,6 +103,25 @@ def process_alert(
             detail = "⚠ " + mismatch + " - " + detail
         if correction:
             detail = "correction - " + detail
+        paper = None
+        if _paper_enabled(cfg) and executor is not None:
+            # paper trading alongside notify: execute against the
+            # seeded ledger and record the simulated fill
+            res = executor.execute(alert, cfg, store)
+            paper = {
+                "ok": bool(res.ok),
+                "qty": res.qty,
+                "detail": res.detail,
+            }
+            store.record_trade(
+                "paper", alert.action, alert.ticker, res.qty or 0,
+                alert.premium, alert,
+                "executed" if res.ok else "skipped",
+                (res.detail or "") + (
+                    " | " + mismatch if mismatch else ""
+                ), key,
+            )
+            detail += " | paper: " + (res.detail or "-")
         store.record_trade(
             "notify", alert.action, alert.ticker, 0, alert.premium,
             alert, "notified", detail, key,
@@ -106,6 +131,7 @@ def process_alert(
             "alert": alert.to_dict(),
             "sizing": sizing,
             "correction": correction,
+            "paper": paper,
         }
 
     if executor is None:

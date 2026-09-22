@@ -46,6 +46,7 @@ def main():
 
     account = None
     executor = None
+    paper_ledger = None
 
     if mode == "paper":
         account = PaperAccount(cfg, store)
@@ -59,6 +60,19 @@ def main():
                 "WARNING: notify mode but discord.webhook_url is not set - "
                 "alerts will not reach your phone"
             )
+        account = WealthsimpleAccount(cfg, store)
+        if cfg.paper.enabled:
+            from trader.account import PaperLedger, seed_paper_accounts
+
+            seeded = seed_paper_accounts(cfg, store, account)
+            if seeded:
+                print(
+                    "paper trading: seeded " + ", ".join(seeded)
+                    + " from live accounts"
+                )
+            paper_ledger = PaperLedger(cfg, store, account)
+            executor = PaperExecutor(cfg, store, paper_ledger)
+            print("paper trading enabled alongside notify")
         try:
             account = WealthsimpleAccount(cfg, store)
             account.values()

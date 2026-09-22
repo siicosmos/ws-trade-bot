@@ -231,6 +231,27 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                 funding = fb_fn() or {}
             except Exception:
                 funding = None
+        # paper ledger values when paper trading runs alongside
+        paper_values = {}
+        paper_initials = {}
+        if getattr(
+            getattr(cfg, "paper", None), "enabled", False
+        ):
+            ledger = getattr(executor, "account", None)
+            vals_fn = getattr(ledger, "values", None)
+            if callable(vals_fn):
+                try:
+                    paper_values = vals_fn() or {}
+                except Exception:
+                    paper_values = {}
+            for lbl in (paper_values or {}):
+                init = store.meta_get(f"paper_initial:{lbl}")
+                if init is not None:
+                    try:
+                        paper_initials[lbl] = float(init)
+                    except (TypeError, ValueError):
+                        pass
+
         out = []
         for label, value in values.items():
             open_risk = store.open_risk(mode, label)
@@ -451,6 +472,16 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                     "alloc_base": alloc_base,
                     "margin_requirement": margin_req,
                     "margin_breakdown": req_parts,
+                    "paper_value": paper_values.get(label),
+                    "paper_initial": paper_initials.get(label),
+                    "paper_pnl": (
+                        round(
+                            paper_values[label]
+                            - paper_initials[label], 2
+                        )
+                        if label in paper_values
+                        and label in paper_initials else None
+                    ),
                     "margin_used": margin_used,
                     "margin_used_cad": round(used_cad_raw, 2)
                     if used_cad_raw else 0.0,

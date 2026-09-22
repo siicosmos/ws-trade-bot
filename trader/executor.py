@@ -206,6 +206,11 @@ class PaperExecutor:
         self.store = store
         self.account = account
 
+    def _fx(self):
+        # seeded ledgers are CAD; option premiums quote USD
+        fn = getattr(self.account, "fx", None)
+        return float(fn()) if callable(fn) else 1.0
+
     def execute(self, alert, cfg, store) -> ExecutionResult:
         if alert.kind == "option":
             return self._option(alert, cfg, store)
@@ -259,7 +264,9 @@ class PaperExecutor:
                 store.apply_position(
                     self.mode, alert, qty, premium=price, account=label
                 )
-                store.adjust_paper_equity(-qty * price * 100, label)
+                store.adjust_paper_equity(
+                    -qty * price * 100 * self._fx(), label
+                )
                 breakdown[label] = f"{qty}x @ {price}{note}"
                 total += qty
             ok = total > 0
@@ -284,7 +291,9 @@ class PaperExecutor:
                     premium=alert.entry, account=label
                 )
             if alert.premium:
-                store.adjust_paper_equity(qty * alert.premium * 100, label)
+                store.adjust_paper_equity(
+                    qty * alert.premium * 100 * self._fx(), label
+                )
             breakdown[label] = f"{qty}/{held}x @ {alert.premium}"
             total += qty
         ok = total > 0

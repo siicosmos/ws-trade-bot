@@ -2203,3 +2203,166 @@ def test_condor_combines_verticals():
     assert condor["risk_cad"] == round(
         (10 * 100 - 155) * 1.4, 2
     )
+
+
+def _paper_cfg(cfg):
+    from types import SimpleNamespace
+
+    cfg.paper = SimpleNamespace(enabled=True)
+    return cfg
+
+
+def test_paper_seeding_and_ledger(monkeypatch):
+    from trader.account import PaperLedger, WealthsimpleAccount, seed_paper_accounts
+    from trader.config import Config
+
+    # raw live nodes: one long option leg + one stock, one short leg
+    nodes = [
+        {
+            "quantity": "2", "positionDirection": "LONG",
+            "bookValue": {"amount": "300.00", "currency": "CAD"},
+            "marketBookValue": {"amount": "220.00", "currency": "USD"},
+            "totalValue": {"amount": "240.00", "currency": "USD"},
+            "averagePrice": {"amount": "1.10", "currency": "USD"},
+            "security": {
+                "securityType": "OPTION",
+                "stock": {"symbol": "SPX"},
+                "optionDetails": {
+                    "strikePrice": "6000", "optionType": "CALL",
+                    "expiryDate": "2026-09-25",
+                    "underlyingSecurity": {"stock": {"symbol": "SPX"}},
+                },
+                "quoteV2": {"price": "1.20", "currency": "USD"},
+            },
+        },
+        {
+            "quantity": "100", "positionDirection": "LONG",
+            "bookValue": {"amount": "3100.00", "currency": "CAD"},
+            "marketBookValue": {"amount": "3100.00", "currency": "CAD"},
+            "totalValue": {"amount": "3200.00", "currency": "CAD"},
+            "averagePrice": {"amount": "31.00", "currency": "CAD"},
+            "security": {
+                "securityType": "STOCK",
+                "stock": {"symbol": "ZWC"},
+                "quoteV2": {"price": "32.00", "currency": "CAD"},
+            },
+        },
+        {   # short leg - not tracked, value backed out of cash
+            "quantity": "-1", "positionDirection": "SHORT",
+            "bookValue": {"amount": "-140.00", "currency": "CAD"},
+            "marketBookValue": {"amount": "-100.00", "currency": "USD"},
+            "totalValue": {"amount": "-90.00", "currency": "USD"},
+            "security": {
+                "securityType": "OPTION",
+                "stock": {"symbol": "SPX"},
+                "optionDetails": {
+                    "strikePrice": "5900", "optionType": "PUT",
+                    "expiryDate": "2026-09-25",
+                },
+                "quoteV2": {"price": "0.90", "currency": "USD"},
+            },
+        },
+    ]
+
+    class FakeWS:
+        identity_id = "id1"
+
+        def graphql_query(self, op, query, variables):
+            return {"data": {"identity": {"financials": {
+                "current": {"positions": {"edges": [
+                    {"node": dict(n)} for n in nodes
+                ]}}}}}}
+
+    class FakeCfg:
+        class wealthsimple:
+            positions_refresh_seconds = 30
+            values_refresh_seconds = 60
+        trading = None
+        paper = None
+
+    from tests.test_pipeline import _ws_position_fixture  # noqa
+
+    acct = WealthsimpleAccount.__new__(WealthsimpleAccount)
+    acct.cfg = FakeCfg()
+    acct.cache_seconds = 900
+    acct._ws = FakeWS()
+    acct._resolved = [("T", "a1")]
+    acct._stale = {}
+    acct._raw_cache = None
+    acct._raw_ts = 0.0
+    acct._pos_cache = None
+    acct._pos_cache_ts = 0.0
+    acct._fx_quote = 1.4
+    acct._fx_quote_ts = 0.0
+    acct._usd_cache = None
+    acct._usd_cache_ts = 0.0
+    acct._funding_cache = None
+    acct._funding_ts = 0.0
+    acct._cache = None
+    acct._cache_ts = 0.0
+    acct._type_map = None
+    acct._margin_rates = {}
+    acct.values = lambda: {"T": 3360.0}
+    acct.open_option_positions = lambda: {
+        "T": {"positions": [], "fx": 1.4, "usd_cash": None},
+    }
+
+    store = _fresh_store()
+    seeded = seed_paper_accounts(FakeCfg(), store, acct)
+    assert seeded == ["T"]
+
+    cash = store.paper_equity("T")
+    # nlv 3360 minus long option 240x1.3636 minus stock 3200
+    assert cash == round(3360.0 - 240.0 * (300.0 / 220.0) - 3200.0, 2)
+
+    positions = store.list_positions("paper", "T")
+    keys = {p["contract_key"] for p in positions}
+    assert "SPX-2026-09-25-6000-C" in keys
+    assert "ZWC" in keys
+    assert not any("5900" in k for k in keys)   # shorts untracked
+
+    ledger = PaperLedger(FakeCfg(), store, acct)
+    value = ledger.value("T")
+    # cash + option 2x1.20x100x1.4 + stock 100x32
+    expect = cash + 2 * 1.20 * 100 * 1.4 + 100 * 32.0
+    assert value == round(expect, 2)
+
+    # seeding is idempotent
+    assert seed_paper_accounts(FakeCfg(), store, acct) == []
+
+
+def test_notify_plus_paper_executes_and_skips_unheld():
+    cfg, store, account, risk = _setup(
+        mode="notify", paper_account_value=10000,
+        cooldown_seconds=0,
+    )
+    cfg = _paper_cfg(cfg)
+    from trader.account import PaperLedger
+    from trader.pipeline import process_alert
+
+    ledger = PaperLedger(cfg, store, None)
+    executor = PaperExecutor(cfg, store, ledger)
+
+    buy = process_alert(
+        "BOUGHT 09/25 COIN 210c @ 2.0 small size", "",
+        cfg, store, risk, executor, account,
+    )
+    assert buy["status"] == "notified"
+    assert buy["paper"]["ok"] is True
+    trades = store.recent_trades(5)
+    paper_rows = [t for t in trades if t["mode"] == "paper"]
+    assert paper_rows and paper_rows[0]["status"] == "executed"
+
+    # a sell for a contract never held is skipped, not shorted
+    sell = process_alert(
+        "SOLD 09/25 COIN 200c @ 2.42 +20%", "",
+        cfg, store, risk, executor, account,
+    )
+    assert sell["status"] == "notified"
+    assert sell["paper"]["ok"] is False
+    trades = store.recent_trades(5)
+    skipped = [
+        t for t in trades
+        if t["mode"] == "paper" and t["status"] == "skipped"
+    ]
+    assert skipped and "no position" in skipped[0]["detail"]

@@ -93,6 +93,14 @@ class WealthsimpleConfig:
 
 
 @dataclass
+class PaperConfig:
+    # paper trading alongside notify mode: accounts are seeded
+    # from their live values and positions, then alerts execute
+    # against the paper ledger
+    enabled: bool = False
+
+
+@dataclass
 class ParserConfig:
     custom_patterns: List[str] = field(default_factory=list)
 
@@ -128,6 +136,7 @@ class Config:
     discord: DiscordConfig
     trading: TradingConfig
     wealthsimple: WealthsimpleConfig
+    paper: PaperConfig
     parser: ParserConfig
     auto_update: AutoUpdateConfig
     quotes: QuotesConfig
@@ -274,6 +283,9 @@ def load_config(path: str) -> Config:
         ),
         parser=ParserConfig(
             custom_patterns=list(_get(parser_raw, "custom_patterns", [])),
+        ),
+        paper=PaperConfig(
+            enabled=bool(_get(raw.get("paper") or {}, "enabled", False)),
         ),
         auto_update=AutoUpdateConfig(
             enabled=bool(_get(raw.get("auto_update") or {}, "enabled", True)),
