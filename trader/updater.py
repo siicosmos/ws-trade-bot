@@ -196,7 +196,13 @@ class AutoUpdater:
             return False
 
         status = _git(self.root, "status", "--porcelain")
-        if status.stdout.strip():
+        # untracked files never conflict with a pull (logs, dbs) -
+        # only modifications to tracked files block it
+        dirty = [
+            line for line in status.stdout.splitlines()
+            if line.strip() and not line.startswith("??")
+        ]
+        if dirty:
             self.last_result = "skipped: working tree dirty"
             print("auto-update: working tree dirty, skipping pull")
             return False

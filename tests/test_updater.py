@@ -283,3 +283,44 @@ def test_interval_change_applies_mid_cycle(tmp_path, monkeypatch):
     assert checks[0] < 1250, checks
     # second check is a full 60s later
     assert 55 <= checks[1] - checks[0] <= 75, checks
+
+
+def test_updater_ignores_untracked_files(tmp_path):
+    import subprocess
+    from trader.updater import AutoUpdater
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init"], cwd=repo, capture_output=True,
+                   check=True)
+    _write(repo, "trader/server.py", "1")
+    _git_run(repo, "add", "-A")
+    _commit(repo, "a")
+
+    origin = tmp_path / "origin.git"
+    subprocess.run(["git", "init", "--bare", str(origin)],
+                   capture_output=True, check=True)
+    work = tmp_path / "work"
+    subprocess.run(["git", "clone", str(origin), str(work)],
+                   capture_output=True, check=True)
+    _write(work, "trader/server.py", "1")
+    _git_run(work, "add", "-A")
+    _commit(work, "initial")
+    _git_run(work, "push", "-u", "origin", "HEAD")
+
+    # an untracked log file must not block the pull
+    (work / "pipeline.log").write_text("log line")
+
+    other = tmp_path / "other"
+    subprocess.run(["git", "clone", str(origin), str(other)],
+                   capture_output=True, check=True)
+    _write(other, "trader/server.py", "2")
+    _git_run(other, "add", "-A")
+    _commit(other, "second")
+    _git_run(other, "push")
+
+    calls = []
+    up = AutoUpdater(_cfg(interval=600, enabled=True), str(work), "",
+                     restart=lambda: calls.append(1))
+    assert up.check_once() is True, up.last_result
+    assert calls == [1]
