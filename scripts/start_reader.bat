@@ -26,7 +26,13 @@ if not exist ..\config.yaml (
 
 :start
 .venv\Scripts\python.exe discord_reader.py
-if errorlevel 77 (
-  echo restarting reader after update...
-  goto start
+set EXITCODE=%errorlevel%
+if %EXITCODE% == 0 (
+  echo reader stopped cleanly
+  goto end
 )
+echo reader exited with code %EXITCODE% - restarting in 5s
+timeout /t 5 /nobreak >nul
+goto start
+
+:end

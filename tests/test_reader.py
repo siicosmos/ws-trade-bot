@@ -976,3 +976,21 @@ def test_divider_splits_merged_messages():
     assert "新的" not in "".join(parts)
     # a divider-only item yields nothing
     assert dr.split_divider("新的") == []
+
+
+def test_reader_log_file_written(tmp_path, monkeypatch):
+    import discord_reader as dr
+
+    monkeypatch.setattr(dr, "READER_LOG", str(tmp_path / "reader.log"))
+    dr._append_reader_log("hello reader")
+    dr._append_reader_log("second line")
+    content = (tmp_path / "reader.log").read_text()
+    assert "hello reader" in content
+    assert "second line" in content
+
+    # oversized log rotates to .1
+    (tmp_path / "reader.log").write_text("x" * 100)
+    monkeypatch.setattr(dr, "READER_LOG_MAX", 50)
+    dr._append_reader_log("forced rotate")
+    assert (tmp_path / "reader.log.1").exists()
+    assert "forced rotate" in (tmp_path / "reader.log").read_text()

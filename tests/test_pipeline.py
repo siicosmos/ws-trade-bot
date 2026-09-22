@@ -2541,3 +2541,32 @@ def test_mirror_skips_unheld_sells():
     assert mirror_real_trades(None, store, ws, ledger) == []
     trades = store.recent_trades(5)
     assert not any("mirrored" in str(t.get("detail", "")) for t in trades)
+
+
+def test_loghook_file_and_rotation(tmp_path):
+    from trader.loghook import LogFile, TeeStream, install_log_webhook
+    io = __import__("io")
+
+    path = str(tmp_path / "pipeline.log")
+    lf = LogFile(path, max_bytes=100, keep=2)
+    stream = TeeStream(io.StringIO(), None, lf)
+    stream.write("first line\n")
+    stream.write("second line\n")
+    content = open(path).read()
+    assert "first line" in content and "second line" in content
+
+    for i in range(30):
+        lf.add(f"filler line number {i} with some padding text")
+    assert os.path.exists(path + ".1")
+    # keep=2 archives: .1 and .2 at most
+    assert not os.path.exists(path + ".3")
+
+    # install wires both sinks without a webhook url
+    import sys
+    saved_out, saved_err = sys.stdout, sys.stderr
+    try:
+        install_log_webhook("", log_path=path)
+        print("via install")
+    finally:
+        sys.stdout, sys.stderr = saved_out, saved_err
+    assert "via install" in open(path).read()

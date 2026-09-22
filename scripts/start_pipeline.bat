@@ -24,7 +24,14 @@ if not exist config.yaml (
 
 :start
 .venv\Scripts\python.exe run.py -c config.yaml
-if errorlevel 77 (
-  echo restarting pipeline after update...
-  goto start
+set EXITCODE=%errorlevel%
+if %EXITCODE% == 0 (
+  echo pipeline stopped cleanly
+  goto end
 )
+echo pipeline exited with code %EXITCODE% - restarting in 5s
+echo check pipeline.log next to trades.db for the traceback
+timeout /t 5 /nobreak >nul
+goto start
+
+:end

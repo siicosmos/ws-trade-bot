@@ -38,7 +38,13 @@ def main():
 
     from trader.loghook import install_log_webhook
 
-    install_log_webhook(cfg.discord.pipeline_log_webhook_url)
+    install_log_webhook(
+        cfg.discord.pipeline_log_webhook_url,
+        log_path=os.path.join(
+            os.path.dirname(os.path.abspath(args.db)),
+            "pipeline.log",
+        ),
+    )
 
     from trader.ws_tokens import load_env_tokens
 

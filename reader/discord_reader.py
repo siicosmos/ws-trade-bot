@@ -268,6 +268,22 @@ def looks_like_message(text):
     return True
 
 
+READER_LOG = None        # resolved lazily - repo_root is later
+READER_LOG_MAX = 2_000_000
+
+
+def _append_reader_log(line):
+    """Crash tracebacks survive here even when the process dies."""
+    path = READER_LOG or os.path.join(repo_root(), "reader.log")
+    try:
+        if os.path.exists(path) and os.path.getsize(path) > READER_LOG_MAX:
+            os.replace(path, path + ".1")
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(line.rstrip("\n") + "\n")
+    except OSError:
+        pass
+
+
 class WebhookLog:
     def __init__(self, url):
         self.url = url
@@ -320,6 +336,7 @@ def log(msg):
     print(line)
     if _log_hook is not None:
         _log_hook.add(line)
+    _append_reader_log(line)
 
 
 def find_config_path():
