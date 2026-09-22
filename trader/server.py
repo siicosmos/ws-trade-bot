@@ -107,6 +107,10 @@ def create_app(cfg, store: Store, risk, executor, account=None,
         "last_seen": None,
     }
 
+    # the 5s dashboard polls otherwise flood pipeline.log with
+    # access lines for every api call
+    logging.getLogger("werkzeug").setLevel(logging.ERROR)
+
     @app.before_request
     def auth_guard():
         token = cfg.pipeline.auth_token

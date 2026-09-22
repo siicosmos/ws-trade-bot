@@ -246,17 +246,21 @@ function fmtTime(ts) {
     pad(d.getHours()) + ":" + pad(d.getMinutes());
 }
 
-let paperOpen = localStorage.getItem("ws_paper_open") || "";
+let paperOpen = JSON.parse(
+  localStorage.getItem("ws_paper_open") || "[]"
+);
 let paperPositions = null;
 
 function togglePaper(label) {
-  paperOpen = paperOpen === label ? "" : label;
-  localStorage.setItem("ws_paper_open", paperOpen);
+  paperOpen = paperOpen.indexOf(label) >= 0
+    ? paperOpen.filter(function(l) { return l !== label; })
+    : paperOpen.concat([label]);
+  localStorage.setItem("ws_paper_open", JSON.stringify(paperOpen));
   loadSummary();
 }
 
 async function loadPaperPositions() {
-  if (!paperOpen) { paperPositions = null; return; }
+  if (!paperOpen.length) { paperPositions = null; return; }
   try {
     paperPositions = await api("/api/paper-positions");
   } catch (e) {
@@ -349,11 +353,11 @@ async function loadSummary() {
         : pnl >= 0 ? "var(--green)" : "var(--red)";
       const pc = document.createElement("div");
       pc.className = "card papercard";
-      const open = paperOpen === a.label;
+      const open = paperOpen.indexOf(a.label) >= 0;
       const rows = (paperPositions || {})[a.label] || [];
       pc.innerHTML =
         '<div class="label" style="cursor:pointer" onclick="togglePaper(\'' + esc(a.label) + '\')">paper · ' + esc(a.label) +
-        '<span style="float:right">' + (rows.length ? "holdings " + (open ? "▴" : "▾") : (open ? "no positions" : "")) + '</span></div>' +
+        '<span style="float:right">' + (rows.length ? "holdings " + (open ? "▴" : "▾") : "holdings ▾") + '</span></div>' +
         '<div class="value" style="font-size:20px">' + (hidden ? "••••••" : fmtMoney(a.paper_value) + " cad") +
         (pnl == null ? '' :
           ' <span style="font-size:13px;color:' + pnlColor + '">' +
@@ -362,7 +366,7 @@ async function loadSummary() {
         '</div>' +
         '<div class="sub"><span>seeded ' + (hidden ? "••••••" : (a.paper_initial != null ? fmtMoney(a.paper_initial) + " cad" : "—")) + '</span>' +
         '<span>' + rows.length + ' positions</span></div>' +
-        (open && rows.length ?
+        (open ? (rows.length ?
           '<table class="pos" style="margin-top:10px;font-size:12px"><tr><th>Contract</th><th class=num>Qty</th><th class=num>Avg $</th><th class=num>Value</th><th class=num>Return</th></tr>' +
           rows.map(function(r) {
             const rc = r.pnl == null ? "var(--muted)" : r.pnl >= 0 ? "var(--green)" : "var(--red)";
@@ -371,7 +375,7 @@ async function loadSummary() {
               '<td class=num>' + (r.avg != null ? "$" + r.avg : "—") + '</td>' +
               '<td class=num>' + (hidden ? "••••••" : fmtMoney(r.value)) + '</td>' +
               '<td class=num style="color:' + rc + '">' + (r.pnl == null ? "—" : (r.pnl >= 0 ? "+" : "") + r.pnl + "%") + '</td></tr>';
-          }).join("") + '</table>' : '');
+          }).join("") + '</table>' : '<div class="empty" style="font-size:12px;padding:8px">no positions</div>') : '');
       wrap.appendChild(pc);
     }
     el.appendChild(wrap);
