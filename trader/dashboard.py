@@ -91,7 +91,11 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   .riskbar { height: 6px; background: #21262d; border-radius: 3px; margin-top: 12px; overflow: hidden; }
   .riskbar > div { height: 100%; border-radius: 3px; background: var(--green); transition: width .4s; }
   .card .sub { color: var(--muted); font-size: 12px; margin-top: 8px; display: flex; justify-content: space-between; }
-  h2 { font-size: 14px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin: 26px 0 10px; }
+  h2 {
+    font-size: 14px; text-transform: uppercase; letter-spacing: 1px;
+    color: var(--muted); margin: 30px 0 10px;
+    border-top: 1px solid var(--border); padding-top: 20px;
+  }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   .pos { table-layout: fixed; font-size: 12px; }
   .pos th, .pos td { padding: 6px 5px; word-break: break-word; }
