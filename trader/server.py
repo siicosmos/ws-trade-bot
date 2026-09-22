@@ -537,6 +537,11 @@ def create_app(cfg, store: Store, risk, executor, account=None,
         return jsonify(
             {
                 "mode": mode,
+                "paper": bool(
+                    getattr(
+                        getattr(cfg, "paper", None), "enabled", False
+                    )
+                ),
                 "accounts": accounts,
                 "reader": reader,
                 "stops": {

@@ -31,6 +31,10 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   .badge.paper { background: #d2992233; color: var(--yellow); }
   .badge.live { background: #f8514933; color: var(--red); }
   .badge.live::before { content: "\\25CF "; animation: pulse 1.5s infinite; }
+  .badge.papersim {
+    background: #3fb95022; color: var(--green);
+    border: 1px dashed #3fb95088;
+  }
   @keyframes pulse { 50% { opacity: .3; } }
   #timebox {
     margin-left: auto; display: flex; align-items: center;
@@ -137,6 +141,7 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   <div class="headrow">
     <h1 style="margin:0">WS Trade Bot</h1>
     <span id="mode" class="badge notify">notify</span>
+    <span id="paper-badge" class="badge papersim" style="display:none">paper</span>
     <span id="timebox"><span id="clock"></span></span>
   </div>
   <div class="headrow" style="color:var(--muted);font-size:12px;gap:18px">
@@ -265,6 +270,8 @@ async function loadSummary() {
   const modeEl = document.getElementById("mode");
   modeEl.textContent = data.mode;
   modeEl.className = "badge " + data.mode;
+  const paperBadge = document.getElementById("paper-badge");
+  paperBadge.style.display = data.paper ? "" : "none";
   if (data.stops) {
     const s = data.stops;
     const streak = s.consecutive_losses + "/" + s.max_consecutive_losses;
@@ -346,7 +353,7 @@ async function loadSummary() {
       const rows = (paperPositions || {})[a.label] || [];
       pc.innerHTML =
         '<div class="label" style="cursor:pointer" onclick="togglePaper(\'' + esc(a.label) + '\')">paper · ' + esc(a.label) +
-        (rows.length || open ? ' ▾' : '') + '</div>' +
+        '<span style="float:right">' + (rows.length ? "holdings " + (open ? "▴" : "▾") : (open ? "no positions" : "")) + '</span></div>' +
         '<div class="value" style="font-size:20px">' + (hidden ? "••••••" : fmtMoney(a.paper_value) + " cad") +
         (pnl == null ? '' :
           ' <span style="font-size:13px;color:' + pnlColor + '">' +

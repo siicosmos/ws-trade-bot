@@ -411,3 +411,14 @@ def test_section_state_applied_on_load():
     # the first toggle click
     assert "function applySectionVisibility" in js
     assert "applySectionVisibility();" in js
+
+
+def test_paper_badge_and_holdings_hint():
+    import trader.dashboard as dash
+
+    js = re.findall(r"<script>(.*?)</script>",
+                    dash.DASHBOARD_HTML, re.S)[0]
+    assert 'id="paper-badge"' in dash.DASHBOARD_HTML
+    assert "badge.papersim" in js or "papersim" in dash.DASHBOARD_HTML
+    assert 'data.paper ? "" : "none"' in js
+    assert '"holdings "' in js
