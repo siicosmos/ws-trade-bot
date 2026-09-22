@@ -375,3 +375,13 @@ def test_open_risk_and_breakdown_masked():
                     dash.DASHBOARD_HTML, re.S)[0]
     assert 'open risk \' + (hidden ? "••••••"' in js
     assert '(hidden ? "" : esc((a.margin_breakdown' in js
+
+
+def test_margin_usage_bar():
+    import trader.dashboard as dash
+
+    js = re.findall(r"<script>(.*?)</script>",
+                    dash.DASHBOARD_HTML, re.S)[0]
+    assert "function marginUsageBar" in js
+    assert 'pct >= 80 ? "#f85149" : pct >= 50 ? "#d29922" : "#3fb950"' in js
+    assert "marginUsageBar(a);" in js

@@ -305,10 +305,20 @@ async function loadSummary() {
               ? ' · ' + fmtMoney(Math.max(0, a.cash_usd)) + " usd"
               : '')) + '</span>' +
           '<span>available</span></div>'
-        : '') + allocBar(a);
+        : '') + allocBar(a) + marginUsageBar(a);
     el.appendChild(card);
     cardIdx += 1;
   }
+}
+
+function marginUsageBar(a) {
+  if (a.margin_available == null || isNaN(a.margin_available)) return "";
+  const used = a.margin_used || 0;
+  const total = used + a.margin_available;
+  const pct = total > 0 ? Math.min(100, used / total * 100) : 0;
+  const color = pct >= 80 ? "#f85149" : pct >= 50 ? "#d29922" : "#3fb950";
+  return '<div class="riskbar"><div style="width:' + pct + '%;background:' + color + '"></div></div>' +
+    '<div class="sub"><span style="color:' + color + '">margin used ' + pct.toFixed(1) + '%</span><span>utilization</span></div>';
 }
 
 function allocBar(a) {
