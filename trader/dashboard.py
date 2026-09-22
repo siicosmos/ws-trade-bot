@@ -258,8 +258,24 @@ try {
 } catch (e) { paperOpen = []; }
 let paperPositions = null;
 
-async function resetPaper(label) {
-  if (!confirm("Reset the paper ledger for " + label + "? It will be re-seeded from the live account.")) return;
+let paperResetArmed = null;
+
+async function resetPaper(label, btn) {
+  // two-tap confirm - native confirm() is unreliable in
+  // mobile webviews
+  if (paperResetArmed !== label) {
+    paperResetArmed = label;
+    if (btn) {
+      btn.textContent = "sure?";
+      setTimeout(function() {
+        paperResetArmed = null;
+        if (btn && btn.isConnected) btn.textContent = "reset";
+      }, 3000);
+    }
+    return;
+  }
+  paperResetArmed = null;
+  if (btn) btn.textContent = "reset";
   try {
     const res = await fetch("/api/paper-reset", {
       method: "POST",
@@ -379,7 +395,7 @@ async function loadSummary() {
       pc.innerHTML =
         '<div class="label" style="display:flex;justify-content:space-between;align-items:center">paper · ' + esc(a.label) +
         '<span><button onclick="togglePaper(\'' + esc(a.label) + '\')" style="background:#21262d;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:2px 10px;font-size:11px;cursor:pointer">' + (rows.length ? "holdings " + (open ? "▴" : "▾") : "holdings ▾") + '</button> ' +
-        '<button onclick="resetPaper(\'' + esc(a.label) + '\')" style="background:#21262d;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:2px 10px;font-size:11px;cursor:pointer">reset</button></span></div>' +
+        '<button onclick="resetPaper(\'' + esc(a.label) + '\', this)" style="background:#21262d;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:2px 10px;font-size:11px;cursor:pointer">reset</button></span></div>' +
         '<div class="value" style="font-size:20px">' + (hidden ? "••••••" : fmtMoney(a.paper_value) + " cad") +
         (pnl == null ? '' :
           ' <span style="font-size:13px;color:' + pnlColor + '">' +

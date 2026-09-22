@@ -274,9 +274,19 @@ def seed_paper_accounts(cfg, store, ws_account):
     account) but their value is backed out of the seed.
     """
     seeded = []
+    # holdings are only mirrored into paper when real-fill
+    # mirroring is on; otherwise the ledger is cash-only at the
+    # live account value
+    mirror_on = bool(
+        getattr(
+            getattr(cfg, "paper", None), "mirror", True
+        )
+    )
     try:
         values = ws_account.values() or {}
-        raw = ws_account._positions_raw() or {}
+        raw = (
+            ws_account._positions_raw() or {} if mirror_on else {}
+        )
     except Exception:
         return seeded
     for label, account_id in ws_account._resolve():

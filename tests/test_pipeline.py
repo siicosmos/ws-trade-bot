@@ -2921,3 +2921,35 @@ def test_clean_start_script(tmp_path):
     assert not (tmp / "pipeline.log.1").exists()
     assert not (tmp / "reader.log").exists()
     assert "clean slate" in res.stdout
+
+
+def test_paper_seeding_without_mirror_is_cash_only():
+    from trader.account import PaperLedger, seed_paper_accounts
+
+    class Acct:
+        def values(self):
+            return {"T": 3360.0}
+
+        def _positions_raw(self):
+            raise AssertionError(
+                "positions must not be fetched when mirror is off"
+            )
+
+        def _resolve(self):
+            return [("T", "a1")]
+
+    class PaperCfg:
+        enabled = True
+        mirror = False
+
+    class Cfg:
+        paper = PaperCfg()
+
+    store = _fresh_store()
+    seeded = seed_paper_accounts(Cfg(), store, Acct())
+    assert seeded == ["T"]
+    assert store.list_positions("paper", "T") == []
+    # cash is the whole account value - no holdings backed out
+    assert store.paper_equity("T") == 3360.0
+    ledger = PaperLedger(Cfg(), store, Acct())
+    assert ledger.value("T") == 3360.0
