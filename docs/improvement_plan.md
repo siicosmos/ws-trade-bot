@@ -124,6 +124,16 @@ lock. WAL is already enabled. If the dashboard ever feels
 sluggish under concurrent polls + mirror writes, switch `Store`
 to a connection factory per thread instead.
 
+## Thread supervision (landed, unplanned)
+
+After the docs-only update killed the updater thread: every
+background loop (auto-update, stop monitor, mirror) now runs
+under `trader/supervise.py` - a crash or an unexpected return
+is logged, reported to the webhook, and the thread relaunches
+after a backoff. The dashboard git line shows `UPDATER STUCK`
+in red when last_check goes 3x past the interval, so a dead
+thread is visible without reading logs.
+
 ## Done / not pursuing
 
 - startup banners, self-healing updater, stale-process cleanup,

@@ -902,8 +902,18 @@ function renderGitStatus(s) {
   }
   text += ")";
   if (s.errors) text += " · " + s.errors + " errors";
+  // liveness: a live updater never lets last_check go much
+  // past its interval - a stuck thread shows here in red
+  let stuck = false;
+  if (s.status === "active" && s.last_check) {
+    const since = Date.now() / 1000 - s.last_check;
+    if (since > (s.interval_seconds || 600) * 3) {
+      stuck = true;
+      text += " · UPDATER STUCK";
+    }
+  }
   el.textContent = text;
-  el.style.color = (s.result || "").indexOf("error") >= 0 || (s.result || "").indexOf("failed") >= 0 ? "var(--red)" : "var(--muted)";
+  el.style.color = stuck || (s.result || "").indexOf("error") >= 0 || (s.result || "").indexOf("failed") >= 0 ? "var(--red)" : "var(--muted)";
   fitText(el, 9);
 }
 window.addEventListener("resize", function() {

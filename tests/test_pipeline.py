@@ -3474,3 +3474,35 @@ def test_updater_survives_local_change_without_restart():
     assert made.get("restarted") is None
     # baseline moved so the next poll is clean
     assert u.start_head == "bbbbbbb"
+
+
+def test_supervised_thread_relaunches():
+    import threading
+    import time as _time
+
+    from trader.supervise import supervised
+
+    calls = {"n": 0}
+    done = threading.Event()
+
+    def flaky():
+        calls["n"] += 1
+        if calls["n"] >= 3:
+            done.set()
+            # keep the supervisor busy instead of exiting again
+            _time.sleep(60)
+        if calls["n"] == 1:
+            raise RuntimeError("boom")
+        # second call: return early (the updater-loop bug class)
+        return
+
+    logs = []
+    t, state = supervised(
+        "flaky", flaky, restart_delay=0.05, log=logs.append
+    )
+    assert done.wait(10)
+    # crash + unexpected return both relaunched the target
+    assert calls["n"] >= 3
+    assert state["restarts"] >= 2
+    assert any("crashed: boom" in l for l in logs)
+    assert any("exited unexpectedly" in l for l in logs)

@@ -17,9 +17,12 @@ class StopMonitor:
         self.errors = 0
 
     def start(self):
-        if self._thread is None:
-            self._thread = threading.Thread(target=self._run, daemon=True)
-            self._thread.start()
+        if self._thread is None or not self._thread.is_alive():
+            from .supervise import supervised
+
+            self._thread, _ = supervised(
+                "stop-monitor", self._run, self.webhook_url
+            )
 
     def _run(self):
         while True:

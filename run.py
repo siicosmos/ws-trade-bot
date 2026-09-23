@@ -96,6 +96,8 @@ def main():
                 start_mirror_thread(
                     cfg, store, account, paper_ledger,
                     cfg.paper.mirror_interval_seconds,
+                    cfg.discord.update_webhook_url
+                    or cfg.discord.webhook_url,
                 )
                 print(
                     "mirroring real trades into the paper ledger "

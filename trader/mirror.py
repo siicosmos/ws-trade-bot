@@ -184,7 +184,7 @@ def mirror_real_trades(cfg, store, ws_account, ledger=None):
 
 
 def start_mirror_thread(cfg, store, ws_account, ledger,
-                        interval_seconds=60):
+                        interval_seconds=60, webhook_url=""):
     """Mirror real trades on a daemon timer."""
 
     def run():
@@ -202,6 +202,7 @@ def start_mirror_thread(cfg, store, ws_account, ledger,
             for line in applied:
                 print(f"trade mirror: {line}")
 
-    thread = threading.Thread(target=run, daemon=True)
-    thread.start()
+    from .supervise import supervised
+
+    thread, _ = supervised("mirror", run, webhook_url)
     return thread

@@ -138,9 +138,12 @@ class AutoUpdater:
         self._seed_record_if_missing()
 
     def start(self):
-        if self._thread is None:
-            self._thread = threading.Thread(target=self._run, daemon=True)
-            self._thread.start()
+        if self._thread is None or not self._thread.is_alive():
+            from .supervise import supervised
+
+            self._thread, _ = supervised(
+                "auto-update", self._run, self.webhook_url
+            )
 
     def _head(self):
         r = _git(self.root, "rev-parse", "HEAD")
