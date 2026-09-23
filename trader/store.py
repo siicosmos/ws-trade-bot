@@ -7,10 +7,12 @@ from datetime import datetime, timedelta, timezone
 
 class Store:
     def __init__(self, path: str = "trades.db", retention_days=90):
-        self._conn = sqlite3.connect(path, check_same_thread=False)
+        self.path = path
         self.retention_days = retention_days
         self._prune_day = None
-        self._lock = threading.Lock()
+        self._local = threading.local()
+        self._write_lock = threading.Lock()
+        self._cache_lock = threading.Lock()
         # positions cache: bumped on every write so reads between
         # trades are served from memory
         self._positions_version = 0
@@ -18,16 +20,25 @@ class Store:
         # data version: bumped on any write that feeds the
         # dashboard summaries, so caches invalidate immediately
         self._data_version = 0
-        try:
-            self._conn.execute("PRAGMA journal_mode=WAL")
-            self._conn.execute("PRAGMA synchronous=NORMAL")
-            self._conn.execute("PRAGMA busy_timeout=5000")
-        except sqlite3.Error:
-            pass
         self._init_schema()
 
+    @property
+    def _conn(self):
+        """Per-thread connection: WAL lets readers run alongside
+        the writer without a global lock (plan #9)."""
+        conn = getattr(self._local, "conn", None)
+        if conn is None:
+            conn = sqlite3.connect(
+                self.path, check_same_thread=False
+            )
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")
+            conn.execute("PRAGMA busy_timeout=5000")
+            self._local.conn = conn
+        return conn
+
     def _init_schema(self):
-        with self._lock, self._conn:
+        with self._write_lock, self._conn:
             self._conn.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS signals (
@@ -160,7 +171,7 @@ class Store:
         return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
     def seen_signal(self, message_key: str) -> bool:
-        with self._lock, self._conn:
+        with self._conn:
             row = self._conn.execute(
                 "SELECT 1 FROM signals WHERE message_key = ?", (message_key,)
             ).fetchone()
@@ -190,7 +201,7 @@ class Store:
             .isoformat(timespec="seconds")
             if ts_epoch else self._now()
         )
-        with self._lock, self._conn:
+        with self._write_lock, self._conn:
             self._conn.execute(
                 "INSERT OR IGNORE INTO signals "
                 "(message_key, ts, author, text, parsed, correction, "
@@ -214,7 +225,7 @@ class Store:
         cutoff = (
             now - timedelta(days=int(retention))
         ).isoformat(timespec="seconds")
-        with self._lock, self._conn:
+        with self._write_lock, self._conn:
             gone_s = self._conn.execute(
                 "SELECT COUNT(*) FROM signals WHERE ts < ?",
                 (cutoff,),
@@ -240,7 +251,7 @@ class Store:
         midnight = datetime.now(timezone.utc).replace(
             hour=0, minute=0, second=0, microsecond=0
         ).isoformat(timespec="seconds")
-        with self._lock, self._conn:
+        with self._conn:
             row = self._conn.execute(
                 "SELECT COUNT(*) FROM trades WHERE ts >= ? AND mode = ? "
                 "AND status = 'executed' AND action = 'BUY'",
@@ -249,7 +260,7 @@ class Store:
             return row[0] if row else 0
 
     def last_buy_time(self) -> str:
-        with self._lock, self._conn:
+        with self._conn:
             row = self._conn.execute(
                 "SELECT ts FROM trades WHERE action = 'BUY' AND status = 'executed' "
                 "ORDER BY id DESC LIMIT 1"
@@ -260,7 +271,7 @@ class Store:
         cutoff = (
             datetime.now(timezone.utc) - timedelta(minutes=window_minutes)
         ).isoformat(timespec="seconds")
-        with self._lock, self._conn:
+        with self._conn:
             return self._conn.execute(
                 "SELECT 1 FROM trades WHERE dedupe_key = ? AND ts >= ? "
                 "AND status = 'executed' LIMIT 1",
@@ -281,7 +292,7 @@ class Store:
     ):
         self.maybe_prune()
         self._touch()
-        with self._lock, self._conn:
+        with self._write_lock, self._conn:
             self._conn.execute(
                 "INSERT INTO trades (ts, mode, action, ticker, qty, price, entry, "
                 "stop_loss, take_profit, status, detail, message_key, dedupe_key, "
@@ -300,7 +311,7 @@ class Store:
     def last_buy_contract(self, ticker, expiry):
         """Strike/right of the most recent BUY for this underlying
         and expiry, for sell-mismatch detection."""
-        with self._lock, self._conn:
+        with self._conn:
             row = self._conn.execute(
                 "SELECT strike, opt_right FROM trades "
                 "WHERE action = 'BUY' AND ticker = ? AND expiry = ? "
@@ -312,7 +323,7 @@ class Store:
         return {"strike": row[0], "right": row[1] or "?"}
 
     def get_position(self, mode: str, contract_key: str, account="default") -> int:
-        with self._lock, self._conn:
+        with self._conn:
             row = self._conn.execute(
                 "SELECT qty FROM positions WHERE mode = ? AND account = ? "
                 "AND contract_key = ?",
@@ -325,7 +336,7 @@ class Store:
                 "strike", "right", "qty", "avg_premium", "realized",
                 "peak_bid"]
         cache_key = (mode, account)
-        with self._lock:
+        with self._cache_lock:
             cached = self._positions_cache.get(cache_key)
             if cached and cached[0] == self._positions_version:
                 return [dict(r) for r in cached[1]]
@@ -352,7 +363,7 @@ class Store:
         self, mode: str, alert, delta: int, premium=None, account="default"
     ):
         key = alert.contract_key()
-        with self._lock, self._conn:
+        with self._write_lock, self._conn:
             row = self._conn.execute(
                 "SELECT qty, avg_premium, realized FROM positions "
                 "WHERE mode = ? AND account = ? AND contract_key = ?",
@@ -427,7 +438,7 @@ class Store:
             return {"count": 0, "date": ""}
 
     def _get_streak(self, mode: str) -> dict:
-        with self._lock:
+        with self._write_lock:
             return self._get_streak_unlocked(mode)
 
     def loss_streak(self, mode: str) -> int:
@@ -441,7 +452,7 @@ class Store:
         self._touch()
         self._positions_version += 1
         self._positions_cache.clear()
-        with self._lock, self._conn:
+        with self._write_lock, self._conn:
             self._conn.execute(
                 "UPDATE positions SET peak_bid = MAX("
                 "COALESCE(peak_bid, COALESCE(avg_premium, 0)), ?) "
@@ -458,12 +469,12 @@ class Store:
         if account is not None:
             query += " AND account = ?"
             params.append(account)
-        with self._lock, self._conn:
+        with self._conn:
             row = self._conn.execute(query, params).fetchone()
         return float(row[0]) if row and row[0] is not None else 0.0
 
     def recent_trades(self, limit=50):
-        with self._lock, self._conn:
+        with self._conn:
             rows = self._conn.execute(
                 "SELECT ts, mode, action, ticker, qty, price, status, detail "
                 "FROM trades ORDER BY id DESC LIMIT ?",
@@ -484,7 +495,7 @@ class Store:
         cutoff = datetime.now(timezone.utc) - timedelta(
             seconds=within_seconds
         )
-        with self._lock, self._conn:
+        with self._conn:
             rows = self._conn.execute(
                 "SELECT ts, text FROM signals "
                 "ORDER BY rowid DESC LIMIT ?",
@@ -505,7 +516,7 @@ class Store:
         return False
 
     def recent_signals(self, limit=50):
-        with self._lock, self._conn:
+        with self._conn:
             rows = self._conn.execute(
                 "SELECT ts, text, parsed, correction, channel, received_ts "
                 "FROM signals ORDER BY rowid DESC LIMIT ?",
@@ -516,7 +527,7 @@ class Store:
         return [dict(zip(keys, r)) for r in rows]
 
     def get_cached_value(self, label: str):
-        with self._lock, self._conn:
+        with self._conn:
             row = self._conn.execute(
                 "SELECT value FROM meta WHERE key = ?",
                 (f"ws_value:{label}",),
@@ -533,7 +544,7 @@ class Store:
 
     def set_cached_value(self, label: str, value: float, ts: str):
         payload = json.dumps({"value": float(value), "ts": ts})
-        with self._lock, self._conn:
+        with self._write_lock, self._conn:
             self._conn.execute(
                 "INSERT INTO meta (key, value) VALUES (?, ?) "
                 "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -548,14 +559,14 @@ class Store:
         self._data_version += 1
 
     def meta_get(self, key: str, default=None):
-        with self._lock, self._conn:
+        with self._conn:
             row = self._conn.execute(
                 "SELECT value FROM meta WHERE key = ?", (key,)
             ).fetchone()
             return row[0] if row else default
 
     def meta_set(self, key: str, value):
-        with self._lock, self._conn:
+        with self._write_lock, self._conn:
             self._conn.execute(
                 "INSERT INTO meta (key, value) VALUES (?, ?) "
                 "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -571,7 +582,7 @@ class Store:
         self._touch()
         self._positions_version += 1
         self._positions_cache.clear()
-        with self._lock, self._conn:
+        with self._write_lock, self._conn:
             self._conn.execute(
                 "INSERT INTO positions (mode, account, contract_key, "
                 "underlying, expiry, strike, right, qty, updated_ts, "
@@ -591,7 +602,7 @@ class Store:
         self._touch()
         self._positions_version += 1
         self._positions_cache.clear()
-        with self._lock, self._conn:
+        with self._write_lock, self._conn:
             self._conn.execute(
                 "DELETE FROM positions WHERE mode = 'paper' "
                 "AND account = ?", (label,)
@@ -606,7 +617,7 @@ class Store:
                 )
 
     def paper_equity(self, label: str = "default"):
-        with self._lock, self._conn:
+        with self._conn:
             row = self._conn.execute(
                 "SELECT value FROM meta WHERE key = ?",
                 (f"paper_equity:{label}",),
@@ -615,7 +626,7 @@ class Store:
 
     def set_paper_equity(self, value: float, label: str = "default"):
         self._touch()
-        with self._lock, self._conn:
+        with self._write_lock, self._conn:
             self._conn.execute(
                 "INSERT INTO meta (key, value) VALUES (?, ?) "
                 "ON CONFLICT(key) DO UPDATE SET value = excluded.value",

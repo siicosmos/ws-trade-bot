@@ -64,7 +64,16 @@ caches, thin delegates) with:
 `account.py` re-exports the old names so existing imports keep
 working; new code should import from the specific modules.
 
-## 7. Static dashboard assets - LOW (deployment trade-off)
+## 7. Static dashboard assets - DONE
+
+The frontend lives in `trader/static/` (dashboard.html /
+dashboard.css / dashboard.js) - real files, lintable and
+syntax-checkable. `trader/dashboard.py` loads and re-exports
+them (DASHBOARD_HTML/CSS/JS) so tests and the ui harness keep
+one source of truth; the login page stays as the tiny
+parameterized template. The page keeps its unconditional
+no-store (flask's static handler would default to no-cache),
+so a post-update reload can never serve stale assets.
 
 trader/dashboard.py (~1,220 lines) is a Python string
 containing the whole frontend: no JS linting, no syntax
@@ -87,12 +96,14 @@ polls ever drop under load:
     pip install waitress
     waitress-serve --port=8080 run:app
 
-## 9. Per-thread SQLite connections - LOW (only if needed)
+## 9. Per-thread SQLite connections - DONE
 
-All requests funnel through one connection guarded by a global
-lock. WAL is already enabled. If the dashboard ever feels
-sluggish under concurrent polls + mirror writes, switch `Store`
-to a connection factory per thread instead.
+`Store._conn` is a per-thread property (WAL + NORMAL +
+busy_timeout on each); writes serialize on `_write_lock`,
+reads (positions, trades, meta lookups) run lock-free beside
+the writer, and the positions cache has its own tiny lock. A
+concurrency test hammers three readers against a writer for
+two seconds with zero sqlite errors.
 
 ## Thread supervision (landed, unplanned)
 

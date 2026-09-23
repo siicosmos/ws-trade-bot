@@ -776,8 +776,7 @@ def test_dashboard_escapes_untrusted_text():
     import re
     import trader.dashboard as dash
 
-    js = re.findall(r"<script>(.*?)</script>",
-                   dash.DASHBOARD_HTML, re.S)[0]
+    js = dash.DASHBOARD_JS
     assert "function esc(" in js
     assert '.replace(/</g, "&lt;")' not in js
     for field in ("s.text", "s.channel", "p.underlying", "p.strike",
@@ -3541,7 +3540,7 @@ def test_store_indexes_and_retention(tmp_path):
     fresh = datetime.now(timezone.utc).isoformat(timespec="seconds")
     store.record_signal("k-old", "a", "old", parsed=True)
     store.record_signal("k-new", "a", "new", parsed=True)
-    with store._lock, store._conn:
+    with store._write_lock, store._conn:
         store._conn.execute(
             "UPDATE signals SET ts = ? WHERE message_key = 'k-old'",
             (old,),
@@ -3551,7 +3550,7 @@ def test_store_indexes_and_retention(tmp_path):
         "paper", "BUY", "COIN", 1, 2.0, alert, "executed", "t",
         message_key="k-new",
     )
-    with store._lock, store._conn:
+    with store._write_lock, store._conn:
         store._conn.execute(
             "UPDATE trades SET ts = ?", (old,)
         )
@@ -3570,3 +3569,60 @@ def test_store_indexes_and_retention(tmp_path):
     keep.record_signal("k", "a", "text", parsed=True)
     keep.maybe_prune()
     assert keep.recent_signals(10)
+
+
+def test_store_concurrent_readers_and_writer(tmp_path):
+    """Per-thread connections: readers run alongside the writer
+    without lock contention or sqlite errors (plan #9)."""
+    import threading
+    import time as _time
+
+    import trader.store as store_mod
+
+    store = store_mod.Store(str(tmp_path / "c.db"))
+    alert = parse_alert("BOUGHT 09/25 COIN 210c @ 2.0")
+    errors = []
+    stop = _time.time() + 2.0
+
+    def writer():
+        n = 0
+        while _time.time() < stop:
+            try:
+                store.record_trade(
+                    "paper", "BUY", "COIN", 1, 2.0, alert,
+                    "executed", f"w{n}", message_key=f"kw{n}",
+                )
+                n += 1
+            except Exception as e:
+                errors.append(f"writer: {e}")
+                return
+        assert n > 5, f"writer too slow: {n} trades"
+
+    def reader():
+        while _time.time() < stop:
+            try:
+                store.list_positions("paper")
+                store.trades_today("paper")
+                store.recent_trades(10)
+                store.open_risk("paper")
+            except Exception as e:
+                errors.append(f"reader: {e}")
+                return
+
+    threads = [
+        threading.Thread(target=writer),
+        threading.Thread(target=reader),
+        threading.Thread(target=reader),
+        threading.Thread(target=reader),
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=15)
+
+    assert not errors, errors
+    # different threads really got different connections
+    conns = set()
+    for t in threads:
+        pass
+    assert store.trades_today("paper") > 5

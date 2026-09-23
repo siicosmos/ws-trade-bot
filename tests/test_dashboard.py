@@ -1,6 +1,6 @@
 import re
 
-from trader.dashboard import DASHBOARD_HTML
+from trader.dashboard import DASHBOARD_HTML, DASHBOARD_CSS, DASHBOARD_JS
 
 
 def _strip_complete_strings(line):
@@ -12,13 +12,10 @@ def _strip_complete_strings(line):
 
 
 def test_dashboard_script_strings_terminated():
-    scripts = re.findall(r"<script>(.*?)</script>", DASHBOARD_HTML, re.S)
-    assert scripts
-    for js in scripts:
-        for line in js.split("\n"):
-            code = _strip_complete_strings(line)
-            assert '"' not in code, f"unterminated string: {line}"
-            assert "'" not in code, f"unterminated string: {line}"
+    for line in DASHBOARD_JS.split("\n"):
+        code = _strip_complete_strings(line)
+        assert '"' not in code, f"unterminated string: {line}"
+        assert "'" not in code, f"unterminated string: {line}"
 
 
 def test_clock_has_no_inline_style_override():
@@ -28,7 +25,7 @@ def test_clock_has_no_inline_style_override():
 
     m = re.search(r'<span id="clock"[^>]*>', dash.DASHBOARD_HTML)
     assert m and "style" not in m.group(0)
-    css = re.search(r"#clock \{(.*?)\}", dash.DASHBOARD_HTML, re.S)
+    css = re.search(r"#clock \{(.*?)\}", dash.DASHBOARD_CSS, re.S)
     assert css
     block = css.group(1)
     assert "font-size: 13px" in block
@@ -39,7 +36,7 @@ def test_clock_has_no_inline_style_override():
 def test_header_rows_and_mobile_wrap():
     import trader.dashboard as dash
 
-    html = dash.DASHBOARD_HTML
+    html = dash.DASHBOARD_HTML + dash.DASHBOARD_CSS
     # row 1: title, mode badge, timebox (age + clock) pinned right
     row = re.search(r'<div class="headrow">(.*?)</div>', html, re.S)
     assert row
@@ -60,8 +57,7 @@ def test_header_rows_and_mobile_wrap():
 def test_pageshow_rechecks_auth_after_back_button():
     import trader.dashboard as dash
 
-    js = re.findall(r"<script>(.*?)</script>",
-                   dash.DASHBOARD_HTML, re.S)[0]
+    js = dash.DASHBOARD_JS
     handler = js[js.index("pageshow"):js.index("pageshow") + 400]
     assert "/api/summary" in handler
     assert "/login" in handler
@@ -71,8 +67,7 @@ def test_settings_list_inputs_span_full_row():
     # narrow grid cells clipped the whitelist / skip-underlyings hints
     import trader.dashboard as dash
 
-    js = re.findall(r"<script>(.*?)</script>",
-                   dash.DASHBOARD_HTML, re.S)[0]
+    js = dash.DASHBOARD_JS
     assert '["ticker_whitelist"' in js
     assert "grid-column:1/-1" in js
 
@@ -90,8 +85,7 @@ def test_open_risk_percentage_colored_by_cap():
     # cap, yellow near it) and goes bold when exceeded
     import trader.dashboard as dash
 
-    js = re.findall(r"<script>(.*?)</script>",
-                    dash.DASHBOARD_HTML, re.S)[0]
+    js = dash.DASHBOARD_JS
     assert 'open risk \' + (hidden ? "••••••" : fmtMoney(risk)' in js
     assert "color:' + color" in js
     assert "font-weight:700" in js
@@ -100,8 +94,7 @@ def test_open_risk_percentage_colored_by_cap():
 def test_positions_table_shows_price_and_return():
     import trader.dashboard as dash
 
-    js = re.findall(r"<script>(.*?)</script>",
-                    dash.DASHBOARD_HTML, re.S)[0]
+    js = dash.DASHBOARD_JS
     assert "<th class=num>Avg $</th>" in js
     assert "<th class=num>Price $</th>" in js
     assert "<th class=num>Return</th>" in js
@@ -115,7 +108,7 @@ def test_positions_table_shows_price_and_return():
     # return shows the dollar P&L stacked under the percentage
     assert "p.cost_usd - mv" in js and "plSpan" in js
     # details stack in a sub-line instead of widening the rows
-    assert '.subv { display: block;' in dash.DASHBOARD_HTML
+    assert '.subv { display: block;' in dash.DASHBOARD_CSS
     assert "set-ws-positions" in js
     assert "set-ws-values" in js
 
@@ -123,8 +116,7 @@ def test_positions_table_shows_price_and_return():
 def test_currency_split_display():
     import trader.dashboard as dash
 
-    js = re.findall(r"<script>(.*?)</script>",
-                    dash.DASHBOARD_HTML, re.S)[0]
+    js = dash.DASHBOARD_JS
     # account value gains a USD equivalent
     assert "usd_value" in js and "USD</span>" in js
     # cash per currency renders on its own card line
@@ -136,13 +128,13 @@ def test_currency_split_display():
 def test_long_text_wraps_and_webhooks_are_textareas():
     import trader.dashboard as dash
 
-    html = dash.DASHBOARD_HTML
+    html = dash.DASHBOARD_HTML + dash.DASHBOARD_CSS
     # alert entries wrap instead of overflowing the panel
     assert "white-space: normal" in html
     assert "word-break: break-word" in html
     assert "white-space: nowrap; color: var(--text)" not in html
     # webhook inputs are full-row wrapping textareas that auto-grow
-    js = re.findall(r"<script>(.*?)</script>", html, re.S)[0]
+    js = dash.DASHBOARD_JS
     assert 'textarea id="' in js
     assert "grid-column:1/-1" in js
     assert "function autoGrow(" in js
@@ -153,7 +145,7 @@ def test_git_status_wording():
     # "last auto/manual pull Xm ago" and the age is labeled "checked"
     import trader.dashboard as dash
 
-    js = re.findall(r"<script>(.*?)</script>", dash.DASHBOARD_HTML, re.S)[0]
+    js = dash.DASHBOARD_JS
     assert '"first check pending"' in js
     assert '"checked " + fmtAge' in js
     assert 'result === "not checked yet"' in js
@@ -166,7 +158,7 @@ def test_settings_form_not_clobbered_while_editing():
     # before the user could save them
     import trader.dashboard as dash
 
-    js = re.findall(r"<script>(.*?)</script>", dash.DASHBOARD_HTML, re.S)[0]
+    js = dash.DASHBOARD_JS
     assert "let settingsDirty = false;" in js
     assert "if (settingsDirty) return;" in js
     # edits mark the form dirty via the central helper
@@ -183,11 +175,10 @@ def test_settings_form_not_clobbered_while_editing():
 def test_currency_toggle():
     import trader.dashboard as dash
 
-    js = re.findall(r"<script>(.*?)</script>",
-                    dash.DASHBOARD_HTML, re.S)[0]
+    js = dash.DASHBOARD_JS
     assert 'localStorage.getItem("ws_card_currency")' in js
     assert "function flipCardCurrency" in js
-    assert "cur-toggle" in dash.DASHBOARD_HTML
+    assert "cur-toggle" in dash.DASHBOARD_JS
     # usd mode converts open risk with the derived fx rate
     assert "a.open_risk * fx" in js
 
@@ -195,8 +186,7 @@ def test_currency_toggle():
 def test_dte_badge_colors():
     import trader.dashboard as dash
 
-    js = re.findall(r"<script>(.*?)</script>",
-                    dash.DASHBOARD_HTML, re.S)[0]
+    js = dash.DASHBOARD_JS
     assert "function dteBadge(" in js
     assert '"#f85149"' in js      # 0dte red
     assert '"#db6d28"' in js      # 1dte orange
@@ -210,30 +200,29 @@ def test_dte_badge_colors():
 def test_positions_table_always_fits_panel():
     import trader.dashboard as dash
 
-    html = dash.DASHBOARD_HTML
+    html = dash.DASHBOARD_HTML + dash.DASHBOARD_CSS
     # fixed layout makes the table mathematically unable to exceed
     # its container, and the panels got wider
     assert "table-layout: fixed" in html
-    assert 'class="pos"' in html
+    assert 'class="pos"' in dash.DASHBOARD_JS
     assert "max-width: 1400px" in html
 
 
 def test_badges_do_not_wrap():
     import trader.dashboard as dash
 
-    html = dash.DASHBOARD_HTML
+    html = dash.DASHBOARD_HTML + dash.DASHBOARD_CSS
     assert "white-space: nowrap" in html
     assert "tag.mini" in html
     # the short and ws tags use the mini variant
-    assert 'tag skip mini' in html
-    assert 'tag ignored mini' in html
+    assert 'tag skip mini' in dash.DASHBOARD_JS
+    assert 'tag ignored mini' in dash.DASHBOARD_JS
 
 
 def test_utc_storage_rendered_locally():
     import trader.dashboard as dash
 
-    js = re.findall(r"<script>(.*?)</script>",
-                    dash.DASHBOARD_HTML, re.S)[0]
+    js = dash.DASHBOARD_JS
     # stored UTC gets a Z and renders via the browser clock mechanism
     assert 'if (!/[zZ+]/.test(s.slice(-6))) s += "Z";' in js
     assert "d.getHours()" in js and "d.getMinutes()" in js
@@ -244,8 +233,7 @@ def test_utc_storage_rendered_locally():
 def test_dual_timestamps_rendered():
     import trader.dashboard as dash
 
-    js = re.findall(r"<script>(.*?)</script>",
-                    dash.DASHBOARD_HTML, re.S)[0]
+    js = dash.DASHBOARD_JS
     # recent alerts show the alert time and when it was parsed down
     assert "parsed ' + fmtTime(s.received_ts)" in js
     assert "function fmtIso(" in js
@@ -255,8 +243,7 @@ def test_dual_timestamps_rendered():
 def test_stock_kind_cell():
     import trader.dashboard as dash
 
-    js = re.findall(r"<script>(.*?)</script>",
-                    dash.DASHBOARD_HTML, re.S)[0]
+    js = dash.DASHBOARD_JS
     # stocks render their own compact cell (symbol + stock label)
     assert 'p.kind === "stock"' in js
     assert '>stock</span>' in js
@@ -265,8 +252,7 @@ def test_stock_kind_cell():
 def test_stock_currency_display():
     import trader.dashboard as dash
 
-    js = re.findall(r"<script>(.*?)</script>",
-                    dash.DASHBOARD_HTML, re.S)[0]
+    js = dash.DASHBOARD_JS
     # stocks use multiplier 1 (not the 100x option multiplier) and
     # label usd amounts only - cad tickers need no suffix
     assert "isStock ? 1 : 100" in js
@@ -276,8 +262,7 @@ def test_stock_currency_display():
 def test_stock_section_and_alloc_bar():
     import trader.dashboard as dash
 
-    js = re.findall(r"<script>(.*?)</script>",
-                    dash.DASHBOARD_HTML, re.S)[0]
+    js = dash.DASHBOARD_JS
     # stock holdings render into their own section
     assert 'id="stock-positions"' in dash.DASHBOARD_HTML
     assert 'rows.filter(r => r.kind === "stock")' in js
@@ -289,8 +274,7 @@ def test_stock_section_and_alloc_bar():
 def test_stock_holdings_hidden_by_default():
     import trader.dashboard as dash
 
-    js = re.findall(r"<script>(.*?)</script>",
-                    dash.DASHBOARD_HTML, re.S)[0]
+    js = dash.DASHBOARD_JS
     # holdings section is collapsed until the user opts in
     assert 'localStorage.getItem("ws_show_stocks") === "1"' in js
     assert "toggle-stocks" in dash.DASHBOARD_HTML
@@ -299,8 +283,7 @@ def test_stock_holdings_hidden_by_default():
 def test_hide_value_eye_toggle():
     import trader.dashboard as dash
 
-    js = re.findall(r"<script>(.*?)</script>",
-                    dash.DASHBOARD_HTML, re.S)[0]
+    js = dash.DASHBOARD_JS
     # per-card eye toggle masks value and cash amounts, persisted
     assert 'localStorage.getItem("ws_card_hidden")' in js
     assert "EYE_SVG" in js and "EYE_OFF_SVG" in js
@@ -320,8 +303,7 @@ def test_hide_value_eye_toggle():
 def test_margin_requirement_line():
     import trader.dashboard as dash
 
-    js = re.findall(r"<script>(.*?)</script>",
-                    dash.DASHBOARD_HTML, re.S)[0]
+    js = dash.DASHBOARD_JS
     assert "margin used" in js
     assert "margin available " in js
     assert "max buying power" in js
@@ -331,8 +313,7 @@ def test_margin_requirement_line():
 def test_margin_lines_show_currencies():
     import trader.dashboard as dash
 
-    js = re.findall(r"<script>(.*?)</script>",
-                    dash.DASHBOARD_HTML, re.S)[0]
+    js = dash.DASHBOARD_JS
     assert 'fmtMoney(a.margin_used_usd || 0)' in js
     assert ">total margin used<" in js
     assert 'fmtMoney(a.margin_requirement) + " cad"' in js
@@ -347,8 +328,7 @@ def test_margin_lines_show_currencies():
 def test_avg_single_value_and_signed_cost():
     import trader.dashboard as dash
 
-    js = re.findall(r"<script>(.*?)</script>",
-                    dash.DASHBOARD_HTML, re.S)[0]
+    js = dash.DASHBOARD_JS
     # avg is one number: per-share for legs, per-contract for spreads
     assert 'Math.abs(p.avg_premium * 100)' in js
     assert "subv\">(\" + fmtSigned(p.avg_premium)" not in js
@@ -362,8 +342,7 @@ def test_avg_single_value_and_signed_cost():
 def test_portfolio_value_and_tappable_breakdown():
     import trader.dashboard as dash
 
-    js = re.findall(r"<script>(.*?)</script>",
-                    dash.DASHBOARD_HTML, re.S)[0]
+    js = dash.DASHBOARD_JS
     assert "portfolio value" in js
     assert "toggleMarginBreakdown" in js
     assert 'white-space:pre-line' in js
@@ -372,8 +351,7 @@ def test_portfolio_value_and_tappable_breakdown():
 def test_open_risk_and_breakdown_masked():
     import trader.dashboard as dash
 
-    js = re.findall(r"<script>(.*?)</script>",
-                    dash.DASHBOARD_HTML, re.S)[0]
+    js = dash.DASHBOARD_JS
     assert 'open risk \' + (hidden ? "••••••"' in js
     assert 'breakdownText(a.margin_breakdown, hidden)' in js
     assert 'no holdings' in js
@@ -383,8 +361,7 @@ def test_open_risk_and_breakdown_masked():
 def test_margin_usage_bar():
     import trader.dashboard as dash
 
-    js = re.findall(r"<script>(.*?)</script>",
-                    dash.DASHBOARD_HTML, re.S)[0]
+    js = dash.DASHBOARD_JS
     assert "function marginUsageBar" in js
     assert 'pct >= 80 ? "#f85149" : pct >= 50 ? "#d29922" : "#3fb950"' in js
     assert "marginUsageBar(a);" in js
@@ -393,8 +370,7 @@ def test_margin_usage_bar():
 def test_section_toggles_and_paper_detail():
     import trader.dashboard as dash
 
-    js = re.findall(r"<script>(.*?)</script>",
-                    dash.DASHBOARD_HTML, re.S)[0]
+    js = dash.DASHBOARD_JS
     # alerts and trades sections collapse, persisted
     assert 'localStorage.getItem("ws_alerts_open") !== "0"' in js
     assert 'localStorage.getItem("ws_trades_open") !== "0"' in js
@@ -408,8 +384,7 @@ def test_section_toggles_and_paper_detail():
 def test_section_state_applied_on_load():
     import trader.dashboard as dash
 
-    js = re.findall(r"<script>(.*?)</script>",
-                    dash.DASHBOARD_HTML, re.S)[0]
+    js = dash.DASHBOARD_JS
     # persisted hidden state must apply at startup, not only after
     # the first toggle click
     assert "function applySectionVisibility" in js
@@ -419,8 +394,7 @@ def test_section_state_applied_on_load():
 def test_paper_badge_and_holdings_hint():
     import trader.dashboard as dash
 
-    js = re.findall(r"<script>(.*?)</script>",
-                    dash.DASHBOARD_HTML, re.S)[0]
+    js = dash.DASHBOARD_JS
     assert 'id="paper-badge"' in dash.DASHBOARD_HTML
     assert "badge.papersim" in js or "papersim" in dash.DASHBOARD_HTML
     assert 'data.paper ? "" : "none"' in js
@@ -430,8 +404,7 @@ def test_paper_badge_and_holdings_hint():
 def test_paper_open_state_migration():
     import trader.dashboard as dash
 
-    js = re.findall(r"<script>(.*?)</script>",
-                    dash.DASHBOARD_HTML, re.S)[0]
+    js = dash.DASHBOARD_JS
     # old single-label values (pre-JSON-array) must not crash the
     # JSON parse
     assert '_po.startsWith("[")' in js

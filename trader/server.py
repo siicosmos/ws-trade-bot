@@ -8,7 +8,7 @@ from datetime import timedelta
 from flask import Flask, Response, jsonify, redirect, request, session
 
 from .account_types import REGISTERED_ACCOUNT_TYPES
-from .dashboard import DASHBOARD_HTML, LOGIN_HTML
+from .dashboard import LOGIN_HTML
 from .pipeline import process_alert
 from .store import Store
 
@@ -373,12 +373,14 @@ def create_app(cfg, store: Store, risk, executor, account=None,
 
     @app.after_request
     def no_store(resp):
-        resp.headers.setdefault("Cache-Control", "no-store")
+        # unconditional: flask's static handler sets no-cache,
+        # and the page must never serve stale after an update
+        resp.headers["Cache-Control"] = "no-store"
         return resp
 
     @app.get("/")
     def dashboard_page():
-        return Response(DASHBOARD_HTML, mimetype="text/html")
+        return app.send_static_file("dashboard.html")
 
     @app.get("/health")
     def health():

@@ -32,7 +32,9 @@ ROOT = os.path.abspath(
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from trader.dashboard import DASHBOARD_HTML  # noqa: E402
+from trader.dashboard import (  # noqa: E402
+    DASHBOARD_CSS, DASHBOARD_HTML, DASHBOARD_JS,
+)
 
 CANNED = {
     "mode": "notify",
@@ -284,9 +286,10 @@ def find_chrome():
 
 
 def build_page():
-    # replace the whole api() helper with the canned stub - the
-    # marker check catches dashboard refactors of api() so the
-    # stub silently not applying can never pass
+    # inline the css/js into the html shell (the page normally
+    # loads them from /static - file:// pages cannot), then stub
+    # api() with canned data. the marker checks catch dashboard
+    # refactors so a silently-not-applying stub can't pass.
     stub = (
         'async function api(path) {\n'
         '  if (path === "/api/dashboard") return '
@@ -308,26 +311,22 @@ def build_page():
     )
     m = re.search(
         r'async function api\(path\) \{.*?\n\}',
-        DASHBOARD_HTML, re.S,
+        DASHBOARD_JS, re.S,
     )
     if not m:
         raise RuntimeError(
-            "api() not found in DASHBOARD_HTML - update the stub"
+            "api() not found in dashboard.js - update the stub"
         )
-    html = DASHBOARD_HTML[:m.start()] + stub + \
-        DASHBOARD_HTML[m.end():]
-    if "__UITEST_STUB__" in html:
-        raise RuntimeError("stub marker collision")
-    html = html.replace(
-        stub, stub.replace(
-            "async function api(path)",
-            "async function api(path) { /* __UITEST_STUB__ */",
-            1,
-        ).replace(
-            "async function api(path) { /* __UITEST_STUB__ */",
-            "async function api(path)",
-        )
+    js = DASHBOARD_JS[:m.start()] + stub + DASHBOARD_JS[m.end():]
+    html = DASHBOARD_HTML.replace(
+        '<link rel="stylesheet" href="/static/dashboard.css">',
+        "<style>\n" + DASHBOARD_CSS + "\n</style>",
+    ).replace(
+        '<script src="/static/dashboard.js"></script>',
+        "<script>\n" + js + "\n</script>",
     )
+    if '<script src="/static/dashboard.js">' in html:
+        raise RuntimeError("static script tag not inlined")
     if '"mode": "notify"' not in html:
         raise RuntimeError("canned data missing from page")
     return html.replace("</body>", HARNESS + "</body>")
