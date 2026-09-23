@@ -151,8 +151,8 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   @media (max-width: 640px) {
     .tlog th:nth-child(2), .tlog td:nth-child(2) { display: none; }
     .tlog { min-width: 460px; font-size: 12px; }
-    .sub { flex-direction: column; align-items: flex-start; }
-    .sub > span:nth-child(2) { align-self: flex-end; text-align: right; }
+    .sub.stack { flex-direction: column; align-items: flex-start; }
+    .sub.stack > span:nth-child(2) { align-self: flex-end; text-align: right; }
     .mini-toggle { padding: 1px 6px; font-size: 10px; }
     .cur-toggle { padding: 1px 6px; margin-bottom: 4px; font-size: 10px; }
   }
@@ -414,13 +414,13 @@ async function loadSummary() {
       '<div class="sub"><span style="color:' + color + (pct >= (a.max_open_risk_pct || 30) ? ';font-weight:700' : '') + '">open risk ' + (hidden ? "••••••" : fmtMoney(risk) + " " + (showUsd ? "usd" : "cad")) + ' (' + (a.open_risk_pct ?? 0) + '%)</span>' +
       '<span>cap ' + (a.max_open_risk_pct) + '%</span></div>' +
       ((a.margin_requirement != null && !isNaN(a.margin_requirement))
-        ? '<div class="sub"><span>total margin used ' + (hidden ? "••••••" : fmtMoney(a.margin_used || 0) + " cad") +
+        ? '<div class="sub stack"><span>total margin used ' + (hidden ? "••••••" : fmtMoney(a.margin_used || 0) + " cad") +
           (hidden ? '' :
             ' · usd ' + fmtMoney(a.margin_used_usd || 0) +
             ' · cad ' + fmtMoney(a.margin_used_cad || 0)) +
           '</span><span style="cursor:pointer" onclick="toggleMarginBreakdown(' + cardIdx + ', \'' + esc(a.label) + '\')">margin requirement ' + (hidden ? "••••••" : fmtMoney(a.margin_requirement) + " cad") + ' ▾</span></div>' +
           '<div id="mbd-' + cardIdx + '" class="sub" style="display:' + (mbdOpen === a.label ? "block" : "none") + ';color:var(--muted);font-size:11px;white-space:pre-line">' + (hidden ? "" : esc((a.margin_breakdown || []).join("\n"))) + '</div>' +
-          '<div class="sub"><span>' + (a.portfolio_value != null && !hidden ? 'portfolio value ' + fmtMoney(a.portfolio_value) + " cad" : '') +
+          '<div class="sub stack"><span>' + (a.portfolio_value != null && !hidden ? 'portfolio value ' + fmtMoney(a.portfolio_value) + " cad" : '') +
           '</span><span>max buying power ' + (hidden ? "••••••" : fmtMoney(a.max_buying_power || 0) + " cad") + '</span></div>'
         : '') +
       ((a.cash_cad != null || a.cash_usd != null)
@@ -465,11 +465,11 @@ async function loadSummary() {
         '<div class="sub"><span>open risk ' + (phidden? "••••••" : fmtMoney(a.paper_open_risk || 0) + " cad") + ' (' + (a.paper_open_risk_pct ?? 0) + '%)</span>' +
         '<span>paper</span></div>' +
         ((a.paper_margin_requirement != null && !isNaN(a.paper_margin_requirement))
-          ? '<div class="sub"><span>total margin used ' + (phidden? "••••••" : fmtMoney(a.paper_margin_used || 0) + " cad") +
+          ? '<div class="sub stack"><span>total margin used ' + (phidden? "••••••" : fmtMoney(a.paper_margin_used || 0) + " cad") +
             (hidden || !(a.paper_margin_used > 0) ? '' : ' · ledger loan') +
             '</span><span style="cursor:pointer" onclick="togglePaperBreakdown(' + cardIdx + ', \'' + esc(a.label) + '\')">margin requirement ' + (phidden? "••••••" : fmtMoney(a.paper_margin_requirement) + " cad") + ' ▾</span></div>' +
           '<div id="pmbd-' + cardIdx + '" class="sub" style="display:' + (pmbdOpen === a.label ? "block" : "none") + ';color:var(--muted);font-size:11px;white-space:pre-line">' + (phidden? "" : esc((a.paper_margin_breakdown || []).join("\n"))) + '</div>' +
-          '<div class="sub"><span>' + (a.paper_portfolio_value != null && !phidden? 'portfolio value ' + fmtMoney(a.paper_portfolio_value) + " cad" : '') +
+          '<div class="sub stack"><span>' + (a.paper_portfolio_value != null && !phidden? 'portfolio value ' + fmtMoney(a.paper_portfolio_value) + " cad" : '') +
             '</span><span>max buying power ' + (phidden? "••••••" : fmtMoney(a.paper_max_buying_power || 0) + " cad") + '</span></div>'
           : '') +
         ((a.paper_cash != null)
