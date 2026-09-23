@@ -47,18 +47,22 @@ the day, called from the record paths): signals and trades
 older than `trading.history_retention_days` (default 90, 0 =
 keep forever) are dropped and the removal is logged.
 
-## 6. Split account.py - LOW (bigger refactor)
+## 6. Split account.py - DONE
 
-trader/account.py (~1,350 lines) mixes four concerns:
+trader/account.py went from ~1,350 lines to ~490 (transport,
+caches, thin delegates) with:
 
-- WS transport (client, extracted GraphQL documents)
-- the margin model (now extracted - see #1)
-- the paper ledger / seeding
-- position mapping and caching
+- `trader/ws_common.py` - shared amount/quote parsing and
+  account resolution helpers (the leaf every other module uses)
+- `trader/paper.py` - PaperAccount, PaperLedger and
+  seed_paper_accounts
+- `trader/mapping.py` - map_stocks / map_options: raw GraphQL
+  nodes into strategy rows (multi-leg grouping, condors,
+  butterflies), taking the usd-cad quote as a callable so it
+  has no transport dependency
 
-Split into `ws_client` / `paper` / `mapping` modules, each
-testable in isolation. The margin extraction was the first
-slice; the rest can follow the same pattern.
+`account.py` re-exports the old names so existing imports keep
+working; new code should import from the specific modules.
 
 ## 7. Static dashboard assets - LOW (deployment trade-off)
 
