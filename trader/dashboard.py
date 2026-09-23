@@ -161,6 +161,11 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
     .sub.mrow .cell:last-child { align-items: flex-end;
       text-align: right; }
     .ptitle { font-size: 10px; }
+    header h1 { font-size: 15px; min-width: 0; overflow: hidden;
+      text-overflow: ellipsis; }
+    .badge { padding: 2px 7px; font-size: 9px; letter-spacing: .3px; }
+    #clock { font-size: 10px; padding: 2px 6px; }
+    #timebox { margin-left: auto; }
     .sub .cell { display: inline-flex; align-items: baseline;
     gap: 6px; min-width: 0; }
   .sub .cell .lab { }
@@ -427,9 +432,8 @@ async function loadSummary() {
       '<div class="sub"><span style="color:' + color + (pct >= (a.max_open_risk_pct || 30) ? ';font-weight:700' : '') + '">open risk ' + (hidden ? "••••••" : fmtMoney(risk) + " " + (showUsd ? "usd" : "cad")) + ' (' + (a.open_risk_pct ?? 0) + '%)</span>' +
       '<span>cap ' + (a.max_open_risk_pct) + '%</span></div>' +
       ((a.margin_requirement != null && !isNaN(a.margin_requirement))
-        ? '<div class="sub mrow"><span class="cell"><span class="lab">total margin used</span><span class="val">' + (hidden ? "••••••" : fmtMoney(a.margin_used || 0) + " cad") +
-          (hidden ? '' :
-            ' · usd ' + fmtMoney(a.margin_used_usd || 0) +
+        ? '<div class="sub mrow"><span class="cell"><span class="lab">total margin used</span><span class="val">' + (hidden ? "••••••" :
+            'usd ' + fmtMoney(a.margin_used_usd || 0) +
             ' · cad ' + fmtMoney(a.margin_used_cad || 0)) +
           '</span></span><span class="cell" style="cursor:pointer" onclick="toggleMarginBreakdown(' + cardIdx + ', \'' + esc(a.label) + '\')"><span class="lab">margin requirement</span><span class="val">' + (hidden ? "••••••" : fmtMoney(a.margin_requirement) + " cad") + ' ▾</span></span></div>' +
           '<div id="mbd-' + cardIdx + '" class="sub" style="display:' + (mbdOpen === a.label ? "block" : "none") + ';color:var(--muted);font-size:11px;white-space:pre-line">' + (hidden ? "" : esc((a.margin_breakdown || []).join("\n"))) + '</div>' +
