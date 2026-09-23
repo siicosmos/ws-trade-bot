@@ -394,6 +394,27 @@ async function loadPaperPositions() {
   }
 }
 
+let readerInfo = null;
+
+function renderReader() {
+  // ticks on its own - button clicks never rewrite this line
+  const el = document.getElementById("reader");
+  if (!el || !readerInfo) return;
+  const r = readerInfo;
+  const age = r.age_seconds === null ? null
+    : Math.round(
+        r.age_seconds + (Date.now() - r.receivedAt) / 1000
+      );
+  const ageTxt =
+    age === null || age > 30 ? "offline" : age + "s ago";
+  el.textContent = r.channel
+    ? "watching: " + r.channel + " (" + ageTxt + ")"
+    : "waiting for: " + (r.desired || "any open channel") +
+      " (" + ageTxt + ")";
+  el.style.color =
+    age !== null && age <= 30 ? "var(--green)" : "var(--yellow)";
+}
+
 async function loadSummary() {
   const data = await api("/api/summary");
   await loadPaperPositions();
@@ -410,13 +431,9 @@ async function loadSummary() {
       (s.trailing_stop_pct > 0 ? " · trailing " + s.trailing_stop_pct + "%" : "");
   }
   if (data.reader) {
-    const r = data.reader;
-    const age = r.age_seconds === null || r.age_seconds > 30 ? "offline" : r.age_seconds + "s ago";
-    document.getElementById("reader").textContent = r.channel
-      ? "watching: " + r.channel + " (" + age + ")"
-      : "waiting for: " + (r.desired || "any open channel") + " (" + age + ")";
-    document.getElementById("reader").style.color =
-      r.age_seconds !== null && r.age_seconds <= 30 ? "var(--green)" : "var(--yellow)";
+    readerInfo = Object.assign({}, data.reader, {
+      receivedAt: Date.now(),
+    });
   }
   const el = document.getElementById("accounts");
   el.innerHTML = "";
@@ -1102,6 +1119,8 @@ window.addEventListener("pageshow", (e) => {
 applySectionVisibility();
 tickClock();
 setInterval(tickClock, 1000);
+renderReader();
+setInterval(renderReader, 1000);
 </script>
 </body>
 </html>
