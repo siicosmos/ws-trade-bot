@@ -342,9 +342,11 @@ let paperPositions = null;
 let pmbdOpen = null;
 
 function togglePaperBreakdown(i, label) {
-  const el = document.getElementById("pmbd-" + i);
   pmbdOpen = (pmbdOpen === label) ? null : label;
-  if (el) el.style.display = (el.style.display === "none") ? "block" : "none";
+  const el = document.getElementById("pmbd-" + i);
+  if (el) el.style.display = pmbdOpen === label ? "block" : "none";
+  const arrow = document.getElementById("pmbda-" + i);
+  if (arrow) arrow.textContent = pmbdOpen === label ? "\u25BC" : "\u25B2";
 }
 
 let modalAction = null;
@@ -478,7 +480,7 @@ async function loadSummary() {
         ? '<div class="sub mrow"><span class="cell"><span class="lab">total margin used</span><span class="val">' + (hidden ? "••••••" :
             'usd ' + fmtMoney(a.margin_used_usd || 0) +
             ' · cad ' + fmtMoney(a.margin_used_cad || 0)) +
-          '</span></span><span class="cell" style="cursor:pointer" onclick="toggleMarginBreakdown(' + cardIdx + ', \'' + esc(a.label) + '\')"><span class="lab">margin requirement</span><span class="val">' + (hidden ? "••••••" : fmtMoney(a.margin_requirement) + " cad") + (mbdOpen === a.label ? " ▼" : " ▲") + '</span></span></div>' +
+          '</span></span><span class="cell" style="cursor:pointer" onclick="toggleMarginBreakdown(' + cardIdx + ', \'' + esc(a.label) + '\')"><span class="lab">margin requirement</span><span class="val">' + (hidden ? "••••••" : fmtMoney(a.margin_requirement) + " cad") + ' <span id="mbda-' + cardIdx + '">' + (mbdOpen === a.label ? "▼" : "▲") + '</span></span></span></div>' +
           '<div id="mbd-' + cardIdx + '" class="sub" style="display:' + (mbdOpen === a.label ? "block" : "none") + ';color:var(--muted);font-size:11px;white-space:pre-line">' + breakdownText(a.margin_breakdown, hidden) + '</div>' +
           '<div class="sub mrow"><span class="cell"><span class="lab">portfolio value</span><span class="val">' + (hidden ? "••••••" : (a.portfolio_value != null ? fmtMoney(a.portfolio_value) + " cad" : '')) +
           '</span></span><span class="cell"><span class="lab">max buying power</span><span class="val">' + (hidden ? "••••••" : fmtMoney(a.max_buying_power || 0) + " cad") + '</span></span></div>'
@@ -542,7 +544,7 @@ async function loadSummary() {
         ((a.paper_margin_requirement != null && !isNaN(a.paper_margin_requirement))
           ? '<div class="sub mrow"><span class="cell"><span class="lab">total margin used</span><span class="val">' + (phidden? "••••••" : fmtMoney(a.paper_margin_used || 0) + " cad") +
             (phidden || !(a.paper_margin_used > 0) ? '' : ' · ledger loan') +
-            '</span></span><span class="cell" style="cursor:pointer" onclick="togglePaperBreakdown(' + cardIdx + ', \'' + esc(a.label) + '\')"><span class="lab">margin requirement</span><span class="val">' + (phidden? "••••••" : fmtMoney(a.paper_margin_requirement) + " cad") + (pmbdOpen === a.label ? " ▼" : " ▲") + '</span></span></div>' +
+            '</span></span><span class="cell" style="cursor:pointer" onclick="togglePaperBreakdown(' + cardIdx + ', \'' + esc(a.label) + '\')"><span class="lab">margin requirement</span><span class="val">' + (phidden? "••••••" : fmtMoney(a.paper_margin_requirement) + " cad") + ' <span id="pmbda-' + cardIdx + '">' + (pmbdOpen === a.label ? "▼" : "▲") + '</span></span></span></div>' +
           '<div id="pmbd-' + cardIdx + '" class="sub" style="display:' + (pmbdOpen === a.label ? "block" : "none") + ';color:var(--muted);font-size:11px;white-space:pre-line">' + ((a.paper_margin_breakdown || []).length ? breakdownText(a.paper_margin_breakdown, phidden) : "no holdings") + '</div>' +
           '<div class="sub mrow"><span class="cell"><span class="lab">portfolio value</span><span class="val">' + (phidden? "••••••" : (a.paper_portfolio_value != null ? fmtMoney(a.paper_portfolio_value) + " cad" : '')) +
             '</span></span><span class="cell"><span class="lab">max buying power</span><span class="val">' + (phidden? "••••••" : fmtMoney(a.paper_max_buying_power || 0) + " cad") + '</span></span></div>'
@@ -726,6 +728,8 @@ function toggleMarginBreakdown(i, label) {
   mbdOpen = mbdOpen === label ? null : label;
   const el = document.getElementById("mbd-" + i);
   if (el) el.style.display = mbdOpen === label ? "block" : "none";
+  const arrow = document.getElementById("mbda-" + i);
+  if (arrow) arrow.textContent = mbdOpen === label ? "\u25BC" : "\u25B2";
 }
 let cardHidden = JSON.parse(localStorage.getItem("ws_card_hidden") || "{}");
 let paperHidden = JSON.parse(localStorage.getItem("ws_paper_hidden") || "{}");
