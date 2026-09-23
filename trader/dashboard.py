@@ -461,9 +461,9 @@ async function loadSummary() {
           (pnlPct != null ? " (" + (pnl >= 0 ? "+" : "") + pnlPct.toFixed(1) + "%)" : "") + '</span>') +
         (a.paper_usd_value && !phidden ? ' <span style="font-size:12px;color:var(--muted)">$' + a.paper_usd_value.toLocaleString("en-CA", {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' USD</span>' : '') +
         '</div>' +
-        '<div class="riskbar"><div style="width:' + Math.min(100, Math.round(a.paper_open_risk_pct || 0)) + '%;background:#3fb950"></div></div>' +
+        '<div class="riskbar"><div style="width:' + Math.min(100, Math.round(a.paper_open_risk_pct || 0)) + '%;background:' + (a.paper_open_risk_pct >= (a.max_open_risk_pct || 30) ? "#f85149" : a.paper_open_risk_pct > (a.max_open_risk_pct || 30) * 0.6 ? "#d29922" : "#3fb950") + '"></div></div>' +
         '<div class="sub"><span>open risk ' + (phidden? "••••••" : fmtMoney(a.paper_open_risk || 0) + " cad") + ' (' + (a.paper_open_risk_pct ?? 0) + '%)</span>' +
-        '<span>paper</span></div>' +
+        '<span>cap ' + (a.max_open_risk_pct ?? 30) + '%</span></div>' +
         ((a.paper_margin_requirement != null && !isNaN(a.paper_margin_requirement))
           ? '<div class="sub stack"><span>total margin used ' + (phidden? "••••••" : fmtMoney(a.paper_margin_used || 0) + " cad") +
             (hidden || !(a.paper_margin_used > 0) ? '' : ' · ledger loan') +
