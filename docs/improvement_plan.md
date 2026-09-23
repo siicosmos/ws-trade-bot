@@ -140,39 +140,13 @@ batcher, health watchdog) under ops/supervise.py, the reader
 process with its locally-supervised webhook thread, and the
 crash/hang/update exit paths that feed the restart loops.
 
-## Database growth model (measured)
+## Database growth model
 
-Representative rows measured in a scratch db (real alert
-shapes, both trade rows per actionable alert, indexes
-included): ~280 B/signal, ~280 B/trade row - about 850 B per
-actionable alert (signal + notify row + paper row) and ~280 B
-per ignored chatter message.
-
-One year of history (365-day retention):
-
-| volume | chatter/day | alerts/day | steady-state size |
-|---|---|---|---|
-| quiet | 20 | 10 | ~5 MB |
-| moderate | 60 | 25 | ~14 MB |
-| heavy | 150 | 60 | ~34 MB |
-
-Conclusions for the plan:
-
-- a year of retention is trivial for sqlite - no action needed
-  at these sizes; positions/meta are kilobytes
-- the file plateaus at the one-year working set: retention
-  deletes free pages internally and they get reused (the file
-  only shrinks with a manual VACUUM - not worth automating
-  here)
-- WAL growth is bounded by auto-checkpointing; the
-  trades.db-wal file is transient
-- when the search UI (#12) lands, use sqlite FTS5 over the
-  signals/trades text - LIKE scans stay fine at these sizes
-  but FTS gives instant free-text search and keeps the query
-  endpoint simple
-- received_ts is NULL on signals recorded before that column
-  existed - the search UI should treat it as "unknown", not
-  sort on it
+Measured and documented in `docs/database_plan.md`: a year
+of retention lands at ~5 MB quiet / ~14 MB moderate /
+~34 MB heavy - trivial for sqlite. The doc also covers
+the maintenance guidance (free-page plateau, WAL bounds,
+consistent backups) and the FTS5 recommendation for #12.
 
 ## 12. Search over older trades/signals - PENDING
 
