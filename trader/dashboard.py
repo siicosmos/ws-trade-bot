@@ -477,9 +477,10 @@ async function loadSummary() {
       const pfx = (a.paper_usd_value && a.paper_value)
         ? a.paper_value / a.paper_usd_value : null;
       const pair = function(cad, hasUsd) {
-        const usd = (pfx && cad != null) ? cad / pfx : null;
-        if (phidden || cad == null || !hasUsd) return cad == null ? "—" : fmtMoney(cad) + " cad";
-        if (usd == null) return fmtMoney(cad) + " cad";
+        if (phidden) return "••••••";
+        if (cad == null) return "—";
+        const usd = pfx ? cad / pfx : null;
+        if (!hasUsd || usd == null) return fmtMoney(cad) + " cad";
         return pshowUsd
           ? fmtMoney(usd) + " usd · " + fmtMoney(cad) + " cad"
           : fmtMoney(cad) + " cad · " + fmtMoney(usd) + " usd";
