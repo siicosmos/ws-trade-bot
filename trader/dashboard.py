@@ -246,6 +246,7 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
     </div>
   </div>
 </div>
+<div id="reconnect" style="display:none;position:fixed;top:0;left:0;right:0;z-index:200;background:#d29922;color:#111;text-align:center;font-size:12px;font-weight:700;padding:6px 8px;box-shadow:0 2px 8px rgba(0,0,0,.4)">server unreachable — reconnecting…</div>
 <script>
 function fmtSigned(v) {
   return (v < 0 ? "-$" : "$") + Math.abs(v).toLocaleString("en-CA",
@@ -289,10 +290,30 @@ function esc(s) {
   return out;
 }
 
+function showReconnect(on) {
+  const el = document.getElementById("reconnect");
+  if (el) el.style.display = on ? "block" : "none";
+}
+
 async function api(path) {
-  const res = await fetch(path);
+  let res;
+  try {
+    res = await fetch(path);
+  } catch (e) {
+    // network down / server restarting - surfaced by the
+    // banner instead of raw fetch errors
+    showReconnect(true);
+    throw e;
+  }
   if (res.status === 401) { location.href = "/login"; throw new Error("unauthorized"); }
-  return res.json();
+  try {
+    const data = await res.json();
+    showReconnect(false);
+    return data;
+  } catch (e) {
+    showReconnect(true);
+    throw e;
+  }
 }
 
 function maskBreakdown(lines) {
