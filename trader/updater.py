@@ -237,6 +237,9 @@ class AutoUpdater:
         return healed
 
     def _restart_for_local_change(self):
+        """Returns True when a restart was initiated (the process
+        exits), False when the change is irrelevant and the
+        update loop must keep running."""
         new = self._head()
         from .notify import notify_discord
 
@@ -247,7 +250,7 @@ class AutoUpdater:
             print("auto-update: local change does not touch the "
                   "pipeline - not restarting")
             self.start_head = new
-            return
+            return False
 
         self._record_update("manual")
 
@@ -269,6 +272,7 @@ class AutoUpdater:
         print("auto-update: local code changed - restarting pipeline...")
         self.last_result = f"local change: {new[:8] if new else '?'}"
         self._restart()
+        return True
 
     def _run(self):
         while True:
@@ -287,8 +291,11 @@ class AutoUpdater:
                 time.sleep(min(15, remain))
                 try:
                     if self._local_head_changed():
-                        self._restart_for_local_change()
-                        return
+                        # only leave the loop when a restart was
+                        # actually initiated; a docs-only local
+                        # change must not kill the update thread
+                        if self._restart_for_local_change():
+                            return
                 except Exception:
                     pass
             try:
@@ -397,6 +404,9 @@ class AutoUpdater:
                 ok=True,
             )
             print("auto-update: no pipeline changes - not restarting")
+            # keep the loop's baseline current so the next poll
+            # does not mistake our own pull for a local change
+            self.start_head = new
             return False
 
         notify_discord(

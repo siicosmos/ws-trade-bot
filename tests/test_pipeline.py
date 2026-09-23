@@ -3430,3 +3430,47 @@ def test_margin_model_single_source():
     ) == 0.25
     assert resolve_rate("SPX", None, None, {"SPX": 0.50}, 0.30) == 0.50
     assert resolve_rate("SPX", "s1", None, {}, 0.30) == 0.30
+
+
+def test_updater_survives_local_change_without_restart():
+    import trader.updater as up
+
+    class FakeResult:
+        def __init__(self, rc=0, out=""):
+            self.returncode = rc
+            self.stdout = out
+
+    made = {}
+
+    def fake_git(root, *args):
+        if args[0] == "diff":
+            # docs-only change
+            return FakeResult(0, "docs/plan.md\n")
+        return FakeResult(0, "")
+
+    import pytest
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(up, "_git", fake_git)
+
+        class Updater(up.AutoUpdater):
+            def __init__(self):
+                self.cfg = None
+                self.root = "/x"
+                self.webhook_url = ""
+                self.last_check = None
+                self.last_result = ""
+                self.errors = 0
+                self.start_head = "aaaaaaa"
+                self.branch = "main"
+                self._restart = lambda: made.update(restarted=True)
+                self._head = lambda: "bbbbbbb"
+                self._thread = None
+
+        u = Updater()
+        # a local change that does not touch the pipeline must
+        # NOT exit the update loop
+        restarted = u._restart_for_local_change()
+    assert made.get("restarted") is None
+    # baseline moved so the next poll is clean
+    assert u.start_head == "bbbbbbb"
