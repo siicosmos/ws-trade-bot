@@ -8,7 +8,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from trader.ws.account import PaperAccount
 from trader.config import ReaderConfig, TradingConfig, WealthsimpleConfig, WSAccountConfig
 from trader.trading.executor import (
-    PaperExecutor, account_sizing, contracts_for, sell_quantity, tier_plan,
+    PaperExecutor, account_sizing, sell_quantity, tier_plan,
 )
 from trader.trading.parser import parse_alert
 from trader.pipeline import process_alert
@@ -73,19 +73,25 @@ def test_risk_dedupe_same_premium():
     assert ok
 
 
-def test_contracts_for_sizing():
+def test_account_sizing():
     cfg, store, account, risk = _setup(
         paper_account_value=10000, risk_per_trade_pct=5
     )
-    assert contracts_for(parse_alert("BOUGHT 0DTE SPY 759c @ 1.5"), cfg, 10000, 1.5) == 3
-    assert contracts_for(parse_alert("BOUGHT 0DTE SPY 759c @ .65"), cfg, 10000, 0.65) == 7
-    assert contracts_for(parse_alert("BOUGHT 0DTE SPY 759c @ 99"), cfg, 10000, 99.0) == 0
-    assert contracts_for(parse_alert("BOUGHT 0DTE SPY 759c @ 1.5 @everyone small size"), cfg, 10000, 1.5) == 1
-    assert contracts_for(parse_alert("BOUGHT 0DTE SPY 759c @ 1.5 @everyone lotto size"), cfg, 10000, 1.5) == 0
-    assert contracts_for(parse_alert("BOUGHT 0DTE SPY 759c @ 1.5 @everyone medium size"), cfg, 10000, 1.5) == 3
-    assert contracts_for(parse_alert("BOUGHT 0DTE SPY 759c @ 1.5 @everyone large size"), cfg, 10000, 1.5) == 6
-    cfg3, _, _, _ = _setup(max_contracts_per_trade=2)
-    assert contracts_for(parse_alert("BOUGHT 0DTE SPY 759c @ 1.5"), cfg3, 100000, 0.5) == 2
+
+    def contracts(alert, acct=None):
+        rows = account_sizing(alert, cfg, acct or account)
+        return [r["final_contracts"] for r in rows]
+
+    assert contracts(parse_alert("BOUGHT 0DTE SPY 759c @ 1.5")) == [3]
+    assert contracts(parse_alert("BOUGHT 0DTE SPY 759c @ .65")) == [7]
+    assert contracts(parse_alert("BOUGHT 0DTE SPY 759c @ 99")) == [0]
+    assert contracts(parse_alert("BOUGHT 0DTE SPY 759c @ 1.5 @everyone small size")) == [1]
+    assert contracts(parse_alert("BOUGHT 0DTE SPY 759c @ 1.5 @everyone lotto size")) == [0]
+    assert contracts(parse_alert("BOUGHT 0DTE SPY 759c @ 1.5 @everyone medium size")) == [3]
+    assert contracts(parse_alert("BOUGHT 0DTE SPY 759c @ 1.5 @everyone large size")) == [6]
+    cfg3, _, account3, _ = _setup(max_contracts_per_trade=2)
+    rows = account_sizing(parse_alert("BOUGHT 0DTE SPY 759c @ 1.5"), cfg3, account3)
+    assert [r["final_contracts"] for r in rows] == [2]
 
 
 def test_tier_plan_capping():
@@ -116,17 +122,17 @@ def test_tier_plan_min_contract_gate():
     assert plan["qty"] == 5
 
 
-def test_contracts_for_per_account_overrides():
+def test_per_account_sizing_overrides():
     cfg, store, account, risk = _setup(risk_per_trade_pct=5)
     big = WSAccountConfig(account_id="rrsp", label="RRSP", risk_per_trade_pct=3)
     small = WSAccountConfig(account_id="pers", label="Personal", risk_per_trade_pct=10)
     alert = parse_alert("BOUGHT 0DTE SPY 759c @ 1.5")
-    assert contracts_for(alert, cfg, 50000, 1.5, big) == 10
-    assert contracts_for(alert, cfg, 2000, 1.5, small) == 1
+    assert tier_plan(alert, cfg, 50000, 1.5, big)["qty"] == 10
+    assert tier_plan(alert, cfg, 2000, 1.5, small)["qty"] == 1
     sized = parse_alert("BOUGHT 0DTE SPY 759c @ 1.5 @everyone small size")
-    assert contracts_for(sized, cfg, 50000, 1.5, big) == 2
+    assert tier_plan(sized, cfg, 50000, 1.5, big)["qty"] == 2
     capped = WSAccountConfig(account_id="x", label="x", max_contracts_per_trade=2)
-    assert contracts_for(alert, cfg, 50000, 1.5, capped) == 2
+    assert tier_plan(alert, cfg, 50000, 1.5, capped)["qty"] == 2
 
 
 def test_sell_quantity_math():

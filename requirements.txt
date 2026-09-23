@@ -5,3 +5,6 @@ wealthsimple-python[keyring]
 pytest
 cryptography
 psutil
+waitress
+# optional: moomoo OpenD client for live option quotes
+# moomoo

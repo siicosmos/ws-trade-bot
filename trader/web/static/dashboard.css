@@ -189,3 +189,28 @@
   .empty { color: var(--muted); font-size: 13px; padding: 14px; text-align: center; background: var(--panel); border-radius: 8px; }
   .num { text-align: right; }
   .subv { display: block; font-size: 11px; color: var(--muted); }
+
+  /* history search bar (plan #12) */
+  #history-search input, #history-search select {
+    background: #0d1117; color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 5px 8px; font-size: 12px;
+    color-scheme: dark;
+  }
+  #history-search button {
+    background: #21262d; color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 5px 14px; font-size: 12px; cursor: pointer;
+  }
+  #history-results table { width: 100%; border-collapse: collapse; }
+  #history-results td, #history-results th {
+    padding: 5px 8px; font-size: 12px;
+    border-bottom: 1px solid var(--border);
+    text-align: left; vertical-align: top;
+  }
+  #history-results .meta { color: var(--muted); font-size: 11px; margin: 6px 0; }
+  #history-results .nav-btns button {
+    background: #21262d; color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 3px 10px; font-size: 11px; cursor: pointer;
+  }

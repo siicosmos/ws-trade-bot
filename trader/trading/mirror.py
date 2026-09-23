@@ -190,6 +190,12 @@ def start_mirror_thread(cfg, store, ws_account, ledger,
     def run():
         while True:
             time.sleep(max(15, int(interval_seconds)))
+            # daily history prune rides this loop too - a quiet
+            # bot must still age rows out (plan finding)
+            try:
+                store.maybe_prune()
+            except Exception:
+                pass
             if not getattr(cfg, "paper", None) or not cfg.paper.mirror:
                 continue
             try:

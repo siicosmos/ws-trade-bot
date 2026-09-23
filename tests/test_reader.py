@@ -7,10 +7,21 @@ _READER_DIR = os.path.join(os.path.dirname(__file__), "..", "reader")
 sys.path.insert(0, _READER_DIR)
 
 sys.modules.setdefault("uiautomation", MagicMock())
-sys.modules.setdefault("psutil", MagicMock())
 sys.modules.setdefault("inspect_discord", MagicMock())
 
+# psutil is stubbed for import-time use, then restored: the real
+# module must stay available to the rest of the session (the
+# stale-process tests depend on it)
+try:
+    import psutil as _real_psutil
+except ImportError:
+    _real_psutil = None
+sys.modules["psutil"] = MagicMock()
+
 import discord_reader as dr  # noqa: E402
+
+if _real_psutil is not None:
+    sys.modules["psutil"] = _real_psutil
 
 
 def _fake_ctrl(name="", children=None, control_type=None):

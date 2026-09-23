@@ -920,6 +920,30 @@ def create_app(cfg, store: Store, risk, executor, account=None,
         limit = request.args.get("limit", default=50, type=int)
         return jsonify(store.recent_trades(limit))
 
+    @app.get("/api/history")
+    def api_history():
+        kind = request.args.get("kind", "trades")
+        if kind not in ("trades", "signals"):
+            kind = "trades"
+        limit = min(max(
+            request.args.get("limit", default=50, type=int) or 50, 1), 200)
+        offset = max(
+            request.args.get("offset", default=0, type=int) or 0, 0)
+        rows, total = store.search_history(
+            kind=kind,
+            ticker=request.args.get("ticker", "").strip() or None,
+            action=request.args.get("action", "").strip() or None,
+            status=request.args.get("status", "").strip() or None,
+            mode=request.args.get("mode", "").strip() or None,
+            since=request.args.get("since", "").strip() or None,
+            until=request.args.get("until", "").strip() or None,
+            q=request.args.get("q", "").strip() or None,
+            limit=limit,
+            offset=offset,
+        )
+        return jsonify({"kind": kind, "total": total, "limit": limit,
+                        "offset": offset, "rows": rows})
+
     @app.get("/api/settings")
     def api_settings_get():
         from ..settings import get_settings

@@ -191,6 +191,22 @@ def main():
         verify=scheme != "https",   # self-signed local cert
     )
 
+    # production wsgi server (plan #8): waitress for robust
+    # connection handling; werkzeug remains the fallback
+    try:
+        from waitress import serve as waitress_serve
+    except ImportError:
+        waitress_serve = None
+
+    if waitress_serve is not None:
+        print("serving with waitress (production wsgi)")
+        waitress_serve(
+            app,
+            host=cfg.pipeline.host, port=cfg.pipeline.port,
+            threads=16,
+        )
+        return
+
     app.run(
         host=cfg.pipeline.host, port=cfg.pipeline.port, threaded=True,
         ssl_context=ssl_context,

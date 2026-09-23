@@ -526,6 +526,90 @@ class Store:
                 "received_ts"]
         return [dict(zip(keys, r)) for r in rows]
 
+    def search_history(self, kind="trades", ticker=None, action=None,
+                       status=None, mode=None, since=None, until=None,
+                       q=None, limit=50, offset=0):
+        """Search the retained history (plan #12): trades or
+        signals filtered by ticker/action/status/mode, a date
+        range, and free text. Returns (rows, total)."""
+        def _like(term):
+            return (
+                "%" + str(term).replace("\\", "\\\\")
+                .replace("%", "\\%").replace("_", "\\_") + "%"
+            )
+
+        # date-only bounds: since is inclusive by prefix ordering,
+        # until is stretched to cover the whole end date
+        if since:
+            since = str(since)
+        if until:
+            until = str(until)
+        if until and len(until) == 10:
+            until += "T99"
+
+        where, params = [], []
+        if since:
+            where.append("ts >= ?")
+            params.append(since)
+        if until:
+            where.append("ts <= ?")
+            params.append(until)
+
+        if kind == "signals":
+            table = "signals"
+            base = ("SELECT ts, author, text, parsed, correction, "
+                    "channel, received_ts FROM signals")
+            keys = ["ts", "author", "text", "parsed", "correction",
+                    "channel", "received_ts"]
+            order = "rowid DESC"
+            if ticker:
+                where.append("UPPER(text) LIKE ? ESCAPE '\\'")
+                params.append(_like(str(ticker).upper()))
+            if q:
+                where.append(
+                    "(text LIKE ? ESCAPE '\\' "
+                    "OR author LIKE ? ESCAPE '\\')"
+                )
+                like = _like(q)
+                params += [like, like]
+        else:
+            table = "trades"
+            base = ("SELECT ts, mode, action, ticker, qty, price, "
+                    "status, detail FROM trades")
+            keys = ["ts", "mode", "action", "ticker", "qty", "price",
+                    "status", "detail"]
+            order = "id DESC"
+            if ticker:
+                where.append("UPPER(ticker) = UPPER(?)")
+                params.append(str(ticker))
+            if action:
+                where.append("UPPER(action) = UPPER(?)")
+                params.append(str(action))
+            if status:
+                where.append("LOWER(status) = LOWER(?)")
+                params.append(str(status))
+            if mode:
+                where.append("mode = ?")
+                params.append(str(mode))
+            if q:
+                where.append(
+                    "(detail LIKE ? ESCAPE '\\' "
+                    "OR ticker LIKE ? ESCAPE '\\')"
+                )
+                like = _like(q)
+                params += [like, like]
+
+        clause = (" WHERE " + " AND ".join(where)) if where else ""
+        with self._conn:
+            total = self._conn.execute(
+                f"SELECT COUNT(*) FROM {table}" + clause, params
+            ).fetchone()[0]
+            rows = self._conn.execute(
+                base + clause + f" ORDER BY {order} LIMIT ? OFFSET ?",
+                params + [int(limit), int(offset)],
+            ).fetchall()
+        return [dict(zip(keys, r)) for r in rows], total
+
     def get_cached_value(self, label: str):
         with self._conn:
             row = self._conn.execute(

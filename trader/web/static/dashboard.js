@@ -697,6 +697,87 @@ function renderTrades(rows) {
   el.innerHTML = html + "</table>";
 }
 
+let historyOffset = 0;
+
+function historyQuery(offset) {
+  const p = new URLSearchParams();
+  p.set("kind", document.getElementById("hs-kind").value);
+  for (const [id, k] of [["hs-q","q"],["hs-ticker","ticker"],["hs-status","status"],["hs-since","since"],["hs-until","until"]]) {
+    const v = document.getElementById(id).value.trim();
+    if (v) p.set(k, v);
+  }
+  p.set("limit", "50");
+  p.set("offset", String(offset));
+  return p.toString();
+}
+
+async function runHistorySearch() {
+  historyOffset = 0;
+  await fetchHistoryPage();
+}
+
+async function historyNav(dir) {
+  historyOffset = Math.max(0, historyOffset + dir * 50);
+  await fetchHistoryPage();
+}
+
+async function fetchHistoryPage() {
+  const res = await fetch("/api/history?" + historyQuery(historyOffset));
+  if (!res.ok) return;
+  renderHistoryResults(await res.json());
+}
+
+function renderHistoryResults(data) {
+  const el = document.getElementById("history-results");
+  const kind = data.kind;
+  let html = '<div class="meta">' + data.total + " result" + (data.total === 1 ? "" : "s") +
+    ' <span class="nav-btns">' +
+    (data.offset > 0 ? '<button onclick="historyNav(-1)">&#8592; newer</button> ' : "") +
+    (data.offset + data.rows.length < data.total ? '<button onclick="historyNav(1)">older &#8594;</button>' : "") +
+    "</span></div>";
+  if (!data.rows.length) {
+    el.innerHTML = html + '<div class="empty">no matches</div>';
+    return;
+  }
+  if (kind === "signals") {
+    html += "<table><tr><th>Time</th><th>Author</th><th>Message</th><th>Status</th><th>Channel</th></tr>";
+    for (const s of data.rows) {
+      const tag = s.parsed ? '<span class="tag buy">signal</span>' : (s.correction ? '<span class="tag skip">correction</span>' : '<span class="tag ignored">ignored</span>');
+      html += "<tr><td>" + fmtTime(s.ts) + "</td><td>" + esc(s.author || "") + "</td><td>" + esc(s.text || "") + "</td><td>" + tag + "</td><td>" + esc(s.channel || "") + "</td></tr>";
+    }
+    el.innerHTML = html + "</table>";
+  } else {
+    html += "<table class=\"tlog\"><tr><th>Time</th><th>Mode</th><th>Action</th><th class=num>Qty</th><th>Ticker</th><th class=num>Price</th><th>Status</th><th>Detail</th></tr>";
+    for (const t of data.rows) {
+      const actionTag = t.action === "BUY" ? "buy" : "sell";
+      let statusTag = "ignored";
+      if (t.status === "executed") statusTag = "ok";
+      else if (t.status === "skipped") statusTag = "skip";
+      else if (t.status === "error") statusTag = "error";
+      else if (t.status === "notified") statusTag = "info";
+      html += "<tr><td>" + fmtTime(t.ts) + "</td><td>" + esc(t.mode) + "</td>" +
+        '<td><span class="tag ' + actionTag + '">' + esc(t.action) + "</span></td>" +
+        '<td class=num>' + t.qty + "</td><td>" + esc(t.ticker) + "</td>" +
+        '<td class=num>' + (t.price ?? "\u2014") + "</td>" +
+        '<td><span class="tag ' + statusTag + '">' + esc(t.status) + "</span></td>" +
+        '<td class="detail">' + esc(t.detail || "") + "</td></tr>";
+    }
+    el.innerHTML = html + "</table>";
+  }
+}
+
+function clearHistorySearch() {
+  for (const id of ["hs-q","hs-ticker","hs-status","hs-since","hs-until"]) document.getElementById(id).value = "";
+  document.getElementById("history-results").innerHTML = "";
+  historyOffset = 0;
+}
+
+function historyKindChanged() {
+  const signals = document.getElementById("hs-kind").value === "signals";
+  document.getElementById("hs-status").disabled = signals;
+  document.getElementById("hs-ticker").placeholder = signals ? "ticker (text match)" : "ticker";
+}
+
 let lastSettings = null;
 
 let settingsDirty = false;

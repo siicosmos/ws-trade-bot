@@ -75,9 +75,6 @@ def tier_plan(alert, cfg, account_value, price, acct=None) -> dict:
     }
 
 
-def contracts_for(alert, cfg, account_value: float, price, acct=None) -> int:
-    return tier_plan(alert, cfg, account_value, price, acct)["qty"]
-
 
 def account_sizing(alert, cfg, account, store=None) -> list:
     price = alert.premium if alert.kind == "option" else (

@@ -138,12 +138,16 @@ def test_settings_take_effect_immediately():
     account = PaperAccount(cfg, store)
 
     alert = parse_alert("BOUGHT 0DTE SPY 759c @ 1.5 @everyone")
-    from trader.trading.executor import contracts_for
+    from trader.trading.executor import account_sizing
 
-    assert contracts_for(alert, cfg, 10000, 1.5) == 3
+    def contracts():
+        rows = account_sizing(alert, cfg, account)
+        return [r["final_contracts"] for r in rows]
+
+    assert contracts() == [3]
 
     apply_settings(cfg, {"trading": {"risk_per_trade_pct": 10}})
-    assert contracts_for(alert, cfg, 10000, 1.5) == 6
+    assert contracts() == [6]
 
 
 def test_settings_endpoint_roundtrip():

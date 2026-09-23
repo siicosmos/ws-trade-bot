@@ -87,14 +87,11 @@ the process and everything swaps at once. Static files also
 need cache-busting (the page currently sends no-store, so it
 would be fine, but it is a behavior to preserve deliberately).
 
-## 8. Production WSGI server - LOW
+## 8. Production WSGI server - DONE
 
-`app.run(threaded=True)` is Werkzeug's dev server. Works for one
-user over Tailscale, but `waitress` is a drop-in replacement if
-polls ever drop under load:
-
-    pip install waitress
-    waitress-serve --port=8080 run:app
+`run.py` now serves through `waitress` (16 threads) when
+installed, with Werkzeug as the automatic fallback for bare
+checkouts. `waitress` is in requirements.txt.
 
 ## 9. Per-thread SQLite connections - DONE
 
@@ -148,15 +145,17 @@ of retention lands at ~5 MB quiet / ~14 MB moderate /
 the maintenance guidance (free-page plateau, WAL bounds,
 consistent backups) and the FTS5 recommendation for #12.
 
-## 12. Search over older trades/signals - PENDING
+## 12. Search over older trades/signals - DONE
 
 Retention is now a year (trading.history_retention_days
 default 365) while the dashboard renders only the latest 50
-of each. The history is kept for a future search UI: a
-query endpoint over trades/signals (ticker, action, status,
-date range, free text over the alert/raw) with a dashboard
-search box above the trade log. The idx_trades_mode_ts
-index already backs date-ranged scans.
+of each. Landed: `Store.search_history` (ticker, action,
+status, mode, date range, free text with LIKE-escaping) over
+both tables, the auth-guarded `/api/history` endpoint with
+pagination, and a dashboard search bar above the trade log
+(kind toggle, free text, ticker, status, date range, newer/
+older paging). The idx_trades_mode_ts index backs
+date-ranged scans.
 
 ## Thread supervision (landed, unplanned)
 
