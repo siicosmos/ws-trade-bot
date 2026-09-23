@@ -3325,9 +3325,9 @@ def test_paper_margin_used_currency_split():
         accounts=accounts,
     )
     cfg.paper = SimpleNamespace(enabled=True)
-    # negative cash = a 1000 cad paper loan, backed by a usd
+    # negative cash = an 800 cad paper loan, backed by a usd
     # option holding worth 700 cad
-    store.set_paper_equity(-1000.0, "Margin")
+    store.set_paper_equity(-800.0, "Margin")
     store.seed_position("paper", "Margin", "SPX-2026-09-25-6000-C",
                         "SPX", "2026-09-25", 6000.0, "C", 1, 7.0)
     store.seed_position("paper", "Margin", "ZWC", "ZWC",
@@ -3369,6 +3369,6 @@ def test_paper_margin_used_currency_split():
     ).get_json()["accounts"][0]
     # the loan backs the usd holding first (700 cad = ~510.95
     # usd), the rest stays cad
-    assert m["paper_margin_used"] == 1000.0
+    assert m["paper_margin_used"] == 800.0
     assert m["paper_margin_used_usd"] == round(700 / 1.37, 2)
-    assert m["paper_margin_used_cad"] == 300.0
+    assert m["paper_margin_used_cad"] == 100.0
