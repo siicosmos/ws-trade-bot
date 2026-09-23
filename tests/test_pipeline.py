@@ -3626,3 +3626,24 @@ def test_store_concurrent_readers_and_writer(tmp_path):
     for t in threads:
         pass
     assert store.trades_today("paper") > 5
+
+
+
+def test_health_watchdog_tick_logic():
+    from trader.ops.watchdog import tick
+
+    state = {"fail_since": None}
+    # healthy resets any pending failure
+    assert tick(state, True, 100.0, 300) is None
+    assert state["fail_since"] is None
+    # first failure arms the clock
+    assert tick(state, False, 100.0, 300) == "arming"
+    assert state["fail_since"] == 100.0
+    # still within grace
+    assert tick(state, False, 200.0, 300) is None
+    # recovery resets
+    assert tick(state, True, 250.0, 300) is None
+    assert state["fail_since"] is None
+    # sustained failure past grace exits
+    assert tick(state, False, 100.0, 300) == "arming"
+    assert tick(state, False, 400.0, 300) == "exit"

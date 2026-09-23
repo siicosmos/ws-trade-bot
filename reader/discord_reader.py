@@ -287,13 +287,32 @@ def _append_reader_log(line):
         pass
 
 
+def _supervised_thread(name, target, restart_delay=30):
+    """Reader-local copy of the supervision policy: a loop that
+    dies is logged and relaunched after a backoff."""
+    def _runner():
+        while True:
+            try:
+                target()
+                log(f"{name} thread exited unexpectedly - "
+                    f"restarting in {restart_delay}s")
+            except Exception as e:
+                log(f"{name} thread crashed: {e} - restarting "
+                    f"in {restart_delay}s")
+            time.sleep(restart_delay)
+
+    t = threading.Thread(target=_runner, daemon=True, name=name)
+    t.start()
+    return t
+
+
 class WebhookLog:
     def __init__(self, url):
         self.url = url
         self.lines = []
         self.lock = threading.Lock()
         if url:
-            threading.Thread(target=self._run, daemon=True).start()
+            _supervised_thread("reader-webhook", self._run)
 
     def add(self, line):
         if not self.url:

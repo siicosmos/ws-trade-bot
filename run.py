@@ -178,6 +178,19 @@ def main():
         print("dashboard served over HTTPS (self-signed)")
     print(f"pipeline running in {mode.upper()} mode on {cfg.pipeline.host}:{cfg.pipeline.port}")
     print(f"dashboard: {scheme}://127.0.0.1:{cfg.pipeline.port}/")
+
+    # main-thread hang protection: crashes restart via the .bat
+    # loop, hangs do not - self-check /health and exit for a
+    # clean restart if serving dies
+    from trader.ops.watchdog import start_health_watchdog
+
+    start_health_watchdog(
+        f"{scheme}://127.0.0.1:{cfg.pipeline.port}/health",
+        cfg.discord.update_webhook_url
+        or cfg.discord.webhook_url,
+        verify=scheme != "https",   # self-signed local cert
+    )
+
     app.run(
         host=cfg.pipeline.host, port=cfg.pipeline.port, threaded=True,
         ssl_context=ssl_context,

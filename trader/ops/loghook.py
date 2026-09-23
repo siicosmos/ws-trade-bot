@@ -13,7 +13,9 @@ class WebhookBatcher:
         self.lines = []
         self.lock = threading.Lock()
         if url:
-            threading.Thread(target=self._run, daemon=True).start()
+            from .supervise import supervised
+
+            supervised("webhook-batcher", self._run, url)
 
     def add(self, line):
         with self.lock:

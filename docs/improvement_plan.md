@@ -136,13 +136,25 @@ and the browser polling over Tailscale.
 ## Thread supervision (landed, unplanned)
 
 After a docs-only update killed the updater thread: every
-background loop (auto-update, stop monitor, mirror) now runs
-under `trader/supervise.py` - a crash or an unexpected return
-is logged, reported to the webhook, and the thread relaunches
-after a backoff. The dashboard git line shows `UPDATER STUCK`
-in red when last_check goes 3x past the interval, so a dead
-thread is visible without reading logs. Thread start calls are
-idempotent (restart if not alive).
+background loop runs under `trader/ops/supervise.py` - a crash
+or an unexpected return is logged, reported to the webhook, and
+the thread relaunches after a backoff. Covered: auto-update,
+stop monitor, trade mirror, the pipeline's webhook batcher, the
+health watchdog, and the reader's webhook thread (reader-local
+wrapper - the reader imports no trader code by design). The
+dashboard git line shows `UPDATER STUCK` in red when
+last_check goes 3x past the interval, so a dead thread is
+visible without reading logs. Thread start calls are idempotent
+(restart if not alive).
+
+Main-thread coverage: a crash restarts via the .bat loop; a
+HANG is caught by `trader/ops/watchdog.py` - a supervised
+thread self-fetches /health every 30s and exits the process
+after 5 minutes of consecutive failures (notifying first) so
+the restart loop recovers it. Browser-side timers need no
+supervision: setInterval invocations are independent, poll
+failures surface via the reconnect banner, and page visibility
+is the browser's domain.
 
 ## Second review findings (post #1-#5)
 
@@ -172,9 +184,10 @@ endpoint, indexes and retention landed:
 - **contracts_for is dead** - executor.py:78 legacy sizing
   helper referenced only by its own tests; account_sizing
   superseded it. Delete with its tests.
-- **WebhookBatcher is unsupervised** - the only background
-  loop left outside trader/supervise.py (its body is trivially
-  safe, but the policy is now 'every thread supervised').
+- ~~WebhookBatcher is unsupervised~~ - now supervised
+  (trader/ops/loghook.py), and the reader's WebhookLog thread
+  runs under a reader-local supervision wrapper (the reader
+  imports no trader code by design).
 - **moomoo is an undeclared optional dependency** -
   quotes.provider=moomoo lazily imports the moomoo package;
   requirements.txt says nothing about it.
