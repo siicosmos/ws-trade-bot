@@ -13,7 +13,7 @@ the interactions that have historically broken:
   - holdings arrow on an empty ledger (static glyph)
   - negative-zero P&L rendering ("+$-0.00")
 
-Usage:  python scripts/ui_test.py
+Usage:  python tests/scripts/ui_test.py
 Needs:  chrome/chromium on PATH (or CHROME_BIN=...). Skips
 with a note when no browser is available.
 """
@@ -27,7 +27,9 @@ import sys
 import tempfile
 
 ROOT = os.path.abspath(
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+    os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "..", ".."
+    )
 )
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)

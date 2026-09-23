@@ -9,7 +9,9 @@ import time
 import requests
 import yaml
 
-ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+ROOT = os.path.abspath(
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
+)
 PYTHON = os.path.join(ROOT, ".venv", "bin", "python")
 if not os.path.exists(PYTHON):
     PYTHON = sys.executable
@@ -71,10 +73,13 @@ def write_config(path, mode, auth_token="", **trading):
 
 def start_pipeline(config_path, db_path):
     base = _current_base()
+    err = tempfile.NamedTemporaryFile(
+        "w+", prefix="e2e-pipeline-err-", delete=False
+    )
     proc = subprocess.Popen(
         [PYTHON, os.path.join(ROOT, "run.py"), "-c", config_path, "--db", db_path],
         stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stderr=err,
         cwd=ROOT,
     )
     for _ in range(60):
@@ -86,7 +91,16 @@ def start_pipeline(config_path, db_path):
             pass
         time.sleep(0.25)
     proc.terminate()
-    raise RuntimeError("pipeline did not start")
+    try:
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        pass
+    err.flush()
+    with open(err.name) as f:
+        tail = f.read()[-2000:]
+    raise RuntimeError(
+        f"pipeline did not start (stderr tail):\n{tail}"
+    )
 
 
 def _current_base():
@@ -482,7 +496,8 @@ def run_ui_smoke_phase():
     import importlib.util
 
     spec = importlib.util.spec_from_file_location(
-        "ui_test", os.path.join(ROOT, "scripts", "ui_test.py")
+        "ui_test",
+        os.path.join(ROOT, "tests", "scripts", "ui_test.py"),
     )
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
