@@ -122,8 +122,10 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
     -webkit-overflow-scrolling: touch; }
   .pos { table-layout: fixed; font-size: 12px; min-width: 620px; }
   .pos th, .pos td { padding: 6px 5px; white-space: nowrap; }
-  /* the contract column is the one allowed to wrap - keys and
-     strategy tags can grow long */
+  /* the account and contract columns are the ones allowed to
+     wrap - labels, keys and strategy tags grow long; the rest
+     stay on one line */
+  .pos th:nth-child(1), .pos td:nth-child(1),
   .pos th:nth-child(2), .pos td:nth-child(2) { white-space: normal;
     word-break: break-word; }
   .papercard .pos { min-width: 0; }
