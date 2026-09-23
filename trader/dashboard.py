@@ -163,6 +163,9 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
     .ptitle { font-size: 10px; }
     header h1 { font-size: 15px; min-width: 0; overflow: hidden;
       text-overflow: ellipsis; }
+    .headrow { flex-wrap: wrap; gap: 6px !important; }
+    #updated, #stops { font-size: 10px; }
+    #logout { padding: 2px 8px; font-size: 10px; }
     .badge { padding: 2px 7px; font-size: 9px; letter-spacing: .3px; }
     #clock { font-size: 10px; padding: 2px 6px; }
     #timebox { margin-left: auto; }
