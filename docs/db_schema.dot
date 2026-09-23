@@ -29,6 +29,7 @@ digraph db_schema {
       <TR><TD ALIGN="LEFT">ticker</TD><TD ALIGN="LEFT">TEXT NOT NULL</TD></TR>
       <TR><TD ALIGN="LEFT">qty</TD><TD ALIGN="LEFT">INTEGER NOT NULL</TD></TR>
       <TR><TD ALIGN="LEFT">price / entry / stop_loss / take_profit</TD><TD ALIGN="LEFT">REAL</TD></TR>
+      <TR><TD ALIGN="LEFT">strike / expiry / opt_right</TD><TD ALIGN="LEFT">REAL / TEXT / TEXT · contract</TD></TR>
       <TR><TD ALIGN="LEFT">status</TD><TD ALIGN="LEFT">TEXT NOT NULL</TD></TR>
       <TR><TD ALIGN="LEFT">detail</TD><TD ALIGN="LEFT">TEXT · sizing</TD></TR>
       <TR><TD ALIGN="LEFT">message_key</TD><TD ALIGN="LEFT">TEXT → signals</TD></TR>
