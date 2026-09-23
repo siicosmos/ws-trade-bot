@@ -374,8 +374,9 @@ def test_open_risk_and_breakdown_masked():
     js = re.findall(r"<script>(.*?)</script>",
                     dash.DASHBOARD_HTML, re.S)[0]
     assert 'open risk \' + (hidden ? "••••••"' in js
-    assert 'maskBreakdown(a.margin_breakdown)' in js
-    assert 'maskBreakdown(a.paper_margin_breakdown)' in js
+    assert 'breakdownText(a.margin_breakdown, hidden)' in js
+    assert 'no holdings' in js
+    assert 'function breakdownText' in js
 
 
 def test_margin_usage_bar():

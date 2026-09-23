@@ -286,12 +286,20 @@ async function api(path) {
 }
 
 function maskBreakdown(lines) {
-  // keep the structure (symbols, rates, widths) - mask only the
-  // money amounts
+  // structure only when hidden: symbols, amounts and rates all
+  // become dots, just the "x" and "=" separators stay
   return (lines || []).map(function(l) {
     return esc(l).replace(
-      /[0-9][0-9,]*\.\d{2}/g, "\u2022\u2022\u2022\u2022\u2022");
+      /[A-Za-z0-9][A-Za-z0-9.,%]*/g,
+      function(m) { return m === "x" ? m : "\u2022\u2022\u2022\u2022"; }
+    );
   }).join("\n");
+}
+
+function breakdownText(lines, masked) {
+  if (!(lines || []).length) return "";
+  return masked ? maskBreakdown(lines)
+    : esc(lines.join("\n"));
 }
 
 function fmtMoney(v) {
@@ -470,9 +478,9 @@ async function loadSummary() {
         ? '<div class="sub mrow"><span class="cell"><span class="lab">total margin used</span><span class="val">' + (hidden ? "••••••" :
             'usd ' + fmtMoney(a.margin_used_usd || 0) +
             ' · cad ' + fmtMoney(a.margin_used_cad || 0)) +
-          '</span></span><span class="cell" style="cursor:pointer" onclick="toggleMarginBreakdown(' + cardIdx + ', \'' + esc(a.label) + '\')"><span class="lab">margin requirement</span><span class="val">' + (hidden ? "••••••" : fmtMoney(a.margin_requirement) + " cad") + ' ▾</span></span></div>' +
-          '<div id="mbd-' + cardIdx + '" class="sub" style="display:' + (mbdOpen === a.label ? "block" : "none") + ';color:var(--muted);font-size:11px;white-space:pre-line">' + maskBreakdown(a.margin_breakdown) + '</div>' +
-          '<div class="sub mrow"><span class="cell"><span class="lab">portfolio value</span><span class="val">' + (a.portfolio_value != null && !hidden ? fmtMoney(a.portfolio_value) + " cad" : '') +
+          '</span></span><span class="cell" style="cursor:pointer" onclick="toggleMarginBreakdown(' + cardIdx + ', \'' + esc(a.label) + '\')"><span class="lab">margin requirement</span><span class="val">' + (hidden ? "••••••" : fmtMoney(a.margin_requirement) + " cad") + (mbdOpen === a.label ? " ▼" : " ▲") + '</span></span></div>' +
+          '<div id="mbd-' + cardIdx + '" class="sub" style="display:' + (mbdOpen === a.label ? "block" : "none") + ';color:var(--muted);font-size:11px;white-space:pre-line">' + breakdownText(a.margin_breakdown, hidden) + '</div>' +
+          '<div class="sub mrow"><span class="cell"><span class="lab">portfolio value</span><span class="val">' + (hidden ? "••••••" : (a.portfolio_value != null ? fmtMoney(a.portfolio_value) + " cad" : '')) +
           '</span></span><span class="cell"><span class="lab">max buying power</span><span class="val">' + (hidden ? "••••••" : fmtMoney(a.max_buying_power || 0) + " cad") + '</span></span></div>'
         : '') +
       ((a.cash_cad != null || a.cash_usd != null)
@@ -517,7 +525,7 @@ async function loadSummary() {
         '<div class="label" style="display:flex;justify-content:space-between;align-items:center;gap:6px;min-width:0">paper · <span class="ptitle">' + esc(a.label) + '</span>' +
         '<span style="display:flex;gap:4px;flex-shrink:0;align-items:center">' +
         '<button class="mini-toggle" title="flip paper value currency" onclick="flipPaperCurrency(\'' + esc(a.label) + '\')">' + pcur.toUpperCase() + ' ⇄</button> ' +
-        '<button class="mini-toggle" onclick="togglePaper(\'' + esc(a.label) + '\')">' + (rows.length ? "holdings " + (open ? "▴" : "▾") : "holdings ▾") + '</button> ' +
+        '<button class="mini-toggle" onclick="togglePaper(\'' + esc(a.label) + '\')">' + (rows.length ? "holdings " + (open ? "▼" : "▲") : "holdings ▲") + '</button> ' +
         '<button class="mini-toggle" onclick="resetPaper(\'' + esc(a.label) + '\')">reset</button> ' +
         '<button class="mini-toggle" title="' + (phidden ? "show paper value" : "hide paper value") + '" onclick="togglePaperHidden(\'' + esc(a.label) + '\')">' + (phidden ? EYE_OFF_SVG : EYE_SVG) + '</button></span></div>' +
         '<div class="value" style="font-size:20px">' + (phidden? "••••••" : pshowUsd ? fmtMoney(a.paper_usd_value) + " USD" : fmtMoney(a.paper_value) + " CAD") +
@@ -534,9 +542,9 @@ async function loadSummary() {
         ((a.paper_margin_requirement != null && !isNaN(a.paper_margin_requirement))
           ? '<div class="sub mrow"><span class="cell"><span class="lab">total margin used</span><span class="val">' + (phidden? "••••••" : fmtMoney(a.paper_margin_used || 0) + " cad") +
             (phidden || !(a.paper_margin_used > 0) ? '' : ' · ledger loan') +
-            '</span></span><span class="cell" style="cursor:pointer" onclick="togglePaperBreakdown(' + cardIdx + ', \'' + esc(a.label) + '\')"><span class="lab">margin requirement</span><span class="val">' + (phidden? "••••••" : fmtMoney(a.paper_margin_requirement) + " cad") + ' ▾</span></span></div>' +
-          '<div id="pmbd-' + cardIdx + '" class="sub" style="display:' + (pmbdOpen === a.label ? "block" : "none") + ';color:var(--muted);font-size:11px;white-space:pre-line">' + maskBreakdown(a.paper_margin_breakdown) + '</div>' +
-          '<div class="sub mrow"><span class="cell"><span class="lab">portfolio value</span><span class="val">' + (a.paper_portfolio_value != null && !phidden? fmtMoney(a.paper_portfolio_value) + " cad" : '') +
+            '</span></span><span class="cell" style="cursor:pointer" onclick="togglePaperBreakdown(' + cardIdx + ', \'' + esc(a.label) + '\')"><span class="lab">margin requirement</span><span class="val">' + (phidden? "••••••" : fmtMoney(a.paper_margin_requirement) + " cad") + (pmbdOpen === a.label ? " ▼" : " ▲") + '</span></span></div>' +
+          '<div id="pmbd-' + cardIdx + '" class="sub" style="display:' + (pmbdOpen === a.label ? "block" : "none") + ';color:var(--muted);font-size:11px;white-space:pre-line">' + ((a.paper_margin_breakdown || []).length ? breakdownText(a.paper_margin_breakdown, phidden) : "no holdings") + '</div>' +
+          '<div class="sub mrow"><span class="cell"><span class="lab">portfolio value</span><span class="val">' + (phidden? "••••••" : (a.paper_portfolio_value != null ? fmtMoney(a.paper_portfolio_value) + " cad" : '')) +
             '</span></span><span class="cell"><span class="lab">max buying power</span><span class="val">' + (phidden? "••••••" : fmtMoney(a.paper_max_buying_power || 0) + " cad") + '</span></span></div>'
           : '') +
         ((a.paper_cash != null)
