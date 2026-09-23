@@ -5,7 +5,7 @@ import tempfile
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from trader.parser import parse_alert
+from trader.trading.parser import parse_alert
 from trader.store import Store
 
 

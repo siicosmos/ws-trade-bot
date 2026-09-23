@@ -1,6 +1,6 @@
 import requests
 
-from .parser import format_scale
+from ..trading.parser import format_scale
 
 
 def notify_discord(webhook_url: str, title: str, fields: dict, ok: bool = True,

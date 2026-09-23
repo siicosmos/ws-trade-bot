@@ -7,10 +7,10 @@ from datetime import timedelta
 
 from flask import Flask, Response, jsonify, redirect, request, session
 
-from .account_types import REGISTERED_ACCOUNT_TYPES
+from ..ws.account_types import REGISTERED_ACCOUNT_TYPES
 from .dashboard import LOGIN_HTML
-from .pipeline import process_alert
-from .store import Store
+from ..pipeline import process_alert
+from ..store import Store
 
 QUIET_GET_PATHS = (
     "/",
@@ -157,7 +157,7 @@ def _paper_card_metrics(
         cfg.wealthsimple, "margin_rate_overrides", {}
     ) or {}
 
-    from .margin import (
+    from ..trading.margin import (
         Holding, compute_requirement, resolve_rate,
     )
 
@@ -188,7 +188,7 @@ def _paper_card_metrics(
             continue
         key = (pos.get("underlying"), pos.get("expiry"))
         groups.setdefault(key, []).append(pos)
-    from .strategies import classify_legs
+    from ..trading.strategies import classify_legs
 
     for (sym, _expiry), legs in groups.items():
         shaped = []
@@ -581,7 +581,7 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                     cfg.wealthsimple, "margin_rate_overrides", {}
                 ) or {}
                 rate_fn = getattr(account, "security_margin_rate", None)
-                from .margin import (
+                from ..trading.margin import (
                     Holding, compute_requirement, resolve_rate,
                 )
 
@@ -840,7 +840,7 @@ def create_app(cfg, store: Store, risk, executor, account=None,
         store.reset_paper_account(label)
         seeded = []
         if hasattr(account, "_positions_raw"):
-            from .account import seed_paper_accounts
+            from ..ws.account import seed_paper_accounts
 
             seeded = seed_paper_accounts(cfg, store, account) or []
         _summary_cache["ts"] = 0.0
@@ -922,7 +922,7 @@ def create_app(cfg, store: Store, risk, executor, account=None,
 
     @app.get("/api/settings")
     def api_settings_get():
-        from .settings import get_settings
+        from ..settings import get_settings
 
         return jsonify(get_settings(cfg))
 
@@ -932,7 +932,7 @@ def create_app(cfg, store: Store, risk, executor, account=None,
         summary = _summary_payload()
         if "error" in summary:
             return jsonify(summary), 502
-        from .settings import get_settings
+        from ..settings import get_settings
 
         return jsonify(
             {
@@ -948,7 +948,7 @@ def create_app(cfg, store: Store, risk, executor, account=None,
 
     @app.post("/api/settings")
     def api_settings_post():
-        from .settings import apply_settings
+        from ..settings import apply_settings
 
         payload = request.get_json(silent=True) or {}
         applied, errors = apply_settings(cfg, payload, config_path)

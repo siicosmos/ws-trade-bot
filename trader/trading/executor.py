@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Optional
 
-from .account import account_label, effective_accounts
+from ..ws.account import account_label, effective_accounts
 
 
 @dataclass
@@ -374,7 +374,7 @@ class WealthsimpleExecutor:
             from wealthsimple_python import WealthsimpleV2
 
             self._ws = WealthsimpleV2()
-        from .ws_tokens import persist_env_tokens
+        from ..ws.ws_tokens import persist_env_tokens
 
         persist_env_tokens()
         return self._ws
@@ -420,7 +420,7 @@ class WealthsimpleExecutor:
         for acct in effective_accounts(self.cfg):
             account_id = acct.account_id
             if not account_id:
-                from .account import resolve_account_id
+                from ..ws.account import resolve_account_id
 
                 account_id = resolve_account_id(ws, self.cfg)
             out.append((account_label(acct), account_id, acct))

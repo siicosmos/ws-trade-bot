@@ -2,10 +2,10 @@ import time
 from datetime import datetime, timezone
 from typing import List
 
-from .config import WSAccountConfig
-from .strategies import classify_legs
+from ..config import WSAccountConfig
+from ..trading.strategies import classify_legs
 from .ws_tokens import persist_env_tokens
-from .paper import (  # noqa: F401 - re-exported
+from ..trading.paper import (  # noqa: F401 - re-exported
     PaperAccount,
     PaperLedger,
     seed_paper_accounts,
@@ -113,7 +113,7 @@ class WealthsimpleAccount:
         rate = None
         try:
             ws = self._client()
-            from trader.ws_security_query import (
+            from trader.ws.ws_security_query import (
                 FETCH_SECURITY, security_variables,
             )
 
@@ -317,7 +317,7 @@ class WealthsimpleAccount:
             # marginRequirement / strategyType / legs that the
             # library's minimal variant does not
             try:
-                from trader.ws_positions_query import (
+                from trader.ws.ws_positions_query import (
                     FETCH_IDENTITY_POSITIONS, app_positions_variables,
                 )
 

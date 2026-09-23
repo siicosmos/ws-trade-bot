@@ -1,6 +1,6 @@
 from datetime import date, datetime, timezone
 
-from .store import Store
+from ..store import Store
 
 
 class RiskEngine:

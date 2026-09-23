@@ -2,14 +2,14 @@ import argparse
 import os
 import sys
 
-from trader.account import PaperAccount, WealthsimpleAccount
+from trader.ws.account import PaperAccount, WealthsimpleAccount
 from trader.config import load_config
-from trader.executor import PaperExecutor, WealthsimpleExecutor
-from trader.quotes import make_quote_provider
-from trader.risk import RiskEngine
-from trader.server import create_app
+from trader.trading.executor import PaperExecutor, WealthsimpleExecutor
+from trader.trading.quotes import make_quote_provider
+from trader.trading.risk import RiskEngine
+from trader.web.server import create_app
 from trader.store import Store
-from trader.updater import AutoUpdater
+from trader.ops.updater import AutoUpdater
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 
@@ -22,7 +22,7 @@ def main():
 
     # a hard restart can leave the previous instance holding
     # the port - clear it before we bind
-    from trader.processes import terminate_stale_instances
+    from trader.ops.processes import terminate_stale_instances
 
     terminate_stale_instances(os.path.abspath(__file__))
 
@@ -47,7 +47,7 @@ def main():
     )
     mode = cfg.trading.mode
 
-    from trader.loghook import install_log_webhook
+    from trader.ops.loghook import install_log_webhook
 
     install_log_webhook(
         cfg.discord.pipeline_log_webhook_url,
@@ -57,7 +57,7 @@ def main():
         ),
     )
 
-    from trader.ws_tokens import load_env_tokens
+    from trader.ws.ws_tokens import load_env_tokens
 
     load_env_tokens()
 
@@ -80,7 +80,7 @@ def main():
             )
         account = WealthsimpleAccount(cfg, store)
         if mode == "paper" or cfg.paper.enabled:
-            from trader.account import PaperLedger, seed_paper_accounts
+            from trader.ws.account import PaperLedger, seed_paper_accounts
 
             seeded = seed_paper_accounts(cfg, store, account)
             if seeded:
@@ -96,7 +96,7 @@ def main():
                    else "enabled alongside notify")
             )
             if cfg.paper.mirror:
-                from trader.mirror import start_mirror_thread
+                from trader.trading.mirror import start_mirror_thread
 
                 start_mirror_thread(
                     cfg, store, account, paper_ledger,
@@ -132,7 +132,7 @@ def main():
     risk = RiskEngine(cfg, store, account)
 
     if mode in ("paper", "live") and cfg.trading.stop_loss_pct > 0:
-        from trader.stops import StopMonitor
+        from trader.trading.stops import StopMonitor
 
         quote_fn = make_quote_provider(cfg, account)
         if quote_fn is not None:
@@ -150,7 +150,7 @@ def main():
                 f"checked every {cfg.trading.stop_check_seconds}s"
             )
 
-    from trader.updater import startup_banner
+    from trader.ops.updater import startup_banner
 
     startup_banner("pipeline", ROOT)
 

@@ -1,6 +1,6 @@
 import logging
 
-from trader.server import QuietPathsFilter
+from trader.web.server import QuietPathsFilter
 
 
 def _record(msg):

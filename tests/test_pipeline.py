@@ -5,14 +5,14 @@ import time
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from trader.account import PaperAccount
+from trader.ws.account import PaperAccount
 from trader.config import ReaderConfig, TradingConfig, WealthsimpleConfig, WSAccountConfig
-from trader.executor import (
+from trader.trading.executor import (
     PaperExecutor, account_sizing, contracts_for, sell_quantity, tier_plan,
 )
-from trader.parser import parse_alert
+from trader.trading.parser import parse_alert
 from trader.pipeline import process_alert
-from trader.risk import RiskEngine
+from trader.trading.risk import RiskEngine
 from trader.store import Store
 
 
@@ -361,14 +361,14 @@ def _make_app(auth_token="", mode="paper"):
                      accounts=accounts, auth_token=auth_token)
     account = PaperAccount(cfg, store)
     risk = RiskEngine(cfg, store, account)
-    app = __import__("trader.server", fromlist=["create_app"]).create_app(
+    app = __import__("trader.web.server", fromlist=["create_app"]).create_app(
         cfg, store, risk, PaperExecutor(cfg, store, account), account
     )
     return app, store, account
 
 
 def test_dashboard_and_api_endpoints():
-    from trader.parser import parse_alert as pa
+    from trader.trading.parser import parse_alert as pa
 
     app, store, account = _make_app()
     alert = pa("BOUGHT 0DTE SPY 759c @ 1.5 @everyone small size")
@@ -440,7 +440,7 @@ def test_auth_guard_alert_endpoint():
 
 
 def test_persist_env_tokens():
-    import trader.ws_tokens as wt
+    import trader.ws.ws_tokens as wt
 
     fd, path = tempfile.mkstemp(suffix=".env")
     os.close(fd)
@@ -488,7 +488,7 @@ def test_cached_value_roundtrip():
 
 def test_ws_account_falls_back_to_cached_values():
     from datetime import datetime, timedelta, timezone
-    from trader.account import WealthsimpleAccount
+    from trader.ws.account import WealthsimpleAccount
 
     accounts = [
         WSAccountConfig(account_id="rrsp", label="RRSP"),
@@ -514,7 +514,7 @@ def test_ws_account_falls_back_to_cached_values():
 
 
 def test_ws_account_raises_without_cache():
-    from trader.account import WealthsimpleAccount
+    from trader.ws.account import WealthsimpleAccount
 
     cfg = ConfigStub(TradingConfig(mode="notify"))
     store = _fresh_store()
@@ -533,7 +533,7 @@ def test_ws_account_raises_without_cache():
 
 def test_account_sizing_shows_stale_warning():
     from datetime import datetime, timedelta, timezone
-    from trader.account import WealthsimpleAccount
+    from trader.ws.account import WealthsimpleAccount
 
     accounts = [WSAccountConfig(account_id="rrsp", label="RRSP")]
     store = _fresh_store()
@@ -555,7 +555,7 @@ def test_account_sizing_shows_stale_warning():
 
 
 def test_load_env_tokens():
-    import trader.ws_tokens as wt
+    import trader.ws.ws_tokens as wt
 
     fd, path = tempfile.mkstemp(suffix=".env")
     os.close(fd)
@@ -588,7 +588,7 @@ def test_load_env_tokens():
 
 
 def test_load_env_tokens_missing_file():
-    import trader.ws_tokens as wt
+    import trader.ws.ws_tokens as wt
 
     assert wt.load_env_tokens(path="/nonexistent/ws_tokens.env") is False
 
@@ -633,7 +633,7 @@ def test_notify_mode_alert_with_correction_flag():
 
 
 def test_ignored_message_forwarded_plain(monkeypatch):
-    import trader.notify as notify_mod
+    import trader.ops.notify as notify_mod
 
     sent = []
 
@@ -653,7 +653,7 @@ def test_ignored_message_forwarded_plain(monkeypatch):
 
 
 def test_repeated_plain_message_notifies_each_time(monkeypatch):
-    import trader.notify as notify_mod
+    import trader.ops.notify as notify_mod
 
     sent = []
 
@@ -728,7 +728,7 @@ def test_no_store_headers():
 
 
 def test_login_rate_limit():
-    import trader.server as srv
+    import trader.web.server as srv
 
     app, store, account = _make_app(auth_token="s3cret")
     client = app.test_client()
@@ -774,7 +774,7 @@ def test_refuses_non_localhost_without_token(tmp_path):
 
 def test_dashboard_escapes_untrusted_text():
     import re
-    import trader.dashboard as dash
+    import trader.web.dashboard as dash
 
     js = dash.DASHBOARD_JS
     assert "function esc(" in js
@@ -789,8 +789,8 @@ def test_dashboard_escapes_untrusted_text():
 def test_notify_sell_fields_scaling_and_sold(monkeypatch):
     import json as json_mod
 
-    import trader.notify as notify
-    from trader.parser import parse_alert
+    import trader.ops.notify as notify
+    from trader.trading.parser import parse_alert
 
     posts = []
     monkeypatch.setattr(
@@ -812,8 +812,8 @@ def test_notify_sell_fields_scaling_and_sold(monkeypatch):
 
 
 def test_notify_buy_fields_bold(monkeypatch):
-    import trader.notify as notify
-    from trader.parser import parse_alert
+    import trader.ops.notify as notify
+    from trader.trading.parser import parse_alert
 
     posts = []
     monkeypatch.setattr(
@@ -882,7 +882,7 @@ class FakeWS:
 
 
 def test_open_option_positions_filters_and_maps(monkeypatch, tmp_path):
-    from trader.account import WealthsimpleAccount
+    from trader.ws.account import WealthsimpleAccount
     from tests.test_pipeline import _ws_position_fixture  # noqa
 
     class FakeCfg:
@@ -953,7 +953,7 @@ def test_positions_endpoint_merges_live(monkeypatch):
         },
         "Personal": {"positions": [], "fx": None, "usd_cash": None},
     }
-    from trader.parser import parse_alert
+    from trader.trading.parser import parse_alert
 
     old_alert = parse_alert("BOUGHT 01/01 OLD 100c @ 1.0")
     store.apply_position("paper", old_alert, 1, account="RRSP")
@@ -975,7 +975,7 @@ def test_positions_endpoint_merges_live(monkeypatch):
 
 
 def test_usd_values_from_financials(monkeypatch):
-    from trader.account import WealthsimpleAccount
+    from trader.ws.account import WealthsimpleAccount
 
     class FakeWS:
         def get_account_current_financials(self, account_id, currency="CAD"):
@@ -1017,7 +1017,7 @@ def test_summary_prefers_ws_usd_value(monkeypatch):
 
 
 def test_short_option_position_displayed(monkeypatch):
-    from trader.account import WealthsimpleAccount
+    from trader.ws.account import WealthsimpleAccount
 
     class FakeWS:
         def get_positions(self, account_ids=None, **kw):
@@ -1078,7 +1078,7 @@ def test_short_option_position_displayed(monkeypatch):
 
 
 def test_debit_spread_grouping(monkeypatch):
-    from trader.account import WealthsimpleAccount
+    from trader.ws.account import WealthsimpleAccount
 
     def leg(strike, qty, book_usd, mv_quote, direction):
         return {
@@ -1144,7 +1144,7 @@ def test_debit_spread_grouping(monkeypatch):
 def test_credit_spread_risk_uses_width(monkeypatch):
     # short 750P for 0.55 credit, long 745P for 0.20 -> width 500,
     # max loss = 500 - 35 credit = 465 per 1x
-    from trader.account import WealthsimpleAccount
+    from trader.ws.account import WealthsimpleAccount
 
     def leg(strike, direction, book_usd, quote):
         return {
@@ -1202,8 +1202,8 @@ def test_credit_spread_risk_uses_width(monkeypatch):
 
 
 def test_notify_call_put_field_lowercase(monkeypatch):
-    import trader.notify as notify
-    from trader.parser import parse_alert
+    import trader.ops.notify as notify
+    from trader.trading.parser import parse_alert
 
     posts = []
     monkeypatch.setattr(
@@ -1229,7 +1229,7 @@ def test_notify_mode_records_trade_log(monkeypatch):
     store._conn.commit()
     client = app.test_client()
     monkeypatch.setattr(
-        "trader.notify.requests.post",
+        "trader.ops.notify.requests.post",
         lambda *a, **k: type("R", (), {"status_code": 200})(),
     )
     resp = client.post(
@@ -1261,7 +1261,7 @@ def test_summary_includes_cash_balances(monkeypatch):
 
 
 def test_funding_balances_mapping(monkeypatch):
-    from trader.account import WealthsimpleAccount
+    from trader.ws.account import WealthsimpleAccount
 
     class FakeWS:
         def get_account_funding_balances(self, account_ids):
@@ -1304,7 +1304,7 @@ def test_funding_balances_mapping(monkeypatch):
 
 
 def test_stock_holdings_mapping(monkeypatch):
-    from trader.account import WealthsimpleAccount
+    from trader.ws.account import WealthsimpleAccount
 
     class FakeWS:
         def get_positions(self, account_ids=None, **kw):
@@ -1446,7 +1446,7 @@ def test_positions_include_stocks(monkeypatch):
 def test_positions_via_real_init(monkeypatch):
     """Regression: _positions_raw attrs must exist on __init__, else
     live fetching dies with AttributeError and the tab goes empty."""
-    from trader.account import WealthsimpleAccount
+    from trader.ws.account import WealthsimpleAccount
 
     class FakeCfg:
         class wealthsimple:
@@ -1494,8 +1494,8 @@ def test_summary_allocation_values():
 
 
 def test_app_document_positions_and_margin():
-    from trader.account import WealthsimpleAccount
-    from trader.ws_positions_query import (
+    from trader.ws.account import WealthsimpleAccount
+    from trader.ws.ws_positions_query import (
         FETCH_IDENTITY_POSITIONS, app_positions_variables,
     )
 
@@ -1698,7 +1698,7 @@ def test_registered_account_no_margin(monkeypatch):
     assert row["margin_requirement"] is not None
 
 def test_account_type_map_cached():
-    from trader.account import WealthsimpleAccount
+    from trader.ws.account import WealthsimpleAccount
 
     calls = []
 
@@ -1743,8 +1743,8 @@ def test_registered_label_suppresses_margin():
 
 
 def test_security_margin_rate_from_api():
-    from trader.account import WealthsimpleAccount
-    from trader.ws_security_query import FETCH_SECURITY
+    from trader.ws.account import WealthsimpleAccount
+    from trader.ws.ws_security_query import FETCH_SECURITY
 
     calls = []
 
@@ -1840,7 +1840,7 @@ def test_expired_credit_spread_full_return(monkeypatch):
     # credit spread legged in as separate positions (no strategyType),
     # expired worthless: quotes settled to zero and the full credit
     # is kept - qty shows negative and return reads +100%
-    from trader.account import WealthsimpleAccount
+    from trader.ws.account import WealthsimpleAccount
 
     def leg(strike, direction, book_usd, quote):
         return {
@@ -1964,7 +1964,7 @@ def test_spread_requirement_uses_full_width():
 
 
 def test_update_relevance_gating(monkeypatch, tmp_path):
-    import trader.updater as up
+    import trader.ops.updater as up
 
     root = str(tmp_path)
 
@@ -2080,7 +2080,7 @@ def test_allocation_base_is_gross_assets():
 
 
 def test_strategy_classifier_names():
-    from trader.strategies import classify_legs as cl
+    from trader.trading.strategies import classify_legs as cl
 
     def leg(strike, right, short, qty=1):
         return {"strike": strike, "right": right,
@@ -2121,7 +2121,7 @@ def test_strategy_classifier_names():
 
 
 def test_condor_combines_verticals():
-    from trader.account import WealthsimpleAccount
+    from trader.ws.account import WealthsimpleAccount
 
     def leg(strike, right, direction, book_usd, mv_quote):
         return {
@@ -2197,7 +2197,7 @@ def _paper_cfg(cfg):
 
 
 def test_paper_seeding_and_ledger(monkeypatch):
-    from trader.account import PaperLedger, WealthsimpleAccount, seed_paper_accounts
+    from trader.ws.account import PaperLedger, WealthsimpleAccount, seed_paper_accounts
     from trader.config import Config
 
     # raw live nodes: one long option leg + one stock, one short leg
@@ -2319,7 +2319,7 @@ def test_notify_plus_paper_executes_and_skips_unheld():
         cooldown_seconds=0,
     )
     cfg = _paper_cfg(cfg)
-    from trader.account import PaperLedger
+    from trader.ws.account import PaperLedger
     from trader.pipeline import process_alert
 
     ledger = PaperLedger(cfg, store, None)
@@ -2351,7 +2351,7 @@ def test_notify_plus_paper_executes_and_skips_unheld():
 
 
 def test_positions_mapping_cached_per_raw_generation(monkeypatch):
-    from trader.account import WealthsimpleAccount
+    from trader.ws.account import WealthsimpleAccount
     from tests.test_pipeline import _ws_position_fixture  # noqa
 
     fetches = []
@@ -2427,7 +2427,7 @@ def test_summary_cache_serves_repeated_polls():
 
 def test_positions_cache_invalidates_on_writes():
     app, store, account = _make_app()
-    from trader.parser import parse_alert
+    from trader.trading.parser import parse_alert
 
     alert = parse_alert("BOUGHT 0DTE SPY 759c @ 1.5 small size")
     store.apply_position("paper", alert, 2, premium=1.5, account="Personal")
@@ -2440,7 +2440,7 @@ def test_positions_cache_invalidates_on_writes():
 
 
 def _mirror_ws_account(activities):
-    from trader.account import WealthsimpleAccount
+    from trader.ws.account import WealthsimpleAccount
 
     class FakeClient:
         def get_activities(self, **kw):
@@ -2460,8 +2460,8 @@ def _mirror_ws_account(activities):
 
 
 def test_mirror_real_trades_applies_fills():
-    from trader.mirror import MirrorShim, mirror_real_trades
-    from trader.account import PaperLedger
+    from trader.trading.mirror import MirrorShim, mirror_real_trades
+    from trader.ws.account import PaperLedger
 
     store = _fresh_store()
     # a seeded ledger holding 2 of the contract being sold
@@ -2522,8 +2522,8 @@ def test_mirror_real_trades_applies_fills():
 
 
 def test_mirror_skips_unheld_sells():
-    from trader.mirror import mirror_real_trades
-    from trader.account import PaperLedger
+    from trader.trading.mirror import mirror_real_trades
+    from trader.ws.account import PaperLedger
 
     store = _fresh_store()
     store.meta_set("paper_seed:Personal", time.time())
@@ -2544,7 +2544,7 @@ def test_mirror_skips_unheld_sells():
 
 
 def test_loghook_file_and_rotation(tmp_path):
-    from trader.loghook import LogFile, TeeStream, install_log_webhook
+    from trader.ops.loghook import LogFile, TeeStream, install_log_webhook
     io = __import__("io")
 
     path = str(tmp_path / "pipeline.log")
@@ -2604,7 +2604,7 @@ def test_summary_includes_paper_when_enabled():
         account = Ledger()
 
     app = __import__(
-        "trader.server", fromlist=["create_app"]
+        "trader.web.server", fromlist=["create_app"]
     ).create_app(
         cfg, store, risk, FakePaperExecutor(), account
     )
@@ -2624,8 +2624,8 @@ def test_summary_includes_paper_when_enabled():
 
 
 def test_paper_positions_detail():
-    from trader.account import PaperLedger
-    from trader.mirror import MirrorShim
+    from trader.ws.account import PaperLedger
+    from trader.trading.mirror import MirrorShim
 
     store = _fresh_store()
     shim = MirrorShim(
@@ -2701,7 +2701,7 @@ def test_paper_positions_endpoint():
         account = Ledger()
 
     app = __import__(
-        "trader.server", fromlist=["create_app"]
+        "trader.web.server", fromlist=["create_app"]
     ).create_app(cfg, store, risk, FakePaperExecutor(), account)
     client = app.test_client()
     data = client.get("/api/paper-positions").get_json()
@@ -2714,7 +2714,7 @@ def test_paper_positions_endpoint():
 
 
 def test_paper_ledger_falls_back_to_config_values():
-    from trader.account import PaperLedger
+    from trader.ws.account import PaperLedger
 
     store = _fresh_store()
     ledger = PaperLedger(cfg=None, store=store, ws_account=None)
@@ -2744,7 +2744,7 @@ def test_summary_paper_flag_in_paper_mode():
     account = PaperAccount(cfg, store)
     risk = RiskEngine(cfg, store, account)
     app = __import__(
-        "trader.server", fromlist=["create_app"]
+        "trader.web.server", fromlist=["create_app"]
     ).create_app(cfg, store, risk, PaperExecutor(cfg, store, account),
                  account)
     summary = app.test_client().get("/api/summary").get_json()
@@ -2820,12 +2820,12 @@ def test_paper_reset_endpoint():
     account = FakeWSAccount()
     risk = RiskEngine(cfg, store, account)
     app = __import__(
-        "trader.server", fromlist=["create_app"]
+        "trader.web.server", fromlist=["create_app"]
     ).create_app(cfg, store, risk, None, account)
     client = app.test_client()
 
     # seed once
-    from trader.account import seed_paper_accounts
+    from trader.ws.account import seed_paper_accounts
     assert seed_paper_accounts(cfg, store, account) == ["Personal"]
     assert store.list_positions("paper", "Personal")
     assert store.paper_equity("Personal") is not None
@@ -2845,8 +2845,8 @@ def test_paper_reset_endpoint():
 
 
 def test_paper_positions_include_kind():
-    from trader.account import PaperLedger
-    from trader.mirror import MirrorShim
+    from trader.ws.account import PaperLedger
+    from trader.trading.mirror import MirrorShim
 
     store = _fresh_store()
     opt = MirrorShim(
@@ -2882,7 +2882,7 @@ def test_clean_start_script(tmp_path):
     store.record_signal("k1", "author", "BOUGHT 09/25 COIN 210c",
                         parsed=True)
     store.record_signal("k2", "author", " chatter", parsed=False)
-    from trader.parser import parse_alert
+    from trader.trading.parser import parse_alert
     alert = parse_alert("BOUGHT 09/25 COIN 210c @ 2.0")
     store.record_trade(
         "paper", alert.action, alert.ticker, 1, 2.0, alert,
@@ -2924,7 +2924,7 @@ def test_clean_start_script(tmp_path):
 
 
 def test_paper_seeding_without_mirror_is_cash_only():
-    from trader.account import PaperLedger, seed_paper_accounts
+    from trader.ws.account import PaperLedger, seed_paper_accounts
 
     class Acct:
         def values(self):
@@ -2958,7 +2958,7 @@ def test_paper_seeding_without_mirror_is_cash_only():
 def test_paper_card_margin_metrics():
     from types import SimpleNamespace
 
-    from trader.account import PaperLedger
+    from trader.ws.account import PaperLedger
     from trader.config import TradingConfig, WSAccountConfig
 
     accounts = [
@@ -3004,7 +3004,7 @@ def test_paper_card_margin_metrics():
 
     risk = RiskEngine(cfg, store, FakeWS())
     app = __import__(
-        "trader.server", fromlist=["create_app"]
+        "trader.web.server", fromlist=["create_app"]
     ).create_app(
         cfg, store, risk,
         SimpleNamespace(account=ledger), FakeWS(),
@@ -3047,7 +3047,7 @@ def test_paper_card_margin_metrics():
 def test_updater_heals_dirty_ignored_runtime_file(tmp_path):
     import subprocess
 
-    from trader.updater import AutoUpdater
+    from trader.ops.updater import AutoUpdater
 
     def git(cwd, *args):
         return subprocess.run(
@@ -3083,7 +3083,7 @@ def test_updater_heals_dirty_ignored_runtime_file(tmp_path):
             enabled = True
             interval_seconds = 30
 
-    from trader.updater import AutoUpdater as AU
+    from trader.ops.updater import AutoUpdater as AU
 
     updater = AU.__new__(AU)
     updater.cfg = Cfg()
@@ -3117,7 +3117,7 @@ def test_updater_clears_stale_index_lock(tmp_path):
     import os
     import time as _time
 
-    from trader.updater import _clear_stale_lock
+    from trader.ops.updater import _clear_stale_lock
 
     root = tmp_path / "repo"
     (root / ".git").mkdir(parents=True)
@@ -3141,7 +3141,7 @@ def test_startup_banner(tmp_path, capsys):
     import json as _json
     import subprocess
 
-    from trader.updater import startup_banner
+    from trader.ops.updater import startup_banner
 
     origin = tmp_path / "origin"
     origin.mkdir()
@@ -3198,7 +3198,7 @@ def test_terminate_stale_instances(tmp_path):
         del _sys.modules["psutil"]
     import psutil  # noqa: F401
 
-    from trader.processes import terminate_stale_instances
+    from trader.ops.processes import terminate_stale_instances
 
     try:
         _run_stale_instance_test(tmp_path, _sys, terminate_stale_instances)
@@ -3236,9 +3236,9 @@ def _run_stale_instance_test(tmp_path, _sys, terminate_stale_instances):
 def test_margin_breakdown_currencies():
     from types import SimpleNamespace
 
-    from trader.account import PaperLedger
+    from trader.ws.account import PaperLedger
     from trader.config import TradingConfig, WSAccountConfig
-    from trader.risk import RiskEngine
+    from trader.trading.risk import RiskEngine
 
     accounts = [
         WSAccountConfig(account_id="m1", label="Margin",
@@ -3284,7 +3284,7 @@ def test_margin_breakdown_currencies():
 
     risk = RiskEngine(cfg, store, FakeWS())
     app = __import__(
-        "trader.server", fromlist=["create_app"]
+        "trader.web.server", fromlist=["create_app"]
     ).create_app(
         cfg, store, risk, SimpleNamespace(account=ledger),
         FakeWS(),
@@ -3311,9 +3311,9 @@ def test_margin_breakdown_currencies():
 def test_paper_margin_used_currency_split():
     from types import SimpleNamespace
 
-    from trader.account import PaperLedger
+    from trader.ws.account import PaperLedger
     from trader.config import TradingConfig, WSAccountConfig
-    from trader.risk import RiskEngine
+    from trader.trading.risk import RiskEngine
 
     accounts = [
         WSAccountConfig(account_id="m1", label="Margin",
@@ -3359,7 +3359,7 @@ def test_paper_margin_used_currency_split():
 
     risk = RiskEngine(cfg, store, FakeWS())
     app = __import__(
-        "trader.server", fromlist=["create_app"]
+        "trader.web.server", fromlist=["create_app"]
     ).create_app(
         cfg, store, risk, SimpleNamespace(account=ledger),
         FakeWS(),
@@ -3375,7 +3375,7 @@ def test_paper_margin_used_currency_split():
 
 
 def test_margin_model_single_source():
-    from trader.margin import (
+    from trader.trading.margin import (
         Holding, compute_requirement, resolve_rate,
     )
 
@@ -3432,7 +3432,7 @@ def test_margin_model_single_source():
 
 
 def test_updater_survives_local_change_without_restart():
-    import trader.updater as up
+    import trader.ops.updater as up
 
     class FakeResult:
         def __init__(self, rc=0, out=""):
@@ -3479,7 +3479,7 @@ def test_supervised_thread_relaunches():
     import threading
     import time as _time
 
-    from trader.supervise import supervised
+    from trader.ops.supervise import supervised
 
     calls = {"n": 0}
     done = threading.Event()

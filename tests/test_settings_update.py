@@ -4,17 +4,17 @@ import tempfile
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from trader.account import PaperAccount
+from trader.ws.account import PaperAccount
 from trader.config import ReaderConfig, TradingConfig, WealthsimpleConfig, WSAccountConfig, \
     AutoUpdateConfig, QuotesConfig
-from trader.executor import PaperExecutor
-from trader.parser import parse_alert
-from trader.quotes import MoomooQuoteProvider
-from trader.risk import RiskEngine
+from trader.trading.executor import PaperExecutor
+from trader.trading.parser import parse_alert
+from trader.trading.quotes import MoomooQuoteProvider
+from trader.trading.risk import RiskEngine
 from trader.settings import apply_settings, get_settings
-from trader.stops import StopMonitor
+from trader.trading.stops import StopMonitor
 from trader.store import Store
-from trader.updater import AutoUpdater
+from trader.ops.updater import AutoUpdater
 
 
 class ConfigStub:
@@ -138,7 +138,7 @@ def test_settings_take_effect_immediately():
     account = PaperAccount(cfg, store)
 
     alert = parse_alert("BOUGHT 0DTE SPY 759c @ 1.5 @everyone")
-    from trader.executor import contracts_for
+    from trader.trading.executor import contracts_for
 
     assert contracts_for(alert, cfg, 10000, 1.5) == 3
 
@@ -147,7 +147,7 @@ def test_settings_take_effect_immediately():
 
 
 def test_settings_endpoint_roundtrip():
-    from trader.server import create_app
+    from trader.web.server import create_app
 
     fd, cfg_path = tempfile.mkstemp(suffix=".yaml")
     os.close(fd)
@@ -209,7 +209,7 @@ def test_moomoo_price_extraction():
 
 
 def _fake_updater(root, results):
-    import trader.updater as up
+    import trader.ops.updater as up
 
     calls = []
 
@@ -236,7 +236,7 @@ def _fake_updater(root, results):
 
 
 def test_updater_skips_when_dirty():
-    import trader.updater as up
+    import trader.ops.updater as up
 
     restarts = []
 
@@ -263,7 +263,7 @@ def test_updater_skips_when_dirty():
 
 
 def test_updater_pulls_and_restarts():
-    import trader.updater as up
+    import trader.ops.updater as up
 
     seq = {
         "rev-parse": type("R", (), {
@@ -319,7 +319,7 @@ def test_updater_pulls_and_restarts():
 
 
 def test_updater_up_to_date_no_restart():
-    import trader.updater as up
+    import trader.ops.updater as up
 
     def fake_git(root, *args):
         class R:
@@ -405,7 +405,7 @@ def test_reader_settings_validation():
 
 
 def test_reader_status_endpoints():
-    from trader.server import create_app
+    from trader.web.server import create_app
 
     cfg = ConfigStub(TradingConfig(mode="notify"))
     store = _fresh_store()
@@ -577,7 +577,7 @@ def test_reader_channels_setting(tmp_path):
 
 def test_quotes_disabled_by_default(tmp_path):
     from trader.config import load_config
-    from trader.quotes import make_quote_provider
+    from trader.trading.quotes import make_quote_provider
 
     cfg_path = tmp_path / "config.yaml"
     with open(cfg_path, "w") as f:

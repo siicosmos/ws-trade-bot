@@ -1,6 +1,6 @@
 import re
 
-from trader.dashboard import DASHBOARD_HTML, DASHBOARD_CSS, DASHBOARD_JS
+from trader.web.dashboard import DASHBOARD_HTML, DASHBOARD_CSS, DASHBOARD_JS
 
 
 def _strip_complete_strings(line):
@@ -21,7 +21,7 @@ def test_dashboard_script_strings_terminated():
 def test_clock_has_no_inline_style_override():
     # an inline style once silently beat the #clock rule, freezing it at 12px
     import re
-    import trader.dashboard as dash
+    import trader.web.dashboard as dash
 
     m = re.search(r'<span id="clock"[^>]*>', dash.DASHBOARD_HTML)
     assert m and "style" not in m.group(0)
@@ -34,7 +34,7 @@ def test_clock_has_no_inline_style_override():
 
 
 def test_header_rows_and_mobile_wrap():
-    import trader.dashboard as dash
+    import trader.web.dashboard as dash
 
     html = dash.DASHBOARD_HTML + dash.DASHBOARD_CSS
     # row 1: title, mode badge, timebox (age + clock) pinned right
@@ -55,7 +55,7 @@ def test_header_rows_and_mobile_wrap():
 
 
 def test_pageshow_rechecks_auth_after_back_button():
-    import trader.dashboard as dash
+    import trader.web.dashboard as dash
 
     js = dash.DASHBOARD_JS
     handler = js[js.index("pageshow"):js.index("pageshow") + 400]
@@ -65,7 +65,7 @@ def test_pageshow_rechecks_auth_after_back_button():
 
 def test_settings_list_inputs_span_full_row():
     # narrow grid cells clipped the whitelist / skip-underlyings hints
-    import trader.dashboard as dash
+    import trader.web.dashboard as dash
 
     js = dash.DASHBOARD_JS
     assert '["ticker_whitelist"' in js
@@ -73,7 +73,7 @@ def test_settings_list_inputs_span_full_row():
 
 
 def test_login_page_rejects_injection():
-    import trader.dashboard as dash
+    import trader.web.dashboard as dash
 
     rendered = dash.LOGIN_HTML('<script>alert(1)</script>')
     assert "<script>alert(1)</script>" not in rendered
@@ -83,7 +83,7 @@ def test_login_page_rejects_injection():
 def test_open_risk_percentage_colored_by_cap():
     # the open-risk text inherits the bar's warning colors (red over the
     # cap, yellow near it) and goes bold when exceeded
-    import trader.dashboard as dash
+    import trader.web.dashboard as dash
 
     js = dash.DASHBOARD_JS
     assert 'open risk \' + (hidden ? "••••••" : fmtMoney(risk)' in js
@@ -92,7 +92,7 @@ def test_open_risk_percentage_colored_by_cap():
 
 
 def test_positions_table_shows_price_and_return():
-    import trader.dashboard as dash
+    import trader.web.dashboard as dash
 
     js = dash.DASHBOARD_JS
     assert "<th class=num>Avg $</th>" in js
@@ -114,7 +114,7 @@ def test_positions_table_shows_price_and_return():
 
 
 def test_currency_split_display():
-    import trader.dashboard as dash
+    import trader.web.dashboard as dash
 
     js = dash.DASHBOARD_JS
     # account value gains a USD equivalent
@@ -126,7 +126,7 @@ def test_currency_split_display():
 
 
 def test_long_text_wraps_and_webhooks_are_textareas():
-    import trader.dashboard as dash
+    import trader.web.dashboard as dash
 
     html = dash.DASHBOARD_HTML + dash.DASHBOARD_CSS
     # alert entries wrap instead of overflowing the panel
@@ -143,7 +143,7 @@ def test_long_text_wraps_and_webhooks_are_textareas():
 def test_git_status_wording():
     # "not checked yet" appeared twice (as result and as age); pulls say
     # "last auto/manual pull Xm ago" and the age is labeled "checked"
-    import trader.dashboard as dash
+    import trader.web.dashboard as dash
 
     js = dash.DASHBOARD_JS
     assert '"first check pending"' in js
@@ -156,7 +156,7 @@ def test_git_status_wording():
 def test_settings_form_not_clobbered_while_editing():
     # the 5s refresh re-rendered the settings form and wiped edits
     # before the user could save them
-    import trader.dashboard as dash
+    import trader.web.dashboard as dash
 
     js = dash.DASHBOARD_JS
     assert "let settingsDirty = false;" in js
@@ -173,7 +173,7 @@ def test_settings_form_not_clobbered_while_editing():
 
 
 def test_currency_toggle():
-    import trader.dashboard as dash
+    import trader.web.dashboard as dash
 
     js = dash.DASHBOARD_JS
     assert 'localStorage.getItem("ws_card_currency")' in js
@@ -184,7 +184,7 @@ def test_currency_toggle():
 
 
 def test_dte_badge_colors():
-    import trader.dashboard as dash
+    import trader.web.dashboard as dash
 
     js = dash.DASHBOARD_JS
     assert "function dteBadge(" in js
@@ -198,7 +198,7 @@ def test_dte_badge_colors():
 
 
 def test_positions_table_always_fits_panel():
-    import trader.dashboard as dash
+    import trader.web.dashboard as dash
 
     html = dash.DASHBOARD_HTML + dash.DASHBOARD_CSS
     # fixed layout makes the table mathematically unable to exceed
@@ -209,7 +209,7 @@ def test_positions_table_always_fits_panel():
 
 
 def test_badges_do_not_wrap():
-    import trader.dashboard as dash
+    import trader.web.dashboard as dash
 
     html = dash.DASHBOARD_HTML + dash.DASHBOARD_CSS
     assert "white-space: nowrap" in html
@@ -220,7 +220,7 @@ def test_badges_do_not_wrap():
 
 
 def test_utc_storage_rendered_locally():
-    import trader.dashboard as dash
+    import trader.web.dashboard as dash
 
     js = dash.DASHBOARD_JS
     # stored UTC gets a Z and renders via the browser clock mechanism
@@ -231,7 +231,7 @@ def test_utc_storage_rendered_locally():
 
 
 def test_dual_timestamps_rendered():
-    import trader.dashboard as dash
+    import trader.web.dashboard as dash
 
     js = dash.DASHBOARD_JS
     # recent alerts show the alert time and when it was parsed down
@@ -241,7 +241,7 @@ def test_dual_timestamps_rendered():
 
 
 def test_stock_kind_cell():
-    import trader.dashboard as dash
+    import trader.web.dashboard as dash
 
     js = dash.DASHBOARD_JS
     # stocks render their own compact cell (symbol + stock label)
@@ -250,7 +250,7 @@ def test_stock_kind_cell():
 
 
 def test_stock_currency_display():
-    import trader.dashboard as dash
+    import trader.web.dashboard as dash
 
     js = dash.DASHBOARD_JS
     # stocks use multiplier 1 (not the 100x option multiplier) and
@@ -260,7 +260,7 @@ def test_stock_currency_display():
 
 
 def test_stock_section_and_alloc_bar():
-    import trader.dashboard as dash
+    import trader.web.dashboard as dash
 
     js = dash.DASHBOARD_JS
     # stock holdings render into their own section
@@ -272,7 +272,7 @@ def test_stock_section_and_alloc_bar():
 
 
 def test_stock_holdings_hidden_by_default():
-    import trader.dashboard as dash
+    import trader.web.dashboard as dash
 
     js = dash.DASHBOARD_JS
     # holdings section is collapsed until the user opts in
@@ -281,7 +281,7 @@ def test_stock_holdings_hidden_by_default():
 
 
 def test_hide_value_eye_toggle():
-    import trader.dashboard as dash
+    import trader.web.dashboard as dash
 
     js = dash.DASHBOARD_JS
     # per-card eye toggle masks value and cash amounts, persisted
@@ -301,7 +301,7 @@ def test_hide_value_eye_toggle():
 
 
 def test_margin_requirement_line():
-    import trader.dashboard as dash
+    import trader.web.dashboard as dash
 
     js = dash.DASHBOARD_JS
     assert "margin used" in js
@@ -311,7 +311,7 @@ def test_margin_requirement_line():
 
 
 def test_margin_lines_show_currencies():
-    import trader.dashboard as dash
+    import trader.web.dashboard as dash
 
     js = dash.DASHBOARD_JS
     assert 'fmtMoney(a.margin_used_usd || 0)' in js
@@ -326,7 +326,7 @@ def test_margin_lines_show_currencies():
 
 
 def test_avg_single_value_and_signed_cost():
-    import trader.dashboard as dash
+    import trader.web.dashboard as dash
 
     js = dash.DASHBOARD_JS
     # avg is one number: per-share for legs, per-contract for spreads
@@ -340,7 +340,7 @@ def test_avg_single_value_and_signed_cost():
 
 
 def test_portfolio_value_and_tappable_breakdown():
-    import trader.dashboard as dash
+    import trader.web.dashboard as dash
 
     js = dash.DASHBOARD_JS
     assert "portfolio value" in js
@@ -349,7 +349,7 @@ def test_portfolio_value_and_tappable_breakdown():
 
 
 def test_open_risk_and_breakdown_masked():
-    import trader.dashboard as dash
+    import trader.web.dashboard as dash
 
     js = dash.DASHBOARD_JS
     assert 'open risk \' + (hidden ? "••••••"' in js
@@ -359,7 +359,7 @@ def test_open_risk_and_breakdown_masked():
 
 
 def test_margin_usage_bar():
-    import trader.dashboard as dash
+    import trader.web.dashboard as dash
 
     js = dash.DASHBOARD_JS
     assert "function marginUsageBar" in js
@@ -368,7 +368,7 @@ def test_margin_usage_bar():
 
 
 def test_section_toggles_and_paper_detail():
-    import trader.dashboard as dash
+    import trader.web.dashboard as dash
 
     js = dash.DASHBOARD_JS
     # alerts and trades sections collapse, persisted
@@ -382,7 +382,7 @@ def test_section_toggles_and_paper_detail():
 
 
 def test_section_state_applied_on_load():
-    import trader.dashboard as dash
+    import trader.web.dashboard as dash
 
     js = dash.DASHBOARD_JS
     # persisted hidden state must apply at startup, not only after
@@ -392,7 +392,7 @@ def test_section_state_applied_on_load():
 
 
 def test_paper_badge_and_holdings_hint():
-    import trader.dashboard as dash
+    import trader.web.dashboard as dash
 
     js = dash.DASHBOARD_JS
     assert 'id="paper-badge"' in dash.DASHBOARD_HTML
@@ -402,7 +402,7 @@ def test_paper_badge_and_holdings_hint():
 
 
 def test_paper_open_state_migration():
-    import trader.dashboard as dash
+    import trader.web.dashboard as dash
 
     js = dash.DASHBOARD_JS
     # old single-label values (pre-JSON-array) must not crash the

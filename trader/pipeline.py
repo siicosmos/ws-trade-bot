@@ -1,14 +1,14 @@
 import hashlib
 
-from .executor import ExecutionResult, account_sizing
-from .notify import (
+from .trading.executor import ExecutionResult, account_sizing
+from .ops.notify import (
     notify_alert,
     notify_correction,
     notify_discord,
     notify_plain,
 )
-from .parser import is_correction, parse_alert
-from .risk import RiskEngine
+from .trading.parser import is_correction, parse_alert
+from .trading.risk import RiskEngine
 
 
 def _message_key(text: str, author: str = "") -> str:

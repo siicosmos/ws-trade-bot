@@ -202,7 +202,7 @@ def start_mirror_thread(cfg, store, ws_account, ledger,
             for line in applied:
                 print(f"trade mirror: {line}")
 
-    from .supervise import supervised
+    from ..ops.supervise import supervised
 
     thread, _ = supervised("mirror", run, webhook_url)
     return thread

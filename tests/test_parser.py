@@ -4,7 +4,7 @@ from datetime import date
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from trader.parser import parse_alert
+from trader.trading.parser import parse_alert
 
 
 def test_option_buy_0dte():
@@ -161,7 +161,7 @@ def test_no_action_returns_none():
 
 
 def test_is_correction_positive():
-    from trader.parser import is_correction
+    from trader.trading.parser import is_correction
     samples = [
         "Typo on the last alert, it was 760c not 7645c",
         "CORRECTION: entry should have been 759c",
@@ -174,7 +174,7 @@ def test_is_correction_positive():
 
 
 def test_is_correction_negative():
-    from trader.parser import is_correction
+    from trader.trading.parser import is_correction
     samples = [
         "BOUGHT 0DTE SPX 7585c @ .7 @everyone HERO or ZERO",
         "SOLD 1/4 0DTE SPX 7585c @ 2.0 runners FREE",
@@ -191,7 +191,7 @@ def test_lotto_word_wins_over_tiny_size():
 
 
 def test_format_scale():
-    from trader.parser import format_scale
+    from trader.trading.parser import format_scale
     assert format_scale(None) is None
     assert format_scale(2 / 3) == "2/3"
     assert format_scale(1 / 3) == "1/3"
@@ -214,7 +214,7 @@ def test_gain_pct_parsed():
 
 
 def test_gain_from_unsigned_percentages():
-    from trader.parser import parse_alert
+    from trader.trading.parser import parse_alert
 
     a = parse_alert(
         "ALL OUT 09/18 SPY 753c @ 6.22 exiting swing runners here for 120%"

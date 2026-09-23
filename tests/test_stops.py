@@ -5,12 +5,12 @@ from datetime import date, timedelta
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from trader.account import PaperAccount
+from trader.ws.account import PaperAccount
 from trader.config import ReaderConfig, TradingConfig, WealthsimpleConfig, WSAccountConfig
-from trader.executor import PaperExecutor
-from trader.parser import parse_alert
-from trader.risk import RiskEngine
-from trader.stops import StopMonitor
+from trader.trading.executor import PaperExecutor
+from trader.trading.parser import parse_alert
+from trader.trading.risk import RiskEngine
+from trader.trading.stops import StopMonitor
 from trader.store import Store
 
 

@@ -7,7 +7,7 @@ store."""
 
 import time
 
-from .ws_common import (
+from ..ws.ws_common import (
     _amount_opt,
     _quote_price,
     account_label,

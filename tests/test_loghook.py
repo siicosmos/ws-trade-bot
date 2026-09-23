@@ -1,6 +1,6 @@
 import io
 
-from trader.loghook import TeeStream, WebhookBatcher
+from trader.ops.loghook import TeeStream, WebhookBatcher
 
 
 def test_batcher_posts_batches(monkeypatch):
@@ -10,9 +10,9 @@ def test_batcher_posts_batches(monkeypatch):
         posts.append((url, json))
 
     monkeypatch.setattr(
-        "trader.loghook.requests.post", fake_post, raising=True
+        "trader.ops.loghook.requests.post", fake_post, raising=True
     )
-    import trader.loghook as lh
+    import trader.ops.loghook as lh
     monkeypatch.setattr(lh.requests, "post", fake_post)
 
     b = WebhookBatcher("http://hook")

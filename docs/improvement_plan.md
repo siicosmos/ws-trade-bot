@@ -105,6 +105,25 @@ the writer, and the positions cache has its own tiny lock. A
 concurrency test hammers three readers against a writer for
 two seconds with zero sqlite errors.
 
+## 10. Package split for trader/ - DONE
+
+The flat 20-module `trader/` folder is now four
+sub-packages plus the true core at the root:
+
+- `trader/ws/` - Wealthsimple integration (account, mapping,
+  the extracted GraphQL documents, tokens, account types)
+- `trader/trading/` - execution logic (executor, parser,
+  risk, stops, quotes, strategies, margin, paper, mirror)
+- `trader/web/` - the dashboard (server, dashboard, static/)
+- `trader/ops/` - process operations (updater, processes,
+  supervise, loghook, notify)
+- root keeps what everything depends on: config, settings,
+  store, pipeline
+
+All import paths updated across run.py, tests and scripts.
+The updater's `trader/*` restart pattern still matches nested
+paths (fnmatch `*` crosses separators) - verified by test.
+
 ## Thread supervision (landed, unplanned)
 
 After a docs-only update killed the updater thread: every
