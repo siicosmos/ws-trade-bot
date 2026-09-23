@@ -71,6 +71,8 @@ digraph architecture {
           <TR><TD ALIGN="LEFT">auto-updater</TD><TD ALIGN="LEFT">pull · restart gating</TD></TR>
           <TR><TD ALIGN="LEFT">trade mirror</TD><TD ALIGN="LEFT">real fills → paper</TD></TR>
           <TR><TD ALIGN="LEFT">stop monitor</TD><TD ALIGN="LEFT">quotes vs stops</TD></TR>
+          <TR><TD ALIGN="LEFT">webhook batcher</TD><TD ALIGN="LEFT">log lines → Discord</TD></TR>
+          <TR><TD ALIGN="LEFT">health watchdog</TD><TD ALIGN="LEFT">self-checks /health · exits on hang</TD></TR>
         </TABLE>>];
 
       paper [label=<
@@ -95,4 +97,5 @@ digraph architecture {
   web -> phone [label="notify · update webhooks", color="#8957e5"];
   threads -> github [label="fetch · ff-only pull", style=dashed];
   github -> threads [label="restart (exit 77)\nif trader/* changed", style=dashed];
+  threads -> web [label="watchdog self-checks /health,\nexit 1 after 5 min hang", color="#f85149", style=dashed];
 }

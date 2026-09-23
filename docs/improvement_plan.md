@@ -124,14 +124,21 @@ All import paths updated across run.py, tests and scripts.
 The updater's `trader/*` restart pattern still matches nested
 paths (fnmatch `*` crosses separators) - verified by test.
 
-## 11. Architecture diagram - DONE
+## 11. Architecture diagrams - DONE
 
-`docs/architecture.dot` (+ rendered png/svg) shows the full
-server layout: the standalone reader feeding alerts over
-HTTP, the Flask pipeline (web, alert processing, store,
-supervised threads, paper ledger), and the external edges -
-Wealthsimple GraphQL, GitHub auto-update, Discord webhooks,
-and the browser polling over Tailscale.
+`docs/architecture.dot` (+ png/svg) shows the full server
+layout: the standalone reader feeding alerts over HTTP, the
+Flask pipeline (web, alert processing, store, supervised
+threads, paper ledger), and the external edges - Wealthsimple
+GraphQL, GitHub auto-update, Discord webhooks, and the browser
+polling over Tailscale.
+
+`docs/runtime.dot` (+ png/svg) shows the process/thread view:
+both .bat restart loops, the pipeline's main thread plus its
+five supervised loops (updater, mirror, stop monitor, webhook
+batcher, health watchdog) under ops/supervise.py, the reader
+process with its locally-supervised webhook thread, and the
+crash/hang/update exit paths that feed the restart loops.
 
 ## Thread supervision (landed, unplanned)
 

@@ -1,0 +1,116 @@
+// ws-trade-bot runtime processes and threads - render with:
+//   dot -Tpng -o docs/runtime.png docs/runtime.dot
+digraph runtime {
+  rankdir=LR;
+  graph [fontname="Helvetica", label="ws-trade-bot — processes and threads at runtime", labelloc=t, fontsize=16];
+  node [shape=plaintext, fontname="Helvetica", fontsize=11];
+  edge [color="#57606a", fontname="Helvetica", fontsize=9];
+
+  // -------------------------------------------------- restart loops
+  bat_pipeline [label=<
+    <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" BGCOLOR="white">
+      <TR><TD BGCOLOR="#8957e5" COLSPAN="2"><FONT COLOR="white"><B>start_pipeline.bat</B></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT">cmd loop</TD><TD ALIGN="LEFT">any nonzero exit → relaunch after 5s</TD></TR>
+    </TABLE>>];
+
+  bat_reader [label=<
+    <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" BGCOLOR="white">
+      <TR><TD BGCOLOR="#8957e5" COLSPAN="2"><FONT COLOR="white"><B>start_reader.bat</B></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT">cmd loop</TD><TD ALIGN="LEFT">any nonzero exit → relaunch after 5s</TD></TR>
+    </TABLE>>];
+
+  // -------------------------------------------------- pipeline process
+  subgraph cluster_pipeline {
+    label="pipeline — python run.py (Windows)";
+    fontsize=13;
+    color="#1f6feb";
+
+    main [label=<
+      <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" BGCOLOR="white">
+        <TR><TD BGCOLOR="#1f6feb" COLSPAN="2"><FONT COLOR="white"><B>main thread</B> — Flask accept loop</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT">app.run(threaded=True)</TD><TD ALIGN="LEFT">HTTPS via Tailscale</TD></TR>
+        <TR><TD ALIGN="LEFT" COLSPAN="2">worker threads per request (transient)</TD></TR>
+      </TABLE>>];
+
+    supervise [label=<
+      <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" BGCOLOR="white">
+        <TR><TD BGCOLOR="#1f6feb" COLSPAN="2"><FONT COLOR="white"><B>ops/supervise.py</B> — relaunch after crash or exit, 30s backoff, webhook notice</FONT></TD></TR>
+      </TABLE>>];
+
+    updater [label=<
+      <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" BGCOLOR="white">
+        <TR><TD BGCOLOR="#238636" COLSPAN="2"><FONT COLOR="white"><B>auto-updater</B></FONT></TD></TR>
+        <TR><TD ALIGN="LEFT">GitHub check / interval</TD><TD ALIGN="LEFT">exit 77 when trader/* changes</TD></TR>
+      </TABLE>>];
+
+    mirror [label=<
+      <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" BGCOLOR="white">
+        <TR><TD BGCOLOR="#238636" COLSPAN="2"><FONT COLOR="white"><B>trade mirror</B></FONT></TD></TR>
+        <TR><TD ALIGN="LEFT">WS activities → paper</TD><TD ALIGN="LEFT">only while mirroring is on</TD></TR>
+      </TABLE>>];
+
+    stops [label=<
+      <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" BGCOLOR="white">
+        <TR><TD BGCOLOR="#238636" COLSPAN="2"><FONT COLOR="white"><B>stop monitor</B></FONT></TD></TR>
+        <TR><TD ALIGN="LEFT">quotes vs stop levels</TD><TD ALIGN="LEFT">only while quotes are enabled</TD></TR>
+      </TABLE>>];
+
+    batcher [label=<
+      <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" BGCOLOR="white">
+        <TR><TD BGCOLOR="#238636" COLSPAN="2"><FONT COLOR="white"><B>webhook batcher</B></FONT></TD></TR>
+        <TR><TD ALIGN="LEFT">log lines → Discord</TD><TD ALIGN="LEFT">3s flush</TD></TR>
+      </TABLE>>];
+
+    watchdog [label=<
+      <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" BGCOLOR="white">
+        <TR><TD BGCOLOR="#238636" COLSPAN="2"><FONT COLOR="white"><B>health watchdog</B></FONT></TD></TR>
+        <TR><TD ALIGN="LEFT">self-fetch /health / 30s</TD><TD ALIGN="LEFT">exit 1 after 5 min hang</TD></TR>
+      </TABLE>>];
+  }
+
+  // -------------------------------------------------- reader process
+  subgraph cluster_reader {
+    label="reader — python reader/discord_reader.py (standalone, no trader imports)";
+    fontsize=13;
+    color="#8957e5";
+
+    reader_main [label=<
+      <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" BGCOLOR="white">
+        <TR><TD BGCOLOR="#1f6feb" COLSPAN="2"><FONT COLOR="white"><B>main thread</B> — UIA poll loop</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT">reads the Discord window</TD><TD ALIGN="LEFT">POST /alert + heartbeat</TD></TR>
+      </TABLE>>];
+
+    reader_webhook [label=<
+      <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" BGCOLOR="white">
+        <TR><TD BGCOLOR="#238636" COLSPAN="2"><FONT COLOR="white"><B>reader-webhook thread</B></FONT></TD></TR>
+        <TR><TD ALIGN="LEFT">log lines → Discord</TD><TD ALIGN="LEFT">reader-local supervision</TD></TR>
+      </TABLE>>];
+  }
+
+  browser [label=<
+    <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" BGCOLOR="white">
+      <TR><TD BGCOLOR="#8957e5" COLSPAN="2"><FONT COLOR="white"><B>browser tab</B> — crash-safe timers</FONT></TD></TR>
+      <TR><TD ALIGN="LEFT">load() poll / 5s</TD><TD ALIGN="LEFT">reconnect banner on failure</TD></TR>
+      <TR><TD ALIGN="LEFT">clock + reader line / 1s</TD><TD ALIGN="LEFT">setInterval invocations independent</TD></TR>
+    </TABLE>>];
+
+  // -------------------------------------------------- edges
+  bat_pipeline -> main [label="spawn"];
+  main -> bat_pipeline [label="crash: nonzero exit", color="#f85149", style=dashed];
+
+  supervise -> updater [label="wraps", style=dotted, arrowhead=none];
+  supervise -> mirror [label="wraps", style=dotted, arrowhead=none];
+  supervise -> stops [label="wraps", style=dotted, arrowhead=none];
+  supervise -> batcher [label="wraps", style=dotted, arrowhead=none];
+  supervise -> watchdog [label="wraps", style=dotted, arrowhead=none];
+
+  watchdog -> main [label="hang detected:\nexit 1 → restart loop", color="#f85149", style=dashed];
+  updater -> bat_pipeline [label="code update:\nexit 77", color="#d29922", style=dashed];
+
+  bat_reader -> reader_main [label="spawn"];
+  reader_main -> bat_reader [label="crash: nonzero exit\n(relevance-gated restarts)", color="#f85149", style=dashed];
+  reader_webhook -> reader_main [label="local supervision", style=dotted, arrowhead=none];
+
+  browser -> main [label="HTTPS poll"];
+  reader_main -> main [label="alerts"];
+}
