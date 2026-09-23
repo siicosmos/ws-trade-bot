@@ -157,15 +157,25 @@ def _paper_card_metrics(
 
     req = 0.0
     parts = []
+
+    def _native(cad_amount, is_usd):
+        return (
+            cad_amount / conv_fx
+            if is_usd and conv_fx else cad_amount
+        )
+
     for r in rows:
         if r.get("kind") != "stock":
             continue
         sym = str(r.get("underlying") or "")
         mv = r.get("value") or 0
+        cur = "usd" if r.get("usd") else "cad"
         rate = float(overrides.get(sym, default_rate))
         req += mv * rate
+        native = _native(mv, r.get("usd"))
         parts.append(
-            f"{sym} {mv:.2f} x {rate:.0%} = {mv * rate:.2f}"
+            f"{sym} {native:.2f} x {rate:.0%} = "
+            f"{native * rate:.2f} {cur}"
         )
 
     # option legs grouped per underlying+expiry, classified into
@@ -214,9 +224,11 @@ def _paper_card_metrics(
                 conv_fx if usd else 1.0
             )
             req += part
+            cur = "usd" if usd else "cad"
+            native = width * 100 * qty
             parts.append(
                 f"{sym} {info.get('name', 'spread')} "
-                f"{qty:g}x width {width:g} = {part:.2f}"
+                f"{qty:g}x width {native:g} = {native:.2f} {cur}"
             )
         else:
             # long (or unpaired) legs carry their full value
@@ -226,10 +238,13 @@ def _paper_card_metrics(
                     continue
                 mv = abs(row.get("value") or 0)
                 req += mv
+                is_usd = bool(row.get("usd"))
+                native = _native(mv, is_usd)
                 tag = "short" if (leg["qty"] or 0) < 0 else "long"
                 parts.append(
                     f"{sym} {leg.get('contract_key', '?')} "
-                    f"{tag} {mv:.2f} = {mv:.2f}"
+                    f"{tag} {native:.2f} = {native:.2f} "
+                    f"{'usd' if is_usd else 'cad'}"
                 )
 
     margin_req = round(req, 2)
@@ -544,9 +559,15 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                 req = 0.0
                 req_parts = []
                 for r in (sk or []):
-                    mv = r.get("market_value") or 0
-                    if r.get("currency") == "USD":
-                        mv *= conv_fx
+                    native = r.get("market_value") or 0
+                    cur = (
+                        "usd"
+                        if r.get("currency") == "USD" else "cad"
+                    )
+                    mv = (
+                        native * conv_fx
+                        if cur == "usd" else native
+                    )
                     sym = str(r.get("underlying") or "")
                     rate = None
                     if callable(rate_fn) and r.get("security_id"):
@@ -561,8 +582,8 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                         )
                     req += mv * rate
                     req_parts.append(
-                        f"{sym} {mv:.2f} x {rate:.0%} = "
-                        f"{mv * rate:.2f}"
+                        f"{sym} {native:.2f} x {rate:.0%} = "
+                        f"{native * rate:.2f} {cur}"
                     )
                 def _spread_width_cad(r):
                     # WS charges spreads the full width without
@@ -578,6 +599,20 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                         return width * conv_fx if width else None
                     except (ValueError, AttributeError):
                         return None
+
+                def _opt_cur(r):
+                    return (
+                        "usd"
+                        if r.get("cost_usd") is not None
+                        else "cad"
+                    )
+
+                def _native(part, r):
+                    return (
+                        part / conv_fx
+                        if _opt_cur(r) == "usd" and conv_fx
+                        else part
+                    )
 
                 if live is not None:
                     for r in live["positions"]:
@@ -596,14 +631,16 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                             req += part
                             req_parts.append(
                                 f"{r.get('underlying', '?')} spread "
-                                f"width {part:.2f}"
+                                f"width {_native(part, r):.2f} "
+                                f"{_opt_cur(r)}"
                             )
                         elif r.get("short"):
                             part = r.get("risk_cad") or 0
                             req += part
                             req_parts.append(
                                 f"{r.get('underlying', '?')} short "
-                                f"risk {part:.2f}"
+                                f"risk {_native(part, r):.2f} "
+                                f"{_opt_cur(r)}"
                             )
                         else:
                             part = (
@@ -613,7 +650,8 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                             req += part
                             req_parts.append(
                                 f"{r.get('underlying', '?')} option "
-                                f"{part:.2f} x 100%"
+                                f"{_native(part, r):.2f} x 100% "
+                                f"{_opt_cur(r)}"
                             )
                 margin_req = round(req, 2)
                 used = 0.0

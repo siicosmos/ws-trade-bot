@@ -3231,3 +3231,78 @@ def _run_stale_instance_test(tmp_path, _sys, terminate_stale_instances):
 
     # a clean run finds nothing to kill
     assert terminate_stale_instances(str(script)) == []
+
+
+def test_margin_breakdown_currencies():
+    from types import SimpleNamespace
+
+    from trader.account import PaperLedger
+    from trader.config import TradingConfig, WSAccountConfig
+    from trader.risk import RiskEngine
+
+    accounts = [
+        WSAccountConfig(account_id="m1", label="Margin",
+                        paper_value=10000),
+    ]
+    store = _fresh_store()
+    cfg = ConfigStub(
+        TradingConfig(mode="notify", risk_per_trade_pct=5),
+        accounts=accounts,
+    )
+    cfg.paper = SimpleNamespace(enabled=True)
+    # a usd stock and a cad stock in the paper ledger
+    store.set_paper_equity(20000.0, "Margin")
+    store.seed_position("paper", "Margin", "COIN", "COIN",
+                        None, None, None, 10, 200.0)
+    store.seed_position("paper", "Margin", "ZWC", "ZWC",
+                        None, None, None, 100, 32.0)
+    store.meta_set("paper_seed:Margin", "1")
+    store.meta_set("paper_initial:Margin", "10000")
+
+    ledger = PaperLedger(cfg, store, None)
+    # live quotes flag the listing currencies
+    ledger._quotes = lambda: {
+        "COIN": {"price": 200.0, "usd": True},
+        "ZWC": {"price": 32.0, "usd": False},
+    }
+    ledger._quote_ts = 1e18
+
+    class FakeWS:
+        _fx_hint = 1.37
+
+        def values(self):
+            return {"Margin": 25000.0}
+
+        def usd_values(self):
+            return {"Margin": 18248.18}
+
+        def _positions_raw(self):
+            return {}
+
+        def _resolve(self):
+            return [("Margin", "m1")]
+
+    risk = RiskEngine(cfg, store, FakeWS())
+    app = __import__(
+        "trader.server", fromlist=["create_app"]
+    ).create_app(
+        cfg, store, risk, SimpleNamespace(account=ledger),
+        FakeWS(),
+    )
+    m = app.test_client().get(
+        "/api/summary"
+    ).get_json()["accounts"][0]
+    lines = m["paper_margin_breakdown"]
+    coin = next(
+        l for l in lines if l.startswith("COIN ")
+    )
+    zwc = next(
+        l for l in lines if l.startswith("ZWC ")
+    )
+    # us stock shows usd, ca stock shows cad
+    assert coin.rstrip().endswith("usd"), coin
+    assert zwc.rstrip().endswith("cad"), zwc
+    # the usd figure is the cad ledger amount divided by the
+    # value fx; cad stocks show their ledger amount as-is
+    assert "1459.85" in coin, coin
+    assert "3200.00" in zwc, zwc
