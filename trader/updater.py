@@ -30,9 +30,55 @@ def files_match(files, patterns):
 
 
 def _git(root, *args):
+    # never hang on credential prompts - a headless failure is
+    # visible in the logs, a hung one just looks like a dead
+    # updater
+    env = dict(os.environ)
+    env["GIT_TERMINAL_PROMPT"] = "0"
     return subprocess.run(
-        ["git", *args], cwd=root, capture_output=True, text=True, timeout=120
+        ["git", *args], cwd=root, capture_output=True, text=True,
+        timeout=120, env=env,
     )
+
+
+def _clear_stale_lock(root):
+    """Remove a stale .git/index.lock left by a git process that
+    died mid-operation (machine slept, hard power off). Every
+    subsequent git call fails until it is gone."""
+    lock = os.path.join(root, ".git", "index.lock")
+    try:
+        age = time.time() - os.path.getmtime(lock)
+    except OSError:
+        return False
+    if age < 300:
+        return False   # possibly live - hands off
+    try:
+        os.remove(lock)
+        print(
+            "auto-update: removed stale .git/index.lock "
+            f"(age {int(age)}s)"
+        )
+        return True
+    except OSError:
+        return False
+
+
+RUNTIME_IGNORED = (
+    "pipeline.log*", "reader.log*", "trades.db*", "*.db",
+    ".last_update.json", ".reader_seen.json", ".session_key",
+    "config.yaml", "ws_tokens.env", "*.pyc", "__pycache__/*",
+)
+
+
+def _is_ignored_runtime_file(root, path):
+    """True when a dirty tracked file is an ignored runtime file
+    (logs, dbs) - safe to restore since it regenerates anyway."""
+    from fnmatch import fnmatch
+
+    if any(fnmatch(path, p) for p in RUNTIME_IGNORED):
+        return True
+    r = _git(root, "check-ignore", "--", path)
+    return r.returncode == 0
 
 
 class AutoUpdater:
@@ -122,6 +168,35 @@ class AutoUpdater:
         except (OSError, ValueError):
             pass
 
+    def _heal_ignored_runtime_files(self, dirty_lines):
+        """Restore dirty tracked files that are ignored runtime
+        files (logs, dbs) so a pull can proceed - the reader.log
+        class of incident, where a runtime file was once
+        committed and then locally modified."""
+        healed = []
+        for line in dirty_lines:
+            path = line[3:].strip('"').strip()
+            if not path or not _is_ignored_runtime_file(
+                self.root, path
+            ):
+                continue
+            _git(self.root, "checkout", "--", path)
+            status = _git(self.root, "status", "--porcelain",
+                          "--", path)
+            if status.returncode == 0 and not status.stdout.strip():
+                healed.append(path)
+            else:
+                # still dirty (deleted-from-tracking etc) - drop
+                # it from the work tree entirely
+                _git(self.root, "clean", "-f", "--", path)
+                healed.append(path + " (removed)")
+        if healed:
+            print(
+                "auto-update: restored ignored runtime files: "
+                + ", ".join(healed)
+            )
+        return healed
+
     def _restart_for_local_change(self):
         new = self._head()
         from .notify import notify_discord
@@ -203,8 +278,23 @@ class AutoUpdater:
             if line.strip() and not line.startswith("??")
         ]
         if dirty:
-            self.last_result = "skipped: working tree dirty"
-            print("auto-update: working tree dirty, skipping pull")
+            self._heal_ignored_runtime_files(dirty)
+            status = _git(self.root, "status", "--porcelain")
+            dirty = [
+                line for line in status.stdout.splitlines()
+                if line.strip() and not line.startswith("??")
+            ]
+        if dirty:
+            names = ", ".join(
+                line[3:].strip('"') for line in dirty[:4]
+            ) or "?"
+            self.last_result = (
+                "skipped: working tree dirty (" + names + ")"
+            )
+            print(
+                "auto-update: working tree dirty, skipping pull: "
+                + names
+            )
             return False
 
         branch = _git(
@@ -213,7 +303,22 @@ class AutoUpdater:
         short = branch if branch and branch != "HEAD" else "main"
         ref = f"origin/{short}"
 
-        _git(self.root, "fetch", "origin")
+        fetch = _git(self.root, "fetch", "origin")
+        if fetch.returncode != 0:
+            if "index.lock" in (
+                fetch.stderr or ""
+            ) and _clear_stale_lock(self.root):
+                fetch = _git(self.root, "fetch", "origin")
+            if fetch.returncode != 0:
+                self.last_result = (
+                    "fetch failed: "
+                    + (fetch.stderr or "").strip()[:120]
+                )
+                print(
+                    "auto-update: fetch failed: "
+                    + (fetch.stderr or "").strip()
+                )
+                return False
 
         local = _git(self.root, "rev-parse", "HEAD").stdout.strip()
         remote = _git(self.root, "rev-parse", ref).stdout.strip()

@@ -3042,3 +3042,96 @@ def test_paper_card_margin_metrics():
     assert r["paper_margin_requirement"] is None
     assert r["paper_cash"] == 4000.0
     assert r["paper_stock_value"] == 2000.0
+
+
+def test_updater_heals_dirty_ignored_runtime_file(tmp_path):
+    import subprocess
+
+    from trader.updater import AutoUpdater
+
+    def git(cwd, *args):
+        return subprocess.run(
+            ["git", "-c", "user.email=t@t", "-c", "user.name=t",
+             *args], cwd=str(cwd), capture_output=True, text=True,
+        )
+
+    origin = tmp_path / "origin"
+    origin.mkdir()
+    (origin / "reader.log").write_text("v1\n")
+    (origin / "run.py").write_text("print(1)\n")
+    git(origin, "init", "-q", "-b", "main")
+    git(origin, "add", "-A")
+    git(origin, "commit", "-q", "-m", "base")
+
+    work = tmp_path / "work"
+    subprocess.run(
+        ["git", "clone", "-q", str(origin), str(work)],
+        capture_output=True, text=True,
+    )
+
+    # new upstream commit touching the same tracked log
+    (origin / "reader.log").write_text("v2\n")
+    git(origin, "add", "-A")
+    git(origin, "commit", "-q", "-m", "log change")
+
+    # local runtime writes dirty the tracked log - this is what
+    # used to wedge the updater for good
+    (work / "reader.log").write_text("locally appended\n")
+
+    class Cfg:
+        class auto_update:
+            enabled = True
+            interval_seconds = 30
+
+    from trader.updater import AutoUpdater as AU
+
+    updater = AU.__new__(AU)
+    updater.cfg = Cfg()
+    updater.root = str(work)
+    updater.webhook_url = ""
+    updater._restart = lambda: (_ for _ in ()).throw(
+        AssertionError("should not restart")
+    )
+    updater.last_check = None
+    updater.last_result = ""
+    updater.errors = 0
+    updater.start_head = None
+    updater.branch = "main"
+
+    pulled = updater.check_once()
+    # no pipeline files changed, so no restart - but the pull
+    # itself must have gone through despite the dirty log
+    assert "updated to" in updater.last_result
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=str(work),
+        capture_output=True, text=True,
+    ).stdout.strip()
+    remote_head = subprocess.run(
+        ["git", "rev-parse", "origin/main"], cwd=str(work),
+        capture_output=True, text=True,
+    ).stdout.strip()
+    assert head == remote_head
+
+
+def test_updater_clears_stale_index_lock(tmp_path):
+    import os
+    import time as _time
+
+    from trader.updater import _clear_stale_lock
+
+    root = tmp_path / "repo"
+    (root / ".git").mkdir(parents=True)
+    lock = root / ".git" / "index.lock"
+    lock.write_text("")
+    fresh = tmp_path / "fresh"
+    (fresh / ".git").mkdir(parents=True)
+    fresh_lock = fresh / ".git" / "index.lock"
+    fresh_lock.write_text("")
+
+    old = os.path.getmtime(str(lock)) - 600
+    os.utime(str(lock), (old, old))
+    # old lock gets removed, fresh one is left alone
+    assert _clear_stale_lock(str(root)) is True
+    assert not lock.exists()
+    assert _clear_stale_lock(str(fresh)) is False
+    assert fresh_lock.exists()
