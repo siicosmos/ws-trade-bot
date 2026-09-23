@@ -89,7 +89,8 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
     border-radius: 6px; padding: 3px 10px; cursor: pointer;
     margin-bottom: 8px; letter-spacing: .5px;
   }
-  .cur-toggle:hover { color: var(--text); border-color: var(--muted); }
+  .cur-toggle { color: #fff; }
+  .cur-toggle:hover { border-color: var(--muted); }
   .card .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .8px; margin-bottom: 6px; }
   .card .value { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
   .riskbar { height: 6px; background: #21262d; border-radius: 3px; margin-top: 12px; overflow: hidden; }
@@ -426,6 +427,7 @@ async function loadSummary() {
     wrap.className = "cardcol";
     wrap.appendChild(card);
     if (a.paper_value != null && !isNaN(a.paper_value)) {
+      const phidden = !!paperHidden[a.label];
       const pnl = a.paper_pnl;
       const pnlPct = a.paper_initial
         ? (pnl / a.paper_initial * 100) : null;
@@ -437,32 +439,33 @@ async function loadSummary() {
       const rows = (paperPositions || {})[a.label] || [];
       pc.innerHTML =
         '<div class="label" style="display:flex;justify-content:space-between;align-items:center">paper · ' + esc(a.label) +
-        '<span><button onclick="togglePaper(\'' + esc(a.label) + '\')" style="background:#21262d;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:2px 10px;font-size:11px;cursor:pointer">' + (rows.length ? "holdings " + (open ? "▴" : "▾") : "holdings ▾") + '</button> ' +
+        '<span><button class="cur-toggle" style="padding:1px 7px;margin:0" title="' + (phidden ? "show paper value" : "hide paper value") + '" onclick="togglePaperHidden(\'' + esc(a.label) + '\')">' + (phidden ? EYE_OFF_SVG : EYE_SVG) + '</button> ' +
+        '<button onclick="togglePaper(\'' + esc(a.label) + '\')" style="background:#21262d;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:2px 10px;font-size:11px;cursor:pointer">' + (rows.length ? "holdings " + (open ? "▴" : "▾") : "holdings ▾") + '</button> ' +
         '<button onclick="resetPaper(\'' + esc(a.label) + '\')" style="background:#21262d;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:2px 10px;font-size:11px;cursor:pointer">reset</button></span></div>' +
-        '<div class="value" style="font-size:20px">' + (hidden ? "••••••" : fmtMoney(a.paper_value) + " cad") +
+        '<div class="value" style="font-size:20px">' + (phidden? "••••••" : fmtMoney(a.paper_value) + " cad") +
         (pnl == null ? '' :
           ' <span style="font-size:13px;color:' + pnlColor + '">' +
           (pnl >= 0 ? "+" : "") + fmtMoney(pnl) +
           (pnlPct != null ? " (" + (pnl >= 0 ? "+" : "") + pnlPct.toFixed(1) + "%)" : "") + '</span>') +
-        (a.paper_usd_value && !hidden ? ' <span style="font-size:12px;color:var(--muted)">$' + a.paper_usd_value.toLocaleString("en-CA", {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' USD</span>' : '') +
+        (a.paper_usd_value && !phidden ? ' <span style="font-size:12px;color:var(--muted)">$' + a.paper_usd_value.toLocaleString("en-CA", {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' USD</span>' : '') +
         '</div>' +
         '<div class="riskbar"><div style="width:' + Math.min(100, Math.round(a.paper_open_risk_pct || 0)) + '%;background:#3fb950"></div></div>' +
-        '<div class="sub"><span>open risk ' + (hidden ? "••••••" : fmtMoney(a.paper_open_risk || 0) + " cad") + ' (' + (a.paper_open_risk_pct ?? 0) + '%)</span>' +
+        '<div class="sub"><span>open risk ' + (phidden? "••••••" : fmtMoney(a.paper_open_risk || 0) + " cad") + ' (' + (a.paper_open_risk_pct ?? 0) + '%)</span>' +
         '<span>paper</span></div>' +
         ((a.paper_margin_requirement != null && !isNaN(a.paper_margin_requirement))
-          ? '<div class="sub"><span>total margin used ' + (hidden ? "••••••" : fmtMoney(a.paper_margin_used || 0) + " cad") +
+          ? '<div class="sub"><span>total margin used ' + (phidden? "••••••" : fmtMoney(a.paper_margin_used || 0) + " cad") +
             (hidden || !(a.paper_margin_used > 0) ? '' : ' · ledger loan') +
-            '</span><span style="cursor:pointer" onclick="togglePaperBreakdown(' + cardIdx + ', \'' + esc(a.label) + '\')">margin requirement ' + (hidden ? "••••••" : fmtMoney(a.paper_margin_requirement) + " cad") + ' ▾</span></div>' +
-          '<div id="pmbd-' + cardIdx + '" class="sub" style="display:' + (pmbdOpen === a.label ? "block" : "none") + ';color:var(--muted);font-size:11px;white-space:pre-line">' + (hidden ? "" : esc((a.paper_margin_breakdown || []).join("\n"))) + '</div>' +
-          '<div class="sub"><span>margin available ' + (hidden ? "••••••" : fmtMoney(a.paper_margin_available) + " cad") +
-            (a.paper_portfolio_value != null && !hidden ? ' · portfolio value ' + fmtMoney(a.paper_portfolio_value) + " cad" : '') +
-            '</span><span>max buying power ' + (hidden ? "••••••" : fmtMoney(a.paper_max_buying_power || 0) + " cad") + '</span></div>'
+            '</span><span style="cursor:pointer" onclick="togglePaperBreakdown(' + cardIdx + ', \'' + esc(a.label) + '\')">margin requirement ' + (phidden? "••••••" : fmtMoney(a.paper_margin_requirement) + " cad") + ' ▾</span></div>' +
+          '<div id="pmbd-' + cardIdx + '" class="sub" style="display:' + (pmbdOpen === a.label ? "block" : "none") + ';color:var(--muted);font-size:11px;white-space:pre-line">' + (phidden? "" : esc((a.paper_margin_breakdown || []).join("\n"))) + '</div>' +
+          '<div class="sub"><span>margin available ' + (phidden? "••••••" : fmtMoney(a.paper_margin_available) + " cad") +
+            (a.paper_portfolio_value != null && !phidden ? ' · portfolio value ' + fmtMoney(a.paper_portfolio_value) + " cad" : '') +
+            '</span><span>max buying power ' + (phidden? "••••••" : fmtMoney(a.paper_max_buying_power || 0) + " cad") + '</span></div>'
           : '') +
         ((a.paper_cash != null)
-          ? '<div class="sub"><span>cash ' + (hidden ? "••••••" : fmtMoney(Math.max(0, a.paper_cash)) + " cad") + '</span>' +
+          ? '<div class="sub"><span>cash ' + (phidden? "••••••" : fmtMoney(Math.max(0, a.paper_cash)) + " cad") + '</span>' +
             '<span>available</span></div>'
           : '') +
-        '<div class="sub"><span>seeded ' + (hidden ? "••••••" : (a.paper_initial != null ? fmtMoney(a.paper_initial) + " cad" : "—")) + '</span>' +
+        '<div class="sub"><span>seeded ' + (phidden? "••••••" : (a.paper_initial != null ? fmtMoney(a.paper_initial) + " cad" : "—")) + '</span>' +
         '<span>' + rows.length + ' positions</span></div>' +
         paperAllocBar(a) + paperMarginUsageBar(a) +
         (open ? (rows.length ?
@@ -472,7 +475,7 @@ async function loadSummary() {
             return '<tr><td>' + esc(r.contract_key) + '</td>' +
               '<td class=num>' + r.qty + '</td>' +
               '<td class=num>' + (r.avg != null ? "$" + r.avg : "—") + '</td>' +
-              '<td class=num>' + (hidden ? "••••••" : fmtMoney(r.value)) + '</td>' +
+              '<td class=num>' + (phidden? "••••••" : fmtMoney(r.value)) + '</td>' +
               '<td class=num style="color:' + rc + '">' + (r.pnl == null ? "—" : (r.pnl >= 0 ? "+" : "") + r.pnl + "%") + '</td></tr>';
           }).join("") + '</table>' : '<div class="empty" style="font-size:12px;padding:8px">no positions</div>') : '');
       wrap.appendChild(pc);
@@ -636,6 +639,7 @@ function toggleMarginBreakdown(i, label) {
   if (el) el.style.display = mbdOpen === label ? "block" : "none";
 }
 let cardHidden = JSON.parse(localStorage.getItem("ws_card_hidden") || "{}");
+let paperHidden = JSON.parse(localStorage.getItem("ws_paper_hidden") || "{}");
 
 const EYE_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>';
 const EYE_OFF_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
@@ -643,6 +647,12 @@ const EYE_OFF_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none"
 function flipCardCurrency(label) {
   cardCurrency[label] = (cardCurrency[label] || "cad") === "cad" ? "usd" : "cad";
   localStorage.setItem("ws_card_currency", JSON.stringify(cardCurrency));
+  loadSummary();
+}
+
+function togglePaperHidden(label) {
+  paperHidden[label] = !paperHidden[label];
+  localStorage.setItem("ws_paper_hidden", JSON.stringify(paperHidden));
   loadSummary();
 }
 
