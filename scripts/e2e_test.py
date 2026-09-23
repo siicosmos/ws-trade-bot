@@ -476,6 +476,24 @@ def run_reader_status_phase():
         stop(proc)
 
 
+def run_ui_smoke_phase():
+    """Headless-chrome dashboard smoke test (skips without a
+    browser on PATH)."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "ui_test", os.path.join(ROOT, "scripts", "ui_test.py")
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    if not mod.find_chrome():
+        print("  SKIP  ui-smoke (no chrome/chromium on PATH)")
+        return
+    print("\n--- UI smoke phase ---")
+    rc = mod.main()
+    check("ui-smoke-suite", rc == 0)
+
+
 def main():
     run_notify_phase()
     run_paper_cycle_phase()
@@ -483,6 +501,7 @@ def main():
     run_auth_phase()
     run_settings_phase()
     run_reader_status_phase()
+    run_ui_smoke_phase()
 
     print(f"\n{'=' * 50}")
     print(f"RESULT: {PASS} passed, {FAIL} failed")

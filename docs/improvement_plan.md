@@ -24,7 +24,14 @@ Extract one module (e.g. `trader/margin.py`) with a single
 `compute_margin_metrics(holdings, fx, rates, ...)` used by both
 paths. This is the money math - it should exist exactly once.
 
-## 2. Headless-Chrome UI smoke test - HIGH
+## 2. Headless-Chrome UI smoke test - HIGH - DONE
+
+Landed: `scripts/ui_test.py` - canned-data page driven by
+headless chrome (`--dump-dom`), 17 checks covering the
+interactions that historically broke (paper flip, eye masking,
+breakdown open/mask/arrow, empty-ledger arrow, negative-zero).
+Runs as part of `scripts/e2e_test.py`, soft-skips without a
+browser on PATH.
 
 Every string-grep test can pass while the browser behaves
 differently. Session experience: three real bugs (static arrow on
