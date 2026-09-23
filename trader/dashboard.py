@@ -510,6 +510,9 @@ async function loadSummary() {
       pc.className = "card papercard";
       const open = paperOpen.indexOf(a.label) >= 0;
       const rows = (paperPositions || {})[a.label] || [];
+      const paperPct = Math.min(100, Math.round(a.paper_open_risk_pct || 0));
+      const paperRiskColor = paperPct >= (a.max_open_risk_pct || 30) ? "#f85149" : paperPct > (a.max_open_risk_pct || 30) * 0.6 ? "#d29922" : "#3fb950";
+      const paperRiskAtCap = paperPct >= (a.max_open_risk_pct || 30);
       const pcur = paperCurrency[a.label] || "cad";
       const pshowUsd = pcur === "usd" && a.paper_usd_value && a.paper_value;
       const pfx = (a.paper_usd_value && a.paper_value)
@@ -527,7 +530,7 @@ async function loadSummary() {
         '<div class="label" style="display:flex;justify-content:space-between;align-items:center;gap:6px;min-width:0">paper · <span class="ptitle">' + esc(a.label).replace(/-/g, "\u2011") + '</span>' +
         '<span style="display:flex;gap:4px;flex-shrink:0;align-items:center">' +
         '<button class="mini-toggle" title="flip paper value currency" onclick="flipPaperCurrency(\'' + esc(a.label) + '\')">' + pcur.toUpperCase() + ' ⇄</button> ' +
-        '<button class="mini-toggle" onclick="togglePaper(\'' + esc(a.label) + '\')">' + (rows.length ? "holdings " + (open ? "▼" : "▲") : "holdings ▲") + '</button> ' +
+        '<button class="mini-toggle" onclick="togglePaper(\'' + esc(a.label) + '\')">' + "holdings " + (open ? "▼" : "▲") + '</button> ' +
         '<button class="mini-toggle" onclick="resetPaper(\'' + esc(a.label) + '\')">reset</button> ' +
         '<button class="mini-toggle" title="' + (phidden ? "show paper value" : "hide paper value") + '" onclick="togglePaperHidden(\'' + esc(a.label) + '\')">' + (phidden ? EYE_OFF_SVG : EYE_SVG) + '</button></span></div>' +
         '<div class="value" style="font-size:20px">' + (phidden? "••••••" : pshowUsd ? fmtMoney(a.paper_usd_value) + " USD" : fmtMoney(a.paper_value) + " CAD") +
@@ -539,7 +542,7 @@ async function loadSummary() {
           '<div class="sub"><span style="color:' + pnlColor + '">return ' + (phidden? "••••••" : (pnl >= 0 ? "+" : "") + fmtMoney(pnl)) +
           (pnlPct != null ? ' (' + (pnl >= 0 ? "+" : "") + pnlPct.toFixed(1) + '%)' : '') + '</span></div>') +
         '<div class="riskbar"><div style="width:' + Math.min(100, Math.round(a.paper_open_risk_pct || 0)) + '%;background:' + (a.paper_open_risk_pct >= (a.max_open_risk_pct || 30) ? "#f85149" : a.paper_open_risk_pct > (a.max_open_risk_pct || 30) * 0.6 ? "#d29922" : "#3fb950") + '"></div></div>' +
-        '<div class="sub"><span>open risk ' + (phidden? "••••••" : fmtMoney(a.paper_open_risk || 0) + " cad") + ' (' + (a.paper_open_risk_pct ?? 0) + '%)</span>' +
+        '<div class="sub"><span style="color:' + paperRiskColor + (paperRiskAtCap ? ';font-weight:700' : '') + '">open risk ' + (phidden? "••••••" : fmtMoney(a.paper_open_risk || 0) + " cad") + ' (' + (a.paper_open_risk_pct ?? 0) + '%)</span>' +
         '<span>cap ' + (a.max_open_risk_pct ?? 30) + '%</span></div>' +
         ((a.paper_margin_requirement != null && !isNaN(a.paper_margin_requirement))
           ? '<div class="sub mrow"><span class="cell"><span class="lab">total margin used</span><span class="val">' + (phidden? "••••••" : fmtMoney(a.paper_margin_used || 0) + " cad") +
@@ -577,15 +580,15 @@ async function loadSummary() {
 }
 
 function paperAllocBar(a) {
-  if (!(a.paper_stock_value || a.paper_option_value)) return "";
+  if (a.paper_value == null) return "";
   const base = (a.paper_alloc_base != null && !isNaN(a.paper_alloc_base))
     ? a.paper_alloc_base : a.paper_value;
   const sp = Math.min(100, (a.paper_stock_value || 0) / base * 100);
   const op = Math.min(100, (a.paper_option_value || 0) / base * 100);
   return '<div class="riskbar"><div style="width:' + sp + '%;background:#4493f8"></div>' +
     '<div style="width:' + op + '%;background:#ab7df6"></div></div>' +
-    '<div class="sub"><span style="color:#4493f8">stocks ' + (a.paper_stock_value ? (a.paper_stock_value / base * 100).toFixed(1) : 0) + '%</span>' +
-    '<span style="color:#ab7df6">options ' + (a.paper_option_value ? (a.paper_option_value / base * 100).toFixed(1) : 0) + '%</span></div>';
+    '<div class="sub"><span style="color:#4493f8">stocks ' + ((a.paper_stock_value || 0) / base * 100).toFixed(1) + '%</span>' +
+    '<span style="color:#ab7df6">options ' + ((a.paper_option_value || 0) / base * 100).toFixed(1) + '%</span></div>';
 }
 
 function paperMarginUsageBar(a) {
