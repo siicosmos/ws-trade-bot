@@ -283,6 +283,15 @@ async function api(path) {
   return res.json();
 }
 
+function maskBreakdown(lines) {
+  // keep the structure (symbols, rates, widths) - mask only the
+  // money amounts
+  return (lines || []).map(function(l) {
+    return esc(l).replace(
+      /[0-9][0-9,]*\.\d{2}/g, "\u2022\u2022\u2022\u2022\u2022");
+  }).join("\n");
+}
+
 function fmtMoney(v) {
   if (v === null || v === undefined) return "—";
   const n = Number(v);
@@ -443,7 +452,7 @@ async function loadSummary() {
             'usd ' + fmtMoney(a.margin_used_usd || 0) +
             ' · cad ' + fmtMoney(a.margin_used_cad || 0)) +
           '</span></span><span class="cell" style="cursor:pointer" onclick="toggleMarginBreakdown(' + cardIdx + ', \'' + esc(a.label) + '\')"><span class="lab">margin requirement</span><span class="val">' + (hidden ? "••••••" : fmtMoney(a.margin_requirement) + " cad") + ' ▾</span></span></div>' +
-          '<div id="mbd-' + cardIdx + '" class="sub" style="display:' + (mbdOpen === a.label ? "block" : "none") + ';color:var(--muted);font-size:11px;white-space:pre-line">' + (hidden ? "" : esc((a.margin_breakdown || []).join("\n"))) + '</div>' +
+          '<div id="mbd-' + cardIdx + '" class="sub" style="display:' + (mbdOpen === a.label ? "block" : "none") + ';color:var(--muted);font-size:11px;white-space:pre-line">' + maskBreakdown(a.margin_breakdown) + '</div>' +
           '<div class="sub mrow"><span class="cell"><span class="lab">portfolio value</span><span class="val">' + (a.portfolio_value != null && !hidden ? fmtMoney(a.portfolio_value) + " cad" : '') +
           '</span></span><span class="cell"><span class="lab">max buying power</span><span class="val">' + (hidden ? "••••••" : fmtMoney(a.max_buying_power || 0) + " cad") + '</span></span></div>'
         : '') +
@@ -507,7 +516,7 @@ async function loadSummary() {
           ? '<div class="sub mrow"><span class="cell"><span class="lab">total margin used</span><span class="val">' + (phidden? "••••••" : fmtMoney(a.paper_margin_used || 0) + " cad") +
             (phidden || !(a.paper_margin_used > 0) ? '' : ' · ledger loan') +
             '</span></span><span class="cell" style="cursor:pointer" onclick="togglePaperBreakdown(' + cardIdx + ', \'' + esc(a.label) + '\')"><span class="lab">margin requirement</span><span class="val">' + (phidden? "••••••" : fmtMoney(a.paper_margin_requirement) + " cad") + ' ▾</span></span></div>' +
-          '<div id="pmbd-' + cardIdx + '" class="sub" style="display:' + (pmbdOpen === a.label ? "block" : "none") + ';color:var(--muted);font-size:11px;white-space:pre-line">' + (phidden? "" : esc((a.paper_margin_breakdown || []).join("\n"))) + '</div>' +
+          '<div id="pmbd-' + cardIdx + '" class="sub" style="display:' + (pmbdOpen === a.label ? "block" : "none") + ';color:var(--muted);font-size:11px;white-space:pre-line">' + maskBreakdown(a.paper_margin_breakdown) + '</div>' +
           '<div class="sub mrow"><span class="cell"><span class="lab">portfolio value</span><span class="val">' + (a.paper_portfolio_value != null && !phidden? fmtMoney(a.paper_portfolio_value) + " cad" : '') +
             '</span></span><span class="cell"><span class="lab">max buying power</span><span class="val">' + (phidden? "••••••" : fmtMoney(a.paper_max_buying_power || 0) + " cad") + '</span></span></div>'
           : '') +
