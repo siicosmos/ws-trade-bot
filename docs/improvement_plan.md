@@ -101,6 +101,41 @@ in red when last_check goes 3x past the interval, so a dead
 thread is visible without reading logs. Thread start calls are
 idempotent (restart if not alive).
 
+## Second review findings (post #1-#5)
+
+Fresh pass after the margin extraction, UI smoke test, batched
+endpoint, indexes and retention landed:
+
+- **create_app megafunction** (trader/server.py, ~740 lines,
+  83-branch depth). Every route and helper is a closure over
+  cfg/store/account, so nothing is testable without building
+  the whole app (the test fixtures are correspondingly heavy).
+  Refactor: a PipelineContext dataclass + Flask blueprint;
+  `_account_summaries` and `_paper_card_metrics` become module
+  functions taking the context. This is the server-side half
+  of #6.
+- **_account_summaries is still 46-deep** even after the
+  margin extraction - registered-plan detection, funding
+  parsing, margin assembly and the paper merge all inline.
+  Extract a per-account summary builder.
+- **Test hygiene: the psutil stub leaks** - tests/test_reader.py
+  globally does `sys.modules.setdefault("psutil", MagicMock())`
+  for the whole session; it already bit the stale-process test.
+  Scope it to a fixture so later tests get the real module.
+- **maybe_prune only runs on writes** - a day with no alerts
+  means no prune, so old rows can outlive the retention window
+  indefinitely on a quiet bot. Hook it into the mirror or
+  updater loop too, or accept the laziness.
+- **contracts_for is dead** - executor.py:78 legacy sizing
+  helper referenced only by its own tests; account_sizing
+  superseded it. Delete with its tests.
+- **WebhookBatcher is unsupervised** - the only background
+  loop left outside trader/supervise.py (its body is trivially
+  safe, but the policy is now 'every thread supervised').
+- **moomoo is an undeclared optional dependency** -
+  quotes.provider=moomoo lazily imports the moomoo package;
+  requirements.txt says nothing about it.
+
 ## Done / not pursuing
 
 - startup banners, self-healing updater (fetch checks, stale
