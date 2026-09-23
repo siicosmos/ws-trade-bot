@@ -333,6 +333,46 @@ class WebhookLog:
 _log_hook = None
 
 
+def _startup_banner():
+    """Running commit + whether this start came from an
+    auto-update (the .last_update.json the updater writes)."""
+    root = repo_root()
+    try:
+        head = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"], cwd=root,
+            capture_output=True, text=True, timeout=30,
+            env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+        )
+        commit = head.stdout.strip() if head.returncode == 0 else ""
+    except (OSError, subprocess.SubprocessError):
+        commit = ""
+    line = f"reader starting - commit {commit or '?'}"
+    try:
+        with open(os.path.join(root, ".last_update.json")) as f:
+            rec = json.load(f)
+        if (
+            isinstance(rec, dict)
+            and rec.get("commit") == (commit or "")
+            and rec.get("ts")
+        ):
+            age = max(0, time.time() - float(rec["ts"]))
+            if age < 3600:
+                ago = f"{int(age // 60)}m ago"
+            elif age < 86400:
+                ago = f"{int(age // 3600)}h ago"
+            else:
+                ago = f"{int(age // 86400)}d ago"
+            how = str(rec.get("how") or "pull")
+            line += (
+                " (auto-updated " + ago + ")"
+                if how == "auto" else
+                " (updated " + ago + " via " + how + ")"
+            )
+    except (OSError, ValueError, TypeError):
+        pass
+    log(line)
+
+
 def log(msg):
     line = f"{time.strftime('%d/%b/%Y %H:%M:%S')} {msg}"
     print(line)
@@ -904,6 +944,8 @@ def main():
     _log_hook = WebhookLog(
         str(discord_cfg.get("reader_log_webhook_url") or "")
     )
+
+    _startup_banner()
 
     sync_clock()
     last_clock_check = time.time()

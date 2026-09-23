@@ -81,6 +81,45 @@ def _is_ignored_runtime_file(root, path):
     return r.returncode == 0
 
 
+def startup_banner(name, root):
+    """Startup line for the logs: the commit being run and how it
+    got there (auto-update / manual pull)."""
+    head = _git(root, "rev-parse", "--short", "HEAD")
+    commit = head.stdout.strip() if head.returncode == 0 else ""
+    subject = _git(root, "log", "-1", "--pretty=%s")
+    line = f"{name} starting - commit {commit or '?'}"
+    if subject.returncode == 0 and subject.stdout.strip():
+        line += f' "{subject.stdout.strip()}"'
+    try:
+        with open(os.path.join(root, UPDATE_RECORD)) as f:
+            rec = json.load(f)
+        if (
+            isinstance(rec, dict)
+            and rec.get("commit")
+            and rec["commit"] == (commit or "")
+        ):
+            how = str(rec.get("how") or "pull")
+            ts = rec.get("ts") or 0
+            age = time.time() - float(ts)
+            if age < 0:
+                ago = "just now"
+            elif age < 3600:
+                ago = f"{int(age // 60)}m ago"
+            elif age < 86400:
+                ago = f"{int(age // 3600)}h ago"
+            else:
+                ago = f"{int(age // 86400)}d ago"
+            line += (
+                " (auto-updated " + ago + ")"
+                if how == "auto" else
+                " (updated " + ago + " via " + how + ")"
+            )
+    except (OSError, ValueError, TypeError):
+        pass
+    print(line)
+    return line
+
+
 class AutoUpdater:
     def __init__(self, cfg, root, webhook_url="", restart=None):
         self.cfg = cfg

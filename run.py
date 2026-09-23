@@ -137,6 +137,10 @@ def main():
                 f"checked every {cfg.trading.stop_check_seconds}s"
             )
 
+    from trader.updater import startup_banner
+
+    startup_banner("pipeline", ROOT)
+
     updater = AutoUpdater(
         cfg, ROOT,
         cfg.discord.update_webhook_url or cfg.discord.webhook_url,

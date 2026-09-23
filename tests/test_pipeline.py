@@ -3135,3 +3135,52 @@ def test_updater_clears_stale_index_lock(tmp_path):
     assert not lock.exists()
     assert _clear_stale_lock(str(fresh)) is False
     assert fresh_lock.exists()
+
+
+def test_startup_banner(tmp_path, capsys):
+    import json as _json
+    import subprocess
+
+    from trader.updater import startup_banner
+
+    origin = tmp_path / "origin"
+    origin.mkdir()
+    (origin / "f.txt").write_text("x\n")
+    subprocess.run(
+        ["git", "-c", "user.email=t@t", "-c", "user.name=t",
+         "init", "-q", "-b", "main"], cwd=str(origin),
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "add", "-A"], cwd=str(origin), capture_output=True,
+    )
+    subprocess.run(
+        ["git", "commit", "-q", "-m", "banner test"],
+        cwd=str(origin), capture_output=True,
+    )
+    head = subprocess.run(
+        ["git", "rev-parse", "--short", "HEAD"], cwd=str(origin),
+        capture_output=True, text=True,
+    ).stdout.strip()
+
+    # no update record - just the commit + subject
+    line = startup_banner("pipeline", str(origin))
+    assert f"commit {head}" in line
+    assert '"banner test"' in line
+    assert "(" not in line
+
+    # matching record marks it as auto-updated
+    (origin / ".last_update.json").write_text(
+        _json.dumps(
+            {"how": "auto", "commit": head, "ts": time.time() - 7200}
+        )
+    )
+    line = startup_banner("pipeline", str(origin))
+    assert "auto-updated 2h ago" in line
+
+    # a record for a different commit is ignored
+    (origin / ".last_update.json").write_text(
+        _json.dumps({"how": "auto", "commit": "deadbee", "ts": 1})
+    )
+    line = startup_banner("pipeline", str(origin))
+    assert "auto-updated" not in line
