@@ -142,6 +142,11 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   .tlog th:not(:last-child), .tlog td:not(:last-child) { white-space: nowrap; }
   #trades { overflow-x: auto; -webkit-overflow-scrolling: touch; }
   #trades .tlog { min-width: 560px; }
+  .sub .cell { display: inline-flex; align-items: baseline;
+    gap: 6px; min-width: 0; }
+  .sub .cell .lab { }
+  .ptitle { flex: 1 1 auto; min-width: 0; white-space: normal;
+    overflow-wrap: anywhere; }
   .mini-toggle {
     color: #fff; font-size: 11px; font-weight: 700;
     background: var(--panel); border: 1px solid var(--border);
@@ -151,9 +156,17 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   @media (max-width: 640px) {
     .tlog th:nth-child(2), .tlog td:nth-child(2) { display: none; }
     .tlog { min-width: 460px; font-size: 12px; }
-    .sub.stack { flex-direction: column; align-items: flex-start; }
-    .sub.stack > span:nth-child(2) { align-self: flex-end; text-align: right; }
-    .mini-toggle { padding: 1px 6px; font-size: 10px; }
+    .sub.mrow .cell { flex-direction: column; align-items: flex-start;
+      gap: 1px; flex: 1 1 0; }
+    .sub.mrow .cell:last-child { align-items: flex-end;
+      text-align: right; }
+    .ptitle { font-size: 10px; }
+    .sub .cell { display: inline-flex; align-items: baseline;
+    gap: 6px; min-width: 0; }
+  .sub .cell .lab { }
+  .ptitle { flex: 1 1 auto; min-width: 0; white-space: normal;
+    overflow-wrap: anywhere; }
+  .mini-toggle { padding: 1px 6px; font-size: 10px; }
     .cur-toggle { padding: 1px 6px; margin-bottom: 4px; font-size: 10px; }
   }
   .empty { color: var(--muted); font-size: 13px; padding: 14px; text-align: center; background: var(--panel); border-radius: 8px; }
@@ -414,14 +427,14 @@ async function loadSummary() {
       '<div class="sub"><span style="color:' + color + (pct >= (a.max_open_risk_pct || 30) ? ';font-weight:700' : '') + '">open risk ' + (hidden ? "••••••" : fmtMoney(risk) + " " + (showUsd ? "usd" : "cad")) + ' (' + (a.open_risk_pct ?? 0) + '%)</span>' +
       '<span>cap ' + (a.max_open_risk_pct) + '%</span></div>' +
       ((a.margin_requirement != null && !isNaN(a.margin_requirement))
-        ? '<div class="sub stack"><span>total margin used ' + (hidden ? "••••••" : fmtMoney(a.margin_used || 0) + " cad") +
+        ? '<div class="sub mrow"><span class="cell"><span class="lab">total margin used</span><span class="val">' + (hidden ? "••••••" : fmtMoney(a.margin_used || 0) + " cad") +
           (hidden ? '' :
             ' · usd ' + fmtMoney(a.margin_used_usd || 0) +
             ' · cad ' + fmtMoney(a.margin_used_cad || 0)) +
-          '</span><span style="cursor:pointer" onclick="toggleMarginBreakdown(' + cardIdx + ', \'' + esc(a.label) + '\')">margin requirement ' + (hidden ? "••••••" : fmtMoney(a.margin_requirement) + " cad") + ' ▾</span></div>' +
+          '</span></span><span class="cell" style="cursor:pointer" onclick="toggleMarginBreakdown(' + cardIdx + ', \'' + esc(a.label) + '\')"><span class="lab">margin requirement</span><span class="val">' + (hidden ? "••••••" : fmtMoney(a.margin_requirement) + " cad") + ' ▾</span></span></div>' +
           '<div id="mbd-' + cardIdx + '" class="sub" style="display:' + (mbdOpen === a.label ? "block" : "none") + ';color:var(--muted);font-size:11px;white-space:pre-line">' + (hidden ? "" : esc((a.margin_breakdown || []).join("\n"))) + '</div>' +
-          '<div class="sub stack"><span>' + (a.portfolio_value != null && !hidden ? 'portfolio value ' + fmtMoney(a.portfolio_value) + " cad" : '') +
-          '</span><span>max buying power ' + (hidden ? "••••••" : fmtMoney(a.max_buying_power || 0) + " cad") + '</span></div>'
+          '<div class="sub mrow"><span class="cell"><span class="lab">portfolio value</span><span class="val">' + (a.portfolio_value != null && !hidden ? fmtMoney(a.portfolio_value) + " cad" : '') +
+          '</span></span><span class="cell"><span class="lab">max buying power</span><span class="val">' + (hidden ? "••••••" : fmtMoney(a.max_buying_power || 0) + " cad") + '</span></span></div>'
         : '') +
       ((a.cash_cad != null || a.cash_usd != null)
         ? '<div class="sub"><span>cash ' + (hidden ? "••••••" :
@@ -448,29 +461,33 @@ async function loadSummary() {
       pc.className = "card papercard";
       const open = paperOpen.indexOf(a.label) >= 0;
       const rows = (paperPositions || {})[a.label] || [];
+      const pcur = cardCurrency[a.label] || "cad";
+      const pshowUsd = pcur === "usd" && a.paper_usd_value && a.paper_value;
       pc.innerHTML =
-        '<div class="label" style="display:flex;justify-content:space-between;align-items:center;gap:6px;min-width:0">paper · <span style="flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(a.label) + '</span>' +
+        '<div class="label" style="display:flex;justify-content:space-between;align-items:center;gap:6px;min-width:0">paper · <span class="ptitle">' + esc(a.label) + '</span>' +
         '<span style="display:flex;gap:4px;flex-shrink:0;align-items:center">' +
+        '<button class="mini-toggle" title="flip account value currency" onclick="flipCardCurrency(\'' + esc(a.label) + '\')">' + pcur.toUpperCase() + ' ⇄</button> ' +
         '<button class="mini-toggle" onclick="togglePaper(\'' + esc(a.label) + '\')">' + (rows.length ? "holdings " + (open ? "▴" : "▾") : "holdings ▾") + '</button> ' +
         '<button class="mini-toggle" onclick="resetPaper(\'' + esc(a.label) + '\')">reset</button> ' +
         '<button class="mini-toggle" title="' + (phidden ? "show paper value" : "hide paper value") + '" onclick="togglePaperHidden(\'' + esc(a.label) + '\')">' + (phidden ? EYE_OFF_SVG : EYE_SVG) + '</button></span></div>' +
-        '<div class="value" style="font-size:20px">' + (phidden? "••••••" : fmtMoney(a.paper_value) + " cad") +
+        '<div class="value" style="font-size:20px">' + (phidden? "••••••" : pshowUsd ? fmtMoney(a.paper_usd_value) + " USD" : fmtMoney(a.paper_value) + " cad") +
         (pnl == null ? '' :
           ' <span style="font-size:13px;color:' + pnlColor + '">' +
           (pnl >= 0 ? "+" : "") + fmtMoney(pnl) +
           (pnlPct != null ? " (" + (pnl >= 0 ? "+" : "") + pnlPct.toFixed(1) + "%)" : "") + '</span>') +
-        (a.paper_usd_value && !phidden ? ' <span style="font-size:12px;color:var(--muted)">$' + a.paper_usd_value.toLocaleString("en-CA", {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' USD</span>' : '') +
+        (!phidden && !pshowUsd && a.paper_usd_value ? ' <span style="font-size:12px;color:var(--muted)">$' + a.paper_usd_value.toLocaleString("en-CA", {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' USD</span>' : '') +
+        (!phidden && pshowUsd ? ' <span style="font-size:12px;color:var(--muted)">' + fmtMoney(a.paper_value) + ' CAD</span>' : '') +
         '</div>' +
         '<div class="riskbar"><div style="width:' + Math.min(100, Math.round(a.paper_open_risk_pct || 0)) + '%;background:' + (a.paper_open_risk_pct >= (a.max_open_risk_pct || 30) ? "#f85149" : a.paper_open_risk_pct > (a.max_open_risk_pct || 30) * 0.6 ? "#d29922" : "#3fb950") + '"></div></div>' +
         '<div class="sub"><span>open risk ' + (phidden? "••••••" : fmtMoney(a.paper_open_risk || 0) + " cad") + ' (' + (a.paper_open_risk_pct ?? 0) + '%)</span>' +
         '<span>cap ' + (a.max_open_risk_pct ?? 30) + '%</span></div>' +
         ((a.paper_margin_requirement != null && !isNaN(a.paper_margin_requirement))
-          ? '<div class="sub stack"><span>total margin used ' + (phidden? "••••••" : fmtMoney(a.paper_margin_used || 0) + " cad") +
-            (hidden || !(a.paper_margin_used > 0) ? '' : ' · ledger loan') +
-            '</span><span style="cursor:pointer" onclick="togglePaperBreakdown(' + cardIdx + ', \'' + esc(a.label) + '\')">margin requirement ' + (phidden? "••••••" : fmtMoney(a.paper_margin_requirement) + " cad") + ' ▾</span></div>' +
+          ? '<div class="sub mrow"><span class="cell"><span class="lab">total margin used</span><span class="val">' + (phidden? "••••••" : fmtMoney(a.paper_margin_used || 0) + " cad") +
+            (phidden || !(a.paper_margin_used > 0) ? '' : ' · ledger loan') +
+            '</span></span><span class="cell" style="cursor:pointer" onclick="togglePaperBreakdown(' + cardIdx + ', \'' + esc(a.label) + '\')"><span class="lab">margin requirement</span><span class="val">' + (phidden? "••••••" : fmtMoney(a.paper_margin_requirement) + " cad") + ' ▾</span></span></div>' +
           '<div id="pmbd-' + cardIdx + '" class="sub" style="display:' + (pmbdOpen === a.label ? "block" : "none") + ';color:var(--muted);font-size:11px;white-space:pre-line">' + (phidden? "" : esc((a.paper_margin_breakdown || []).join("\n"))) + '</div>' +
-          '<div class="sub stack"><span>' + (a.paper_portfolio_value != null && !phidden? 'portfolio value ' + fmtMoney(a.paper_portfolio_value) + " cad" : '') +
-            '</span><span>max buying power ' + (phidden? "••••••" : fmtMoney(a.paper_max_buying_power || 0) + " cad") + '</span></div>'
+          '<div class="sub mrow"><span class="cell"><span class="lab">portfolio value</span><span class="val">' + (a.paper_portfolio_value != null && !phidden? fmtMoney(a.paper_portfolio_value) + " cad" : '') +
+            '</span></span><span class="cell"><span class="lab">max buying power</span><span class="val">' + (phidden? "••••••" : fmtMoney(a.paper_max_buying_power || 0) + " cad") + '</span></span></div>'
           : '') +
         ((a.paper_cash != null)
           ? '<div class="sub"><span>cash ' + (phidden? "••••••" : fmtMoney(Math.max(0, a.paper_cash)) + " cad") + '</span>' +

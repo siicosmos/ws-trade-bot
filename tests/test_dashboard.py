@@ -322,9 +322,9 @@ def test_margin_requirement_line():
 
     js = re.findall(r"<script>(.*?)</script>",
                     dash.DASHBOARD_HTML, re.S)[0]
-    assert "margin used " in js
+    assert "margin used" in js
     assert "margin available " in js
-    assert "max buying power " in js
+    assert "max buying power" in js
     assert 'esc(p.strategy_type || "multi-leg spread")' in js
 
 
@@ -334,7 +334,7 @@ def test_margin_lines_show_currencies():
     js = re.findall(r"<script>(.*?)</script>",
                     dash.DASHBOARD_HTML, re.S)[0]
     assert 'fmtMoney(a.margin_used || 0) + " cad"' in js
-    assert "total margin used " in js
+    assert ">total margin used<" in js
     assert 'fmtMoney(a.margin_requirement) + " cad"' in js
     assert 'fmtMoney(a.margin_available) + " cad"' in js
     assert 'fmtMoney(a.max_buying_power || 0) + " cad"' in js
