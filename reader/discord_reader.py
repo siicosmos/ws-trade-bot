@@ -270,6 +270,7 @@ def looks_like_message(text):
 
 READER_LOG = None        # resolved lazily - repo_root is later
 READER_LOG_MAX = 2_000_000
+_stayup_log_ts = 0.0
 
 
 def _append_reader_log(line):
@@ -736,7 +737,7 @@ def snap_to_bottom(container, log_fn=None):
         try:
             container.SetFocus()
             auto.SendKeys("{End}", waitTime=0.05)
-            if log_fn and time.time() - _snap_warn_ts > 600:
+            if log_fn and time.time() - _snap_warn_ts > 3600:
                 log_fn(
                     "no scroll pattern - using End key to jump to "
                     "latest messages"
@@ -1086,8 +1087,15 @@ def main():
                     )
                     os._exit(77)
                 # the pull only touched files the reader does not
-                # execute - keep the process running
-                log("repo updated (no reader changes) - staying up")
+                # execute - keep the process running (logged at
+                # most hourly - dev pushes land in bursts)
+                now = time.time()
+                if now - _stayup_log_ts > 3600:
+                    log(
+                        "repo updated (no reader changes) - "
+                        "staying up"
+                    )
+                    _stayup_log_ts = now
                 start_head = head
 
         try:
