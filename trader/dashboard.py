@@ -415,7 +415,7 @@ async function doPaperReset(label) {
     if (res.status === 401) { location.href = "/login"; return; }
   } catch (e) { /* surfaced by the next refresh */ }
   paperPositions = null;
-  loadSummary();
+  load();
 }
 
 function togglePaper(label) {
@@ -423,16 +423,7 @@ function togglePaper(label) {
     ? paperOpen.filter(function(l) { return l !== label; })
     : paperOpen.concat([label]);
   localStorage.setItem("ws_paper_open", JSON.stringify(paperOpen));
-  loadSummary();
-}
-
-async function loadPaperPositions() {
-  if (!paperOpen.length) { paperPositions = null; return; }
-  try {
-    paperPositions = await api("/api/paper-positions");
-  } catch (e) {
-    paperPositions = null;
-  }
+  load();
 }
 
 let readerInfo = null;
@@ -456,9 +447,7 @@ function renderReader() {
     age !== null && age <= 30 ? "var(--green)" : "var(--yellow)";
 }
 
-async function loadSummary() {
-  const data = await api("/api/summary");
-  await loadPaperPositions();
+function renderSummary(data) {
   const modeEl = document.getElementById("mode");
   modeEl.textContent = data.mode;
   modeEl.className = "badge " + data.mode;
@@ -665,8 +654,7 @@ function allocBar(a) {
     '<span style="color:#ab7df6">options ' + (a.option_value ? (a.option_value / base * 100).toFixed(1) : 0) + '%</span></div>';
 }
 
-async function loadPositions() {
-  const rows = await api("/api/positions");
+function renderPositions(rows) {
   const stocksEl = document.getElementById("stock-positions");
   stocksEl.style.display = showStocks ? "" : "none";
   document.getElementById("toggle-stocks").textContent = showStocks ? "Hide holdings" : "Show holdings";
@@ -775,7 +763,7 @@ const EYE_OFF_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none"
 function flipCardCurrency(label) {
   cardCurrency[label] = (cardCurrency[label] || "cad") === "cad" ? "usd" : "cad";
   localStorage.setItem("ws_card_currency", JSON.stringify(cardCurrency));
-  loadSummary();
+  load();
 }
 
 function flipPaperCurrency(label) {
@@ -783,19 +771,19 @@ function flipPaperCurrency(label) {
     ? "usd" : "cad";
   localStorage.setItem("ws_paper_currency",
     JSON.stringify(paperCurrency));
-  loadSummary();
+  load();
 }
 
 function togglePaperHidden(label) {
   paperHidden[label] = !paperHidden[label];
   localStorage.setItem("ws_paper_hidden", JSON.stringify(paperHidden));
-  loadSummary();
+  load();
 }
 
 function toggleCardHidden(label) {
   cardHidden[label] = !cardHidden[label];
   localStorage.setItem("ws_card_hidden", JSON.stringify(cardHidden));
-  loadSummary();
+  load();
 }
 
 let showStocks = localStorage.getItem("ws_show_stocks") === "1";
@@ -826,17 +814,16 @@ function toggleStocks() {
   localStorage.setItem("ws_show_stocks", showStocks ? "1" : "0");
   document.getElementById("toggle-stocks").textContent = showStocks ? "Hide holdings" : "Show holdings";
   document.getElementById("stock-positions").style.display = showStocks ? "" : "none";
-  loadPositions();
+  load();
 }
 
 function toggleIgnored() {
   showIgnored = !showIgnored;
   document.getElementById("toggle-ignored").textContent = showIgnored ? "Hide ignored" : "Show ignored";
-  loadSignals();
+  load();
 }
 
-async function loadSignals() {
-  const rows = await api("/api/signals");
+function renderSignals(rows) {
   const el = document.getElementById("signals");
   const visible = showIgnored ? rows : rows.filter(function(s) { return s.parsed || s.correction; });
   if (!rows.length) { el.innerHTML = '<div class="empty">no alerts yet</div>'; return; }
@@ -893,8 +880,7 @@ function fitText(el, floor) {
   }
 }
 
-async function loadGitStatus() {
-  const s = await api("/api/update_status");
+function renderGitStatus(s) {
   const el = document.getElementById("git");
   if (!s || s.status !== "active") { el.textContent = ""; return; }
   const checked = s.last_check
@@ -924,8 +910,7 @@ window.addEventListener("resize", function() {
   fitText(document.getElementById("git"), 9);
 });
 
-async function loadTrades() {
-  const rows = await api("/api/trades");
+function renderTrades(rows) {
   const el = document.getElementById("trades");
   if (!rows.length) { el.innerHTML = '<div class="empty">no trades yet</div>'; return; }
   let html = "<table class=\"tlog\"><tr><th>Time</th><th>Mode</th><th>Action</th><th class=num>Qty</th><th>Ticker</th><th class=num>Price</th><th>Status</th><th>Detail</th></tr>";
@@ -957,14 +942,13 @@ function setSettingsDirty(v) {
 
 function revertSettings() {
   setSettingsDirty(false);
-  loadSettings();
+  load();
 }
 
 document.getElementById("settings-save").onclick = saveSettings;
 document.getElementById("settings-revert").onclick = revertSettings;
 
-async function loadSettings() {
-  const s = await api("/api/settings");
+function renderSettings(s) {
   lastSettings = s;
   // leave the form alone while the user has unsaved edits - the
   // periodic refresh used to wipe them mid-typing
@@ -1126,14 +1110,20 @@ async function saveSettings() {
     document.getElementById("settings-save").textContent = "Saved";
     setTimeout(() => document.getElementById("settings-save").textContent = "Save", 1500);
     setSettingsDirty(false);
-    await loadSettings();
     load();
   }
 }
 
 async function load() {
   try {
-    await Promise.all([loadSummary(), loadPositions(), loadSignals(), loadTrades(), loadSettings(), loadGitStatus()]);
+    const data = await api("/api/dashboard");
+    paperPositions = data.paper_positions || {};
+    renderSummary(data.summary);
+    renderPositions(data.positions || []);
+    renderSignals(data.signals || []);
+    renderTrades(data.trades || []);
+    renderSettings(data.settings || {});
+    renderGitStatus(data.update_status);
     lastRefresh = Date.now();
   } catch (e) { /* handled in api() */ }
 }

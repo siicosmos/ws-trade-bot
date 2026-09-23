@@ -152,7 +152,7 @@ window.__t = function(name, ok, detail) {
 };
 (async function() {
   try {
-    await loadSummary();
+    await load();
 
     // 1. cards render
     const cards = document.querySelectorAll(".card").length;
@@ -289,6 +289,16 @@ def build_page():
     # stub silently not applying can never pass
     stub = (
         'async function api(path) {\n'
+        '  if (path === "/api/dashboard") return '
+        + json.dumps({
+            "summary": CANNED,
+            "paper_positions": PAPER_POSITIONS,
+            "positions": [],
+            "signals": [],
+            "trades": [],
+            "settings": {},
+            "update_status": {"status": "disabled"},
+        }) + ';\n'
         '  if (path === "/api/summary") return '
         + json.dumps(CANNED) + ';\n'
         '  if (path === "/api/paper-positions") return '

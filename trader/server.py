@@ -788,11 +788,10 @@ def create_app(cfg, store: Store, risk, executor, account=None,
         _summary_cache["accounts"] = out
         return out, None
 
-    @app.get("/api/summary")
-    def api_summary():
+    def _summary_payload():
         accounts, err = _account_summaries()
         if err:
-            return jsonify({"error": err}), 502
+            return {"error": err}
         t = cfg.trading
         last_seen = app.reader_state.get("last_seen")
         reader = dict(app.reader_state)
@@ -800,24 +799,29 @@ def create_app(cfg, store: Store, risk, executor, account=None,
         reader["age_seconds"] = (
             round(time.time() - last_seen, 1) if last_seen else None
         )
-        return jsonify(
-            {
-                "mode": mode,
-                "paper": bool(
-                    getattr(
-                        getattr(cfg, "paper", None), "enabled", False
-                    ) or mode == "paper",
-                ),
-                "accounts": accounts,
-                "reader": reader,
-                "stops": {
-                    "stop_loss_pct": t.stop_loss_pct,
-                    "trailing_stop_pct": t.trailing_stop_pct,
-                    "consecutive_losses": store.loss_streak(mode),
-                    "max_consecutive_losses": t.max_consecutive_losses,
-                },
-            }
-        )
+        return {
+            "mode": mode,
+            "paper": bool(
+                getattr(
+                    getattr(cfg, "paper", None), "enabled", False
+                ) or mode == "paper",
+            ),
+            "accounts": accounts,
+            "reader": reader,
+            "stops": {
+                "stop_loss_pct": t.stop_loss_pct,
+                "trailing_stop_pct": t.trailing_stop_pct,
+                "consecutive_losses": store.loss_streak(mode),
+                "max_consecutive_losses": t.max_consecutive_losses,
+            },
+        }
+
+    @app.get("/api/summary")
+    def api_summary():
+        payload = _summary_payload()
+        if "error" in payload:
+            return jsonify(payload), 502
+        return jsonify(payload)
 
     @app.post("/api/paper-reset")
     def api_paper_reset():
@@ -843,26 +847,31 @@ def create_app(cfg, store: Store, risk, executor, account=None,
             "reseeded": label in seeded,
         })
 
-    @app.get("/api/paper-positions")
-    def api_paper_positions():
+    def _paper_positions_payload():
         if not getattr(
             getattr(cfg, "paper", None), "enabled", False
         ):
-            return jsonify({})
+            return {}
         ledger = getattr(executor, "account", None)
         positions_fn = getattr(ledger, "positions", None)
         if not callable(positions_fn):
-            return jsonify({})
+            return {}
         out = {}
         try:
             for label in (ledger.values() or {}):
                 out[label] = positions_fn(label)
         except Exception as e:
-            return jsonify({"error": str(e)}), 500
-        return jsonify(out)
+            return {"error": str(e)}
+        return out
 
-    @app.get("/api/positions")
-    def api_positions():
+    @app.get("/api/paper-positions")
+    def api_paper_positions():
+        payload = _paper_positions_payload()
+        if isinstance(payload, dict) and "error" in payload:
+            return jsonify(payload), 500
+        return jsonify(payload)
+
+    def _positions_payload():
         rows = [dict(r) for r in store.list_positions(mode)]
         for r in rows:
             r.setdefault("kind", "option")
@@ -893,7 +902,11 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                     row["account"] = label
                     row["source"] = "ws"
                     rows.append(row)
-        return jsonify(rows)
+        return rows
+
+    @app.get("/api/positions")
+    def api_positions():
+        return jsonify(_positions_payload())
 
     @app.get("/api/signals")
     def api_signals():
@@ -910,6 +923,26 @@ def create_app(cfg, store: Store, risk, executor, account=None,
         from .settings import get_settings
 
         return jsonify(get_settings(cfg))
+
+    @app.get("/api/dashboard")
+    def api_dashboard():
+        """Everything the dashboard polls, in one round trip."""
+        summary = _summary_payload()
+        if "error" in summary:
+            return jsonify(summary), 502
+        from .settings import get_settings
+
+        return jsonify(
+            {
+                "summary": summary,
+                "paper_positions": _paper_positions_payload(),
+                "positions": _positions_payload(),
+                "signals": store.recent_signals(50),
+                "trades": store.recent_trades(50),
+                "settings": get_settings(cfg),
+                "update_status": _update_status_payload(),
+            }
+        )
 
     @app.post("/api/settings")
     def api_settings_post():
@@ -954,25 +987,26 @@ def create_app(cfg, store: Store, risk, executor, account=None,
         )
         return jsonify(state)
 
-    @app.get("/api/update_status")
-    def api_update_status():
+    def _update_status_payload():
         updater = getattr(app, "ws_updater", None)
         if updater is None:
-            return jsonify({"status": "disabled"})
-        return jsonify(
-            {
-                "status": "active",
-                "interval_seconds": (
-                    getattr(updater.cfg.auto_update, "interval_seconds", 600)
-                ),
-                "last_check": updater.last_check,
-                "result": updater.last_result,
-                "errors": updater.errors,
-                "head": (updater.start_head or "")[:8],
-                "branch": updater.branch,
-                "last_pull": updater.last_pull(),
-            }
-        )
+            return {"status": "disabled"}
+        return {
+            "status": "active",
+            "interval_seconds": (
+                getattr(updater.cfg.auto_update, "interval_seconds", 600)
+            ),
+            "last_check": updater.last_check,
+            "result": updater.last_result,
+            "errors": updater.errors,
+            "head": (updater.start_head or "")[:8],
+            "branch": updater.branch,
+            "last_pull": updater.last_pull(),
+        }
+
+    @app.get("/api/update_status")
+    def api_update_status():
+        return jsonify(_update_status_payload())
 
     @app.post("/alert")
     def alert():

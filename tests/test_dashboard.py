@@ -173,7 +173,7 @@ def test_settings_form_not_clobbered_while_editing():
     assert "setSettingsDirty(true);" in js
     # a successful save clears it and re-renders with persisted values
     assert "setSettingsDirty(false);" in js
-    assert "await loadSettings();" in js
+    assert "load();" in js
     # floating save/revert bar only shows while dirty
     assert "function revertSettings()" in js
     assert 'id="settings-float"' in dash.DASHBOARD_HTML
@@ -400,7 +400,7 @@ def test_section_toggles_and_paper_detail():
     assert "function toggleAlerts" in js and "function toggleTrades" in js
     # paper card expands with its holdings
     assert "function togglePaper" in js
-    assert "/api/paper-positions" in js
+    assert "data.paper_positions" in js
     assert "ws_paper_open" in js
 
 

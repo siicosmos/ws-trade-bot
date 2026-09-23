@@ -49,7 +49,14 @@ Add `scripts/ui_test.py`:
 The harness pattern already exists in the dev notes; it just
 needs to live in the repo and run in CI/e2e.
 
-## 3. Batched dashboard endpoint - MEDIUM
+## 3. Batched dashboard endpoint - MEDIUM - DONE
+
+Landed: `/api/dashboard` composes summary, paper positions,
+positions, signals, trades, settings and update status in one
+response (payload builders shared with the individual routes,
+which still exist). The client `load()` does a single fetch and
+one render pass; every button action refreshes through the same
+round trip. The 5s poll went from seven requests to one.
 
 The 5s poll fires six requests (summary, positions, signals,
 trades, settings, update_status). One `/api/dashboard` endpoint
