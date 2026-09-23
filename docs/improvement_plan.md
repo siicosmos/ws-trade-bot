@@ -33,20 +33,19 @@ remain available). The client's 5s poll went from seven
 requests to one; every button action refreshes through the
 same round trip; loaders are pure render functions.
 
-## 4. SQLite indexes - MEDIUM
+## 4. SQLite indexes - DONE
 
-- `trades(ts)` and `trades(mode, ts)` for `trades_today` /
-  `loss_streak` windows
-- `positions(mode, account)` for `open_risk`
+`trades(mode, ts)` backs `trades_today` / `loss_streak`, and
+`trades(dedupe_key, ts)` backs the dedupe lookup (EXPLAIN
+QUERY PLAN verified in tests). The `positions` PK already
+covers its `mode + account` lookups, so no extra index there.
 
-Tables are small today; each is a one-line migration in
-`Store.__init__` and keeps queries O(small) forever.
+## 5. Retention for signals/trades - DONE
 
-## 5. Retention for signals/trades - MEDIUM
-
-Neither table expires. Add a daily-rollover cleanup (delete
-rows older than 90 days) so queries and the dashboard stay
-fast without periodic clean starts.
+`Store.maybe_prune()` runs once per calendar day (latched to
+the day, called from the record paths): signals and trades
+older than `trading.history_retention_days` (default 90, 0 =
+keep forever) are dropped and the removal is logged.
 
 ## 6. Split account.py - LOW (bigger refactor)
 

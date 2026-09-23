@@ -39,7 +39,12 @@ def main():
               'print(secrets.token_urlsafe(24))"')
         print("then set it under pipeline: in config.yaml and restart")
         sys.exit(1)
-    store = Store(args.db)
+    store = Store(
+        args.db,
+        retention_days=int(
+            getattr(cfg.trading, "history_retention_days", 90)
+        ),
+    )
     mode = cfg.trading.mode
 
     from trader.loghook import install_log_webhook

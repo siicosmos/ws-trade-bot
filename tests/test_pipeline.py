@@ -3506,3 +3506,67 @@ def test_supervised_thread_relaunches():
     assert state["restarts"] >= 2
     assert any("crashed: boom" in l for l in logs)
     assert any("exited unexpectedly" in l for l in logs)
+
+
+def test_store_indexes_and_retention(tmp_path):
+    import sqlite3
+    from datetime import datetime, timedelta, timezone
+
+    import trader.store as store_mod
+
+    db = str(tmp_path / "t.db")
+    store = store_mod.Store(db, retention_days=90)
+
+    # the windowed queries get index backing
+    conn = sqlite3.connect(db)
+    names = {
+        r[0] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'index'"
+        )
+    }
+    assert "idx_trades_mode_ts" in names
+    assert "idx_trades_dedupe" in names
+    plan = conn.execute(
+        "EXPLAIN QUERY PLAN SELECT COUNT(*) FROM trades "
+        "WHERE ts >= ? AND mode = ? AND status = 'executed' "
+        "AND action = 'BUY'", ("x", "paper"),
+    ).fetchall()
+    assert any("idx_trades_mode_ts" in str(p) for p in plan)
+    conn.close()
+
+    # old rows age out, fresh ones stay
+    old = (
+        datetime.now(timezone.utc) - timedelta(days=120)
+    ).isoformat(timespec="seconds")
+    fresh = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    store.record_signal("k-old", "a", "old", parsed=True)
+    store.record_signal("k-new", "a", "new", parsed=True)
+    with store._lock, store._conn:
+        store._conn.execute(
+            "UPDATE signals SET ts = ? WHERE message_key = 'k-old'",
+            (old,),
+        )
+    alert = parse_alert("BOUGHT 09/25 COIN 210c @ 2.0")
+    store.record_trade(
+        "paper", "BUY", "COIN", 1, 2.0, alert, "executed", "t",
+        message_key="k-new",
+    )
+    with store._lock, store._conn:
+        store._conn.execute(
+            "UPDATE trades SET ts = ?", (old,)
+        )
+
+    store._prune_day = None   # simulate the next day's prune
+    store.maybe_prune()
+    remaining = store.recent_signals(50)
+    assert len(remaining) == 1
+    assert remaining[0]["text"] == "new"
+    assert store.recent_trades(50) == []
+    # same-day second call is a no-op (no error, no change)
+    store.maybe_prune()
+
+    # retention disabled keeps everything
+    keep = store_mod.Store(str(tmp_path / "keep.db"), retention_days=0)
+    keep.record_signal("k", "a", "text", parsed=True)
+    keep.maybe_prune()
+    assert keep.recent_signals(10)

@@ -6,8 +6,10 @@ from datetime import datetime, timedelta, timezone
 
 
 class Store:
-    def __init__(self, path: str = "trades.db"):
+    def __init__(self, path: str = "trades.db", retention_days=90):
         self._conn = sqlite3.connect(path, check_same_thread=False)
+        self.retention_days = retention_days
+        self._prune_day = None
         self._lock = threading.Lock()
         # positions cache: bumped on every write so reads between
         # trades are served from memory
@@ -105,6 +107,14 @@ class Store:
                 )
             except sqlite3.OperationalError:
                 pass
+            self._conn.executescript(
+                """
+                CREATE INDEX IF NOT EXISTS idx_trades_mode_ts
+                    ON trades (mode, ts);
+                CREATE INDEX IF NOT EXISTS idx_trades_dedupe
+                    ON trades (dedupe_key, ts);
+                """
+            )
             for col in ("realized", "peak_bid"):
                 try:
                     self._conn.execute(
@@ -159,6 +169,7 @@ class Store:
     def record_signal(self, message_key: str, author: str, text: str, parsed: bool,
                       correction: bool = False, channel: str = "",
                       ts_epoch=None, parsed_epoch=None):
+        self.maybe_prune()
         self._touch()
         # both stored in UTC: the alert's own (Discord-displayed) time
         # and the moment the reader parsed and passed it down
@@ -188,6 +199,42 @@ class Store:
                 (message_key, ts, author, text[:2000], int(parsed),
                  int(correction), channel[:80], received),
             )
+
+    def maybe_prune(self, now=None):
+        """Drop signals/trades older than the retention window,
+        once per calendar day. Cheap no-op otherwise."""
+        retention = getattr(self, "retention_days", 90)
+        if not retention or retention <= 0:
+            return
+        now = now or datetime.now(timezone.utc)
+        today = now.date().isoformat()
+        if self._prune_day == today:
+            return
+        self._prune_day = today
+        cutoff = (
+            now - timedelta(days=int(retention))
+        ).isoformat(timespec="seconds")
+        with self._lock, self._conn:
+            gone_s = self._conn.execute(
+                "SELECT COUNT(*) FROM signals WHERE ts < ?",
+                (cutoff,),
+            ).fetchone()[0]
+            gone_t = self._conn.execute(
+                "SELECT COUNT(*) FROM trades WHERE ts < ?",
+                (cutoff,),
+            ).fetchone()[0]
+            if gone_s or gone_t:
+                self._conn.execute(
+                    "DELETE FROM signals WHERE ts < ?", (cutoff,)
+                )
+                self._conn.execute(
+                    "DELETE FROM trades WHERE ts < ?", (cutoff,)
+                )
+                self._touch()
+                print(
+                    f"history prune: removed {gone_s} signal(s) and "
+                    f"{gone_t} trade(s) older than {retention} days"
+                )
 
     def trades_today(self, mode: str) -> int:
         midnight = datetime.now(timezone.utc).replace(
@@ -232,6 +279,7 @@ class Store:
         detail: str,
         message_key: str = None,
     ):
+        self.maybe_prune()
         self._touch()
         with self._lock, self._conn:
             self._conn.execute(
