@@ -124,6 +124,15 @@ All import paths updated across run.py, tests and scripts.
 The updater's `trader/*` restart pattern still matches nested
 paths (fnmatch `*` crosses separators) - verified by test.
 
+## 11. Architecture diagram - DONE
+
+`docs/architecture.dot` (+ rendered png/svg) shows the full
+server layout: the standalone reader feeding alerts over
+HTTP, the Flask pipeline (web, alert processing, store,
+supervised threads, paper ledger), and the external edges -
+Wealthsimple GraphQL, GitHub auto-update, Discord webhooks,
+and the browser polling over Tailscale.
+
 ## Thread supervision (landed, unplanned)
 
 After a docs-only update killed the updater thread: every
