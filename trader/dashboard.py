@@ -118,8 +118,15 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   #modalBox .mtext { color: var(--muted); font-size: 13px;
     line-height: 1.45; margin-bottom: 16px; }
   #modalBox .mrow { display: flex; gap: 8px; justify-content: flex-end; }
-  .pos { table-layout: fixed; font-size: 12px; }
-  .pos th, .pos td { padding: 6px 5px; word-break: break-word; }
+  #positions, #stock-positions { overflow-x: auto;
+    -webkit-overflow-scrolling: touch; }
+  .pos { table-layout: fixed; font-size: 12px; min-width: 620px; }
+  .pos th, .pos td { padding: 6px 5px; white-space: nowrap; }
+  /* the contract column is the one allowed to wrap - keys and
+     strategy tags can grow long */
+  .pos th:nth-child(2), .pos td:nth-child(2) { white-space: normal;
+    word-break: break-word; }
+  .papercard .pos { min-width: 0; }
   .pos th:nth-child(1), .pos td:nth-child(1) { width: 12%; }
   .pos th:nth-child(2), .pos td:nth-child(2) { width: 17%; }
   .pos th:nth-child(3), .pos td:nth-child(3) { width: 9%; }
@@ -158,6 +165,7 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   @media (max-width: 640px) {
     .tlog th:nth-child(2), .tlog td:nth-child(2) { display: none; }
     .tlog { min-width: 460px; font-size: 12px; }
+    .pos { min-width: 540px; }
     .sub.mrow .cell { flex-direction: column; align-items: flex-start;
       gap: 1px; flex: 1 1 0; }
     .sub.mrow .cell:last-child { align-items: flex-end;
@@ -563,7 +571,7 @@ async function loadSummary() {
           ? '<div class="sub"><span>margin available ' + (phidden? "••••••" : fmtMoney(a.paper_margin_available) + " cad") + '</span></div>'
           : '') + paperMarginUsageBar(a) +
         (open ? (rows.length ?
-          '<table class="pos" style="margin-top:10px;font-size:12px"><tr><th>Holding</th><th class=num>Qty</th><th class=num>Avg $</th><th class=num>Value</th><th class=num>Return</th></tr>' +
+          '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch"><table class="pos" style="margin-top:10px;font-size:12px"><tr><th>Holding</th><th class=num>Qty</th><th class=num>Avg $</th><th class=num>Value</th><th class=num>Return</th></tr>' +
           rows.map(function(r) {
             const rc = r.pnl == null ? "var(--muted)" : r.pnl >= 0 ? "var(--green)" : "var(--red)";
             return '<tr><td>' + esc(r.contract_key) + '</td>' +
@@ -571,7 +579,7 @@ async function loadSummary() {
               '<td class=num>' + (r.avg != null ? "$" + r.avg : "—") + '</td>' +
               '<td class=num>' + (phidden? "••••••" : fmtMoney(r.value)) + '</td>' +
               '<td class=num style="color:' + rc + '">' + (r.pnl == null ? "—" : (r.pnl >= 0 ? "+" : "") + r.pnl + "%") + '</td></tr>';
-          }).join("") + '</table>' : '<div class="empty" style="font-size:12px;padding:8px">no positions</div>') : '');
+          }).join("") + '</table></div>' : '<div class="empty" style="font-size:12px;padding:8px">no positions</div>') : '');
       wrap.appendChild(pc);
     }
     el.appendChild(wrap);
