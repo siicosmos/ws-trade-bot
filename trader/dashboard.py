@@ -129,6 +129,10 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   .pos th:nth-child(2), .pos td:nth-child(2) { white-space: normal;
     word-break: break-word; }
   .papercard .pos { min-width: 0; }
+  /* strategy badges stack under the qty instead of painting
+     over the next column in the fixed-layout table */
+  .pos .cellbadges { display: flex; flex-wrap: wrap;
+    justify-content: flex-end; gap: 2px; margin-top: 2px; }
   .pos th:nth-child(1), .pos td:nth-child(1) { width: 12%; }
   .pos th:nth-child(2), .pos td:nth-child(2) { width: 17%; }
   .pos th:nth-child(3), .pos td:nth-child(3) { width: 9%; }
@@ -694,7 +698,13 @@ function renderPositionsInto(elId, rows, emptyText) {
         '</span><br><span style="font-size:11px;color:var(--muted)">' +
         esc(String(p.expiry || "").slice(0, 10)) + "</span> " +
         dteBadge(p.expiry)) + "</td>" +
-      '<td class=num>' + (p.short ? "-" + p.qty : p.qty) + (p.short ? ' <span class="tag skip mini" title="short position">short</span>' : "") + (p.spread ? ' <span class="tag ignored mini" title="' + esc(p.strategy_type || "multi-leg spread") + '">' + stratTag(p.strategy_type) + '</span>' : "") + "</td>" +
+      '<td class=num>' + (p.short ? "-" + p.qty : p.qty) +
+      ((p.short || p.spread)
+        ? '<div class="cellbadges">' +
+          (p.short ? '<span class="tag skip mini" title="short position">short</span>' : "") +
+          (p.spread ? '<span class="tag ignored mini" title="' + esc(p.strategy_type || "multi-leg spread") + '">' + stratTag(p.strategy_type) + '</span>' : "") +
+          "</div>"
+        : "") + "</td>" +
       '<td class=num>' + (p.avg_premium == null
         ? "—"
         : (isStock

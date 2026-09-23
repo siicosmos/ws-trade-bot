@@ -355,7 +355,8 @@ def test_avg_single_value_and_signed_cost():
     # short option rows show the credit as a negative cost
     assert '(p.short ? "-" : "") + fmtMoney(p.cost_usd)' in js
     # short and spread tags coexist
-    assert '(p.spread ? \' <span class="tag ignored mini" title="\'' in js
+    assert "short position" in js and "multi-leg spread" in js
+    assert "cellbadges" in js
 
 
 def test_portfolio_value_and_tappable_breakdown():
