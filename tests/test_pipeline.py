@@ -3184,3 +3184,50 @@ def test_startup_banner(tmp_path, capsys):
     )
     line = startup_banner("pipeline", str(origin))
     assert "auto-updated" not in line
+
+
+def test_terminate_stale_instances(tmp_path):
+    import subprocess
+    import sys as _sys
+
+    # the reader tests stub psutil globally - make sure this
+    # test uses the real module
+    mock = _sys.modules.get("psutil")
+    is_mock = mock is not None and type(mock).__name__ == "MagicMock"
+    if is_mock:
+        del _sys.modules["psutil"]
+    import psutil  # noqa: F401
+
+    from trader.processes import terminate_stale_instances
+
+    try:
+        _run_stale_instance_test(tmp_path, _sys, terminate_stale_instances)
+    finally:
+        if is_mock:
+            _sys.modules["psutil"] = mock
+
+
+def _run_stale_instance_test(tmp_path, _sys, terminate_stale_instances):
+    import subprocess
+
+    script = tmp_path / "run.py"
+    script.write_text(
+        "import time\nprint('ready', flush=True)\n"
+        "time.sleep(60)\n"
+    )
+    p = subprocess.Popen(
+        [_sys.executable, str(script)],
+        cwd=str(tmp_path),
+        stdout=subprocess.PIPE,
+    )
+    # wait for the child to be fully up
+    p.stdout.readline()
+    assert p.poll() is None
+
+    killed = terminate_stale_instances(str(script))
+    assert p.pid in killed
+    p.wait(timeout=10)
+    assert p.poll() is not None
+
+    # a clean run finds nothing to kill
+    assert terminate_stale_instances(str(script)) == []

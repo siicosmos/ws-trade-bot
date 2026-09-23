@@ -4,3 +4,4 @@ requests
 wealthsimple-python[keyring]
 pytest
 cryptography
+psutil

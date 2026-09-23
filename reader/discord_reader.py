@@ -906,7 +906,76 @@ def git_head(root):
     return None
 
 
+def _terminate_stale_reader():
+    """Kill leftover reader instances from a previous run - a
+    hard restart can leave the old one attached to the Discord
+    window."""
+    try:
+        import psutil
+    except ImportError:
+        return
+    me = os.getpid()
+    script = os.path.normcase(os.path.abspath(__file__))
+    script_dir = os.path.normcase(os.path.dirname(script))
+    stale = []
+    try:
+        for p in psutil.process_iter(["pid", "name", "cmdline"]):
+            try:
+                if p.info["pid"] == me:
+                    continue
+                name = (p.info["name"] or "").lower()
+                if "python" not in name:
+                    continue
+                cmd = p.info["cmdline"] or []
+                if not any(
+                    os.path.normcase(os.path.basename(str(c)))
+                    == os.path.basename(script)
+                    for c in cmd
+                ):
+                    continue
+                try:
+                    cwd = os.path.normcase(p.cwd())
+                except (
+                    psutil.AccessDenied, psutil.NoSuchProcess
+                ):
+                    continue
+                if cwd != script_dir:
+                    continue
+                stale.append(p)
+            except (
+                psutil.NoSuchProcess, psutil.AccessDenied
+            ):
+                continue
+    except Exception as e:
+        log(f"stale-reader check failed: {e}")
+        return
+    for p in stale:
+        try:
+            p.terminate()
+        except (
+            psutil.NoSuchProcess, psutil.AccessDenied
+        ):
+            pass
+    try:
+        _, alive = psutil.wait_procs(stale, timeout=3)
+        for p in alive:
+            try:
+                p.kill()
+            except (
+                psutil.NoSuchProcess, psutil.AccessDenied
+            ):
+                pass
+    except Exception:
+        pass
+    if stale:
+        log(
+            "terminated stale reader process(es): "
+            + ", ".join(str(p.pid) for p in stale)
+        )
+
+
 def main():
+    _terminate_stale_reader()
     raw_cfg = load_config()
     cfg = raw_cfg.get("reader") or {}
     discord_cfg = raw_cfg.get("discord") or {}

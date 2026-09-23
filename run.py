@@ -20,6 +20,12 @@ def main():
     ap.add_argument("--db", default="trades.db")
     args = ap.parse_args()
 
+    # a hard restart can leave the previous instance holding
+    # the port - clear it before we bind
+    from trader.processes import terminate_stale_instances
+
+    terminate_stale_instances(os.path.abspath(__file__))
+
     cfg = load_config(args.config)
     if (
         not cfg.pipeline.auth_token
