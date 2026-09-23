@@ -3306,3 +3306,69 @@ def test_margin_breakdown_currencies():
     # value fx; cad stocks show their ledger amount as-is
     assert "1459.85" in coin, coin
     assert "3200.00" in zwc, zwc
+
+
+def test_paper_margin_used_currency_split():
+    from types import SimpleNamespace
+
+    from trader.account import PaperLedger
+    from trader.config import TradingConfig, WSAccountConfig
+    from trader.risk import RiskEngine
+
+    accounts = [
+        WSAccountConfig(account_id="m1", label="Margin",
+                        paper_value=10000),
+    ]
+    store = _fresh_store()
+    cfg = ConfigStub(
+        TradingConfig(mode="notify", risk_per_trade_pct=5),
+        accounts=accounts,
+    )
+    cfg.paper = SimpleNamespace(enabled=True)
+    # negative cash = a 1000 cad paper loan, backed by a usd
+    # option holding worth 700 cad
+    store.set_paper_equity(-1000.0, "Margin")
+    store.seed_position("paper", "Margin", "SPX-2026-09-25-6000-C",
+                        "SPX", "2026-09-25", 6000.0, "C", 1, 7.0)
+    store.seed_position("paper", "Margin", "ZWC", "ZWC",
+                        None, None, None, 10, 30.0)
+    store.meta_set("paper_seed:Margin", "1")
+    store.meta_set("paper_initial:Margin", "10000")
+
+    ledger = PaperLedger(cfg, store, None)
+    ledger._quotes = lambda: {
+        "SPX-2026-09-25-6000-C": {"price": 7.0, "usd": True},
+        "ZWC": {"price": 30.0, "usd": False},
+    }
+    ledger._quote_ts = 1e18
+
+    class FakeWS:
+        _fx_hint = 1.37
+
+        def values(self):
+            return {"Margin": 25000.0}
+
+        def usd_values(self):
+            return {"Margin": 18248.18}
+
+        def _positions_raw(self):
+            return {}
+
+        def _resolve(self):
+            return [("Margin", "m1")]
+
+    risk = RiskEngine(cfg, store, FakeWS())
+    app = __import__(
+        "trader.server", fromlist=["create_app"]
+    ).create_app(
+        cfg, store, risk, SimpleNamespace(account=ledger),
+        FakeWS(),
+    )
+    m = app.test_client().get(
+        "/api/summary"
+    ).get_json()["accounts"][0]
+    # the loan backs the usd holding first (700 cad = ~510.95
+    # usd), the rest stays cad
+    assert m["paper_margin_used"] == 1000.0
+    assert m["paper_margin_used_usd"] == round(700 / 1.37, 2)
+    assert m["paper_margin_used_cad"] == 300.0

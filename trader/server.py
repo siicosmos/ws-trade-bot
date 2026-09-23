@@ -141,6 +141,8 @@ def _paper_card_metrics(
                 "paper_margin_requirement": None,
                 "paper_margin_breakdown": [],
                 "paper_margin_used": None,
+                "paper_margin_used_usd": None,
+                "paper_margin_used_cad": None,
                 "paper_margin_available": None,
                 "paper_max_buying_power": None,
                 "paper_portfolio_value": None,
@@ -249,12 +251,26 @@ def _paper_card_metrics(
 
     margin_req = round(req, 2)
     used = max(0.0, -(cash or 0.0))
+    # currency split of the paper loan, mirroring the real
+    # account: usd holdings are what usd borrowing backs
+    usd_rows_value = sum(
+        abs(r.get("value") or 0)
+        for r in rows if r.get("usd")
+    )
+    usd_loan_cad = min(used, usd_rows_value)
     margin_available = round(value - margin_req, 2)
     out.update(
         {
             "paper_margin_requirement": margin_req,
             "paper_margin_breakdown": parts,
             "paper_margin_used": round(used, 2),
+            "paper_margin_used_usd": (
+                round(usd_loan_cad / conv_fx, 2)
+                if conv_fx else 0.0
+            ),
+            "paper_margin_used_cad": round(
+                used - usd_loan_cad, 2
+            ),
             "paper_margin_available": margin_available,
             "paper_max_buying_power": (
                 round(margin_available / default_rate, 2)

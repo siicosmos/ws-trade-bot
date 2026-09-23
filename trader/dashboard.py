@@ -478,8 +478,8 @@ async function loadSummary() {
       '<span>cap ' + (a.max_open_risk_pct) + '%</span></div>' +
       ((a.margin_requirement != null && !isNaN(a.margin_requirement))
         ? '<div class="sub mrow"><span class="cell"><span class="lab">total margin used</span><span class="val">' + (hidden ? "••••••" :
-            'usd ' + fmtMoney(a.margin_used_usd || 0) +
-            ' · cad ' + fmtMoney(a.margin_used_cad || 0)) +
+            fmtMoney(a.margin_used_usd || 0) + ' usd' +
+            ' · ' + fmtMoney(a.margin_used_cad || 0) + ' cad') +
           '</span></span><span class="cell" style="cursor:pointer" onclick="toggleMarginBreakdown(' + cardIdx + ', \'' + esc(a.label) + '\')"><span class="lab">margin requirement</span><span class="val">' + (hidden ? "••••••" : fmtMoney(a.margin_requirement) + " cad") + ' <span id="mbda-' + cardIdx + '">' + (mbdOpen === a.label ? "▼" : "▲") + '</span></span></span></div>' +
           '<div id="mbd-' + cardIdx + '" class="sub" style="display:' + (mbdOpen === a.label ? "block" : "none") + ';color:var(--muted);font-size:11px;white-space:pre-line">' + breakdownText(a.margin_breakdown, hidden) + '</div>' +
           '<div class="sub mrow"><span class="cell"><span class="lab">portfolio value</span><span class="val">' + (hidden ? "••••••" : (a.portfolio_value != null ? fmtMoney(a.portfolio_value) + " cad" : '')) +
