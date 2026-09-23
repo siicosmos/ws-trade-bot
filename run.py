@@ -42,7 +42,7 @@ def main():
     store = Store(
         args.db,
         retention_days=int(
-            getattr(cfg.trading, "history_retention_days", 90)
+            getattr(cfg.trading, "history_retention_days", 365)
         ),
     )
     mode = cfg.trading.mode

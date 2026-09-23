@@ -116,8 +116,10 @@ trading:
   max_trades_per_day: 5      # per account, resets at midnight
   cooldown_seconds: 60       # min seconds between trades on the same contract
   dedupe_window_minutes: 10  # same alert text inside this window is ignored
-  history_retention_days: 90 # daily prune of recorded signals/trades older
-                             # than this; 0 = keep forever
+  history_retention_days: 365 # daily prune of recorded signals/trades older
+                             # than this; 0 = keep forever. the dashboard
+                             # shows the latest 50 of each - older rows are
+                             # kept here for the future search UI
   ticker_whitelist: []       # only trade these tickers; empty = allow all
   sell_only_if_held: true    # only sell contracts the account actually holds
   place_stop_loss: false     # also place a broker-side stop order on entry

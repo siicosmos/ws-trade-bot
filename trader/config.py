@@ -77,7 +77,7 @@ class TradingConfig:
     max_trades_per_day: int = 5
     cooldown_seconds: int = 60
     dedupe_window_minutes: int = 10
-    history_retention_days: int = 90
+    history_retention_days: int = 365
     ticker_whitelist: List[str] = field(default_factory=list)
     sell_only_if_held: bool = True
     place_stop_loss: bool = False
@@ -243,7 +243,7 @@ def load_config(path: str) -> Config:
         max_trades_per_day=int(_get(trading_raw, "max_trades_per_day", 5)),
         cooldown_seconds=int(_get(trading_raw, "cooldown_seconds", 60)),
         history_retention_days=int(
-            _get(trading_raw, "history_retention_days", 90)
+            _get(trading_raw, "history_retention_days", 365)
         ),
         dedupe_window_minutes=int(
             _get(trading_raw, "dedupe_window_minutes", 10)

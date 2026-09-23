@@ -140,6 +140,16 @@ batcher, health watchdog) under ops/supervise.py, the reader
 process with its locally-supervised webhook thread, and the
 crash/hang/update exit paths that feed the restart loops.
 
+## 12. Search over older trades/signals - PENDING
+
+Retention is now a year (trading.history_retention_days
+default 365) while the dashboard renders only the latest 50
+of each. The history is kept for a future search UI: a
+query endpoint over trades/signals (ticker, action, status,
+date range, free text over the alert/raw) with a dashboard
+search box above the trade log. The idx_trades_mode_ts
+index already backs date-ranged scans.
+
 ## Thread supervision (landed, unplanned)
 
 After a docs-only update killed the updater thread: every
