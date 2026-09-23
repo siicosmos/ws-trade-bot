@@ -465,12 +465,22 @@ async function loadSummary() {
       pc.className = "card papercard";
       const open = paperOpen.indexOf(a.label) >= 0;
       const rows = (paperPositions || {})[a.label] || [];
-      const pcur = cardCurrency[a.label] || "cad";
+      const pcur = paperCurrency[a.label] || "cad";
       const pshowUsd = pcur === "usd" && a.paper_usd_value && a.paper_value;
+      const pfx = (a.paper_usd_value && a.paper_value)
+        ? a.paper_value / a.paper_usd_value : null;
+      const pair = function(cad, hasUsd) {
+        const usd = (pfx && cad != null) ? cad / pfx : null;
+        if (phidden || cad == null || !hasUsd) return cad == null ? "—" : fmtMoney(cad) + " cad";
+        if (usd == null) return fmtMoney(cad) + " cad";
+        return pshowUsd
+          ? fmtMoney(usd) + " usd · " + fmtMoney(cad) + " cad"
+          : fmtMoney(cad) + " cad · " + fmtMoney(usd) + " usd";
+      };
       pc.innerHTML =
         '<div class="label" style="display:flex;justify-content:space-between;align-items:center;gap:6px;min-width:0">paper · <span class="ptitle">' + esc(a.label) + '</span>' +
         '<span style="display:flex;gap:4px;flex-shrink:0;align-items:center">' +
-        '<button class="mini-toggle" title="flip account value currency" onclick="flipCardCurrency(\'' + esc(a.label) + '\')">' + pcur.toUpperCase() + ' ⇄</button> ' +
+        '<button class="mini-toggle" title="flip paper value currency" onclick="flipPaperCurrency(\'' + esc(a.label) + '\')">' + pcur.toUpperCase() + ' ⇄</button> ' +
         '<button class="mini-toggle" onclick="togglePaper(\'' + esc(a.label) + '\')">' + (rows.length ? "holdings " + (open ? "▴" : "▾") : "holdings ▾") + '</button> ' +
         '<button class="mini-toggle" onclick="resetPaper(\'' + esc(a.label) + '\')">reset</button> ' +
         '<button class="mini-toggle" title="' + (phidden ? "show paper value" : "hide paper value") + '" onclick="togglePaperHidden(\'' + esc(a.label) + '\')">' + (phidden ? EYE_OFF_SVG : EYE_SVG) + '</button></span></div>' +
@@ -494,10 +504,10 @@ async function loadSummary() {
             '</span></span><span class="cell"><span class="lab">max buying power</span><span class="val">' + (phidden? "••••••" : fmtMoney(a.paper_max_buying_power || 0) + " cad") + '</span></span></div>'
           : '') +
         ((a.paper_cash != null)
-          ? '<div class="sub"><span>cash ' + (phidden? "••••••" : fmtMoney(Math.max(0, a.paper_cash)) + " cad") + '</span>' +
+          ? '<div class="sub"><span>cash ' + pair(Math.max(0, a.paper_cash), a.paper_cash != null) + '</span>' +
             '<span>available</span></div>'
           : '') +
-        '<div class="sub"><span>seeded ' + (phidden? "••••••" : (a.paper_initial != null ? fmtMoney(a.paper_initial) + " cad" : "—")) + '</span>' +
+        '<div class="sub"><span>seeded ' + pair(a.paper_initial, a.paper_initial != null) + '</span>' +
         '<span>' + rows.length + ' positions</span></div>' +
         paperAllocBar(a) +
         ((a.paper_margin_available != null && !isNaN(a.paper_margin_available))
@@ -675,6 +685,7 @@ function toggleMarginBreakdown(i, label) {
 }
 let cardHidden = JSON.parse(localStorage.getItem("ws_card_hidden") || "{}");
 let paperHidden = JSON.parse(localStorage.getItem("ws_paper_hidden") || "{}");
+let paperCurrency = JSON.parse(localStorage.getItem("ws_paper_currency") || "{}");
 
 const EYE_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>';
 const EYE_OFF_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
@@ -682,6 +693,14 @@ const EYE_OFF_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none"
 function flipCardCurrency(label) {
   cardCurrency[label] = (cardCurrency[label] || "cad") === "cad" ? "usd" : "cad";
   localStorage.setItem("ws_card_currency", JSON.stringify(cardCurrency));
+  loadSummary();
+}
+
+function flipPaperCurrency(label) {
+  paperCurrency[label] = (paperCurrency[label] || "cad") === "cad"
+    ? "usd" : "cad";
+  localStorage.setItem("ws_paper_currency",
+    JSON.stringify(paperCurrency));
   loadSummary();
 }
 
