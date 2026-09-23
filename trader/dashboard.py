@@ -285,7 +285,11 @@ async function api(path) {
 
 function fmtMoney(v) {
   if (v === null || v === undefined) return "—";
-  return "$" + Number(v).toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const n = Number(v);
+  if (isNaN(n)) return "—";
+  // -0 (a rounding artifact) must not render as "$-0.00"
+  return (n < 0 ? "-$" : "$") + Math.abs(n).toLocaleString(
+    "en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function fmtIso(ts) {

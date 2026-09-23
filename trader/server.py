@@ -664,10 +664,12 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                         and conv_fx else None
                     ),
                     "paper_pnl": (
+                        # `or 0.0` also normalizes -0.0, which
+                        # otherwise renders as "+$-0.00"
                         round(
                             paper_values[label]
                             - paper_initials[label], 2
-                        )
+                        ) or 0.0
                         if label in paper_values
                         and label in paper_initials else None
                     ),
