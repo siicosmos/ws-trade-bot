@@ -1941,6 +1941,7 @@ def test_spread_requirement_uses_full_width():
                  "strike": "6100/6105", "qty": 1,
                  "risk_cad": round(482 * 1.403, 2),
                  "cost_cad": round(-18 * 1.403, 2),
+                 "cost_usd": -18.0,
                  "market_value": 0.0},
             ],
             "fx": 1.403,
@@ -3034,7 +3035,7 @@ def test_paper_card_margin_metrics():
     )
     assert m["paper_portfolio_value"] == nlv
     assert any(
-        "SPX" in p and "long" in p
+        "SPX" in p and "x 100%" in p
         for p in m["paper_margin_breakdown"]
     )
     # registered paper card: no margin metrics, just cash
@@ -3372,3 +3373,60 @@ def test_paper_margin_used_currency_split():
     assert m["paper_margin_used"] == 800.0
     assert m["paper_margin_used_usd"] == round(700 / 1.37, 2)
     assert m["paper_margin_used_cad"] == 100.0
+
+
+def test_margin_model_single_source():
+    from trader.margin import (
+        Holding, compute_requirement, resolve_rate,
+    )
+
+    holdings = [
+        Holding("SPX", "stock", currency="usd",
+                native_value=12345.67, security_id="s1"),
+        Holding("ZWC", "stock", currency="cad",
+                native_value=3200.0),
+        Holding("SPX", "spread", currency="usd",
+                structure="put credit spread", qty=1, width=5),
+        Holding("XYZ", "short", currency="usd", risk=482.0),
+        Holding("COIN", "long", currency="usd",
+                native_value=500.0),
+    ]
+    req, parts = compute_requirement(
+        holdings, fx=1.403,
+        rate_for=lambda h: resolve_rate(
+            h.symbol, h.security_id, None,
+            {"ZWC": 0.50}, 0.30,
+        ),
+    )
+    # stock usd 12345.67 x 30% x 1.403 + stock cad 3200 x 50% +
+    # spread 5 x 100 x 1 x 1.403 + short 482 x 1.403 +
+    # long 500 x 1.403
+    expect = (
+        12345.67 * 0.30 * 1.403
+        + 3200 * 0.50
+        + 5 * 100 * 1.403
+        + 482 * 1.403
+        + 500 * 1.403
+    )
+    assert req == round(expect, 2)
+    assert parts == [
+        "SPX 12345.67 x 30% = 3703.70 usd",
+        "ZWC 3200.00 x 50% = 1600.00 cad",
+        "SPX put credit spread 1x width 5 = 500.00 usd",
+        "XYZ short risk 482.00 usd",
+        "COIN option 500.00 x 100% usd",
+    ]
+
+    # fallback amount when no width is derivable
+    h = Holding("SPX", "spread", currency="usd", qty=2,
+                amount_native=1234.0)
+    req2, parts2 = compute_requirement([h], fx=1.4, rate_for=None)
+    assert req2 == round(1234.0 * 1.4, 2)
+    assert parts2 == ["SPX spread 2x = 1234.00 usd"]
+
+    # rate resolution order: per-security beats overrides
+    assert resolve_rate(
+        "SPX", "s1", lambda sid: 0.25, {"SPX": 0.50}, 0.30
+    ) == 0.25
+    assert resolve_rate("SPX", None, None, {"SPX": 0.50}, 0.30) == 0.50
+    assert resolve_rate("SPX", "s1", None, {}, 0.30) == 0.30

@@ -4,7 +4,13 @@ Architecture and performance review of the codebase (~9.9k lines),
 in priority order. Each item is independent - pick them off as
 time allows.
 
-## 1. Shared margin model (correctness) - HIGH
+## 1. Shared margin model (correctness) - DONE
+
+Landed: `trader/margin.py` (Holding / compute_requirement /
+resolve_rate) is the single source of truth; both the real-card
+computation in `_account_summaries` and `_paper_card_metrics`
+build normalized Holdings and call in. Unified breakdown line
+formats across both cards.
 
 The requirement computation is inline in `_account_summaries`
 (trader/server.py) while `_paper_card_metrics` reimplements a

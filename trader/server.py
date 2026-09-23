@@ -157,27 +157,27 @@ def _paper_card_metrics(
         cfg.wealthsimple, "margin_rate_overrides", {}
     ) or {}
 
-    req = 0.0
-    parts = []
+    from .margin import (
+        Holding, compute_requirement, resolve_rate,
+    )
 
-    def _native(cad_amount, is_usd):
-        return (
-            cad_amount / conv_fx
-            if is_usd and conv_fx else cad_amount
-        )
-
+    holdings = []
     for r in rows:
         if r.get("kind") != "stock":
             continue
-        sym = str(r.get("underlying") or "")
-        mv = r.get("value") or 0
-        cur = "usd" if r.get("usd") else "cad"
-        rate = float(overrides.get(sym, default_rate))
-        req += mv * rate
-        native = _native(mv, r.get("usd"))
-        parts.append(
-            f"{sym} {native:.2f} x {rate:.0%} = "
-            f"{native * rate:.2f} {cur}"
+        is_usd = bool(r.get("usd"))
+        holdings.append(
+            Holding(
+                symbol=str(r.get("underlying") or ""),
+                kind="stock",
+                currency="usd" if is_usd else "cad",
+                # ledger values are cad - carry the native figure
+                native_value=(
+                    (r.get("value") or 0) / conv_fx
+                    if is_usd and conv_fx
+                    else (r.get("value") or 0)
+                ),
+            )
         )
 
     # option legs grouped per underlying+expiry, classified into
@@ -210,27 +210,26 @@ def _paper_card_metrics(
         if not shaped:
             continue
         info = classify_legs(shaped)
+        # usd underlyings charge their width in cad
+        usd = any(
+            (by_key.get(l.get("contract_key")) or {})
+            .get("usd")
+            for l in legs
+        )
+        cur = "usd" if usd else "cad"
         if info and info.get("kind") in (
             "vertical", "butterfly", "condor",
             "iron fly", "ratio",
         ):
-            qty = info.get("qty") or 0
-            width = info.get("width") or 0
-            # usd underlyings charge their width in cad
-            usd = any(
-                (by_key.get(l.get("contract_key")) or {})
-                .get("usd")
-                for l in legs
-            )
-            part = width * 100 * qty * (
-                conv_fx if usd else 1.0
-            )
-            req += part
-            cur = "usd" if usd else "cad"
-            native = width * 100 * qty
-            parts.append(
-                f"{sym} {info.get('name', 'spread')} "
-                f"{qty:g}x width {native:g} = {native:.2f} {cur}"
+            holdings.append(
+                Holding(
+                    symbol=sym,
+                    kind="spread",
+                    currency=cur,
+                    structure=info.get("name"),
+                    qty=info.get("qty") or 0,
+                    width=info.get("width") or 0,
+                )
             )
         else:
             # long (or unpaired) legs carry their full value
@@ -238,18 +237,26 @@ def _paper_card_metrics(
                 row = by_key.get(leg.get("contract_key"))
                 if row is None:
                     continue
-                mv = abs(row.get("value") or 0)
-                req += mv
                 is_usd = bool(row.get("usd"))
-                native = _native(mv, is_usd)
-                tag = "short" if (leg["qty"] or 0) < 0 else "long"
-                parts.append(
-                    f"{sym} {leg.get('contract_key', '?')} "
-                    f"{tag} {native:.2f} = {native:.2f} "
-                    f"{'usd' if is_usd else 'cad'}"
+                holdings.append(
+                    Holding(
+                        symbol=leg.get("contract_key") or "?",
+                        kind="long",
+                        currency=cur,
+                        native_value=(
+                            abs(row.get("value") or 0) / conv_fx
+                            if is_usd and conv_fx
+                            else abs(row.get("value") or 0)
+                        ),
+                    )
                 )
 
-    margin_req = round(req, 2)
+    margin_req, parts = compute_requirement(
+        holdings, conv_fx,
+        lambda h: resolve_rate(
+            h.symbol, None, None, overrides, default_rate
+        ),
+    )
     used = max(0.0, -(cash or 0.0))
     # currency split of the paper loan, mirroring the real
     # account: usd holdings are what usd borrowing backs
@@ -572,49 +579,31 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                     cfg.wealthsimple, "margin_rate_overrides", {}
                 ) or {}
                 rate_fn = getattr(account, "security_margin_rate", None)
-                req = 0.0
-                req_parts = []
+                from .margin import (
+                    Holding, compute_requirement, resolve_rate,
+                )
+
+                holdings = []
                 for r in (sk or []):
-                    native = r.get("market_value") or 0
-                    cur = (
-                        "usd"
-                        if r.get("currency") == "USD" else "cad"
-                    )
-                    mv = (
-                        native * conv_fx
-                        if cur == "usd" else native
-                    )
-                    sym = str(r.get("underlying") or "")
-                    rate = None
-                    if callable(rate_fn) and r.get("security_id"):
-                        try:
-                            rate = rate_fn(r["security_id"])
-                        except Exception:
-                            rate = None
-                    if rate is None:
-                        # configured fallback (30% like the WS page)
-                        rate = float(
-                            overrides.get(sym, default_rate)
+                    holdings.append(
+                        Holding(
+                            symbol=str(r.get("underlying") or ""),
+                            kind="stock",
+                            currency=(
+                                "usd"
+                                if r.get("currency") == "USD"
+                                else "cad"
+                            ),
+                            native_value=r.get("market_value") or 0,
+                            security_id=r.get("security_id"),
                         )
-                    req += mv * rate
-                    req_parts.append(
-                        f"{sym} {native:.2f} x {rate:.0%} = "
-                        f"{native * rate:.2f} {cur}"
                     )
-                def _spread_width_cad(r):
-                    # WS charges spreads the full width without
-                    # netting the premium
-                    try:
-                        s1, s2 = str(
-                            r.get("strike") or ""
-                        ).split("/")
-                        width = (
-                            abs(float(s2) - float(s1))
-                            * 100 * (r.get("qty") or 0)
-                        )
-                        return width * conv_fx if width else None
-                    except (ValueError, AttributeError):
-                        return None
+
+                def _rate_for(h):
+                    return resolve_rate(
+                        h.symbol, h.security_id, rate_fn,
+                        overrides, default_rate,
+                    )
 
                 def _opt_cur(r):
                     return (
@@ -623,53 +612,71 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                         else "cad"
                     )
 
-                def _native(part, r):
-                    return (
-                        part / conv_fx
-                        if _opt_cur(r) == "usd" and conv_fx
-                        else part
-                    )
-
                 if live is not None:
                     for r in live["positions"]:
+                        cur = _opt_cur(r)
+                        cur_fx = conv_fx if cur == "usd" else 1.0
                         if r.get("spread"):
-                            part = _spread_width_cad(r)
-                            if part is None:
+                            # WS charges spreads the full width
+                            # without netting the premium
+                            width = None
+                            try:
+                                s1, s2 = str(
+                                    r.get("strike") or ""
+                                ).split("/")
+                                width = abs(float(s2) - float(s1))
+                            except (ValueError, AttributeError):
+                                width = None
+                            amount = None
+                            if not width:
+                                # no derivable width - fall back
+                                # to defined risk / full value
                                 if r.get("short"):
-                                    part = (
+                                    amount = (
                                         (r.get("risk_cad") or 0)
-                                        + abs(r.get("cost_cad") or 0)
-                                    )
+                                        + abs(
+                                            r.get("cost_cad") or 0
+                                        )
+                                    ) / cur_fx
                                 else:
-                                    part = abs(
+                                    amount = abs(
                                         r.get("market_value") or 0
-                                    ) * conv_fx
-                            req += part
-                            req_parts.append(
-                                f"{r.get('underlying', '?')} spread "
-                                f"width {_native(part, r):.2f} "
-                                f"{_opt_cur(r)}"
+                                    )
+                            holdings.append(
+                                Holding(
+                                    symbol=r.get("underlying") or "?",
+                                    kind="spread",
+                                    currency=cur,
+                                    structure=r.get("strategy_type"),
+                                    qty=r.get("qty") or 0,
+                                    width=width,
+                                    amount_native=amount,
+                                )
                             )
                         elif r.get("short"):
-                            part = r.get("risk_cad") or 0
-                            req += part
-                            req_parts.append(
-                                f"{r.get('underlying', '?')} short "
-                                f"risk {_native(part, r):.2f} "
-                                f"{_opt_cur(r)}"
+                            holdings.append(
+                                Holding(
+                                    symbol=r.get("underlying") or "?",
+                                    kind="short",
+                                    currency=cur,
+                                    risk=(r.get("risk_cad") or 0)
+                                    / cur_fx,
+                                )
                             )
                         else:
-                            part = (
-                                abs(r.get("market_value") or 0)
-                                * conv_fx
+                            holdings.append(
+                                Holding(
+                                    symbol=r.get("underlying") or "?",
+                                    kind="long",
+                                    currency=cur,
+                                    native_value=abs(
+                                        r.get("market_value") or 0
+                                    ),
+                                )
                             )
-                            req += part
-                            req_parts.append(
-                                f"{r.get('underlying', '?')} option "
-                                f"{_native(part, r):.2f} x 100% "
-                                f"{_opt_cur(r)}"
-                            )
-                margin_req = round(req, 2)
+                margin_req, req_parts = compute_requirement(
+                    holdings, conv_fx, _rate_for
+                )
                 used = 0.0
                 used_cad_raw = 0.0
                 used_usd_raw = 0.0
