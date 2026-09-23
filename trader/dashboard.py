@@ -148,7 +148,7 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
     gap: 6px; min-width: 0; }
   .sub .cell .lab { }
   .ptitle { flex: 1 1 auto; min-width: 0; white-space: normal;
-    overflow-wrap: anywhere; }
+    overflow-wrap: normal; hyphens: none; }
   .mini-toggle {
     color: #fff; font-size: 11px; font-weight: 700;
     background: var(--panel); border: 1px solid var(--border);
@@ -175,7 +175,7 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
     gap: 6px; min-width: 0; }
   .sub .cell .lab { }
   .ptitle { flex: 1 1 auto; min-width: 0; white-space: normal;
-    overflow-wrap: anywhere; }
+    overflow-wrap: normal; hyphens: none; }
   .mini-toggle { padding: 1px 6px; font-size: 10px; }
     .cur-toggle { padding: 1px 6px; margin-bottom: 4px; font-size: 10px; }
   }
@@ -522,7 +522,7 @@ async function loadSummary() {
           : fmtMoney(cad) + " cad · " + fmtMoney(usd) + " usd";
       };
       pc.innerHTML =
-        '<div class="label" style="display:flex;justify-content:space-between;align-items:center;gap:6px;min-width:0">paper · <span class="ptitle">' + esc(a.label) + '</span>' +
+        '<div class="label" style="display:flex;justify-content:space-between;align-items:center;gap:6px;min-width:0">paper · <span class="ptitle">' + esc(a.label).replace(/-/g, "\u2011") + '</span>' +
         '<span style="display:flex;gap:4px;flex-shrink:0;align-items:center">' +
         '<button class="mini-toggle" title="flip paper value currency" onclick="flipPaperCurrency(\'' + esc(a.label) + '\')">' + pcur.toUpperCase() + ' ⇄</button> ' +
         '<button class="mini-toggle" onclick="togglePaper(\'' + esc(a.label) + '\')">' + (rows.length ? "holdings " + (open ? "▼" : "▲") : "holdings ▲") + '</button> ' +
