@@ -142,9 +142,19 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   .tlog th:not(:last-child), .tlog td:not(:last-child) { white-space: nowrap; }
   #trades { overflow-x: auto; -webkit-overflow-scrolling: touch; }
   #trades .tlog { min-width: 560px; }
+  .mini-toggle {
+    color: #fff; font-size: 11px; font-weight: 700;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 6px; padding: 2px 8px; cursor: pointer;
+    letter-spacing: .3px; white-space: nowrap;
+  }
   @media (max-width: 640px) {
     .tlog th:nth-child(2), .tlog td:nth-child(2) { display: none; }
     .tlog { min-width: 460px; font-size: 12px; }
+    .sub { flex-direction: column; align-items: flex-start; }
+    .sub > span:nth-child(2) { align-self: flex-end; text-align: right; }
+    .mini-toggle { padding: 1px 6px; font-size: 10px; }
+    .cur-toggle { padding: 1px 6px; margin-bottom: 4px; font-size: 10px; }
   }
   .empty { color: var(--muted); font-size: 13px; padding: 14px; text-align: center; background: var(--panel); border-radius: 8px; }
   .num { text-align: right; }
@@ -410,8 +420,7 @@ async function loadSummary() {
             ' · cad ' + fmtMoney(a.margin_used_cad || 0)) +
           '</span><span style="cursor:pointer" onclick="toggleMarginBreakdown(' + cardIdx + ', \'' + esc(a.label) + '\')">margin requirement ' + (hidden ? "••••••" : fmtMoney(a.margin_requirement) + " cad") + ' ▾</span></div>' +
           '<div id="mbd-' + cardIdx + '" class="sub" style="display:' + (mbdOpen === a.label ? "block" : "none") + ';color:var(--muted);font-size:11px;white-space:pre-line">' + (hidden ? "" : esc((a.margin_breakdown || []).join("\n"))) + '</div>' +
-          '<div class="sub"><span>margin available ' + (hidden ? "••••••" : fmtMoney(a.margin_available) + " cad") +
-          (a.portfolio_value != null && !hidden ? ' · portfolio value ' + fmtMoney(a.portfolio_value) + " cad" : '') +
+          '<div class="sub"><span>' + (a.portfolio_value != null && !hidden ? 'portfolio value ' + fmtMoney(a.portfolio_value) + " cad" : '') +
           '</span><span>max buying power ' + (hidden ? "••••••" : fmtMoney(a.max_buying_power || 0) + " cad") + '</span></div>'
         : '') +
       ((a.cash_cad != null || a.cash_usd != null)
@@ -421,7 +430,10 @@ async function loadSummary() {
               ? ' · ' + fmtMoney(Math.max(0, a.cash_usd)) + " usd"
               : '')) + '</span>' +
           '<span>available</span></div>'
-        : '') + allocBar(a) + marginUsageBar(a);
+        : '') + allocBar(a) +
+      ((a.margin_available != null && !isNaN(a.margin_available))
+        ? '<div class="sub"><span>margin available ' + (hidden ? "••••••" : fmtMoney(a.margin_available) + " cad") + '</span></div>'
+        : '') + marginUsageBar(a);
     const wrap = document.createElement("div");
     wrap.className = "cardcol";
     wrap.appendChild(card);
@@ -437,10 +449,11 @@ async function loadSummary() {
       const open = paperOpen.indexOf(a.label) >= 0;
       const rows = (paperPositions || {})[a.label] || [];
       pc.innerHTML =
-        '<div class="label" style="display:flex;justify-content:space-between;align-items:center">paper · ' + esc(a.label) +
-        '<span><button class="cur-toggle" style="padding:1px 7px;margin:0" title="' + (phidden ? "show paper value" : "hide paper value") + '" onclick="togglePaperHidden(\'' + esc(a.label) + '\')">' + (phidden ? EYE_OFF_SVG : EYE_SVG) + '</button> ' +
-        '<button onclick="togglePaper(\'' + esc(a.label) + '\')" style="background:#21262d;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:2px 10px;font-size:11px;cursor:pointer">' + (rows.length ? "holdings " + (open ? "▴" : "▾") : "holdings ▾") + '</button> ' +
-        '<button onclick="resetPaper(\'' + esc(a.label) + '\')" style="background:#21262d;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:2px 10px;font-size:11px;cursor:pointer">reset</button></span></div>' +
+        '<div class="label" style="display:flex;justify-content:space-between;align-items:center;gap:6px;min-width:0">paper · <span style="flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(a.label) + '</span>' +
+        '<span style="display:flex;gap:4px;flex-shrink:0;align-items:center">' +
+        '<button class="mini-toggle" onclick="togglePaper(\'' + esc(a.label) + '\')">' + (rows.length ? "holdings " + (open ? "▴" : "▾") : "holdings ▾") + '</button> ' +
+        '<button class="mini-toggle" onclick="resetPaper(\'' + esc(a.label) + '\')">reset</button> ' +
+        '<button class="mini-toggle" title="' + (phidden ? "show paper value" : "hide paper value") + '" onclick="togglePaperHidden(\'' + esc(a.label) + '\')">' + (phidden ? EYE_OFF_SVG : EYE_SVG) + '</button></span></div>' +
         '<div class="value" style="font-size:20px">' + (phidden? "••••••" : fmtMoney(a.paper_value) + " cad") +
         (pnl == null ? '' :
           ' <span style="font-size:13px;color:' + pnlColor + '">' +
@@ -456,8 +469,7 @@ async function loadSummary() {
             (hidden || !(a.paper_margin_used > 0) ? '' : ' · ledger loan') +
             '</span><span style="cursor:pointer" onclick="togglePaperBreakdown(' + cardIdx + ', \'' + esc(a.label) + '\')">margin requirement ' + (phidden? "••••••" : fmtMoney(a.paper_margin_requirement) + " cad") + ' ▾</span></div>' +
           '<div id="pmbd-' + cardIdx + '" class="sub" style="display:' + (pmbdOpen === a.label ? "block" : "none") + ';color:var(--muted);font-size:11px;white-space:pre-line">' + (phidden? "" : esc((a.paper_margin_breakdown || []).join("\n"))) + '</div>' +
-          '<div class="sub"><span>margin available ' + (phidden? "••••••" : fmtMoney(a.paper_margin_available) + " cad") +
-            (a.paper_portfolio_value != null && !phidden ? ' · portfolio value ' + fmtMoney(a.paper_portfolio_value) + " cad" : '') +
+          '<div class="sub"><span>' + (a.paper_portfolio_value != null && !phidden? 'portfolio value ' + fmtMoney(a.paper_portfolio_value) + " cad" : '') +
             '</span><span>max buying power ' + (phidden? "••••••" : fmtMoney(a.paper_max_buying_power || 0) + " cad") + '</span></div>'
           : '') +
         ((a.paper_cash != null)
@@ -466,7 +478,10 @@ async function loadSummary() {
           : '') +
         '<div class="sub"><span>seeded ' + (phidden? "••••••" : (a.paper_initial != null ? fmtMoney(a.paper_initial) + " cad" : "—")) + '</span>' +
         '<span>' + rows.length + ' positions</span></div>' +
-        paperAllocBar(a) + paperMarginUsageBar(a) +
+        paperAllocBar(a) +
+        ((a.paper_margin_available != null && !isNaN(a.paper_margin_available))
+          ? '<div class="sub"><span>margin available ' + (phidden? "••••••" : fmtMoney(a.paper_margin_available) + " cad") + '</span></div>'
+          : '') + paperMarginUsageBar(a) +
         (open ? (rows.length ?
           '<table class="pos" style="margin-top:10px;font-size:12px"><tr><th>Holding</th><th class=num>Qty</th><th class=num>Avg $</th><th class=num>Value</th><th class=num>Return</th></tr>' +
           rows.map(function(r) {
