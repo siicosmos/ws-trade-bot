@@ -111,9 +111,8 @@
 <title>signals&#45;&gt;trades</title>
 <path fill="none" stroke="#57606a" d="M309.1,-147C371.35,-147 448.62,-147 519.81,-147"/>
 <polygon fill="#57606a" stroke="#57606a" points="519.82,-147 529.82,-151.5 524.82,-147 529.82,-147 529.82,-147 529.82,-147 524.82,-147 529.82,-142.5 519.82,-147 519.82,-147"/>
+<text text-anchor="middle" x="450" y="-159.8" font-family="Helvetica,sans-Serif" font-size="9.00">1 signal · 0..* trades</text>
 <text text-anchor="middle" x="450" y="-149.8" font-family="Helvetica,sans-Serif" font-size="9.00">message_key / dedupe_key</text>
-<text text-anchor="middle" x="511.69" y="-153.25" font-family="Helvetica,sans-Serif" font-size="9.00">0..*</text>
-<text text-anchor="middle" x="327.23" y="-136.35" font-family="Helvetica,sans-Serif" font-size="9.00">1</text>
 </g>
 <!-- positions -->
 <g id="node3" class="node">
