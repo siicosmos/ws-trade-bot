@@ -46,6 +46,8 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   }
   .headrow #stops, .headrow #reader { overflow: hidden;
     text-overflow: ellipsis; }
+  #git { flex: 1 1 auto; min-width: 0; overflow: hidden;
+    white-space: nowrap; }
   #logout {
     color: var(--muted); font-size: 12px; text-decoration: none;
     border: 1px solid var(--border); border-radius: 6px;
@@ -808,6 +810,25 @@ function fmtAge(secs) {
   return Math.round(secs / 86400) + "d ago";
 }
 
+function fitText(el, floor) {
+  // shrink the font until the text fits its box; wrap as a last
+  // resort instead of clipping
+  if (!el) return;
+  el.style.fontSize = "";
+  el.style.whiteSpace = "";
+  el.style.wordBreak = "";
+  let size = parseFloat(getComputedStyle(el).fontSize) || 12;
+  const min = floor || 9;
+  while (size > min && el.scrollWidth > el.clientWidth) {
+    size -= 0.5;
+    el.style.fontSize = size + "px";
+  }
+  if (el.scrollWidth > el.clientWidth) {
+    el.style.whiteSpace = "normal";
+    el.style.wordBreak = "break-word";
+  }
+}
+
 async function loadGitStatus() {
   const s = await api("/api/update_status");
   const el = document.getElementById("git");
@@ -833,7 +854,11 @@ async function loadGitStatus() {
   if (s.errors) text += " · " + s.errors + " errors";
   el.textContent = text;
   el.style.color = (s.result || "").indexOf("error") >= 0 || (s.result || "").indexOf("failed") >= 0 ? "var(--red)" : "var(--muted)";
+  fitText(el, 9);
 }
+window.addEventListener("resize", function() {
+  fitText(document.getElementById("git"), 9);
+});
 
 async function loadTrades() {
   const rows = await api("/api/trades");
