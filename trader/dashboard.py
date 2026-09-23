@@ -506,6 +506,7 @@ async function loadSummary() {
         '<div class="value" style="font-size:20px">' + (phidden? "••••••" : pshowUsd ? fmtMoney(a.paper_usd_value) + " USD" : fmtMoney(a.paper_value) + " cad") +
         (!phidden && !pshowUsd && a.paper_usd_value ? ' <span style="font-size:12px;color:var(--muted)">$' + a.paper_usd_value.toLocaleString("en-CA", {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' USD</span>' : '') +
         (!phidden && pshowUsd ? ' <span style="font-size:12px;color:var(--muted)">' + fmtMoney(a.paper_value) + ' CAD</span>' : '') +
+        (pcur === "usd" && !pshowUsd && !phidden ? ' <span style="font-size:12px;color:var(--yellow)">fx unavailable</span>' : '') +
         '</div>' +
         (pnl == null ? '' :
           '<div class="sub"><span style="color:' + pnlColor + '">return ' + (phidden? "••••••" : (pnl >= 0 ? "+" : "") + fmtMoney(pnl)) +

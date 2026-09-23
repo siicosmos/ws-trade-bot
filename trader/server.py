@@ -657,11 +657,27 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                     "margin_breakdown": req_parts,
                     "paper_value": paper_values.get(label),
                     "paper_initial": paper_initials.get(label),
+                    # prefer wealthsimple's own conversion for
+                    # the real account (works with no open
+                    # positions, unlike the positions-derived fx
+                    # which falls back to 1.0 and makes the flip a
+                    # no-op); positions fx is the fallback
                     "paper_usd_value": (
-                        round(paper_values[label] / conv_fx, 2)
+                        round(
+                            paper_values[label] * usd_value / value, 2
+                        )
                         if label in paper_values
                         and paper_values.get(label) is not None
-                        and conv_fx else None
+                        and usd_value and value
+                        else (
+                            round(
+                                paper_values[label] / conv_fx, 2
+                            )
+                            if label in paper_values
+                            and paper_values.get(label) is not None
+                            and conv_fx and conv_fx > 1.0
+                            else None
+                        )
                     ),
                     "paper_pnl": (
                         # `or 0.0` also normalizes -0.0, which
