@@ -84,12 +84,11 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   #settings-save:hover { background: #2ea043; }
   #settings-revert { background: #21262d; color: var(--text); border: 1px solid var(--border); }
   .cur-toggle {
-    color: var(--muted); font-size: 11px; font-weight: 700;
+    color: #fff; font-size: 11px; font-weight: 700;
     background: var(--panel); border: 1px solid var(--border);
     border-radius: 6px; padding: 3px 10px; cursor: pointer;
     margin-bottom: 8px; letter-spacing: .5px;
   }
-  .cur-toggle { color: #fff; }
   .cur-toggle:hover { border-color: var(--muted); }
   .card .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .8px; margin-bottom: 6px; }
   .card .value { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
