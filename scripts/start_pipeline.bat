@@ -35,7 +35,7 @@ if %EXITCODE% == -1073741510 (
 )
 echo pipeline exited with code %EXITCODE% - restarting in 5s
 echo check pipeline.log next to trades.db for the traceback
-timeout /t 5 /nobreak >nul
+ping -n 6 127.0.0.1 >nul
 goto start
 
 :end

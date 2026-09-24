@@ -36,7 +36,7 @@ if %EXITCODE% == -1073741510 (
   goto end
 )
 echo reader exited with code %EXITCODE% - restarting in 5s
-timeout /t 5 /nobreak >nul
+ping -n 6 127.0.0.1 >nul
 goto start
 
 :end
