@@ -282,7 +282,10 @@
     display: flex; gap: 16px; flex-wrap: wrap; align-items: center;
     margin-bottom: 12px;
   }
-  .set-checks label { color: var(--text); font-size: 13px; font-weight: 600; }
+  .set-checks label {
+    color: var(--text); font-size: 13px; font-weight: 600;
+    display: inline-flex; align-items: center; gap: 7px;
+  }
   .set-inline {
     display: flex; gap: 14px; flex-wrap: wrap; align-items:center;
     color: var(--muted); font-size: 12px;
@@ -301,7 +304,10 @@
     display: flex; justify-content: space-between; align-items: center;
     margin-bottom: 8px; color: var(--text); font-weight: 600;
   }
-  .acct-head label { color: var(--muted); font-size: 11px; font-weight: 400; }
+  .acct-head label {
+    color: var(--muted); font-size: 11px; font-weight: 400;
+    display: inline-flex; align-items: center; gap: 5px;
+  }
   .acct-grid {
     display: grid; gap: 8px;
     grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
