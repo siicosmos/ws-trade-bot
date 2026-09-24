@@ -298,3 +298,12 @@
     display: grid; gap: 8px;
     grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
   }
+
+  /* merged history stream: trades produced by a listed alert */
+  #history-results tr.linked td {
+    background: rgba(31, 111, 235, .08);
+  }
+  #history-results tr.linked td:first-child {
+    padding-left: 26px;
+    border-left: 2px solid var(--accent, #1f6feb);
+  }

@@ -529,86 +529,135 @@ class Store:
     def search_history(self, kind="trades", ticker=None, action=None,
                        status=None, mode=None, since=None, until=None,
                        q=None, limit=50, offset=0):
-        """Search the retained history (plan #12): trades or
-        signals filtered by ticker/action/status/mode, a date
-        range, and free text. Returns (rows, total)."""
-        def _like(term):
-            return (
-                "%" + str(term).replace("\\", "\\\\")
-                .replace("%", "\\%").replace("_", "\\_") + "%"
+        """Search the retained history (plan #12): trades,
+        signals, or both merged chronologically - filters apply
+        per table (action/status/mode are trade-only). Returns
+        (rows, total); every row carries a "type" marker."""
+        if kind not in ("trades", "signals", "both"):
+            kind = "trades"
+
+        def _run(tk, limit_, offset_):
+            def _like(term):
+                return (
+                    "%" + str(term).replace("\\", "\\\\")
+                    .replace("%", "\\%").replace("_", "\\_") + "%"
+                )
+
+            # date-only bounds: since is inclusive by prefix
+            # ordering, until is stretched to cover the end date
+            nonlocal since, until
+            if since:
+                since = str(since)
+            if until:
+                until = str(until)
+            if until and len(until) == 10:
+                until += "T99"
+
+            where, params = [], []
+            if since:
+                where.append("ts >= ?")
+                params.append(since)
+            if until:
+                where.append("ts <= ?")
+                params.append(until)
+
+            if tk == "signals":
+                table = "signals"
+                base = ("SELECT ts, author, text, parsed, correction, "
+                        "channel, received_ts, message_key "
+                        "FROM signals")
+                keys = ["ts", "author", "text", "parsed", "correction",
+                        "channel", "received_ts", "message_key"]
+                order = "rowid DESC"
+                if ticker:
+                    where.append("UPPER(text) LIKE ? ESCAPE '\\'")
+                    params.append(_like(str(ticker).upper()))
+                if q:
+                    where.append(
+                        "(text LIKE ? ESCAPE '\\' "
+                        "OR author LIKE ? ESCAPE '\\')"
+                    )
+                    like = _like(q)
+                    params += [like, like]
+            else:
+                table = "trades"
+                base = ("SELECT ts, mode, action, ticker, qty, price, "
+                        "status, detail, message_key "
+                        "FROM trades")
+                keys = ["ts", "mode", "action", "ticker", "qty", "price",
+                        "status", "detail", "message_key"]
+                order = "id DESC"
+                if ticker:
+                    where.append("UPPER(ticker) = UPPER(?)")
+                    params.append(str(ticker))
+                if action:
+                    where.append("UPPER(action) = UPPER(?)")
+                    params.append(str(action))
+                if status:
+                    where.append("LOWER(status) = LOWER(?)")
+                    params.append(str(status))
+                if mode:
+                    where.append("mode = ?")
+                    params.append(str(mode))
+                if q:
+                    where.append(
+                        "(detail LIKE ? ESCAPE '\\' "
+                        "OR ticker LIKE ? ESCAPE '\\')"
+                    )
+                    like = _like(q)
+                    params += [like, like]
+
+            clause = (" WHERE " + " AND ".join(where)) if where else ""
+            with self._conn:
+                total = self._conn.execute(
+                    f"SELECT COUNT(*) FROM {table}" + clause, params
+                ).fetchone()[0]
+                rows = self._conn.execute(
+                    base + clause + f" ORDER BY {order} LIMIT ? OFFSET ?",
+                    params + [int(limit_), int(offset_)],
+                ).fetchall()
+            return [dict(zip(keys, r)) for r in rows], total
+
+        if kind == "both":
+            # merged chronological view: alerts and the trades
+            # they produced side by side (linked via message_key).
+            # An alert's sort key rises to its newest trade's ts
+            # so the pair stays adjacent, alert on top - with
+            # second-precision timestamps the raw order cannot
+            # distinguish them.
+            merge_cap = 5000
+            trades, t_total = _run("trades", merge_cap, 0)
+            signals, s_total = _run("signals", merge_cap, 0)
+            for r in trades:
+                r["type"] = "trade"
+            for r in signals:
+                r["type"] = "signal"
+            group_top = {}
+            for r in trades:
+                k = r["message_key"]
+                if k:
+                    group_top[k] = r["ts"]
+            sig_keys = {
+                r["message_key"] for r in signals if r["message_key"]
+            }
+
+            def _key(r):
+                if r["type"] == "signal":
+                    top = group_top.get(r["message_key"])
+                    ts = top if top and top > r["ts"] else r["ts"]
+                    return (ts, 1)   # alert sorts above its trades
+                return (r["ts"], 0)
+
+            merged = sorted(
+                trades + signals, key=_key, reverse=True,
             )
+            page = merged[int(offset):int(offset) + int(limit)]
+            return page, t_total + s_total
 
-        # date-only bounds: since is inclusive by prefix ordering,
-        # until is stretched to cover the whole end date
-        if since:
-            since = str(since)
-        if until:
-            until = str(until)
-        if until and len(until) == 10:
-            until += "T99"
-
-        where, params = [], []
-        if since:
-            where.append("ts >= ?")
-            params.append(since)
-        if until:
-            where.append("ts <= ?")
-            params.append(until)
-
-        if kind == "signals":
-            table = "signals"
-            base = ("SELECT ts, author, text, parsed, correction, "
-                    "channel, received_ts FROM signals")
-            keys = ["ts", "author", "text", "parsed", "correction",
-                    "channel", "received_ts"]
-            order = "rowid DESC"
-            if ticker:
-                where.append("UPPER(text) LIKE ? ESCAPE '\\'")
-                params.append(_like(str(ticker).upper()))
-            if q:
-                where.append(
-                    "(text LIKE ? ESCAPE '\\' "
-                    "OR author LIKE ? ESCAPE '\\')"
-                )
-                like = _like(q)
-                params += [like, like]
-        else:
-            table = "trades"
-            base = ("SELECT ts, mode, action, ticker, qty, price, "
-                    "status, detail FROM trades")
-            keys = ["ts", "mode", "action", "ticker", "qty", "price",
-                    "status", "detail"]
-            order = "id DESC"
-            if ticker:
-                where.append("UPPER(ticker) = UPPER(?)")
-                params.append(str(ticker))
-            if action:
-                where.append("UPPER(action) = UPPER(?)")
-                params.append(str(action))
-            if status:
-                where.append("LOWER(status) = LOWER(?)")
-                params.append(str(status))
-            if mode:
-                where.append("mode = ?")
-                params.append(str(mode))
-            if q:
-                where.append(
-                    "(detail LIKE ? ESCAPE '\\' "
-                    "OR ticker LIKE ? ESCAPE '\\')"
-                )
-                like = _like(q)
-                params += [like, like]
-
-        clause = (" WHERE " + " AND ".join(where)) if where else ""
-        with self._conn:
-            total = self._conn.execute(
-                f"SELECT COUNT(*) FROM {table}" + clause, params
-            ).fetchone()[0]
-            rows = self._conn.execute(
-                base + clause + f" ORDER BY {order} LIMIT ? OFFSET ?",
-                params + [int(limit), int(offset)],
-            ).fetchall()
-        return [dict(zip(keys, r)) for r in rows], total
+        rows, total = _run(kind, int(limit), int(offset))
+        for r in rows:
+            r["type"] = "trade" if kind == "trades" else "signal"
+        return rows, total
 
     def get_cached_value(self, label: str):
         with self._conn:

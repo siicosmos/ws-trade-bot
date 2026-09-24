@@ -1021,7 +1021,7 @@ def create_app(cfg, store: Store, risk, executor, account=None,
     @app.get("/api/history")
     def api_history():
         kind = request.args.get("kind", "trades")
-        if kind not in ("trades", "signals"):
+        if kind not in ("trades", "signals", "both"):
             kind = "trades"
         limit = min(max(
             request.args.get("limit", default=50, type=int) or 50, 1), 200)

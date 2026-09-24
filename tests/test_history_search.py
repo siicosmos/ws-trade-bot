@@ -163,3 +163,88 @@ def test_history_endpoint():
 
     r = client.get("/api/history?status=skipped", headers=hdr)
     assert r.get_json()["total"] == 1
+
+
+def test_search_both_merges_chronologically():
+    import time
+
+    s = _fresh_store()
+    # the alert first, then the trade it produced (linked via
+    # message_key), then an unrelated newer alert
+    base = time.time()
+    s.record_signal("s1", "alpha", "BOUGHT 0DTE SPY 759c @ 1.5",
+                    True, channel="options", ts_epoch=base)
+    _record_trade(s, "paper", "BUY", "SPY", 3, 1.5, "executed",
+                  "bought 3", "s1")
+    s.record_signal("s2", "beta", "chatter", False, channel="general",
+                    ts_epoch=base + 5)
+
+    rows, total = s.search_history(kind="both")
+    assert total == 3
+    # newest first; the s1 alert rides its trade's timestamp so
+    # the pair lands together, alert on top
+    assert [r["type"] for r in rows] == ["signal", "signal", "trade"]
+    assert rows[0]["message_key"] == "s2"
+    assert rows[1]["message_key"] == "s1"
+    assert rows[2]["message_key"] == "s1"
+
+
+def test_search_both_filters_per_table():
+    s = _fresh_store()
+    _record_trade(s, "paper", "BUY", "SPY", 3, 1.5, "executed",
+                  "bought", "k1")
+    s.record_signal("s1", "alpha", "BOUGHT 0DTE SPY 759c", True)
+
+    # status applies to trades only - the alert still lists
+    rows, total = s.search_history(kind="both", status="skipped")
+    assert total == 1 and rows[0]["type"] == "signal"
+
+    # free text applies to both tables
+    rows, total = s.search_history(kind="both", q="SPY")
+    assert total == 2
+
+
+def test_search_both_pagination():
+    s = _fresh_store()
+    for i in range(5):
+        _record_trade(s, "paper", "BUY", "SPY", 1, 1.0, "executed",
+                      f"t{i}", f"k{i}")
+        s.record_signal(f"s{i}", "a", f"alert {i}", True)
+    rows, total = s.search_history(kind="both", limit=4)
+    assert total == 10 and len(rows) == 4
+    rows, _ = s.search_history(kind="both", limit=4, offset=8)
+    assert len(rows) == 2
+
+
+def test_history_endpoint_both():
+    from trader.config import (
+        AutoUpdateConfig, DiscordConfig, QuotesConfig, ReaderConfig,
+        TradingConfig, WealthsimpleConfig,
+    )
+    from trader.web.server import create_app
+
+    class Stub:
+        def __init__(self):
+            self.trading = TradingConfig(mode="notify")
+            self.pipeline = type(
+                "P", (), {"auth_token": "secret"})()
+            self.wealthsimple = WealthsimpleConfig(accounts=[])
+            self.reader = ReaderConfig()
+            self.discord = DiscordConfig()
+            self.parser = type("P2", (), {"custom_patterns": []})()
+            self.auto_update = AutoUpdateConfig()
+            self.quotes = QuotesConfig()
+
+    store = _fresh_store()
+    s1 = "BOUGHT 0DTE SPY 759c @ 1.5"
+    store.record_signal("s1", "alpha", s1, True)
+    _record_trade(store, "paper", "BUY", "SPY", 3, 1.5, "executed",
+                  "bought", "s1")
+
+    app = create_app(Stub(), store, None, None, None)
+    client = app.test_client()
+    r = client.get("/api/history?kind=both", headers={"X-Auth-Token": "secret"})
+    assert r.status_code == 200
+    data = r.get_json()
+    assert data["total"] == 2
+    assert {row["type"] for row in data["rows"]} == {"signal", "trade"}

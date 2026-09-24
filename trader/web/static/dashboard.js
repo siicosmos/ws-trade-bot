@@ -764,6 +764,51 @@ function renderHistoryResults(data) {
     el.innerHTML = html + '<div class="empty">no matches</div>';
     return;
   }
+  if (kind === "both") {
+    // merged stream: alerts and trades interleaved by time,
+    // trades produced by a listed alert are marked linked
+    const sigKeys = new Set(
+      data.rows.filter(function(r) {
+        return r.type === "signal" && r.message_key;
+      }).map(function(r) { return r.message_key; })
+    );
+    const tradeKeys = new Set(
+      data.rows.filter(function(r) {
+        return r.type === "trade" && r.message_key;
+      }).map(function(r) { return r.message_key; })
+    );
+    html += "<table><tr><th>Time</th><th>Kind</th><th>Detail</th></tr>";
+    for (const r of data.rows) {
+      if (r.type === "signal") {
+        const tag = r.parsed ? '<span class="tag buy">signal</span>'
+          : (r.correction ? '<span class="tag skip">correction</span>'
+          : '<span class="tag ignored">ignored</span>');
+        const matched = r.message_key && tradeKeys.has(r.message_key);
+        html += "<tr" + (matched ? ' class="linked"' : "") + "><td>" +
+          fmtTime(r.ts) + "</td>" +
+          '<td><span class="tag info">alert</span></td>' +
+          "<td>" + esc(r.author || "") + ": " + esc(r.text || "") +
+          " " + tag + "</td></tr>";
+      } else {
+        const linked = r.message_key && sigKeys.has(r.message_key);
+        const actionTag = r.action === "BUY" ? "buy" : "sell";
+        let statusTag = "ignored";
+        if (r.status === "executed") statusTag = "ok";
+        else if (r.status === "skipped") statusTag = "skip";
+        else if (r.status === "error") statusTag = "error";
+        else if (r.status === "notified") statusTag = "info";
+        html += "<tr" + (linked ? ' class="linked"' : "") + "><td>" +
+          fmtTime(r.ts) + "</td>" +
+          '<td><span class="tag ' + actionTag + '">' + esc(r.action) + "</span></td>" +
+          '<td>' + (linked ? "&#8627; " : "") + r.qty + " " + esc(r.ticker) +
+          " @ " + (r.price ?? "\u2014") +
+          ' <span class="tag ' + statusTag + '">' + esc(r.status) + "</span> " +
+          '<span class="detail">' + esc(r.detail || "") + "</span></td></tr>";
+      }
+    }
+    el.innerHTML = html + "</table>";
+    return;
+  }
   if (kind === "signals") {
     html += "<table><tr><th>Time</th><th>Author</th><th>Message</th><th>Status</th><th>Channel</th></tr>";
     for (const s of data.rows) {

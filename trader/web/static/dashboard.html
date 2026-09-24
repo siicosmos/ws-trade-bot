@@ -38,12 +38,6 @@
 <h2 style="display:flex;justify-content:space-between;align-items:center"><span>Recent Alerts</span><span><button id="toggle-alerts" onclick="toggleAlerts()" style="background:#21262d;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 14px;font-size:12px;cursor:pointer">Hide</button> <button id="toggle-ignored" onclick="toggleIgnored()" style="background:#21262d;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 14px;font-size:12px;cursor:pointer">Hide ignored</button></span></h2>
 <div id="signals"></div>
 
-<h2>History Search</h2>
-<div class="card" id="history-search" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:10px">
-  <select id="hs-kind" onchange="historyKindChanged()">
-    <option value="trades">Trades</option>
-    <option value="signals">Signals</option>
-  </select>
   <input id="hs-q" placeholder="free text" onkeydown="if(event.key==='Enter')runHistorySearch()" style="min-width:140px">
   <input id="hs-ticker" placeholder="ticker" onkeydown="if(event.key==='Enter')runHistorySearch()" style="width:70px;text-transform:uppercase">
   <select id="hs-status">
@@ -62,6 +56,29 @@
 
 <h2 style="display:flex;justify-content:space-between;align-items:center"><span>Trade Log</span><button id="toggle-trades" onclick="toggleTrades()" style="background:#21262d;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 14px;font-size:12px;cursor:pointer">Hide</button></h2>
 <div id="trades"></div>
+
+<h2>History Search</h2>
+<div class="card" id="history-search" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:10px">
+  <select id="hs-kind" onchange="historyKindChanged()">
+    <option value="both" selected>Alerts + trades</option>
+    <option value="trades">Trades</option>
+    <option value="signals">Alerts</option>
+  </select>
+  <input id="hs-q" placeholder="free text" onkeydown="if(event.key==='Enter')runHistorySearch()" style="min-width:140px">
+  <input id="hs-ticker" placeholder="ticker" onkeydown="if(event.key==='Enter')runHistorySearch()" style="width:70px;text-transform:uppercase">
+  <select id="hs-status">
+    <option value="">any status</option>
+    <option value="executed">executed</option>
+    <option value="skipped">skipped</option>
+    <option value="error">error</option>
+    <option value="notified">notified</option>
+  </select>
+  <input type="date" id="hs-since" title="from date">
+  <input type="date" id="hs-until" title="to date (inclusive)">
+  <button onclick="runHistorySearch()">Search</button>
+  <button onclick="clearHistorySearch()">Clear</button>
+</div>
+<div id="history-results"></div>
 
 <div id="settingsBackdrop" onclick="if(event.target===this) requestCloseSettings()">
   <div id="settingsPanel">

@@ -141,10 +141,13 @@ default 365) while the dashboard renders only the latest 50
 of each. Landed: `Store.search_history` (ticker, action,
 status, mode, date range, free text with LIKE-escaping) over
 both tables, the auth-guarded `/api/history` endpoint with
-pagination, and a dashboard search bar above the trade log
-(kind toggle, free text, ticker, status, date range, newer/
-older paging). The idx_trades_mode_ts index backs
-date-ranged scans.
+pagination, and a dashboard search bar below the trade log.
+The default kind is a merged chronological stream - alerts
+and the trades they produced side by side, paired via
+message_key (the alert rides its trade's timestamp so the
+pair stays adjacent, alert on top, both rows highlighted;
+trade-only filters still apply to the trades half). The
+idx_trades_mode_ts index backs date-ranged scans.
 
 ## 13. Thread supervision - DONE
 
