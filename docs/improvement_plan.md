@@ -68,26 +68,16 @@ working; new code should import from the specific modules.
 
 ## 7. Static dashboard assets - DONE
 
-The frontend lives in `trader/static/` (dashboard.html /
+The frontend lives in `trader/web/static/` (dashboard.html /
 dashboard.css / dashboard.js) - real files, lintable and
-syntax-checkable. `trader/dashboard.py` loads and re-exports
+syntax-checkable. `trader/web/dashboard.py` loads and re-exports
 them (DASHBOARD_HTML/CSS/JS) so tests and the ui harness keep
 one source of truth; the login page stays as the tiny
 parameterized template. The page keeps its unconditional
 no-store (flask's static handler would default to no-cache),
-so a post-update reload can never serve stale assets.
-
-trader/dashboard.py (~1,220 lines) is a Python string
-containing the whole frontend: no JS linting, no syntax
-highlighting, edits via string replacement. Moving HTML/JS/CSS
-to `trader/static/` served by Flask is the biggest
-maintainability win.
-
-Trade-off: the single-string approach gives atomic one-commit
-deploys with zero static-path concerns - the updater restarts
-the process and everything swaps at once. Static files also
-need cache-busting (the page currently sends no-store, so it
-would be fine, but it is a behavior to preserve deliberately).
+so a post-update reload can never serve stale assets. Atomic
+one-commit deploys are preserved: the updater restarts the
+process and everything swaps at once.
 
 ## 8. Production WSGI server - DONE
 
@@ -232,6 +222,36 @@ endpoint, indexes and retention landed. All findings closed:
   tests, nothing missing.
 - **#5 retention** - the quiet-day prune gap is closed (see
   the mirror-loop fix above).
+
+## #6-#12 re-review (third pass)
+
+- **#6 account.py split** - one real gap: the six ws_common
+  helpers (_amount, _amount_opt, _quote_price,
+  effective_accounts, account_label, resolve_account_id) were
+  duplicated byte-for-byte in trader/ws/account.py, defeating
+  the shared-leaf point of the split. Fixed: account.py
+  imports them from ws_common (same import surface).
+- **#7 static assets** - stale docstrings: the module and the
+  plan doc still said trader/static/ (they live in
+  trader/web/static/) and the doc kept the pre-#7 problem
+  statement below the DONE header. Both corrected.
+- **#8 waitress** - verified: fallback intact, requirements
+  noted, request logging actually quieter than the Werkzeug
+  path (no access lines at all). No findings.
+- **#9 per-thread connections** - verified: threading.local
+  releases a dead thread's connection (CPython clears the
+  local on thread exit), so supervised restarts don't leak;
+  the concurrency test still hammers green. No findings.
+- **#10 package split** - verified: no stale flat imports
+  anywhere; the updater restart-pattern test still covers the
+  nested paths. No findings.
+- **#11 diagrams** - architecture.dot gained the
+  /api/history row (re-rendered to png/svg). Node paths were
+  otherwise current.
+- **#12 history search** - one UI nit fixed: switching the
+  kind to Signals disabled the status select but kept its
+  value, silently sending a stale filter (the store ignored
+  it, but the UI misled); it now clears on the switch.
 
 ## Done / not pursuing
 

@@ -1,7 +1,7 @@
 """Dashboard assets.
 
-The HTML/CSS/JS live in trader/static/ (plan #7) - editable as
-real files, lintable, syntax-highlighted. This module loads
+The HTML/CSS/JS live in trader/web/static/ (plan #7) - editable
+as real files, lintable, syntax-highlighted. This module loads
 them and re-exports the pieces the server and tests use; the
 login page stays here (it is a tiny parameterized template).
 """

@@ -779,7 +779,9 @@ function clearHistorySearch() {
 
 function historyKindChanged() {
   const signals = document.getElementById("hs-kind").value === "signals";
-  document.getElementById("hs-status").disabled = signals;
+  const statusSel = document.getElementById("hs-status");
+  statusSel.disabled = signals;
+  if (signals) statusSel.value = "";   // stale filter would mislead
   document.getElementById("hs-ticker").placeholder = signals ? "ticker (text match)" : "ticker";
 }
 

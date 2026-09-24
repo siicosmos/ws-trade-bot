@@ -48,6 +48,7 @@ digraph architecture {
           <TR><TD BGCOLOR="#1f6feb" COLSPAN="2"><FONT COLOR="white"><B>web/</B> — Flask (HTTPS · session auth)</FONT></TD></TR>
           <TR><TD ALIGN="LEFT">GET / + /static</TD><TD ALIGN="LEFT">dashboard page</TD></TR>
           <TR><TD ALIGN="LEFT">GET /api/dashboard</TD><TD ALIGN="LEFT">one batched poll</TD></TR>
+          <TR><TD ALIGN="LEFT">GET /api/history</TD><TD ALIGN="LEFT">search trades/signals</TD></TR>
           <TR><TD ALIGN="LEFT">POST /alert · /api/settings</TD><TD ALIGN="LEFT">token + login</TD></TR>
         </TABLE>>];
 
