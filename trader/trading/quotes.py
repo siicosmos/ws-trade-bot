@@ -122,6 +122,14 @@ class MoomooQuoteProvider:
         try:
             ret, data = self._context().get_market_snapshot(codes)
         except Exception:
+            # OpenD can drop the connection (restart, machine
+            # sleep) - drop the cached context so the next
+            # poll reconnects instead of staying blind
+            try:
+                self._ctx.close()
+            except Exception:
+                pass
+            self._ctx = None
             return None
         if ret != 0 or data is None:
             return None

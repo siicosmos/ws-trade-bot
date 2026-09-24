@@ -1045,9 +1045,9 @@ function renderSettings(s) {
         "seconds between wealthsimple account value refreshes") +
       _numField("set-ws-margin-rate", "stock margin rate", ws.stock_margin_rate,
         "maintenance margin rate applied to stock holdings (0.30 = 30%)") +
-      '<div class="set-field"><label title="quote source for the stop monitor">' +
+      '<div class="set-field"><label title="quote source for the stop monitor (takes effect after restart)">' +
       'quotes provider</label>' +
-      '<select id="set-quotes-provider" title="quote source for the stop monitor: ws = wealthsimple, moomoo = OpenD feed">' +
+      '<select id="set-quotes-provider" title="quote source for the stop monitor - takes effect after restart: ws = wealthsimple, moomoo = OpenD feed">' +
         '<option value="ws"' + (q.provider === "ws" ? " selected" : "") + '>ws</option>' +
         '<option value="moomoo"' + (q.provider === "moomoo" ? " selected" : "") + '>moomoo</option>' +
       '</select></div>' +

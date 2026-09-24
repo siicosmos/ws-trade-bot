@@ -179,3 +179,63 @@ def test_stop_monitor_records_peak_for_trailing():
     quotes[key] = 1.3
     monitor.check_once()
     assert store.get_position("paper", key) == 0
+
+
+def test_moomoo_provider_reconnects_after_opend_drop():
+    """OpenD can restart while the pipeline runs - the cached
+    context must be dropped so the next poll reconnects."""
+    import sys
+    import types
+
+    if "moomoo" not in sys.modules:
+        sys.modules["moomoo"] = types.ModuleType("moomoo")
+
+    from trader.trading.quotes import MoomooQuoteProvider
+
+    made = []
+
+    class _Row:
+        @staticmethod
+        def get(key):
+            return {"bid_price": 1.5}.get(key)
+
+    class _Data:
+        empty = False
+
+        class _Iloc:
+            @staticmethod
+            def __getitem__(i):
+                return _Row()
+
+        iloc = _Iloc()
+
+    calls = {"n": 0}
+
+    class _Ctx:
+        def __init__(self, host, port):
+            made.append(self)
+
+        def get_market_snapshot(self, codes):
+            calls["n"] += 1
+            if calls["n"] == 1:   # the very first call ever dies
+                raise OSError("connection reset by OpenD")
+            return 0, _Data()
+
+        def close(self):
+            pass
+
+    sys.modules["moomoo"].OpenQuoteContext = _Ctx
+    cfg = types.SimpleNamespace(
+        quotes=types.SimpleNamespace(
+            moomoo_host="127.0.0.1", moomoo_port=11111
+        )
+    )
+    pos = {
+        "underlying": "SPY", "expiry": "2026-09-18",
+        "strike": 759.0, "right": "C",
+    }
+    p = MoomooQuoteProvider(cfg)
+    assert p.quote(pos) is None      # first call: connection dies
+    assert p._ctx is None           # context dropped for reconnect
+    assert p.quote(pos) == 1.5       # second call: reconnected
+    assert len(made) == 2
