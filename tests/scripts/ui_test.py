@@ -254,7 +254,28 @@ window.__t = function(name, ok, detail) {
     __t("empty-ledger-says-no-positions",
         rrspCard2.textContent.indexOf("no positions") >= 0);
 
-    // 7. no negative-zero or $- artifacts in the *rendered*
+    // 7. history search: one bar at the end, auto-runs, the
+    // merged pair renders linked
+    const bars = document.querySelectorAll("#history-search");
+    __t("history-bar-single", bars.length === 1, "bars=" + bars.length);
+    __t("history-bar-last",
+        !!((document.getElementById("trades")
+             .compareDocumentPosition(
+               document.getElementById("history-search"))
+             & Node.DOCUMENT_POSITION_FOLLOWING)));
+    document.getElementById("hs-q").value = "SPY";
+    autoSearch();
+    await new Promise(r => setTimeout(r, 700));
+    const res = document.getElementById("history-results");
+    const linkedRows = res.querySelectorAll("tr.linked");
+    __t("history-search-renders",
+        res.textContent.indexOf("2 results") >= 0
+        && res.textContent.indexOf("alpha") >= 0,
+        res.textContent.slice(0, 80));
+    __t("history-pair-linked", linkedRows.length === 2,
+        "linked=" + linkedRows.length);
+
+    // 8. no negative-zero or $- artifacts in the *rendered*
     // text (scripts contain the string in comments)
     const clone = document.body.cloneNode(true);
     clone.querySelectorAll("script, style").forEach(n => n.remove());
@@ -306,6 +327,21 @@ def build_page():
         }) + ';\n'
         '  if (path === "/api/summary") return '
         + json.dumps(CANNED) + ';\n'
+        '  if (path.indexOf("/api/history") === 0) return '
+        + json.dumps({
+            "kind": "both", "total": 2, "limit": 50,
+            "offset": 0,
+            "rows": [
+                {"type": "signal", "ts": "2026-09-24T00:00:01+00:00",
+                 "author": "alpha", "text": "BOUGHT 0DTE SPY 759c @ 1.5",
+                 "parsed": True, "correction": False,
+                 "channel": "player-alerts", "message_key": "k1"},
+                {"type": "trade", "ts": "2026-09-24T00:00:02+00:00",
+                 "mode": "paper", "action": "BUY", "ticker": "SPY",
+                 "qty": 5, "price": 1.5, "status": "executed",
+                 "detail": "[PAPER] BUY 5x", "message_key": "k1"},
+            ],
+        }) + ';\n'
         '  if (path === "/api/paper-positions") return '
         + json.dumps(PAPER_POSITIONS) + ';\n'
         '  return {};\n'

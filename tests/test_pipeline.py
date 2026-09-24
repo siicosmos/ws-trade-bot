@@ -3653,3 +3653,95 @@ def test_health_watchdog_tick_logic():
     # sustained failure past grace exits
     assert tick(state, False, 100.0, 300) == "arming"
     assert tick(state, False, 400.0, 300) == "exit"
+
+
+def test_notify_paper_respects_risk_gates():
+    """The hybrid notify+paper pipeline must run the RiskEngine
+    before paper fills - it used to bypass whitelist, daily
+    limit, cooldown and the loss-streak breaker."""
+    cfg, store, account, risk = _setup(
+        mode="notify", ticker_whitelist=["SPY"], cooldown_seconds=0
+    )
+    cfg.discord.notify = False
+    from trader.config import PaperConfig
+
+    cfg.paper = PaperConfig(enabled=True, mirror=False)
+
+    ex = PaperExecutor(cfg, store, account)
+
+    r1 = process_alert(
+        "BOUGHT 0DTE QQQ 759c @ 1.5", "a", cfg, store, risk, ex,
+        account,
+    )
+    assert r1["status"] == "notified"
+    assert r1["paper"]["detail"].startswith("blocked:")
+    assert "QQQ not in whitelist" in r1["paper"]["detail"]
+    # the paper row records the block with the shared message_key
+    rows = store.recent_trades(5)
+    paper_rows = [r for r in rows if r["mode"] == "paper"]
+    assert paper_rows and paper_rows[0]["status"] == "skipped"
+    assert "whitelist" in paper_rows[0]["detail"]
+
+    r2 = process_alert(
+        "BOUGHT 0DTE SPY 759c @ 1.5", "b", cfg, store, risk, ex,
+        account,
+    )
+    assert r2["paper"]["ok"] is True
+    assert store.get_position("paper", "SPY-2026-09-24-759-C",
+                              "default") >= 1
+
+
+def test_health_watchdog_rides_the_prune():
+    """The daily prune now rides the always-on watchdog loop (the
+    mirror loop only runs when mirroring is enabled)."""
+    import threading
+    import time as _time
+    from trader.ops import watchdog as wd
+
+    pruned = []
+    store = types_mod = None
+    import types as _types
+
+    class FakeStore:
+        def maybe_prune(self):
+            pruned.append(_time.time())
+
+    served = {"n": 0}
+
+    def fake_exit():
+        raise SystemExit(99)
+
+    # an http server that always answers /health
+    import http.server
+
+    class H(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            served["n"] += 1
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"ok")
+
+        def log_message(self, *a):
+            pass
+
+    srv = http.server.HTTPServer(("127.0.0.1", 0), H)
+    port = srv.server_address[1]
+    t = threading.Thread(target=srv.serve_forever, daemon=True)
+    t.start()
+    try:
+        wd.start_health_watchdog(
+            f"http://127.0.0.1:{port}/health",
+            interval_seconds=0.1, grace_seconds=300,
+            log=lambda *a: None, _exit=fake_exit,
+            store=FakeStore(),
+        )
+        # the watchdog floors its interval at 5s - the first
+        # prune lands just after that; wait for both the prune
+        # and the health probe (they race in the same cycle)
+        deadline = _time.time() + 20
+        while (not pruned or not served["n"]) and _time.time() < deadline:
+            _time.sleep(0.1)
+        assert pruned, "watchdog never pruned"
+        assert served["n"] >= 1
+    finally:
+        srv.shutdown()

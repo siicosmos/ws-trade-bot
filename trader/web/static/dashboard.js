@@ -762,9 +762,10 @@ async function historyNav(dir) {
 }
 
 async function fetchHistoryPage() {
-  const res = await fetch("/api/history?" + historyQuery(historyOffset));
-  if (!res.ok) return;
-  renderHistoryResults(await res.json());
+  try {
+    const data = await api("/api/history?" + historyQuery(historyOffset));
+    renderHistoryResults(data);
+  } catch (e) { /* 401 redirect or network - surfaced by the banner */ }
 }
 
 function renderHistoryResults(data) {

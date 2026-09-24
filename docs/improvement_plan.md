@@ -280,6 +280,32 @@ work):**
   protection, settings validation ranges, endpoint auth
   guards, waitress/werkzeug selection.
 
+**Find-fix loop (fourth pass):** ran the review loop until
+clean - three more rounds after the third-pass review:
+
+- **round 2 - risk gates bypassed in notify+paper (real
+  bug)**: the hybrid pipeline executed paper fills without
+  consulting the RiskEngine - whitelist, daily trade limit,
+  cooldown and the loss-streak breaker never applied (pure
+  paper mode gated them, notify+paper skipped them entirely).
+  Fixed: risk.evaluate runs before every paper fill, blocked
+  alerts record a skipped paper row carrying the reason.
+- **round 3 - closed the noted gaps**: the history search
+  gained ui-smoke coverage (single bar, positioned last,
+  auto-run renders the merged pair linked - 21 ui checks now);
+  fixing the test surfaced a real bug: fetchHistoryPage used
+  raw fetch instead of the api() wrapper, missing the
+  401-redirect and reconnect-banner handling every other
+  load has. moomoo host/port now persist unconditionally
+  (clearing the host no longer leaves a stale yaml value).
+  The watchdog prune test was de-flaked (it raced the health
+  probe in the same cycle).
+- **round 4 - clean**: notify.py / loghook.py reviewed
+  (guarded requests, bounded batches, locks scoped tightly);
+  no TODO/FIXME markers; compileall, the unbound-local scan,
+  296 unit tests and the full e2e (68 checks incl. the ui
+  suite) green on repeat runs. Nothing further found.
+
 **#6-#12 re-review (third pass):**
 
 - **#6 account.py split** - one real gap: the six ws_common

@@ -453,9 +453,12 @@ def _persist(cfg, config_path):
     quotes = raw.setdefault("quotes", {})
     quotes["enabled"] = cfg.quotes.enabled
     quotes["provider"] = cfg.quotes.provider
-    if getattr(cfg.quotes, "moomoo_host", None):
-        quotes["moomoo_host"] = cfg.quotes.moomoo_host
-        quotes["moomoo_port"] = cfg.quotes.moomoo_port
+    quotes["moomoo_host"] = getattr(
+        cfg.quotes, "moomoo_host", ""
+    )
+    quotes["moomoo_port"] = getattr(
+        cfg.quotes, "moomoo_port", 11111
+    )
 
     paper_cfg = getattr(cfg, "paper", None)
     if paper_cfg is not None:

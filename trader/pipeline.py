@@ -115,22 +115,38 @@ def process_alert(
         paper = None
         if _paper_enabled(cfg) and executor is not None:
             # paper trading alongside notify: execute against the
-            # seeded ledger and record the simulated fill
-            res = executor.execute(alert, cfg, store)
-            paper = {
-                "ok": bool(res.ok),
-                "qty": res.qty,
-                "detail": res.detail,
-            }
-            store.record_trade(
-                "paper", alert.action, alert.ticker, res.qty or 0,
-                alert.premium, alert,
-                "executed" if res.ok else "skipped",
-                (res.detail or "") + (
-                    " | " + mismatch if mismatch else ""
-                ), key,
-            )
-            detail += " | paper: " + (res.detail or "-")
+            # seeded ledger and record the simulated fill. The
+            # same risk gates as paper mode apply (whitelist,
+            # daily limit, cooldown, loss-streak breaker) -
+            # the hybrid used to bypass them entirely.
+            allowed, reason = risk.evaluate(alert)
+            if allowed:
+                res = executor.execute(alert, cfg, store)
+                paper = {
+                    "ok": bool(res.ok),
+                    "qty": res.qty,
+                    "detail": res.detail,
+                }
+                store.record_trade(
+                    "paper", alert.action, alert.ticker, res.qty or 0,
+                    alert.premium, alert,
+                    "executed" if res.ok else "skipped",
+                    (res.detail or "") + (
+                        " | " + mismatch if mismatch else ""
+                    ), key,
+                )
+            else:
+                paper = {
+                    "ok": False,
+                    "qty": 0,
+                    "detail": f"blocked: {reason}",
+                }
+                store.record_trade(
+                    "paper", alert.action, alert.ticker, 0,
+                    alert.premium, alert, "skipped",
+                    f"blocked: {reason}", key,
+                )
+            detail += " | paper: " + (paper["detail"] or "-")
         store.record_trade(
             "notify", alert.action, alert.ticker, 0, alert.premium,
             alert, "notified", detail, key,
