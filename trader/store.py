@@ -124,6 +124,8 @@ class Store:
                     ON trades (mode, ts);
                 CREATE INDEX IF NOT EXISTS idx_trades_dedupe
                     ON trades (dedupe_key, ts);
+                CREATE INDEX IF NOT EXISTS idx_trades_message_key
+                    ON trades (message_key);
                 """
             )
             for col in ("realized", "peak_bid"):

@@ -755,7 +755,29 @@ async function fetchHistoryPage() {
 function renderHistoryResults(data) {
   const el = document.getElementById("history-results");
   const kind = data.kind;
-  let html = '<div class="meta">' + data.total + " result" + (data.total === 1 ? "" : "s") +
+  // the alert->trade link: trades record the message_key of
+  // the signal that produced them
+  const sigKeys = new Set(
+    data.rows.filter(function(r) {
+      return r.type === "signal" && r.message_key;
+    }).map(function(r) { return r.message_key; })
+  );
+  const tradeKeys = new Set(
+    data.rows.filter(function(r) {
+      return r.type === "trade" && r.message_key;
+    }).map(function(r) { return r.message_key; })
+  );
+  let meta = data.total + " result" + (data.total === 1 ? "" : "s");
+  if (kind === "both") {
+    const matched = Array.from(sigKeys).filter(function(k) {
+      return tradeKeys.has(k);
+    }).length;
+    if (matched) {
+      meta += " · " + matched + " alert" + (matched === 1 ? "" : "s") +
+        " matched to trades";
+    }
+  }
+  let html = '<div class="meta">' + meta +
     ' <span class="nav-btns">' +
     (data.offset > 0 ? '<button onclick="historyNav(-1)">&#8592; newer</button> ' : "") +
     (data.offset + data.rows.length < data.total ? '<button onclick="historyNav(1)">older &#8594;</button>' : "") +
@@ -765,18 +787,8 @@ function renderHistoryResults(data) {
     return;
   }
   if (kind === "both") {
-    // merged stream: alerts and trades interleaved by time,
-    // trades produced by a listed alert are marked linked
-    const sigKeys = new Set(
-      data.rows.filter(function(r) {
-        return r.type === "signal" && r.message_key;
-      }).map(function(r) { return r.message_key; })
-    );
-    const tradeKeys = new Set(
-      data.rows.filter(function(r) {
-        return r.type === "trade" && r.message_key;
-      }).map(function(r) { return r.message_key; })
-    );
+    // merged stream: alerts and the trades they produced side
+    // by side, the pair highlighted and the trade indented
     html += "<table><tr><th>Time</th><th>Kind</th><th>Detail</th></tr>";
     for (const r of data.rows) {
       if (r.type === "signal") {

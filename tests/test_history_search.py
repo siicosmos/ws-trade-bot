@@ -248,3 +248,40 @@ def test_history_endpoint_both():
     data = r.get_json()
     assert data["total"] == 2
     assert {row["type"] for row in data["rows"]} == {"signal", "trade"}
+
+
+def test_trades_message_key_index_exists():
+    import sqlite3
+
+    s = _fresh_store()
+    with s._conn:
+        names = {
+            r[0] for r in s._conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='index'"
+            )
+        }
+    assert "idx_trades_message_key" in names
+    # the link lookup uses the index
+    plan = " ".join(
+        str(col) for col in s._conn.execute(
+            "EXPLAIN QUERY PLAN SELECT * FROM trades "
+            "WHERE message_key = ?", ("x",),
+        ).fetchall()[0]
+    )
+    assert "idx_trades_message_key" in plan
+
+
+def test_pipeline_trades_carry_the_signal_key():
+    # the production path: every alert-driven record_trade call
+    # passes the signal's message_key, so the merged search can
+    # pair them (mirrored fills and stop exits have no signal
+    # and stay unlinked by design)
+    import inspect
+
+    from trader import pipeline
+
+    src = inspect.getsource(pipeline)
+    calls = src.count("store.record_trade(")
+    keyed = src.count(", key,\n            )") + src.count(", key,")
+    assert calls >= 4
+    assert keyed >= 4, "alert-driven trades must pass message_key"

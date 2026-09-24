@@ -145,8 +145,14 @@ pagination, and a dashboard search bar below the trade log.
 The default kind is a merged chronological stream - alerts
 and the trades they produced side by side, paired via
 message_key (the alert rides its trade's timestamp so the
-pair stays adjacent, alert on top, both rows highlighted;
-trade-only filters still apply to the trades half). The
+pair stays adjacent, alert on top, both rows highlighted; the
+result count notes how many alerts matched trades;
+trade-only filters still apply to the trades half). The link
+is first-class schema-wise: every alert-driven
+record_trade carries the signal's message_key and
+idx_trades_message_key backs the lookup (mirrored fills and
+stop exits have no originating signal and stay unlinked by
+design). The
 idx_trades_mode_ts index backs date-ranged scans.
 
 ## 13. Thread supervision - DONE
