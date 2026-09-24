@@ -72,8 +72,12 @@ def test_settings_list_inputs_span_full_row():
     import trader.web.dashboard as dash
 
     js = dash.DASHBOARD_JS
-    assert '["ticker_whitelist"' in js
-    assert "grid-column:1/-1" in js
+    css = dash.DASHBOARD_CSS
+    assert '"set-ticker_whitelist"' in js
+    assert '"set-skip_underlyings"' in js
+    # full-row fields come from the shared class + css rule
+    assert ".set-field.full" in css
+    assert "grid-column: 1 / -1" in css
 
 
 def test_login_page_rejects_injection():
@@ -139,8 +143,9 @@ def test_long_text_wraps_and_webhooks_are_textareas():
     assert "white-space: nowrap; color: var(--text)" not in html
     # webhook inputs are full-row wrapping textareas that auto-grow
     js = dash.DASHBOARD_JS
+    css = dash.DASHBOARD_CSS
     assert 'textarea id="' in js
-    assert "grid-column:1/-1" in js
+    assert "grid-column: 1 / -1" in css
     assert "function autoGrow(" in js
 
 

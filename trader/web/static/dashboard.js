@@ -822,100 +822,151 @@ function revertSettings() {
 document.getElementById("settings-save").onclick = saveSettings;
 document.getElementById("settings-revert").onclick = revertSettings;
 
+function _numField(id, label, value, cls) {
+  return '<div class="set-field"><label>' + esc(label) + '</label>' +
+    '<input id="' + id + '" type="number" step="any" value="' + (value ?? "") + '"' +
+    (cls ? ' class="' + cls + '"' : "") + '></div>';
+}
+
+function _txtField(id, label, value, placeholder, full) {
+  return '<div class="set-field' + (full ? " full" : "") + '"><label>' + esc(label) + '</label>' +
+    '<input id="' + id + '" type="text" value="' + esc(value ?? "") + '"' +
+    (placeholder ? ' placeholder="' + esc(placeholder) + '"' : "") + '></div>';
+}
+
+function _check(id, label, checked) {
+  return '<label><input id="' + id + '" type="checkbox"' + (checked ? " checked" : "") +
+    '> ' + esc(label) + '</label>';
+}
+
+function _section(title, body) {
+  return '<div class="set-section"><div class="set-title">' + esc(title) + '</div>' +
+    body + '</div>';
+}
+
 function renderSettings(s) {
   lastSettings = s;
   // leave the form alone while the user has unsaved edits - the
   // periodic refresh used to wipe them mid-typing
   if (settingsDirty) return;
   const el = document.getElementById("settings");
-  const t = s.trading;
-  const quick = {
-    risk_per_trade_pct: "default risk %",
-    max_contracts_per_trade: "max contracts",
-    max_open_risk_pct: "open risk cap %",
-    stop_loss_pct: "stop loss %",
-    trailing_stop_pct: "trailing stop %",
-  };
-  let html = '<div style="border:1px solid var(--border);background:#161b22;border-radius:8px;padding:14px;margin-bottom:14px">' +
-    '<div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;margin-bottom:12px">' +
-    '<span style="color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.8px">quick controls</span>' +
-    '<label style="color:var(--text);font-size:13px;font-weight:600"><input id="set-notify" type="checkbox"' + ((s.discord || {}).notify !== false ? " checked" : "") + '> notify</label>' +
-    '<label style="color:var(--text);font-size:13px;font-weight:600"><input id="set-paper-enabled" type="checkbox"' + (s.paper && s.paper.enabled ? " checked" : "") + '> paper trading</label>' +
-    '<label style="color:var(--text);font-size:13px;font-weight:600"><input id="set-paper-mirror" type="checkbox"' + (s.paper && s.paper.mirror ? " checked" : "") + '> mirror real fills</label></div>' +
-    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">' +
-    Object.entries(quick).map(([k, label]) =>
-      '<div><label style="color:var(--text);font-size:11px;text-transform:uppercase">' + label + '</label>' +
-      '<input id="set-' + k + '" type="number" step="any" value="' + t[k] + '" style="width:100%;background:#0d1117;color:var(--text);border:1px solid #30363d;border-radius:6px;padding:8px;font-size:15px;font-weight:600"></div>'
-    ).join("") + '</div></div>' +
-    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px">';
-  const labels = {
-    stop_check_seconds: "stop check (s)",
-    max_consecutive_losses: "max losses in row", min_dte_days: "min DTE",
-    max_trades_per_day: "max trades/day", cooldown_seconds: "cooldown (s)",
-    dedupe_window_minutes: "dedupe (min)",
-  };
-  for (const [k, label] of Object.entries(labels)) {
-    html += '<div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">' + label + '</label>' +
-      '<input id="set-' + k + '" type="number" step="any" value="' + t[k] + '" style="width:100%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px"></div>';
+  const t = s.trading || {};
+  const rd = s.reader || {};
+  const dc = s.discord || {};
+  const ws = s.wealthsimple || {};
+  const au = s.auto_update || {};
+  const q = s.quotes || {};
+
+  // 1. quick controls: the toggles and numbers touched most
+  let html = _section("quick controls",
+    '<div class="set-checks">' +
+      _check("set-notify", "notify", dc.notify !== false) +
+      _check("set-paper-enabled", "paper trading", s.paper && s.paper.enabled) +
+      _check("set-paper-mirror", "mirror real fills", s.paper && s.paper.mirror) +
+    '</div>' +
+    '<div class="set-grid">' +
+      _numField("set-risk_per_trade_pct", "default risk %", t.risk_per_trade_pct, "big") +
+      _numField("set-max_contracts_per_trade", "max contracts", t.max_contracts_per_trade, "big") +
+      _numField("set-max_open_risk_pct", "open risk cap %", t.max_open_risk_pct, "big") +
+      _numField("set-stop_loss_pct", "stop loss %", t.stop_loss_pct, "big") +
+      _numField("set-trailing_stop_pct", "trailing stop %", t.trailing_stop_pct, "big") +
+    '</div>');
+
+  // 2. trading limits
+  html += _section("trading limits", '<div class="set-grid">' +
+    _numField("set-stop_check_seconds", "stop check (s)", t.stop_check_seconds) +
+    _numField("set-max_consecutive_losses", "max losses in row", t.max_consecutive_losses) +
+    _numField("set-min_dte_days", "min DTE", t.min_dte_days) +
+    _numField("set-max_trades_per_day", "max trades/day", t.max_trades_per_day) +
+    _numField("set-cooldown_seconds", "cooldown (s)", t.cooldown_seconds) +
+    _numField("set-dedupe_window_minutes", "dedupe (min)", t.dedupe_window_minutes) +
+    '</div>');
+
+  // 3. filters
+  html += _section("filters", '<div class="set-grid">' +
+    _txtField("set-ticker_whitelist", "ticker whitelist",
+      (t.ticker_whitelist || []).join(", "),
+      "e.g. SPY, SPX - empty = allow all", true) +
+    _txtField("set-skip_underlyings", "skip underlyings",
+      (t.skip_underlyings || []).join(", "),
+      "e.g. SPX - empty = none", true) +
+    '</div>');
+
+  // 4. size tiers
+  let tiers = '<div class="set-grid">' +
+    '<div class="set-field full" style="color:var(--muted);font-size:11px">' +
+    'risk % cap / min / max contracts</div>';
+  for (const [name, tier] of Object.entries(t.size_tiers || {})) {
+    tiers += '<div class="set-field"><label>' + esc(name) + '</label>' +
+      '<input id="tier-' + esc(name) + '-risk" type="number" step="any" value="' + tier.risk_pct_max + '" title="risk % cap">' +
+      '<div class="tier-row">' +
+      '<input id="tier-' + esc(name) + '-min" type="number" value="' + tier.contracts_min + '" title="min contracts">' +
+      '<input id="tier-' + esc(name) + '-max" type="number" value="' + tier.contracts_max + '" title="max contracts">' +
+      '</div></div>';
   }
-  for (const [k, hint] of [["ticker_whitelist", "e.g. SPY, SPX - empty = allow all"], ["skip_underlyings", "e.g. SPX - empty = none"]]) {
-    html += '<div style="grid-column:1/-1"><label style="color:var(--muted);font-size:11px;text-transform:uppercase">' + k.replace('_', ' ') + ' (comma-separated)</label>' +
-      '<input id="set-' + k + '" type="text" value="' + esc((t[k] || []).join(', ')) + '" placeholder="' + hint + '" style="width:100%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px"></div>';
-  }
-  html += "</div>";
-  html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-top:14px">';
-  html += '<div style="color:var(--muted);font-size:12px;grid-column:1/-1">size tiers (risk % cap / min / max contracts)</div>';
-  for (const [name, tier] of Object.entries(t.size_tiers)) {
-    html += '<div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">' + esc(name) + '</label>' +
-      '<input id="tier-' + name + '-risk" type="number" step="any" value="' + tier.risk_pct_max + '" title="risk % cap" style="width:100%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px">' +
-      '<div style="display:flex;gap:6px;margin-top:4px"><input id="tier-' + name + '-min" type="number" value="' + tier.contracts_min + '" title="min contracts" style="width:50%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px">' +
-      '<input id="tier-' + name + '-max" type="number" value="' + tier.contracts_max + '" title="max contracts" style="width:50%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px"></div></div>';
-  }
-  html += "</div>";
+  tiers += '</div>';
+  html += _section("size tiers", tiers);
+
+  // 5. accounts: per-account overrides (empty = inherit global)
   if (s.accounts && s.accounts.length) {
-    html += '<div style="color:var(--muted);font-size:12px;margin-top:14px">accounts (numeric overrides: empty = inherit global)</div>';
-    html += '<div style="display:grid;grid-template-columns:1fr;gap:10px">';
+    let accts = "";
     s.accounts.forEach((a, i) => {
-      html += '<div style="border:1px solid var(--border);border-radius:8px;padding:10px">' +
-        '<div style="color:var(--text);font-weight:600;margin-bottom:6px">' + esc(a.label) +
-        ' <label style="float:right;color:var(--muted);font-size:11px"><input id="set-acct-' + i + '-enabled" type="checkbox"' + (a.enabled ? " checked" : "") + '> on</label></div>' +
-        '<label style="color:var(--muted);font-size:10px;text-transform:uppercase">account id</label>' +
-        '<input id="set-acct-' + i + '-id" type="text" value="' + esc(a.account_id || "") + '" style="width:100%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:12px">' +
-        '<label style="color:var(--muted);font-size:10px;text-transform:uppercase;margin-top:4px;display:block">max contracts</label>' +
-        '<input id="set-acct-' + i + '-max" type="number" value="' + (a.max_contracts_per_trade ?? "") + '" placeholder="global 10" style="width:100%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:12px">' +
-        '<label style="color:var(--muted);font-size:10px;text-transform:uppercase;margin-top:4px;display:block">risk % (default trades)</label>' +
-        '<input id="set-acct-' + i + '-risk" type="number" step="any" value="' + (a.risk_per_trade_pct ?? "") + '" placeholder="global 5" style="width:100%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:12px">' +
-        '<label style="color:var(--muted);font-size:10px;text-transform:uppercase;margin-top:4px;display:block">paper value $</label>' +
-        '<input id="set-acct-' + i + '-paper" type="number" step="any" value="' + (a.paper_value ?? "") + '" placeholder="10000" style="width:100%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:12px"></div>';
+      accts += '<div class="acct-card">' +
+        '<div class="acct-head"><span>' + esc(a.label) + '</span>' +
+        '<span>' + _check("set-acct-" + i + "-enabled", "on", a.enabled) + '</span></div>' +
+        '<div class="acct-grid">' +
+        _txtField("set-acct-" + i + "-id", "account id", a.account_id, "") +
+        _numField("set-acct-" + i + "-max", "max contracts", a.max_contracts_per_trade) +
+        _numField("set-acct-" + i + "-risk", "risk %", a.risk_per_trade_pct) +
+        _numField("set-acct-" + i + "-paper", "paper value $", a.paper_value) +
+        '</div></div>';
     });
-    html += "</div>";
+    html += _section("accounts", accts);
   }
-  html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-top:14px">' +
-    '<div style="color:var(--muted);font-size:12px;grid-column:1/-1">reader (channel marker: empty = follow whatever channel is open in Discord)</div>' +
-    '<div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">channel marker</label>' +
-    '<input id="set-reader-channel_marker" type="text" value="' + esc(s.reader.channel_marker || "") + '" placeholder="e.g. player-alerts" style="width:100%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px"></div>' +
-    '<div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">poll interval (s)</label>' +
-    '<input id="set-reader-poll_interval" type="number" step="any" value="' + s.reader.poll_interval + '" style="width:100%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px"></div>' +
-    '<div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">max messages kept</label>' +
-    '<input id="set-reader-max_items" type="number" value="' + s.reader.max_items + '" style="width:100%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px"></div>' +
-            '<div style="margin-bottom:6px"><label style="color:var(--muted);font-size:12px">Allowed channels (comma-separated, empty = any)</label>' +
-            '<input id="set-reader-channels" type="text" value="' + esc((s.reader.channels || []).join(",")) + '" placeholder="e.g. test-alerts, player-alerts" style="width:100%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px"></div>' +
-    "</div>";
-  html += '<div style="display:flex;gap:10px;margin-top:14px;align-items:center;flex-wrap:wrap">' +
-    '<label style="color:var(--muted);font-size:12px"><input id="set-au-enabled" type="checkbox"' + (s.auto_update.enabled ? " checked" : "") + '> auto-update</label>' +
-    '<label style="color:var(--muted);font-size:12px">every <input id="set-au-interval" type="number" value="' + s.auto_update.interval_seconds + '" style="width:80px;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:13px">s</label>' +
-    '<div style="grid-column:1/-1;color:var(--muted);font-size:12px">discord webhooks (take effect after restart)</div>' +
-    [["set-discord-webhook_url", "trade alerts", "main alerts channel", (s.discord || {}).webhook_url || ""],
-     ["set-discord-reader_log_webhook_url", "reader log", "empty = off", (s.discord || {}).reader_log_webhook_url || ""],
-     ["set-discord-pipeline_log_webhook_url", "pipeline log", "empty = off", (s.discord || {}).pipeline_log_webhook_url || ""],
-     ["set-discord-update_webhook_url", "update notices", "empty = trade alerts channel", (s.discord || {}).update_webhook_url || ""]].map(hook =>
-      '<div style="flex-basis:100%"><label style="color:var(--muted);font-size:11px;text-transform:uppercase">' + hook[1] + '</label>' +
-      '<textarea id="' + hook[0] + '" rows="2" placeholder="' + hook[2] + '" style="width:100%;box-sizing:border-box;resize:none;overflow:hidden;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px">' + esc(hook[3]) + '</textarea></div>'
-    ).join("") +
-    '<label style="color:var(--muted);font-size:12px">positions every <input id="set-ws-positions" type="number" value="' + (s.wealthsimple ? s.wealthsimple.positions_refresh_seconds : 30) + '" style="width:70px;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:13px">s</label>' +
-    '<label style="color:var(--muted);font-size:12px">account values every <input id="set-ws-values" type="number" value="' + (s.wealthsimple ? s.wealthsimple.values_refresh_seconds : 60) + '" style="width:70px;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:13px">s</label>' +
-    '<label style="color:var(--muted);font-size:12px"><input id="set-quotes-enabled" type="checkbox"' + (s.quotes.enabled ? " checked" : "") + '> live option quotes (stop monitor)</label>' +
-    '<label style="color:var(--muted);font-size:12px">quotes: <select id="set-quotes-provider" style="background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:13px"><option value="ws"' + (s.quotes.provider === "ws" ? " selected" : "") + '>ws</option><option value="moomoo"' + (s.quotes.provider === "moomoo" ? " selected" : "") + '>moomoo</option></select></label></div>';
+
+  // 6. reader
+  html += _section("reader", '<div class="set-grid">' +
+    _txtField("set-reader-channel_marker", "channel marker",
+      rd.channel_marker, "e.g. player-alerts") +
+    _numField("set-reader-poll_interval", "poll interval (s)", rd.poll_interval) +
+    _numField("set-reader-max_items", "max messages kept", rd.max_items) +
+    _txtField("set-reader-channels", "allowed channels (comma-separated)",
+      (rd.channels || []).join(", "), "e.g. test-alerts, player-alerts", true) +
+    '<div class="set-field full set-checks" style="margin-bottom:0">' +
+      _check("set-reader-auto_scroll", "auto scroll to newest message", rd.auto_scroll) +
+    '</div>' +
+    '</div>');
+
+  // 7. automation
+  html += _section("automation",
+    '<div class="set-inline" style="margin-bottom:10px">' +
+      '<span>' + _check("set-au-enabled", "auto-update", au.enabled) + '</span>' +
+      '<label>every <input id="set-au-interval" type="number" value="' + (au.interval_seconds ?? 600) + '">s</label>' +
+      '<label><input id="set-quotes-enabled" type="checkbox"' + (q.enabled ? " checked" : "") + '> live option quotes (stop monitor)</label>' +
+      '<label>quotes <select id="set-quotes-provider">' +
+        '<option value="ws"' + (q.provider === "ws" ? " selected" : "") + '>ws</option>' +
+        '<option value="moomoo"' + (q.provider === "moomoo" ? " selected" : "") + '>moomoo</option>' +
+      '</select></label>' +
+    '</div>' +
+    '<div class="set-inline">' +
+      '<label>positions every <input id="set-ws-positions" type="number" value="' + (ws.positions_refresh_seconds ?? 30) + '">s</label>' +
+      '<label>account values every <input id="set-ws-values" type="number" value="' + (ws.values_refresh_seconds ?? 60) + '">s</label>' +
+    '</div>');
+
+  // 8. discord webhooks
+  const hooks = [
+    ["set-discord-webhook_url", "trade alerts", "main alerts channel", dc.webhook_url || ""],
+    ["set-discord-reader_log_webhook_url", "reader log", "empty = off", dc.reader_log_webhook_url || ""],
+    ["set-discord-pipeline_log_webhook_url", "pipeline log", "empty = off", dc.pipeline_log_webhook_url || ""],
+    ["set-discord-update_webhook_url", "update notices", "empty = trade alerts channel", dc.update_webhook_url || ""],
+  ];
+  html += _section("discord webhooks (take effect after restart)",
+    '<div class="set-grid wide">' +
+    hooks.map(h =>
+      '<div class="set-field full"><label>' + esc(h[1]) + '</label>' +
+      '<textarea id="' + h[0] + '" rows="2" placeholder="' + esc(h[2]) + '">' + esc(h[3]) + '</textarea></div>'
+    ).join("") + '</div>');
+
   el.innerHTML = html;
   el.querySelectorAll("textarea").forEach(function(t) {
     autoGrow(t);
@@ -967,12 +1018,18 @@ async function saveSettings() {
       poll_interval: num("set-reader-poll_interval"),
       max_items: parseInt(val("set-reader-max_items")),
       channels: val("set-reader-channels").split(",").map(function(s) { return s.trim(); }).filter(Boolean),
+      auto_scroll: document.getElementById("set-reader-auto_scroll").checked,
     },
     auto_update: { enabled: document.getElementById("set-au-enabled").checked, interval_seconds: parseInt(val("set-au-interval")) },
     wealthsimple: { positions_refresh_seconds: parseInt(val("set-ws-positions")), values_refresh_seconds: parseInt(val("set-ws-values")) },
-    discord: { webhook_url: val("set-discord-webhook_url").trim(), reader_log_webhook_url: val("set-discord-reader_log_webhook_url").trim(), pipeline_log_webhook_url: val("set-discord-pipeline_log_webhook_url").trim(), update_webhook_url: val("set-discord-update_webhook_url").trim() },
+    discord: {
+      notify: document.getElementById("set-notify").checked,
+      webhook_url: val("set-discord-webhook_url").trim(),
+      reader_log_webhook_url: val("set-discord-reader_log_webhook_url").trim(),
+      pipeline_log_webhook_url: val("set-discord-pipeline_log_webhook_url").trim(),
+      update_webhook_url: val("set-discord-update_webhook_url").trim(),
+    },
     quotes: { enabled: document.getElementById("set-quotes-enabled").checked, provider: val("set-quotes-provider") },
-    discord: { notify: document.getElementById("set-notify").checked },
     paper: { enabled: document.getElementById("set-paper-enabled").checked, mirror: document.getElementById("set-paper-mirror").checked },
   };
   const res = await fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });

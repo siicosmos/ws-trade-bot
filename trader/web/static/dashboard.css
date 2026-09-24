@@ -243,3 +243,58 @@
     border: 1px solid var(--border); border-radius: 6px;
     padding: 3px 10px; font-size: 11px; cursor: pointer;
   }
+
+  /* settings popup: unified section styles */
+  .set-section {
+    border: 1px solid var(--border); background: #161b22;
+    border-radius: 8px; padding: 14px; margin-bottom: 14px;
+  }
+  .set-title {
+    color: var(--muted); font-size: 11px; text-transform: uppercase;
+    letter-spacing: .8px; margin-bottom: 10px; font-weight: 600;
+  }
+  .set-grid {
+    display: grid; gap: 10px;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  }
+  .set-grid.wide { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+  .set-field label {
+    display: block; color: var(--muted); font-size: 11px;
+    text-transform: uppercase; margin-bottom: 4px;
+  }
+  .set-field.full { grid-column: 1 / -1; }
+  .set-field input, .set-field select, .set-field textarea {
+    width: 100%; box-sizing: border-box; background: #0d1117;
+    color: var(--text); border: 1px solid #30363d; border-radius: 6px;
+    padding: 6px 8px; font-size: 13px; font-family: inherit;
+  }
+  .set-field textarea { resize: none; overflow: hidden; }
+  .set-field input.big { padding: 8px; font-size: 15px; font-weight: 600; }
+  .set-checks {
+    display: flex; gap: 16px; flex-wrap: wrap; align-items: center;
+    margin-bottom: 12px;
+  }
+  .set-checks label { color: var(--text); font-size: 13px; font-weight: 600; }
+  .set-inline {
+    display: flex; gap: 14px; flex-wrap: wrap; align-items:center;
+    color: var(--muted); font-size: 12px;
+  }
+  .set-inline label { display: flex; gap: 6px; align-items: center; }
+  .set-inline input, .set-inline select {
+    background: #0d1117; color: var(--text); border: 1px solid #30363d;
+    border-radius: 6px; padding: 4px 6px; font-size: 13px;
+    font-family: inherit; width: 90px;
+  }
+  .set-hint { color: var(--muted); font-size: 11px; margin-top: 4px; }
+  .tier-row { display: flex; gap: 6px; margin-top: 4px; }
+  .tier-row input { width: 50% !important; }
+  .acct-card { border: 1px solid var(--border); border-radius: 8px; padding: 10px; }
+  .acct-head {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 8px; color: var(--text); font-weight: 600;
+  }
+  .acct-head label { color: var(--muted); font-size: 11px; font-weight: 400; }
+  .acct-grid {
+    display: grid; gap: 8px;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  }
