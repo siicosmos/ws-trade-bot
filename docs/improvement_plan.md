@@ -141,8 +141,10 @@ default 365) while the dashboard renders only the latest 50
 of each. Landed: `Store.search_history` (ticker, action,
 status, mode, date range, free text with LIKE-escaping) over
 both tables, the auth-guarded `/api/history` endpoint with
-pagination, and a dashboard search bar below the trade log.
-The default kind is a merged chronological stream - alerts
+pagination, and a dashboard search bar below the trade log -
+a single search that always merges alerts and trades (the
+kind selector was dropped after review). The merged stream
+puts alerts
 and the trades they produced side by side, paired via
 message_key (the alert rides its trade's timestamp so the
 pair stays adjacent, alert on top, both rows highlighted; the

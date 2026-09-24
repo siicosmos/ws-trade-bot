@@ -61,11 +61,6 @@
 
 <h2>History Search</h2>
 <div class="card" id="history-search" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:10px">
-  <select id="hs-kind" onchange="historyKindChanged()">
-    <option value="both" selected>Alerts + trades</option>
-    <option value="trades">Trades</option>
-    <option value="signals">Alerts</option>
-  </select>
   <input id="hs-q" placeholder="free text" onkeydown="if(event.key==='Enter')runHistorySearch()" style="min-width:140px">
   <input id="hs-ticker" placeholder="ticker" onkeydown="if(event.key==='Enter')runHistorySearch()" style="width:70px;text-transform:uppercase">
   <select id="hs-status">
