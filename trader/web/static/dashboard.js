@@ -484,21 +484,41 @@ function renderPositionsInto(elId, rows, emptyText) {
   el.innerHTML = html + "</table>";
 }
 
-let settingsOpen = localStorage.getItem("ws_settings_open") === "1";
+function openSettings() {
+  document.getElementById("settingsBackdrop").style.display = "flex";
+  document.querySelectorAll("#settings textarea").forEach(autoGrow);
+}
 
-function applySettingsVisibility() {
-  document.getElementById("settings").style.display = settingsOpen ? "" : "none";
-  document.getElementById("settings-toggle").textContent = settingsOpen ? "Hide" : "Show";
-  if (settingsOpen) {
-    document.querySelectorAll("#settings textarea").forEach(autoGrow);
+function closeSettings() {
+  document.getElementById("settingsBackdrop").style.display = "none";
+}
+
+function requestCloseSettings() {
+  if (settingsDirty) {
+    openModal(
+      "Unsaved changes",
+      "Discard unsaved settings changes?",
+      "discard",
+      async function() { discardAndCloseSettings(); }
+    );
+    return;
   }
+  closeSettings();
 }
 
-function toggleSettings() {
-  settingsOpen = !settingsOpen;
-  localStorage.setItem("ws_settings_open", settingsOpen ? "1" : "0");
-  applySettingsVisibility();
+function discardAndCloseSettings() {
+  setSettingsDirty(false);
+  load();
+  closeSettings();
 }
+
+document.addEventListener("keydown", function(e) {
+  if (e.key !== "Escape") return;
+  const modal = document.getElementById("modalBackdrop");
+  if (modal && modal.style.display === "flex") { closeModal(); return; }
+  const sp = document.getElementById("settingsBackdrop");
+  if (sp && sp.style.display === "flex") requestCloseSettings();
+});
 
 let lastRefresh = null;
 
@@ -981,7 +1001,6 @@ async function load() {
   } catch (e) { /* handled in api() */ }
 }
 
-applySettingsVisibility();
 load();
 setInterval(load, 5000);
 function tickClock() {

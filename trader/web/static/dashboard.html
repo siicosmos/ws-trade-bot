@@ -22,7 +22,8 @@
   <div class="headrow" style="color:var(--muted);font-size:12px;gap:18px">
     <span id="updated">data refreshed</span>
     <span id="stops"></span>
-    <a href="/logout" id="logout" style="margin-left:auto">log out</a>
+    <button id="settings-btn" onclick="openSettings()">settings</button>
+    <a href="/logout" id="logout">log out</a>
   </div>
 </header>
 
@@ -62,12 +63,15 @@
 <h2 style="display:flex;justify-content:space-between;align-items:center"><span>Trade Log</span><button id="toggle-trades" onclick="toggleTrades()" style="background:#21262d;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 14px;font-size:12px;cursor:pointer">Hide</button></h2>
 <div id="trades"></div>
 
-<h2 style="display:flex;justify-content:space-between;align-items:center"><span>Settings</span><button id="settings-toggle" onclick="toggleSettings()" style="background:#21262d;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 14px;font-size:12px;cursor:pointer">Show</button></h2>
-<div id="settings" class="card"></div>
-
-<div id="settings-float">
-  <button id="settings-revert">Revert</button>
-  <button id="settings-save">Save</button>
+<div id="settingsBackdrop" onclick="if(event.target===this) requestCloseSettings()">
+  <div id="settingsPanel">
+    <div id="settingsHead"><span>Settings</span><button id="settingsClose" onclick="requestCloseSettings()">&#215;</button></div>
+    <div id="settingsScroll"><div id="settings" class="card"></div></div>
+    <div id="settings-float">
+      <button id="settings-revert">Revert</button>
+      <button id="settings-save">Save</button>
+    </div>
+  </div>
 </div>
 <div id="modalBackdrop" onclick="if(event.target===this) closeModal()">
   <div id="modalBox">

@@ -45,10 +45,14 @@ def test_header_rows_and_mobile_wrap():
         assert needle in row_html, needle
     assert 'id="updated"' not in row_html
     assert 'href="/logout"' not in row_html
-    # row 2: refreshed label rides the watching line, logout at corner
+    # row 2: refreshed label rides the watching line, settings
+    # + logout buttons at corner
     assert '<span id="updated">data refreshed</span>' in html
-    assert 'id="logout" style="margin-left:auto"' in html
+    assert 'id="settings-btn" onclick="openSettings()"' in html
+    assert "#settings-btn {" in html
+    assert "margin-left: auto" in html
     assert 'id="logout"' in html
+    assert 'id="logout" style="margin-left:auto"' not in html
     # refresh label renders before the first data cycle
     # the clock never drops to its own line - top-right on all screens
     assert "#timebox { order: 10" not in html
