@@ -1031,7 +1031,7 @@ function renderSettings(s) {
         "maintenance margin rate applied to stock holdings (0.30 = 30%)") +
       '<div class="set-field"><label title="quote source for the stop monitor">' +
       'quotes provider</label>' +
-      '<select id="set-quotes-provider">' +
+      '<select id="set-quotes-provider" title="quote source for the stop monitor: ws = wealthsimple, moomoo = OpenD feed">' +
         '<option value="ws"' + (q.provider === "ws" ? " selected" : "") + '>ws</option>' +
         '<option value="moomoo"' + (q.provider === "moomoo" ? " selected" : "") + '>moomoo</option>' +
       '</select></div>' +
