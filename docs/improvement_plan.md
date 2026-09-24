@@ -264,6 +264,12 @@ endpoint, indexes and retention landed. All findings closed:
   index.lock, ignored-runtime-file healing), stale-process
   cleanup, WAL + busy_timeout, summary caching with
   data-version invalidation, mapped-positions caching per fetch
-  generation (all landed)
+  generation (all landed). The stale-process cleanup learned
+  the Windows venv-launcher trap: a venv python.exe spawns the
+  real interpreter with an identical command line, so the
+  cleanup now spares its own ancestor chain (launcher + shell)
+  instead of killing its parent (exit 15) and restart-looping;
+  the .bat loops treat the console ctrl+c exit code as a clean
+  stop
 - reader stays standalone by design (UIA on Windows, no trader
   imports) - duplication of small helpers is accepted

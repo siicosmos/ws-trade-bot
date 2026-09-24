@@ -9,6 +9,30 @@ of itself before starting work.
 import os
 
 
+def _protected_pids(me):
+    """Me plus every ancestor.
+
+    On Windows a venv python.exe is a launcher that spawns the
+    real interpreter as a child with an identical command line -
+    the launcher is our parent. Killing it (exit code 15) makes
+    the .bat loop restart us while this interpreter runs on as
+    an orphan: a self-restart loop with zombie copies."""
+    pids = {me}
+    try:
+        import psutil
+
+        proc = psutil.Process(me)
+        for _ in range(10):
+            ppid = proc.ppid()
+            if ppid <= 0 or ppid in pids:
+                break
+            pids.add(ppid)
+            proc = psutil.Process(ppid)
+    except Exception:
+        pass
+    return pids
+
+
 def terminate_stale_instances(script_path, log=print):
     """Kill python processes running this same entry point.
 
@@ -23,13 +47,14 @@ def terminate_stale_instances(script_path, log=print):
         return []
 
     me = os.getpid()
+    protected = _protected_pids(me)
     script = os.path.normcase(os.path.abspath(script_path))
     script_dir = os.path.normcase(os.path.dirname(script))
     stale = []
     try:
         for p in psutil.process_iter(["pid", "name", "cmdline"]):
             try:
-                if p.info["pid"] == me:
+                if p.info["pid"] in protected:
                     continue
                 name = (p.info["name"] or "").lower()
                 if "python" not in name:

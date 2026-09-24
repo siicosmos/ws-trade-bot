@@ -926,6 +926,29 @@ def git_head(root):
     return None
 
 
+def _protected_pids(me):
+    """Me plus every ancestor. On Windows a venv python.exe is
+    a launcher that spawns the real interpreter with an identical
+    command line - the launcher is our parent, and killing it
+    (exit code 15) restart-loops us while we run on as an
+    orphan. The reader imports no trader code, so this is a
+    local copy of the pipeline's helper."""
+    pids = {me}
+    try:
+        import psutil
+
+        proc = psutil.Process(me)
+        for _ in range(10):
+            ppid = proc.ppid()
+            if ppid <= 0 or ppid in pids:
+                break
+            pids.add(ppid)
+            proc = psutil.Process(ppid)
+    except Exception:
+        pass
+    return pids
+
+
 def _terminate_stale_reader():
     """Kill leftover reader instances from a previous run - a
     hard restart can leave the old one attached to the Discord
@@ -935,13 +958,14 @@ def _terminate_stale_reader():
     except ImportError:
         return
     me = os.getpid()
+    protected = _protected_pids(me)
     script = os.path.normcase(os.path.abspath(__file__))
     script_dir = os.path.normcase(os.path.dirname(script))
     stale = []
     try:
         for p in psutil.process_iter(["pid", "name", "cmdline"]):
             try:
-                if p.info["pid"] == me:
+                if p.info["pid"] in protected:
                     continue
                 name = (p.info["name"] or "").lower()
                 if "python" not in name:

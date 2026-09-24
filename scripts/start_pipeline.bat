@@ -29,6 +29,10 @@ if %EXITCODE% == 0 (
   echo pipeline stopped cleanly
   goto end
 )
+if %EXITCODE% == -1073741510 (
+  echo pipeline stopped via ctrl+c
+  goto end
+)
 echo pipeline exited with code %EXITCODE% - restarting in 5s
 echo check pipeline.log next to trades.db for the traceback
 timeout /t 5 /nobreak >nul

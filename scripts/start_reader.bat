@@ -31,6 +31,10 @@ if %EXITCODE% == 0 (
   echo reader stopped cleanly
   goto end
 )
+if %EXITCODE% == -1073741510 (
+  echo reader stopped via ctrl+c
+  goto end
+)
 echo reader exited with code %EXITCODE% - restarting in 5s
 timeout /t 5 /nobreak >nul
 goto start
