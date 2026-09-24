@@ -45,12 +45,15 @@ def test_header_rows_and_mobile_wrap():
         assert needle in row_html, needle
     assert 'id="updated"' not in row_html
     assert 'href="/logout"' not in row_html
-    # row 2: refreshed label rides the watching line, settings
-    # + logout buttons at corner
+    # row 3: refreshed label + stops; settings and logout moved
+    # to their own right-aligned row, logout in danger red
     assert '<span id="updated">data refreshed</span>' in html
+    css = dash.DASHBOARD_CSS
     assert 'id="settings-btn" onclick="openSettings()"' in html
-    assert "#settings-btn {" in html
-    assert "margin-left: auto" in html
+    assert "#settings-btn {" in css
+    assert "justify-content:flex-end" in html
+    assert "#logout {" in css
+    assert "#f85149" in css
     assert 'id="logout"' in html
     assert 'id="logout" style="margin-left:auto"' not in html
     # refresh label renders before the first data cycle
