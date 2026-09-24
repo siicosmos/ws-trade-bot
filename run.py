@@ -191,14 +191,14 @@ def main():
         verify=scheme != "https",   # self-signed local cert
     )
 
-    # production wsgi server (plan #8): waitress for robust
-    # connection handling; werkzeug remains the fallback
-    try:
+    # production wsgi server (plan #8): waitress handles plain
+    # http robustly. it has no native tls support, so https
+    # (the self-signed cert path) stays on werkzeug - serving
+    # plain http under an https config would break the health
+    # watchdog and the reader's https posts.
+    if pick_wsgi(ssl_context, waitress_available()):
         from waitress import serve as waitress_serve
-    except ImportError:
-        waitress_serve = None
 
-    if waitress_serve is not None:
         print("serving with waitress (production wsgi)")
         waitress_serve(
             app,
@@ -207,10 +207,27 @@ def main():
         )
         return
 
+    if ssl_context is not None:
+        print("serving https via werkzeug (waitress has no tls)")
     app.run(
         host=cfg.pipeline.host, port=cfg.pipeline.port, threaded=True,
         ssl_context=ssl_context,
     )
+
+
+def waitress_available():
+    try:
+        import waitress  # noqa: F401
+
+        return True
+    except ImportError:
+        return False
+
+
+def pick_wsgi(ssl_context, waitress_ok):
+    """waitress for plain http; tls stays on werkzeug (waitress
+    has no native ssl support)."""
+    return bool(waitress_ok and ssl_context is None)
 
 
 if __name__ == "__main__":

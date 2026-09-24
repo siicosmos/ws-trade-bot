@@ -81,9 +81,14 @@ process and everything swaps at once.
 
 ## 8. Production WSGI server - DONE
 
-`run.py` now serves through `waitress` (16 threads) when
-installed, with Werkzeug as the automatic fallback for bare
-checkouts. `waitress` is in requirements.txt.
+`run.py` serves through `waitress` (16 threads) on plain http
+when installed, with Werkzeug as the automatic fallback for
+bare checkouts. Caveat found in review: waitress has no native
+TLS, so https configs (the self-signed cert path) stay on
+Werkzeug - `pick_wsgi(ssl_context, waitress_available)` makes
+that explicit and tested. Serving plain http under an https
+config would break the health watchdog and the reader's https
+posts (that was a live restart loop once).
 
 ## 9. Per-thread SQLite connections - DONE
 
