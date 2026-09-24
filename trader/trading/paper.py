@@ -92,8 +92,16 @@ class PaperLedger:
                                 strike = float(od.get("strikePrice"))
                             except (TypeError, ValueError):
                                 continue
+                            # alerts key expiries as plain dates
+                            # (2026-09-24) - the raw graphql value
+                            # is a full timestamp, which never
+                            # matched and froze paper pricing at
+                            # cost basis (return stuck at 0%)
+                            expiry = str(
+                                od.get("expiryDate") or ""
+                            )[:10]
                             key = (
-                                f"{underlying}-{od.get('expiryDate', '')}"
+                                f"{underlying}-{expiry}"
                                 f"-{strike:g}-{right}"
                             )
                         else:

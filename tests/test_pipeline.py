@@ -3858,3 +3858,55 @@ def test_mirror_partial_holding_credits_only_held():
     # bought `held` at 1.0 (100/contract), sold `held` at 3.0
     expected = 10000.0 + held * (3.0 - 1.0) * 100
     assert abs(remaining - expected) < 0.01, (remaining, expected)
+
+
+def test_paper_pricing_matches_alert_expiry_format():
+    """The paper quote lookup keyed live expiryDates as full
+    timestamps while positions carry plain dates - every option
+    priced at cost and the return column stuck at 0%."""
+    from trader.trading.paper import PaperLedger
+    import types as _types
+
+    cfg, store, account, risk = _setup(paper_account_value=10000)
+    ledger = PaperLedger(cfg, store, _FakeWsForQuotes())
+    store.set_paper_equity(10000.0, "default")
+
+    buy = parse_alert("BOUGHT 0DTE SPY 759c @ 1.0")
+    from trader.trading.executor import PaperExecutor
+
+    ex = PaperExecutor(cfg, store, ledger)
+    assert ex.execute(buy, cfg, store).ok
+
+    rows = ledger.positions("default")
+    assert len(rows) == 1
+    row = rows[0]
+    # the live quote (2.50) must reach the row, not the cost basis
+    # (5 contracts bought at $1 -> 5 * 2.50 * 100)
+    assert row["avg"] == 1.0
+    assert row["value"] == 1250.0, row
+    assert row["pnl"] == 150.0, row
+
+
+class _FakeWsForQuotes:
+    """Live positions whose option expiryDate carries the full
+    graphql timestamp format."""
+
+    def _positions_raw(self):
+        return {"default": [{
+            "security": {
+                "stock": {"symbol": "SPY"},
+                "optionDetails": {
+                    "underlyingSecurity": {"stock": {"symbol": "SPY"}},
+                    "expiryDate": "2026-09-24T00:00:00.000-04:00",
+                    "strikePrice": 759.0,
+                    "optionType": "CALL",
+                },
+                "quoteV2": {"price": 2.5, "currency": "USD"},
+            },
+        }]}
+
+    def open_option_positions(self):
+        return {"default": {"fx": 1.0, "positions": []}}
+
+    def values(self):
+        return {"default": 10000.0}
