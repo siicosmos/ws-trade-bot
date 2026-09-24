@@ -217,8 +217,9 @@ re-review on the third pass. Everything surfaced is closed:
   daily.
 - **contracts_for is dead** - deleted with its tests rewired
   onto `account_sizing` / `tier_plan`.
-- **moomoo is an undeclared optional dependency** - noted in
-  requirements.txt as an optional install.
+- **moomoo was an undeclared dependency** - now a real
+  requirements entry: `moomoo-api` (import name `moomoo`),
+  the client for the OpenD quote gateway.
 - **WebhookBatcher is unsupervised** - supervised
   (trader/ops/loghook.py), and the reader's WebhookLog thread
   runs under a reader-local supervision wrapper (folded into

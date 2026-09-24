@@ -187,8 +187,10 @@ def test_moomoo_provider_reconnects_after_opend_drop():
     import sys
     import types
 
-    if "moomoo" not in sys.modules:
-        sys.modules["moomoo"] = types.ModuleType("moomoo")
+    # swap in a stub module even when the real moomoo-api
+    # package is installed - and restore it afterwards
+    real = sys.modules.get("moomoo")
+    stub = types.ModuleType("moomoo")
 
     from trader.trading.quotes import MoomooQuoteProvider
 
@@ -224,18 +226,25 @@ def test_moomoo_provider_reconnects_after_opend_drop():
         def close(self):
             pass
 
-    sys.modules["moomoo"].OpenQuoteContext = _Ctx
-    cfg = types.SimpleNamespace(
-        quotes=types.SimpleNamespace(
-            moomoo_host="127.0.0.1", moomoo_port=11111
+    stub.OpenQuoteContext = _Ctx
+    sys.modules["moomoo"] = stub
+    try:
+        cfg = types.SimpleNamespace(
+            quotes=types.SimpleNamespace(
+                moomoo_host="127.0.0.1", moomoo_port=11111
+            )
         )
-    )
-    pos = {
-        "underlying": "SPY", "expiry": "2026-09-18",
-        "strike": 759.0, "right": "C",
-    }
-    p = MoomooQuoteProvider(cfg)
-    assert p.quote(pos) is None      # first call: connection dies
-    assert p._ctx is None           # context dropped for reconnect
-    assert p.quote(pos) == 1.5       # second call: reconnected
-    assert len(made) == 2
+        pos = {
+            "underlying": "SPY", "expiry": "2026-09-18",
+            "strike": 759.0, "right": "C",
+        }
+        p = MoomooQuoteProvider(cfg)
+        assert p.quote(pos) is None      # first call: connection dies
+        assert p._ctx is None           # context dropped for reconnect
+        assert p.quote(pos) == 1.5       # second call: reconnected
+        assert len(made) == 2
+    finally:
+        if real is not None:
+            sys.modules["moomoo"] = real
+        else:
+            sys.modules.pop("moomoo", None)
