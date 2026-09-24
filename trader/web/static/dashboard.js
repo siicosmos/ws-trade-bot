@@ -841,25 +841,30 @@ function revertSettings() {
 document.getElementById("settings-save").onclick = saveSettings;
 document.getElementById("settings-revert").onclick = revertSettings;
 
-function _numField(id, label, value, cls) {
+function _numField(id, label, value, tip, cls) {
   return '<div class="set-field"><label>' + esc(label) + '</label>' +
     '<input id="' + id + '" type="number" step="any" value="' + (value ?? "") + '"' +
+    (tip ? ' title="' + esc(tip) + '"' : "") +
     (cls ? ' class="' + cls + '"' : "") + '></div>';
 }
 
-function _txtField(id, label, value, placeholder, full) {
-  return '<div class="set-field' + (full ? " full" : "") + '"><label>' + esc(label) + '</label>' +
+function _txtField(id, label, value, placeholder, tip, full) {
+  return '<div class="set-field' + (full ? " full" : "") + '"><label' +
+    (tip ? ' title="' + esc(tip) + '"' : "") + '>' + esc(label) + '</label>' +
     '<input id="' + id + '" type="text" value="' + esc(value ?? "") + '"' +
-    (placeholder ? ' placeholder="' + esc(placeholder) + '"' : "") + '></div>';
+    (placeholder ? ' placeholder="' + esc(placeholder) + '"' : "") +
+    (tip ? ' title="' + esc(tip) + '"' : "") + '></div>';
 }
 
-function _check(id, label, checked) {
-  return '<label><input id="' + id + '" type="checkbox"' + (checked ? " checked" : "") +
+function _check(id, label, checked, tip) {
+  return '<label' + (tip ? ' title="' + esc(tip) + '"' : "") +
+    '><input id="' + id + '" type="checkbox"' + (checked ? " checked" : "") +
     '> ' + esc(label) + '</label>';
 }
 
-function _section(title, body) {
-  return '<div class="set-section"><div class="set-title">' + esc(title) + '</div>' +
+function _section(title, body, tip) {
+  return '<div class="set-section"><div class="set-title"' +
+    (tip ? ' title="' + esc(tip) + '"' : "") + '>' + esc(title) + '</div>' +
     body + '</div>';
 }
 
@@ -879,36 +884,52 @@ function renderSettings(s) {
   // 1. quick controls: the toggles and numbers touched most
   let html = _section("quick controls",
     '<div class="set-checks">' +
-      _check("set-notify", "notify", dc.notify !== false) +
-      _check("set-paper-enabled", "paper trading", s.paper && s.paper.enabled) +
-      _check("set-paper-mirror", "mirror real fills", s.paper && s.paper.mirror) +
+      _check("set-notify", "notify", dc.notify !== false,
+        "send parsed trade alerts to the discord webhook") +
+      _check("set-paper-enabled", "paper trading", s.paper && s.paper.enabled,
+        "simulate executions against the paper ledger alongside notify mode") +
+      _check("set-paper-mirror", "mirror real fills", s.paper && s.paper.mirror,
+        "copy real wealthsimple fills into the paper ledger") +
     '</div>' +
     '<div class="set-grid">' +
-      _numField("set-risk_per_trade_pct", "default risk %", t.risk_per_trade_pct, "big") +
-      _numField("set-max_contracts_per_trade", "max contracts", t.max_contracts_per_trade, "big") +
-      _numField("set-max_open_risk_pct", "open risk cap %", t.max_open_risk_pct, "big") +
-      _numField("set-stop_loss_pct", "stop loss %", t.stop_loss_pct, "big") +
-      _numField("set-trailing_stop_pct", "trailing stop %", t.trailing_stop_pct, "big") +
+      _numField("set-risk_per_trade_pct", "default risk %", t.risk_per_trade_pct,
+        "% of account value risked per trade when no size keyword is given", "big") +
+      _numField("set-max_contracts_per_trade", "max contracts", t.max_contracts_per_trade,
+        "hard cap on contracts per trade across all accounts", "big") +
+      _numField("set-max_open_risk_pct", "open risk cap %", t.max_open_risk_pct,
+        "stop opening new risk once deployed capital exceeds this % of account value", "big") +
+      _numField("set-stop_loss_pct", "stop loss %", t.stop_loss_pct,
+        "hard stop distance below entry; 0 disables the stop monitor", "big") +
+      _numField("set-trailing_stop_pct", "trailing stop %", t.trailing_stop_pct,
+        "trailing stop distance once in profit; 0 disables", "big") +
     '</div>');
 
   // 2. trading limits
   html += _section("trading limits", '<div class="set-grid">' +
-    _numField("set-stop_check_seconds", "stop check (s)", t.stop_check_seconds) +
-    _numField("set-max_consecutive_losses", "max losses in row", t.max_consecutive_losses) +
-    _numField("set-min_dte_days", "min DTE", t.min_dte_days) +
-    _numField("set-max_trades_per_day", "max trades/day", t.max_trades_per_day) +
-    _numField("set-cooldown_seconds", "cooldown (s)", t.cooldown_seconds) +
-    _numField("set-dedupe_window_minutes", "dedupe (min)", t.dedupe_window_minutes) +
+    _numField("set-stop_check_seconds", "stop check (s)", t.stop_check_seconds,
+      "how often the stop monitor polls quotes") +
+    _numField("set-max_consecutive_losses", "max losses in row", t.max_consecutive_losses,
+      "pause trading after this many consecutive losses; 0 = off") +
+    _numField("set-min_dte_days", "min DTE", t.min_dte_days,
+      "skip options expiring sooner than this many days") +
+    _numField("set-max_trades_per_day", "max trades/day", t.max_trades_per_day,
+      "hard cap on executed trades per calendar day") +
+    _numField("set-cooldown_seconds", "cooldown (s)", t.cooldown_seconds,
+      "minimum wait between consecutive trades") +
+    _numField("set-dedupe_window_minutes", "dedupe (min)", t.dedupe_window_minutes,
+      "window for recognizing duplicate alerts") +
     '</div>');
 
   // 3. filters
   html += _section("filters", '<div class="set-grid">' +
     _txtField("set-ticker_whitelist", "ticker whitelist",
       (t.ticker_whitelist || []).join(", "),
-      "e.g. SPY, SPX - empty = allow all", true) +
+      "e.g. SPY, SPX - empty = allow all",
+      "only trade these underlyings; empty = allow all", true) +
     _txtField("set-skip_underlyings", "skip underlyings",
       (t.skip_underlyings || []).join(", "),
-      "e.g. SPX - empty = none", true) +
+      "e.g. SPX - empty = none",
+      "never trade these underlyings", true) +
     '</div>');
 
   // 4. size tiers
@@ -916,7 +937,9 @@ function renderSettings(s) {
     '<div class="set-field full" style="color:var(--muted);font-size:11px">' +
     'risk % cap / min / max contracts</div>';
   for (const [name, tier] of Object.entries(t.size_tiers || {})) {
-    tiers += '<div class="set-field"><label>' + esc(name) + '</label>' +
+    tiers += '<div class="set-field"><label' +
+      ' title="alert size keywords map to these risk caps and contract bounds"' +
+      '>' + esc(name) + '</label>' +
       '<input id="tier-' + esc(name) + '-risk" type="number" step="any" value="' + tier.risk_pct_max + '" title="risk % cap">' +
       '<div class="tier-row">' +
       '<input id="tier-' + esc(name) + '-min" type="number" value="' + tier.contracts_min + '" title="min contracts">' +
@@ -931,13 +954,20 @@ function renderSettings(s) {
     let accts = "";
     s.accounts.forEach((a, i) => {
       accts += '<div class="acct-card">' +
-        '<div class="acct-head"><span>' + esc(a.label) + '</span>' +
-        '<span>' + _check("set-acct-" + i + "-enabled", "on", a.enabled) + '</span></div>' +
+        '<div class="acct-head"><span' +
+        ' title="per-account overrides; empty fields inherit the global settings"' +
+        '>' + esc(a.label) + '</span>' +
+        '<span>' + _check("set-acct-" + i + "-enabled", "on", a.enabled,
+          "include this account in sizing and paper trading") + '</span></div>' +
         '<div class="acct-grid">' +
-        _txtField("set-acct-" + i + "-id", "account id", a.account_id, "") +
-        _numField("set-acct-" + i + "-max", "max contracts", a.max_contracts_per_trade) +
-        _numField("set-acct-" + i + "-risk", "risk %", a.risk_per_trade_pct) +
-        _numField("set-acct-" + i + "-paper", "paper value $", a.paper_value) +
+        _txtField("set-acct-" + i + "-id", "account id", a.account_id, "",
+          "wealthsimple account id") +
+        _numField("set-acct-" + i + "-max", "max contracts", a.max_contracts_per_trade,
+          "per-account contract cap; empty = inherit global") +
+        _numField("set-acct-" + i + "-risk", "risk %", a.risk_per_trade_pct,
+          "per-account risk override; empty = inherit global") +
+        _numField("set-acct-" + i + "-paper", "paper value $", a.paper_value,
+          "fallback paper equity when live values are unavailable") +
         '</div></div>';
     });
     html += _section("accounts", accts);
@@ -946,44 +976,64 @@ function renderSettings(s) {
   // 6. reader
   html += _section("reader", '<div class="set-grid">' +
     _txtField("set-reader-channel_marker", "channel marker",
-      rd.channel_marker, "e.g. player-alerts") +
-    _numField("set-reader-poll_interval", "poll interval (s)", rd.poll_interval) +
-    _numField("set-reader-max_items", "max messages kept", rd.max_items) +
+      rd.channel_marker, "e.g. player-alerts",
+      "only read messages from the discord channel containing this text; empty = whatever channel is open") +
+    _numField("set-reader-poll_interval", "poll interval (s)", rd.poll_interval,
+      "how often the reader scans the discord window") +
+    _numField("set-reader-max_items", "max messages kept", rd.max_items,
+      "how many recent messages the reader scans each poll") +
     _txtField("set-reader-channels", "allowed channels (comma-separated)",
-      (rd.channels || []).join(", "), "e.g. test-alerts, player-alerts", true) +
+      (rd.channels || []).join(", "), "e.g. test-alerts, player-alerts",
+      "only these discord channels are read; empty = any", true) +
     '<div class="set-field full set-checks" style="margin-bottom:0">' +
-      _check("set-reader-auto_scroll", "auto scroll to newest message", rd.auto_scroll) +
+      _check("set-reader-auto_scroll", "auto scroll to newest message", rd.auto_scroll,
+        "keep the discord window scrolled to the newest message") +
     '</div>' +
     '</div>');
 
-  // 7. automation
+  // 7. automation: aligned grid like the other sections
   html += _section("automation",
-    '<div class="set-inline" style="margin-bottom:10px">' +
-      '<span>' + _check("set-au-enabled", "auto-update", au.enabled) + '</span>' +
-      '<label>every <input id="set-au-interval" type="number" value="' + (au.interval_seconds ?? 600) + '">s</label>' +
-      '<label><input id="set-quotes-enabled" type="checkbox"' + (q.enabled ? " checked" : "") + '> live option quotes (stop monitor)</label>' +
-      '<label>quotes <select id="set-quotes-provider">' +
+    '<div class="set-checks" style="margin-bottom:10px">' +
+      _check("set-au-enabled", "auto-update", au.enabled,
+        "pull and apply code updates from github automatically") +
+      _check("set-quotes-enabled", "live option quotes (stop monitor)", q.enabled,
+        "fetch live option quotes for the stop monitor") +
+    '</div>' +
+    '<div class="set-grid">' +
+      _numField("set-au-interval", "update check (s)", au.interval_seconds,
+        "seconds between github update checks") +
+      _numField("set-ws-positions", "positions refresh (s)", ws.positions_refresh_seconds,
+        "seconds between wealthsimple position refreshes") +
+      _numField("set-ws-values", "values refresh (s)", ws.values_refresh_seconds,
+        "seconds between wealthsimple account value refreshes") +
+      '<div class="set-field"><label title="quote source for the stop monitor">' +
+      'quotes provider</label>' +
+      '<select id="set-quotes-provider">' +
         '<option value="ws"' + (q.provider === "ws" ? " selected" : "") + '>ws</option>' +
         '<option value="moomoo"' + (q.provider === "moomoo" ? " selected" : "") + '>moomoo</option>' +
-      '</select></label>' +
-    '</div>' +
-    '<div class="set-inline">' +
-      '<label>positions every <input id="set-ws-positions" type="number" value="' + (ws.positions_refresh_seconds ?? 30) + '">s</label>' +
-      '<label>account values every <input id="set-ws-values" type="number" value="' + (ws.values_refresh_seconds ?? 60) + '">s</label>' +
+      '</select></div>' +
     '</div>');
 
   // 8. discord webhooks
   const hooks = [
-    ["set-discord-webhook_url", "trade alerts", "main alerts channel", dc.webhook_url || ""],
-    ["set-discord-reader_log_webhook_url", "reader log", "empty = off", dc.reader_log_webhook_url || ""],
-    ["set-discord-pipeline_log_webhook_url", "pipeline log", "empty = off", dc.pipeline_log_webhook_url || ""],
-    ["set-discord-update_webhook_url", "update notices", "empty = trade alerts channel", dc.update_webhook_url || ""],
+    ["set-discord-webhook_url", "trade alerts",
+      "webhook for parsed alerts and execution results",
+      "main alerts channel", dc.webhook_url || ""],
+    ["set-discord-reader_log_webhook_url", "reader log",
+      "periodic reader heartbeat; empty = off",
+      "empty = off", dc.reader_log_webhook_url || ""],
+    ["set-discord-pipeline_log_webhook_url", "pipeline log",
+      "pipeline log tail; empty = off",
+      "empty = off", dc.pipeline_log_webhook_url || ""],
+    ["set-discord-update_webhook_url", "update notices",
+      "restart and update notices; empty = the trade alerts channel",
+      "empty = trade alerts channel", dc.update_webhook_url || ""],
   ];
   html += _section("discord webhooks (take effect after restart)",
     '<div class="set-grid wide">' +
     hooks.map(h =>
-      '<div class="set-field full"><label>' + esc(h[1]) + '</label>' +
-      '<textarea id="' + h[0] + '" rows="2" placeholder="' + esc(h[2]) + '">' + esc(h[3]) + '</textarea></div>'
+      '<div class="set-field full"><label title="' + esc(h[2]) + '">' + esc(h[1]) + '</label>' +
+      '<textarea id="' + h[0] + '" rows="2" title="' + esc(h[2]) + '" placeholder="' + esc(h[3]) + '">' + esc(h[4]) + '</textarea></div>'
     ).join("") + '</div>');
 
   el.innerHTML = html;
