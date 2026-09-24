@@ -1110,6 +1110,10 @@ def main():
     last_stale_log = 0.0
     sync_counter = 99
     scroll_counter = 0
+    # local for the stay-up log (an assignment inside main()
+    # shadows the module-level default - keep it initialized
+    # before the loop like its neighbors)
+    _stayup_log_ts = 0.0
 
     while True:
         if time.time() - last_clock_check > 600:
