@@ -749,6 +749,13 @@ async function runHistorySearch() {
   await fetchHistoryPage();
 }
 
+let _searchDebounce = null;
+
+function autoSearch() {
+  clearTimeout(_searchDebounce);
+  _searchDebounce = setTimeout(runHistorySearch, 400);
+}
+
 async function historyNav(dir) {
   historyOffset = Math.max(0, historyOffset + dir * 50);
   await fetchHistoryPage();
@@ -826,6 +833,7 @@ function renderHistoryResults(data) {
 }
 
 function clearHistorySearch() {
+  clearTimeout(_searchDebounce);
   for (const id of ["hs-q","hs-ticker","hs-status","hs-since","hs-until"]) document.getElementById(id).value = "";
   document.getElementById("history-results").innerHTML = "";
   historyOffset = 0;
@@ -1205,6 +1213,15 @@ window.addEventListener("pageshow", (e) => {
 applySectionVisibility();
 tickClock();
 setInterval(tickClock, 1000);
+// history search runs itself: text inputs debounce 400ms,
+// select/date changes fire at once - no button needed
+for (const id of ["hs-q", "hs-ticker"]) {
+  document.getElementById(id).addEventListener("input", autoSearch);
+}
+for (const id of ["hs-status", "hs-since", "hs-until"]) {
+  document.getElementById(id).addEventListener("change", runHistorySearch);
+}
+
 renderReader();
 setInterval(renderReader, 1000);
 setInterval(function() {
