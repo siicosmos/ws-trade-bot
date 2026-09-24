@@ -134,14 +134,6 @@ batcher, health watchdog) under ops/supervise.py, the reader
 process with its locally-supervised webhook thread, and the
 crash/hang/update exit paths that feed the restart loops.
 
-## Database growth model
-
-Measured and documented in `docs/database_plan.md`: a year
-of retention lands at ~5 MB quiet / ~14 MB moderate /
-~34 MB heavy - trivial for sqlite. The doc also covers
-the maintenance guidance (free-page plateau, WAL bounds,
-consistent backups) and the FTS5 recommendation for #12.
-
 ## 12. Search over older trades/signals - DONE
 
 Retention is now a year (trading.history_retention_days
@@ -154,12 +146,12 @@ pagination, and a dashboard search bar above the trade log
 older paging). The idx_trades_mode_ts index backs
 date-ranged scans.
 
-## Thread supervision (landed, unplanned)
+## 13. Thread supervision - DONE
 
 After a docs-only update killed the updater thread: every
 background loop runs under `trader/ops/supervise.py` - a crash
-or an unexpected return is logged, reported to the webhook, and
-the thread relaunches after a backoff. Covered: auto-update,
+or an unexpected return is logged, reported to the webhook,
+and the thread relaunches after a backoff. Covered: auto-update,
 stop monitor, trade mirror, the pipeline's webhook batcher, the
 health watchdog, and the reader's webhook thread (reader-local
 wrapper - the reader imports no trader code by design). The
@@ -177,10 +169,20 @@ supervision: setInterval invocations are independent, poll
 failures surface via the reconnect banner, and page visibility
 is the browser's domain.
 
-## Second review findings (post #1-#5) - RESOLVED
+## Database growth model
 
-Fresh pass after the margin extraction, UI smoke test, batched
-endpoint, indexes and retention landed. All findings closed:
+Measured and documented in `docs/database_plan.md`: a year
+of retention lands at ~5 MB quiet / ~14 MB moderate /
+~34 MB heavy - trivial for sqlite. The doc also covers
+the maintenance guidance (free-page plateau, WAL bounds,
+consistent backups) and the FTS5 recommendation for #12.
+
+## Reviews - all findings resolved
+
+A second review after #1-#5 landed, then a full #1-#12
+re-review on the third pass. Everything surfaced is closed:
+
+**Second-review findings (post #1-#5):**
 
 - **create_app megafunction** - resolved via
   `PipelineContext` (trader/web/server.py): the payload
@@ -206,11 +208,12 @@ endpoint, indexes and retention landed. All findings closed:
   onto `account_sizing` / `tier_plan`.
 - **moomoo is an undeclared optional dependency** - noted in
   requirements.txt as an optional install.
-- ~~WebhookBatcher is unsupervised~~ - supervised
+- **WebhookBatcher is unsupervised** - supervised
   (trader/ops/loghook.py), and the reader's WebhookLog thread
-  runs under a reader-local supervision wrapper.
+  runs under a reader-local supervision wrapper (folded into
+  #13).
 
-## #1-#5 re-review (third pass)
+**#1-#5 re-review (third pass):**
 
 - **#1 margin model** - clean: one Holding shape, one
   compute path, injected rate resolvers. No findings.
@@ -225,10 +228,10 @@ endpoint, indexes and retention landed. All findings closed:
   502); the client guards the missing accounts list.
 - **#4 indexes** - verified: both plans EXPLAIN-verified in
   tests, nothing missing.
-- **#5 retention** - the quiet-day prune gap is closed (see
-  the mirror-loop fix above).
+- **#5 retention** - the quiet-day prune gap is closed (the
+  mirror-loop fix above).
 
-## #6-#12 re-review (third pass)
+**#6-#12 re-review (third pass):**
 
 - **#6 account.py split** - one real gap: the six ws_common
   helpers (_amount, _amount_opt, _quote_price,
@@ -242,7 +245,8 @@ endpoint, indexes and retention landed. All findings closed:
   statement below the DONE header. Both corrected.
 - **#8 waitress** - verified: fallback intact, requirements
   noted, request logging actually quieter than the Werkzeug
-  path (no access lines at all). No findings.
+  path (no access lines at all). No findings (the TLS
+  caveat is documented in #8 above).
 - **#9 per-thread connections** - verified: threading.local
   releases a dead thread's connection (CPython clears the
   local on thread exit), so supervised restarts don't leak;
