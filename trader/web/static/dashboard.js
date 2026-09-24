@@ -181,7 +181,13 @@ let readerInfo = null;
 function renderReader() {
   // ticks on its own - button clicks never rewrite this line
   const el = document.getElementById("reader");
-  if (!el || !readerInfo) return;
+  if (!el) return;
+  if (!readerInfo) {
+    // same pre-first-load treatment as "data refreshed ..."
+    el.textContent = "reader \u2026";
+    el.style.color = "var(--muted)";
+    return;
+  }
   const r = readerInfo;
   const age = r.age_seconds === null ? null
     : Math.round(
