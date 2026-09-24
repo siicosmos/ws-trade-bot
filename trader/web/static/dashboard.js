@@ -667,6 +667,8 @@ function fitText(el, floor) {
   }
 }
 
+let gitStatus = null;
+
 function renderGitStatus(s) {
   const el = document.getElementById("git");
   if (!s || s.status !== "active") { el.textContent = ""; return; }
@@ -1171,7 +1173,8 @@ async function load() {
     renderSignals(data.signals || []);
     renderTrades(data.trades || []);
     renderSettings(data.settings || {});
-    renderGitStatus(data.update_status);
+    gitStatus = data.update_status || null;
+    renderGitStatus(gitStatus);
     lastRefresh = Date.now();
   } catch (e) { /* handled in api() */ }
 }
@@ -1204,3 +1207,7 @@ tickClock();
 setInterval(tickClock, 1000);
 renderReader();
 setInterval(renderReader, 1000);
+setInterval(function() {
+  // the checked/pull ages tick in real time like the clock
+  if (gitStatus) renderGitStatus(gitStatus);
+}, 1000);
