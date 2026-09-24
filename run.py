@@ -131,7 +131,17 @@ def main():
 
     risk = RiskEngine(cfg, store, account)
 
-    if mode in ("paper", "live") and cfg.trading.stop_loss_pct > 0:
+    # the stop monitor runs wherever positions are executed: live,
+    # paper-only, or paper alongside notify (it watches the paper
+    # ledger through the PaperExecutor)
+    paper_alongside = (
+        mode == "notify"
+        and executor is not None
+        and getattr(getattr(cfg, "paper", None), "enabled", False)
+    )
+    if (
+        mode in ("paper", "live") or paper_alongside
+    ) and cfg.trading.stop_loss_pct > 0:
         from trader.trading.stops import StopMonitor
 
         quote_fn = make_quote_provider(cfg, account)
