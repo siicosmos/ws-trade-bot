@@ -892,6 +892,9 @@ function renderSettings(s) {
         "copy real wealthsimple fills into the paper ledger") +
     '</div>' +
     '<div class="set-grid">' +
+      _numField("set-mirror-interval", "mirror every (s)",
+        s.paper && s.paper.mirror_interval_seconds,
+        "seconds between real-fill mirror scans") +
       _numField("set-risk_per_trade_pct", "default risk %", t.risk_per_trade_pct,
         "% of account value risked per trade when no size keyword is given", "big") +
       _numField("set-max_contracts_per_trade", "max contracts", t.max_contracts_per_trade,
@@ -918,6 +921,24 @@ function renderSettings(s) {
       "minimum wait between consecutive trades") +
     _numField("set-dedupe_window_minutes", "dedupe (min)", t.dedupe_window_minutes,
       "window for recognizing duplicate alerts") +
+    _numField("set-limit_offset_pct", "limit offset %", t.limit_offset_pct,
+      "how far past the market price a limit order chases (limit order type only)") +
+    _numField("set-history_retention_days", "history retention (d)", t.history_retention_days,
+      "days to keep signals and trades; 0 = keep forever") +
+    '<div class="set-field"><label title="order type used for live executions">' +
+    'order type</label>' +
+    '<select id="set-order_type" title="order type used for live executions">' +
+      '<option value="market"' + (t.order_type === "market" ? " selected" : "") + '>market</option>' +
+      '<option value="limit"' + (t.order_type === "limit" ? " selected" : "") + '>limit</option>' +
+    '</select></div>' +
+    '</div>' +
+    '<div class="set-checks" style="margin-bottom:0">' +
+      _check("set-place_stop_loss", "place stop-loss orders",
+        t.place_stop_loss,
+        "submit an actual stop-loss order after entry (live mode)") +
+      _check("set-sell_only_if_held", "sell only if held",
+        t.sell_only_if_held,
+        "refuse sells when the ledger shows no open position") +
     '</div>');
 
   // 3. filters
@@ -985,10 +1006,10 @@ function renderSettings(s) {
     _txtField("set-reader-channels", "allowed channels (comma-separated)",
       (rd.channels || []).join(", "), "e.g. test-alerts, player-alerts",
       "only these discord channels are read; empty = any", true) +
-    '<div class="set-field full set-checks" style="margin-bottom:0">' +
+    '</div>' +
+    '<div class="set-checks" style="margin:10px 0 0">' +
       _check("set-reader-auto_scroll", "auto scroll to newest message", rd.auto_scroll,
         "keep the discord window scrolled to the newest message") +
-    '</div>' +
     '</div>');
 
   // 7. automation: aligned grid like the other sections
@@ -1006,12 +1027,18 @@ function renderSettings(s) {
         "seconds between wealthsimple position refreshes") +
       _numField("set-ws-values", "values refresh (s)", ws.values_refresh_seconds,
         "seconds between wealthsimple account value refreshes") +
+      _numField("set-ws-margin-rate", "stock margin rate", ws.stock_margin_rate,
+        "maintenance margin rate applied to stock holdings (0.30 = 30%)") +
       '<div class="set-field"><label title="quote source for the stop monitor">' +
       'quotes provider</label>' +
       '<select id="set-quotes-provider">' +
         '<option value="ws"' + (q.provider === "ws" ? " selected" : "") + '>ws</option>' +
         '<option value="moomoo"' + (q.provider === "moomoo" ? " selected" : "") + '>moomoo</option>' +
       '</select></div>' +
+      _txtField("set-quotes-moomoo_host", "moomoo host", q.moomoo_host, "127.0.0.1",
+        "OpenD gateway address for moomoo quotes") +
+      _numField("set-quotes-moomoo_port", "moomoo port", q.moomoo_port,
+        "OpenD gateway port for moomoo quotes") +
     '</div>');
 
   // 8. discord webhooks
@@ -1051,9 +1078,12 @@ async function saveSettings() {
   const val = (id) => document.getElementById(id).value;
   const num = (id) => parseFloat(val(id));
   const trading = {};
-  for (const k of ["risk_per_trade_pct","max_contracts_per_trade","max_open_risk_pct","stop_loss_pct","trailing_stop_pct","stop_check_seconds","max_consecutive_losses","min_dte_days","max_trades_per_day","cooldown_seconds","dedupe_window_minutes"]) {
+  for (const k of ["risk_per_trade_pct","max_contracts_per_trade","max_open_risk_pct","stop_loss_pct","trailing_stop_pct","stop_check_seconds","max_consecutive_losses","min_dte_days","max_trades_per_day","cooldown_seconds","dedupe_window_minutes","limit_offset_pct","history_retention_days"]) {
     trading[k] = num("set-" + k);
   }
+  trading.order_type = val("set-order_type");
+  trading.place_stop_loss = document.getElementById("set-place_stop_loss").checked;
+  trading.sell_only_if_held = document.getElementById("set-sell_only_if_held").checked;
   const toList = (id) => val(id).split(",").map(function(s) { return s.trim(); }).filter(Boolean);
   trading.ticker_whitelist = toList("set-ticker_whitelist");
   trading.skip_underlyings = toList("set-skip_underlyings");
@@ -1090,7 +1120,11 @@ async function saveSettings() {
       auto_scroll: document.getElementById("set-reader-auto_scroll").checked,
     },
     auto_update: { enabled: document.getElementById("set-au-enabled").checked, interval_seconds: parseInt(val("set-au-interval")) },
-    wealthsimple: { positions_refresh_seconds: parseInt(val("set-ws-positions")), values_refresh_seconds: parseInt(val("set-ws-values")) },
+    wealthsimple: {
+      positions_refresh_seconds: parseInt(val("set-ws-positions")),
+      values_refresh_seconds: parseInt(val("set-ws-values")),
+      stock_margin_rate: num("set-ws-margin-rate"),
+    },
     discord: {
       notify: document.getElementById("set-notify").checked,
       webhook_url: val("set-discord-webhook_url").trim(),
@@ -1098,8 +1132,17 @@ async function saveSettings() {
       pipeline_log_webhook_url: val("set-discord-pipeline_log_webhook_url").trim(),
       update_webhook_url: val("set-discord-update_webhook_url").trim(),
     },
-    quotes: { enabled: document.getElementById("set-quotes-enabled").checked, provider: val("set-quotes-provider") },
-    paper: { enabled: document.getElementById("set-paper-enabled").checked, mirror: document.getElementById("set-paper-mirror").checked },
+    quotes: {
+      enabled: document.getElementById("set-quotes-enabled").checked,
+      provider: val("set-quotes-provider"),
+      moomoo_host: val("set-quotes-moomoo_host").trim(),
+      moomoo_port: parseInt(val("set-quotes-moomoo_port")),
+    },
+    paper: {
+      enabled: document.getElementById("set-paper-enabled").checked,
+      mirror: document.getElementById("set-paper-mirror").checked,
+      mirror_interval_seconds: parseInt(val("set-mirror-interval")),
+    },
   };
   const res = await fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
   const data = await res.json();

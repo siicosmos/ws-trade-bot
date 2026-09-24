@@ -29,6 +29,9 @@ class ConfigStub:
         self.reader = ReaderConfig()
         self.auto_update = AutoUpdateConfig()
         self.quotes = QuotesConfig()
+        from trader.config import PaperConfig
+
+        self.paper = PaperConfig()
 
 
 def _fresh_store():
@@ -828,3 +831,72 @@ def test_discord_notify_toggle(tmp_path):
     assert applied["discord.notify"] is False
     cfg2 = load_config(str(path))
     assert cfg2.discord.notify is False
+
+
+def test_new_settings_fields_roundtrip():
+    """The settings UI exposes the full config surface: order
+    type, limit offset, stop-order/sell-held toggles, history
+    retention, the margin rate, the mirror interval and the
+    moomoo connection."""
+    cfg = ConfigStub(
+        TradingConfig(mode="notify"), accounts=[]
+    )
+
+    ok, errors = apply_settings(cfg, {
+        "trading": {
+            "order_type": "limit",
+            "limit_offset_pct": 0.75,
+            "place_stop_loss": True,
+            "sell_only_if_held": False,
+            "history_retention_days": 365,
+        },
+        "wealthsimple": {"stock_margin_rate": 0.35},
+        "paper": {"mirror_interval_seconds": 120},
+        "quotes": {
+            "moomoo_host": "192.168.1.50",
+            "moomoo_port": 11111,
+        },
+    })
+    assert not errors, errors
+    assert cfg.trading.order_type == "limit"
+    assert cfg.trading.limit_offset_pct == 0.75
+    assert cfg.trading.place_stop_loss is True
+    assert cfg.trading.sell_only_if_held is False
+    assert cfg.trading.history_retention_days == 365
+    assert cfg.wealthsimple.stock_margin_rate == 0.35
+    assert cfg.paper.mirror_interval_seconds == 120
+    assert cfg.quotes.moomoo_host == "192.168.1.50"
+    assert cfg.quotes.moomoo_port == 11111
+
+    # get_settings exposes them all for the form
+    s = get_settings(cfg)
+    assert s["trading"]["order_type"] == "limit"
+    assert s["trading"]["limit_offset_pct"] == 0.75
+    assert s["trading"]["place_stop_loss"] is True
+    assert s["trading"]["sell_only_if_held"] is False
+    assert s["trading"]["history_retention_days"] == 365
+    assert s["wealthsimple"]["stock_margin_rate"] == 0.35
+    assert s["paper"]["mirror_interval_seconds"] == 120
+    assert s["quotes"]["moomoo_host"] == "192.168.1.50"
+    assert s["quotes"]["moomoo_port"] == 11111
+
+    # out-of-range and bad enum values are rejected
+    _, errors = apply_settings(cfg, {
+        "trading": {"order_type": "iceberg"},
+    })
+    assert any("order_type" in e for e in errors)
+
+    _, errors = apply_settings(cfg, {
+        "wealthsimple": {"stock_margin_rate": 2.0},
+    })
+    assert any("stock_margin_rate" in e for e in errors)
+
+    _, errors = apply_settings(cfg, {
+        "paper": {"mirror_interval_seconds": 5},
+    })
+    assert any("mirror_interval_seconds" in e for e in errors)
+
+    _, errors = apply_settings(cfg, {
+        "quotes": {"moomoo_port": 99999},
+    })
+    assert any("moomoo_port" in e for e in errors)

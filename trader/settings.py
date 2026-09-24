@@ -15,7 +15,11 @@ EDITABLE_SCALARS = {
     "max_trades_per_day": ("int", 0, 1000),
     "cooldown_seconds": ("int", 0, 86400),
     "dedupe_window_minutes": ("int", 0, 1440),
+    "limit_offset_pct": ("float", 0, 5),
+    "history_retention_days": ("int", 0, 3650),
 }
+EDITABLE_ENUMS = {"order_type": ("market", "limit")}
+EDITABLE_BOOLS = ("place_stop_loss", "sell_only_if_held")
 EDITABLE_LISTS = ("ticker_whitelist", "skip_underlyings")
 EDITABLE_READER = {
     "channel_marker": ("str", 0, 100),
@@ -32,6 +36,10 @@ EDITABLE_ACCOUNT_NUMERIC = {
 
 def get_settings(cfg) -> dict:
     trading = {k: getattr(cfg.trading, k) for k in EDITABLE_SCALARS}
+    for k in EDITABLE_ENUMS:
+        trading[k] = getattr(cfg.trading, k)
+    for k in EDITABLE_BOOLS:
+        trading[k] = getattr(cfg.trading, k)
     for k in EDITABLE_LISTS:
         trading[k] = getattr(cfg.trading, k)
     trading["size_tiers"] = cfg.trading.size_tiers
@@ -61,6 +69,8 @@ def get_settings(cfg) -> dict:
         "quotes": {
             "enabled": cfg.quotes.enabled,
             "provider": cfg.quotes.provider,
+            "moomoo_host": cfg.quotes.moomoo_host,
+            "moomoo_port": cfg.quotes.moomoo_port,
         },
         "paper": {
             "enabled": bool(
@@ -68,6 +78,12 @@ def get_settings(cfg) -> dict:
             ),
             "mirror": bool(
                 getattr(getattr(cfg, "paper", None), "mirror", True)
+            ),
+            "mirror_interval_seconds": int(
+                getattr(
+                    getattr(cfg, "paper", None),
+                    "mirror_interval_seconds", 60,
+                )
             ),
         },
         "wealthsimple": {
@@ -77,6 +93,7 @@ def get_settings(cfg) -> dict:
             "values_refresh_seconds": (
                 cfg.wealthsimple.values_refresh_seconds
             ),
+            "stock_margin_rate": cfg.wealthsimple.stock_margin_rate,
         },
         "discord": {
             "notify": bool(
@@ -111,6 +128,26 @@ def apply_settings(cfg, payload: dict, config_path=None) -> tuple:
         if value < lo or value > hi:
             errors.append(f"trading.{key}: must be between {lo} and {hi}")
             continue
+        setattr(cfg.trading, key, value)
+        applied[f"trading.{key}"] = value
+
+    for key, choices in EDITABLE_ENUMS.items():
+        if key not in trading_payload:
+            continue
+        value = str(trading_payload[key]).strip().lower()
+        if value not in choices:
+            errors.append(
+                f"trading.{key}: must be one of "
+                + ", ".join(choices)
+            )
+            continue
+        setattr(cfg.trading, key, value)
+        applied[f"trading.{key}"] = value
+
+    for key in EDITABLE_BOOLS:
+        if key not in trading_payload:
+            continue
+        value = bool(trading_payload[key])
         setattr(cfg.trading, key, value)
         applied[f"trading.{key}"] = value
 
@@ -263,11 +300,41 @@ def apply_settings(cfg, payload: dict, config_path=None) -> tuple:
         if "mirror" in paper_payload:
             paper_cfg.mirror = bool(paper_payload["mirror"])
             applied["paper.mirror"] = paper_cfg.mirror
+        if "mirror_interval_seconds" in paper_payload:
+            try:
+                interval = int(
+                    paper_payload["mirror_interval_seconds"]
+                )
+            except (TypeError, ValueError):
+                interval = 0
+            if not (15 <= interval <= 86400):
+                errors.append(
+                    "paper.mirror_interval_seconds: must be 15-86400"
+                )
+            else:
+                paper_cfg.mirror_interval_seconds = interval
+                applied[
+                    "paper.mirror_interval_seconds"
+                ] = interval
 
     quotes_payload = payload.get("quotes") or {}
     if "enabled" in quotes_payload:
         cfg.quotes.enabled = bool(quotes_payload["enabled"])
         applied["quotes.enabled"] = cfg.quotes.enabled
+    if "moomoo_host" in quotes_payload:
+        host = str(quotes_payload["moomoo_host"]).strip()[:100]
+        cfg.quotes.moomoo_host = host
+        applied["quotes.moomoo_host"] = host
+    if "moomoo_port" in quotes_payload:
+        try:
+            port = int(quotes_payload["moomoo_port"])
+        except (TypeError, ValueError):
+            port = 0
+        if not (1 <= port <= 65535):
+            errors.append("quotes.moomoo_port: must be 1-65535")
+        else:
+            cfg.quotes.moomoo_port = port
+            applied["quotes.moomoo_port"] = port
     if "provider" in quotes_payload:
         provider = str(quotes_payload["provider"]).strip().lower()
         if provider not in ("ws", "moomoo"):
@@ -294,6 +361,18 @@ def apply_settings(cfg, payload: dict, config_path=None) -> tuple:
                 applied[f"discord.{field}"] = url
 
     ws_payload = payload.get("wealthsimple") or {}
+    if "stock_margin_rate" in ws_payload:
+        try:
+            rate = float(ws_payload["stock_margin_rate"])
+        except (TypeError, ValueError):
+            rate = -1.0
+        if not (0.0 <= rate <= 1.0):
+            errors.append(
+                "wealthsimple.stock_margin_rate: must be 0-1"
+            )
+        else:
+            cfg.wealthsimple.stock_margin_rate = rate
+            applied["wealthsimple.stock_margin_rate"] = rate
     for field in ("positions_refresh_seconds", "values_refresh_seconds"):
         if field in ws_payload:
             try:
@@ -358,6 +437,10 @@ def _persist(cfg, config_path):
     ws = raw.setdefault("wealthsimple", {})
     for field in ("positions_refresh_seconds", "values_refresh_seconds"):
         ws[field] = getattr(cfg.wealthsimple, field)
+    if "stock_margin_rate" in ws or getattr(
+        cfg.wealthsimple, "stock_margin_rate", None
+    ) not in (None, 0.30):
+        ws["stock_margin_rate"] = cfg.wealthsimple.stock_margin_rate
 
     au = raw.setdefault("auto_update", {})
     au["enabled"] = cfg.auto_update.enabled
@@ -366,12 +449,19 @@ def _persist(cfg, config_path):
     quotes = raw.setdefault("quotes", {})
     quotes["enabled"] = cfg.quotes.enabled
     quotes["provider"] = cfg.quotes.provider
+    if getattr(cfg.quotes, "moomoo_host", None):
+        quotes["moomoo_host"] = cfg.quotes.moomoo_host
+        quotes["moomoo_port"] = cfg.quotes.moomoo_port
 
     paper_cfg = getattr(cfg, "paper", None)
     if paper_cfg is not None:
         paper = raw.setdefault("paper", {})
         paper["enabled"] = paper_cfg.enabled
         paper["mirror"] = paper_cfg.mirror
+        if getattr(paper_cfg, "mirror", False):
+            paper["mirror_interval_seconds"] = (
+                paper_cfg.mirror_interval_seconds
+            )
     discord_cfg = getattr(cfg, "discord", None)
     if discord_cfg is not None and "notify" in (
         raw.get("discord") or {}
