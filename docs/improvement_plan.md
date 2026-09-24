@@ -15,14 +15,14 @@ unified across both cards.
 
 ## 2. Headless-Chrome UI smoke test - DONE
 
-`scripts/ui_test.py` renders the real dashboard in headless
-chrome (`--dump-dom`) with a stubbed `api()`, 17 checks covering
-the interactions that historically broke while unit tests
-passed: paper currency flip, eye masking of cash/seeded, margin
-breakdown open/mask/arrow states, holdings arrow on an empty
-ledger, negative-zero rendering. Runs as the final phase of
-`scripts/e2e_test.py`, soft-skips without a browser on PATH
-(`CHROME_BIN` overrides).
+`tests/scripts/ui_test.py` renders the real dashboard in
+headless chrome (`--dump-dom`) with a stubbed `api()`, 17
+checks covering the interactions that historically broke while
+unit tests passed: paper currency flip, eye masking of
+cash/seeded, margin breakdown open/mask/arrow states, holdings
+arrow on an empty ledger, negative-zero rendering. Runs as the
+final phase of `tests/scripts/e2e_test.py`, soft-skips without
+a browser on PATH (`CHROME_BIN` overrides).
 
 ## 3. Batched dashboard endpoint - DONE
 
@@ -31,7 +31,9 @@ signals, trades, settings and update status in one response
 (payload builders shared with the individual routes, which
 remain available). The client's 5s poll went from seven
 requests to one; every button action refreshes through the
-same round trip; loaders are pure render functions.
+same round trip; loaders are pure render functions. A summary
+failure degrades to its error marker - the rest of the
+payload still renders.
 
 ## 4. SQLite indexes - DONE
 
@@ -180,41 +182,56 @@ supervision: setInterval invocations are independent, poll
 failures surface via the reconnect banner, and page visibility
 is the browser's domain.
 
-## Second review findings (post #1-#5)
+## Second review findings (post #1-#5) - RESOLVED
 
 Fresh pass after the margin extraction, UI smoke test, batched
-endpoint, indexes and retention landed:
+endpoint, indexes and retention landed. All findings closed:
 
-- **create_app megafunction** (trader/server.py, ~740 lines,
-  83-branch depth). Every route and helper is a closure over
-  cfg/store/account, so nothing is testable without building
-  the whole app (the test fixtures are correspondingly heavy).
-  Refactor: a PipelineContext dataclass + Flask blueprint;
-  `_account_summaries` and `_paper_card_metrics` become module
-  functions taking the context. This is the server-side half
-  of #6.
-- **_account_summaries is still 46-deep** even after the
-  margin extraction - registered-plan detection, funding
-  parsing, margin assembly and the paper merge all inline.
-  Extract a per-account summary builder.
-- **Test hygiene: the psutil stub leaks** - tests/test_reader.py
-  globally does `sys.modules.setdefault("psutil", MagicMock())`
-  for the whole session; it already bit the stale-process test.
-  Scope it to a fixture so later tests get the real module.
-- **maybe_prune only runs on writes** - a day with no alerts
-  means no prune, so old rows can outlive the retention window
-  indefinitely on a quiet bot. Hook it into the mirror or
-  updater loop too, or accept the laziness.
-- **contracts_for is dead** - executor.py:78 legacy sizing
-  helper referenced only by its own tests; account_sizing
-  superseded it. Delete with its tests.
-- ~~WebhookBatcher is unsupervised~~ - now supervised
+- **create_app megafunction** - resolved via
+  `PipelineContext` (trader/web/server.py): the payload
+  builders (`_account_summaries`, `_summary_payload`,
+  `_paper_positions_payload`, `_positions_payload`,
+  `_update_status_payload`, `_real_positions`, `_real_stocks`)
+  are module-level functions over the context, directly
+  testable without building the app. Routes remain thin
+  closures over the context - declarative enough that a full
+  blueprint migration would add ceremony without testability.
+- **_account_summaries was 46-deep** - split into
+  `_account_summary` (one account's row: funding parsing,
+  value math, paper merge) and `_margin_metrics` (holdings
+  assembly + the shared margin model call). Depth is now
+  flat; each concern is a named function.
+- **Test hygiene: the psutil stub leaks** - fixed: the reader
+  tests stub psutil for import time only, then restore the
+  real module for the rest of the session.
+- **maybe_prune only runs on writes** - fixed: the prune also
+  rides the mirror loop, so a quiet bot still ages rows out
+  daily.
+- **contracts_for is dead** - deleted with its tests rewired
+  onto `account_sizing` / `tier_plan`.
+- **moomoo is an undeclared optional dependency** - noted in
+  requirements.txt as an optional install.
+- ~~WebhookBatcher is unsupervised~~ - supervised
   (trader/ops/loghook.py), and the reader's WebhookLog thread
-  runs under a reader-local supervision wrapper (the reader
-  imports no trader code by design).
-- **moomoo is an undeclared optional dependency** -
-  quotes.provider=moomoo lazily imports the moomoo package;
-  requirements.txt says nothing about it.
+  runs under a reader-local supervision wrapper.
+
+## #1-#5 re-review (third pass)
+
+- **#1 margin model** - clean: one Holding shape, one
+  compute path, injected rate resolvers. No findings.
+- **#2 UI smoke test** - moved to tests/scripts/ui_test.py
+  during the scripts cleanup; 17 checks, runs as the final
+  phase of tests/scripts/e2e_test.py.
+- **#3 batched endpoint** - one gap found and fixed: a
+  summary failure used to 502 the whole batch, killing
+  trades/signals/settings/update status with it. Now the
+  dashboard degrades to the summary error marker while the
+  rest still renders (the individual /api/summary keeps its
+  502); the client guards the missing accounts list.
+- **#4 indexes** - verified: both plans EXPLAIN-verified in
+  tests, nothing missing.
+- **#5 retention** - the quiet-day prune gap is closed (see
+  the mirror-loop fix above).
 
 ## Done / not pursuing
 

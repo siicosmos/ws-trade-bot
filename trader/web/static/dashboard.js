@@ -198,6 +198,11 @@ function renderReader() {
 }
 
 function renderSummary(data) {
+  if (!data || data.error) {
+    document.getElementById("accounts").innerHTML =
+      '<div class="empty">' + esc((data && data.error) || "summary unavailable") + "</div>";
+    return;
+  }
   const modeEl = document.getElementById("mode");
   modeEl.textContent = data.mode;
   modeEl.className = "badge " + data.mode;
