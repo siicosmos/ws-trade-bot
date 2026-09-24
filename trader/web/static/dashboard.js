@@ -932,7 +932,7 @@ function renderSettings(s) {
       '<option value="limit"' + (t.order_type === "limit" ? " selected" : "") + '>limit</option>' +
     '</select></div>' +
     '</div>' +
-    '<div class="set-checks" style="margin-bottom:0">' +
+    '<div class="set-checks" style="margin:10px 0 0">' +
       _check("set-place_stop_loss", "place stop-loss orders",
         t.place_stop_loss,
         "submit an actual stop-loss order after entry (live mode)") +
