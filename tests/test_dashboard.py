@@ -421,3 +421,32 @@ def test_paper_open_state_migration():
     # JSON parse
     assert '_po.startsWith("[")' in js
     assert "} catch (e) { paperOpen = []; }" in js
+
+
+def test_no_duplicate_element_ids():
+    """A partial block move once left an orphaned search bar
+    with duplicate hs-* ids shadowing the real one - the page
+    must never carry the same id twice."""
+    import re
+
+    import trader.web.dashboard as dash
+
+    ids = re.findall(r'id="([a-zA-Z0-9_-]+)"', dash.DASHBOARD_HTML)
+    assert len(ids) == len(set(ids)), (
+        "duplicate ids: "
+        + str(sorted({i for i in ids if ids.count(i) > 1}))
+    )
+
+
+def test_history_search_bar_is_single_and_last():
+    import trader.web.dashboard as dash
+
+    html = dash.DASHBOARD_HTML
+    assert html.count('id="history-search"') == 1
+    assert html.count('id="history-results"') == 1
+    # it sits below the trade log, at the end of the page body
+    assert html.index('id="trades"') < html.index('id="history-search"')
+    # no search fragments before the trade log
+    assert html.index('id="signals"') < html.index('id="trades"')
+    between = html[html.index('id="signals"'):html.index('id="trades"')]
+    assert "hs-q" not in between
