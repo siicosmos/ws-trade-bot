@@ -37,6 +37,7 @@ def start_health_watchdog(
     log=print,
     _exit=None,
     verify=True,
+    store=None,
 ):
     """Returns the supervised thread. Fetches health_url every
     interval; after grace_seconds of consecutive failures the
@@ -51,6 +52,13 @@ def start_health_watchdog(
     def check():
         while True:
             time.sleep(max(5, interval_seconds))
+            # the daily history prune rides this always-on loop:
+            # the mirror loop only runs when mirroring is enabled
+            if store is not None:
+                try:
+                    store.maybe_prune()
+                except Exception as e:
+                    log(f"history prune failed: {e}")
             try:
                 resp = requests.get(
                     health_url, timeout=10, verify=verify

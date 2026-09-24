@@ -900,3 +900,34 @@ def test_new_settings_fields_roundtrip():
         "quotes": {"moomoo_port": 99999},
     })
     assert any("moomoo_port" in e for e in errors)
+
+
+def test_new_fields_persist_to_config_file():
+    """order_type / place_stop_loss / sell_only_if_held applied
+    at runtime must also land in config.yaml - they once
+    silently reverted on restart."""
+    import yaml
+
+    fd, cfg_path = tempfile.mkstemp(suffix=".yaml")
+    os.close(fd)
+    with open(cfg_path, "w") as f:
+        f.write("trading:\n  mode: notify\n")
+
+    cfg = ConfigStub(
+        TradingConfig(mode="notify"), accounts=[]
+    )
+    ok, errors = apply_settings(cfg, {
+        "trading": {
+            "order_type": "limit",
+            "place_stop_loss": True,
+            "sell_only_if_held": False,
+        }
+    }, config_path=cfg_path)
+    assert ok and not errors
+
+    with open(cfg_path) as f:
+        raw = yaml.safe_load(f)
+    assert raw["trading"]["order_type"] == "limit"
+    assert raw["trading"]["place_stop_loss"] is True
+    assert raw["trading"]["sell_only_if_held"] is False
+    os.unlink(cfg_path)

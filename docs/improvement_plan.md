@@ -243,6 +243,43 @@ re-review on the third pass. Everything surfaced is closed:
 - **#5 retention** - the quiet-day prune gap is closed (the
   mirror-loop fix above).
 
+**Third-pass full review (post moomoo/history-search/settings
+work):**
+
+- **settings did not persist order_type / place_stop_loss /
+  sell_only_if_held** - they applied at runtime but _persist
+  never wrote them, so they silently reverted on restart.
+  Fixed: the enum/bool fields ride the persist loop, with a
+  config-file roundtrip test (the earlier gap slipped because
+  no test wrote a real file).
+- **merged history search split notify+paper pairs** -
+  group_top kept the oldest trade's timestamp (an overwrite
+  where a max was needed), so a signal with two trades sharing
+  its message_key could float away from the group. Fixed and
+  contiguity-tested; the dead sig_keys variable is gone.
+- **the daily prune was gated on mirroring** - it rode the
+  mirror loop, which only starts when paper.mirror is on: with
+  mirroring off a quiet bot never pruned (the earlier fix was
+  weaker than this doc claimed). The prune now also rides the
+  always-on health watchdog.
+- **history_retention_days does not reach the live store**
+  (retention is read at construction) - tooltip now says it
+  takes effect after restart.
+- Noted, not fixed: the ui smoke suite has no history-search
+  interaction checks (the orphaned-fragment bug shipped
+  because of that gap - the duplicate-id guard now exists, but
+  search behavior remains untested at the ui level);
+  moomoo_host persists only when set, so clearing it leaves a
+  stale yaml value; renderSettings from empty stub data
+  defaults the order-type select (harness-only edge).
+- Verified clean this pass: margin model paths, sizing/tier
+  caps (account override replaces the global - by design),
+  paper valuation and seeding, notify+paper dual trade rows,
+  updater/supervise/watchdog/loghook/notify error handling,
+  reader post unbound-local fix, stale-process ancestor
+  protection, settings validation ranges, endpoint auth
+  guards, waitress/werkzeug selection.
+
 **#6-#12 re-review (third pass):**
 
 - **#6 account.py split** - one real gap: the six ws_common

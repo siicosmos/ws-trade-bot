@@ -418,6 +418,10 @@ def _persist(cfg, config_path):
     trading = raw.setdefault("trading", {})
     for key in EDITABLE_SCALARS:
         trading[key] = getattr(cfg.trading, key)
+    for key in EDITABLE_ENUMS:
+        trading[key] = getattr(cfg.trading, key)
+    for key in EDITABLE_BOOLS:
+        trading[key] = getattr(cfg.trading, key)
     for key in EDITABLE_LISTS:
         trading[key] = getattr(cfg.trading, key)
     trading["size_tiers"] = cfg.trading.size_tiers

@@ -199,6 +199,7 @@ def main():
         cfg.discord.update_webhook_url
         or cfg.discord.webhook_url,
         verify=scheme != "https",   # self-signed local cert
+        store=store,
     )
 
     # production wsgi server (plan #8): waitress handles plain

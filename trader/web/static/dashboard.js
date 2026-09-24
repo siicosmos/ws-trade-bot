@@ -940,7 +940,7 @@ function renderSettings(s) {
     _numField("set-limit_offset_pct", "limit offset %", t.limit_offset_pct,
       "how far past the market price a limit order chases (limit order type only)") +
     _numField("set-history_retention_days", "history retention (d)", t.history_retention_days,
-      "days to keep signals and trades; 0 = keep forever") +
+      "days to keep signals and trades; 0 = keep forever (takes effect after restart)") +
     '<div class="set-field"><label title="order type used for live executions">' +
     'order type</label>' +
     '<select id="set-order_type" title="order type used for live executions">' +

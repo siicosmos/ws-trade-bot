@@ -285,3 +285,23 @@ def test_pipeline_trades_carry_the_signal_key():
     keyed = src.count(", key,\n            )") + src.count(", key,")
     assert calls >= 4
     assert keyed >= 4, "alert-driven trades must pass message_key"
+
+
+def test_search_both_keeps_group_contiguous():
+    """A notify+paper alert writes two trades sharing one
+    message_key - the group must not split in the merged view
+    (the alert rides its NEWEST trade, not the oldest)."""
+    s = _fresh_store()
+    s.record_signal("s1", "alpha", "BOUGHT 0DTE SPY 759c @ 1.5", True)
+    _record_trade(s, "notify", "BUY", "SPY", 0, 1.5, "notified",
+                  "preview", "s1")
+    _record_trade(s, "paper", "BUY", "SPY", 5, 1.5, "executed",
+                  "paper fill", "s1")
+
+    rows, total = s.search_history(kind="both")
+    assert total == 3
+    # all three rows adjacent, alert on top of its trades
+    keys = [r["message_key"] for r in rows]
+    assert keys == ["s1", "s1", "s1"]
+    assert rows[0]["type"] == "signal"
+    assert {rows[1]["type"], rows[2]["type"]} == {"trade", "trade"}

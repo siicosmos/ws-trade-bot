@@ -634,14 +634,14 @@ class Store:
                 r["type"] = "trade"
             for r in signals:
                 r["type"] = "signal"
+            # the alert rides its NEWEST trade's timestamp so the
+            # whole group (notify row, paper row, signal) lands
+            # together; trades arrive newest-first, so keep the max
             group_top = {}
             for r in trades:
                 k = r["message_key"]
                 if k:
-                    group_top[k] = r["ts"]
-            sig_keys = {
-                r["message_key"] for r in signals if r["message_key"]
-            }
+                    group_top[k] = max(group_top.get(k, ""), r["ts"])
 
             def _key(r):
                 if r["type"] == "signal":
