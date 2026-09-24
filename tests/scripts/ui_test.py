@@ -275,7 +275,16 @@ window.__t = function(name, ok, detail) {
     __t("history-pair-linked", linkedRows.length === 2,
         "linked=" + linkedRows.length);
 
-    // 8. no negative-zero or $- artifacts in the *rendered*
+    // 8. hostile config values must not break out of the
+    // settings form markup
+    const setEl = document.getElementById("settings");
+    __t("hostile-settings-no-scripts",
+        setEl.querySelectorAll("script").length === 0);
+    const riskInput = document.getElementById("set-risk_per_trade_pct");
+    __t("hostile-settings-input-intact",
+        !!riskInput && riskInput.tagName === "INPUT");
+
+    // 9. no negative-zero or $- artifacts in the *rendered*
     // text (scripts contain the string in comments)
     const clone = document.body.cloneNode(true);
     clone.querySelectorAll("script, style").forEach(n => n.remove());
@@ -322,7 +331,23 @@ def build_page():
             "positions": [],
             "signals": [],
             "trades": [],
-            "settings": {},
+            "settings": {
+                # hostile values: a broken-out attribute would
+                # inject markup into the settings form
+                "trading": {
+                    # hostile but without a closing-script
+                    # token (that would end the harness block)
+                    "risk_per_trade_pct": '"><img src=x onerror=alert(1)>',
+                    "order_type": "market",
+                    "size_tiers": {
+                        'x" onmouseover="alert(1)': {
+                            "risk_pct_max": 5,
+                            "contracts_min": 1,
+                            "contracts_max": 5,
+                        }
+                    },
+                },
+            },
             "update_status": {"status": "disabled"},
         }) + ';\n'
         '  if (path === "/api/summary") return '

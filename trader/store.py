@@ -89,6 +89,12 @@ class Store:
                 self._conn.execute("ALTER TABLE trades ADD COLUMN dedupe_key TEXT")
             except sqlite3.OperationalError:
                 pass
+            try:
+                self._conn.execute(
+                    "ALTER TABLE trades ADD COLUMN message_key TEXT"
+                )
+            except sqlite3.OperationalError:
+                pass
             for col, decl in (
                 ("strike", "REAL"), ("expiry", "TEXT"),
                 ("opt_right", "TEXT"),
@@ -388,7 +394,11 @@ class Store:
                     (total_old + delta * premium) / new_qty if new_qty else old_avg
                 )
             elif delta < 0 and premium is not None and old_avg:
-                realized = old_realized + (-delta) * (premium - old_avg) * 100
+                # options settle per-contract (x100), stocks per
+                # share (x1) - the old x100-for-everything inflated
+                # stock p&l a hundredfold
+                mult = 100 if getattr(alert, "kind", "option") == "option" else 1
+                realized = old_realized + (-delta) * (premium - old_avg) * mult
 
             self._conn.execute(
                 "INSERT INTO positions (mode, account, contract_key, underlying, "

@@ -88,6 +88,10 @@ STOPWORDS = {
     "THE", "TO", "MOON", "CHART", "BREAKOUT", "ALERT", "SIGNAL", "TRADE",
     "ORDER", "PRICE", "LIMIT", "MARKET", "OPEN", "HIGH", "LOW", "NEWS",
     "IMO", "PUMP", "WATCH", "ADD", "SCALE", "BB", "MA", "EMA", "RSI",
+    # action verbs that also match the ticker shape - without
+    # these, "SOLD XYZ @ 12" parsed ticker=SOLD and the sell
+    # no-oped against every position
+    "SOLD", "DUMP", "GRAB", "LOAD", "OUT", "ALL",
 }
 
 BUY_RE = re.compile(

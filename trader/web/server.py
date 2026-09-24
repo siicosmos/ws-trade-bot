@@ -68,6 +68,18 @@ LOCKOUT_SECONDS = 900
 _LOGIN_FAILS = {}
 
 
+def _purge_login_fails(now):
+    """Drop fail entries not touched for a day - the dict must
+    not grow without bound under sustained attacks. (A zero
+    locked_until means 'not locked yet', not 'long expired'.)"""
+    stale = [
+        ip for ip, e in _LOGIN_FAILS.items()
+        if now - e.get("ts", 0) > 86400
+    ]
+    for ip in stale:
+        _LOGIN_FAILS.pop(ip, None)
+
+
 def _load_secret_key(config_path):
     if not config_path:
         return secrets.token_hex(32)
@@ -85,6 +97,8 @@ def _load_secret_key(config_path):
     try:
         with open(key_file, "w") as f:
             f.write(key)
+        # the session signing key is only for this user
+        os.chmod(key_file, 0o600)
     except OSError:
         pass
     return key
@@ -910,6 +924,7 @@ def create_app(cfg, store: Store, risk, executor, account=None,
             return redirect("/")
         ip = request.remote_addr or "?"
         now = time.time()
+        _purge_login_fails(now)
         entry = _LOGIN_FAILS.get(ip)
         if entry and entry.get("locked_until", 0) > now:
             return Response(
@@ -931,10 +946,13 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                 _LOGIN_FAILS[ip] = {
                     "count": count,
                     "locked_until": now + LOCKOUT_SECONDS,
+                    "ts": now,
                 }
                 error = "too many attempts - try again later"
             else:
-                _LOGIN_FAILS[ip] = {"count": count, "locked_until": 0}
+                _LOGIN_FAILS[ip] = {
+                    "count": count, "locked_until": 0, "ts": now,
+                }
                 error = "wrong access token"
             time.sleep(1)
         return Response(

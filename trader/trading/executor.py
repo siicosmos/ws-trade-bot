@@ -281,7 +281,7 @@ class PaperExecutor:
             qty = sell_quantity(held, alert.scale)
             store.apply_position(
                     self.mode, alert, -qty,
-                    premium=alert.entry, account=label
+                    premium=alert.premium, account=label
                 )
             if alert.premium:
                 store.adjust_paper_equity(
@@ -341,9 +341,11 @@ class PaperExecutor:
                 breakdown[label] = "no position"
                 continue
             qty = sell_quantity(held, alert.scale)
+            # generic stock alerts carry the price in entry (the
+            # service form sets both) - realized needs either
             store.apply_position(
                     self.mode, alert, -qty,
-                    premium=alert.entry, account=label
+                    premium=alert.premium or alert.entry, account=label
                 )
             if alert.entry:
                 store.adjust_paper_equity(qty * alert.entry, label)

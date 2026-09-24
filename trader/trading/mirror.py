@@ -146,19 +146,30 @@ def mirror_real_trades(cfg, store, ws_account, ledger=None):
                 stop_loss=None, take_profit=None,
                 ts=occurred or str(time.time()), **info,
             )
+            fx = float(fx_fn()) if callable(fx_fn) else 1.0
+            mult = 100 if info["kind"] == "option" else 1
             if action == "SELL":
-                held = store.get_position("paper", shim.contract_key(), label)
-                if held < int(min(qty, held) or qty):
+                held = store.get_position(
+                    "paper", shim.contract_key(), label
+                )
+                if held < 1:
                     # the paper ledger does not hold this fill - the
                     # real account traded something the simulation
                     # missed or already closed
                     continue
+                # sell only what the ledger actually holds: a partial
+                # holding must not credit the full real fill's
+                # proceeds (the position clamps at zero either way)
+                qty = min(int(qty), int(held))
             delta = int(qty) if action == "BUY" else -int(qty)
             store.apply_position(
                 "paper", shim, delta, premium=premium, account=label
             )
-            fx = float(fx_fn()) if callable(fx_fn) else 1.0
-            proceeds = amount * (fx if info["kind"] == "option" else 1.0)
+            # per-unit basis keeps the paper equity consistent with
+            # what the ledger actually traded
+            proceeds = qty * (premium or 0.0) * mult * (
+                fx if info["kind"] == "option" else 1.0
+            )
             if action == "BUY":
                 store.adjust_paper_equity(-proceeds, label)
             else:

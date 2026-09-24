@@ -220,8 +220,11 @@ def test_gain_from_unsigned_percentages():
         "ALL OUT 09/18 SPY 753c @ 6.22 exiting swing runners here for 120%"
     )
     assert a.gain_pct == 120
-    b = parse_alert("SOLD half at 45% - trimming here")
+    b = parse_alert("SOLD half XYZ at 45% - trimming here")
     assert b.gain_pct == 45
+    # a tickerless sell no longer parses (SOLD used to be
+    # grabbed as the ticker itself)
+    assert parse_alert("SOLD half at 45%") is None
     # size percentages ("2% budget") and other numbers stay ignored
     c = parse_alert("BOUGHT 09/25 ARM 300c @ 1.65 small size")
     assert c.gain_pct is None

@@ -3745,3 +3745,116 @@ def test_health_watchdog_rides_the_prune():
         assert served["n"] >= 1
     finally:
         srv.shutdown()
+
+
+def test_paper_option_sell_books_realized_and_streak():
+    """Option sells used to pass premium=None (alert.entry) - no
+    realized p&l ever accrued, so the loss-streak breaker never
+    counted a losing paper trade."""
+    cfg, store, account, risk = _setup(
+        paper_account_value=10000, risk_per_trade_pct=5,
+        cooldown_seconds=0,
+    )
+    ex = PaperExecutor(cfg, store, account)
+
+    buy = parse_alert("BOUGHT 0DTE SPY 759c @ 2.0 @everyone")
+    assert ex.execute(buy, cfg, store).ok
+
+    sell = parse_alert("SOLD 0DTE SPY 759c @ 1.0")
+    res = ex.execute(sell, cfg, store)
+    assert res.ok
+
+    row = store._conn.execute(
+        "SELECT qty, realized FROM positions "
+        "WHERE mode = 'paper' AND contract_key LIKE 'SPY%'"
+    ).fetchone()
+    # position closed, loss booked: 2 contracts at (1.0-2.0)*100
+    assert row[0] == 0
+    assert row[1] == -200.0
+    assert store.loss_streak("paper") == 1
+
+
+def test_paper_stock_sell_realized_not_inflated():
+    """Stock closes settle per share (x1) - the x100 option
+    multiplier used to inflate stock p&l a hundredfold."""
+    cfg, store, account, risk = _setup(
+        paper_account_value=10000, cooldown_seconds=0
+    )
+    ex = PaperExecutor(cfg, store, account)
+
+    buy = parse_alert("BOUGHT XYZ @ 10")
+    assert ex.execute(buy, cfg, store).ok
+    held = store.get_position("paper", "XYZ", "default")
+    assert held == 10  # position_size_cad 100 / $10
+
+    sell = parse_alert("SOLD XYZ @ 12")
+    assert ex.execute(sell, cfg, store).ok
+
+    row = store._conn.execute(
+        "SELECT qty, realized FROM positions "
+        "WHERE mode = 'paper' AND contract_key = 'XYZ'"
+    ).fetchone()
+    assert row[0] == 0
+    # (12 - 10) * 10 shares = +20, not +2000
+    assert row[1] == 20.0
+
+
+def test_mirror_partial_holding_credits_only_held():
+    """A real fill for more contracts than the paper ledger holds
+    must credit only the held quantity - the old code credited
+    the full real fill's proceeds while clamping the position."""
+    from trader.trading.mirror import mirror_real_trades
+    from trader.trading.paper import PaperLedger
+
+    cfg, store, account, risk = _setup(paper_account_value=10000)
+    ledger = PaperLedger(cfg, store, account)
+    store.set_paper_equity(10000.0, "default")
+
+    # the paper ledger holds 2 of a contract the real account
+    # sold 3 of
+    buy = parse_alert("BOUGHT 0DTE SPY 759c @ 1.0")
+    from trader.trading.executor import PaperExecutor
+
+    ex = PaperExecutor(cfg, store, ledger)
+    assert ex.execute(buy, cfg, store).ok
+    held = store.get_position("paper", buy.contract_key(), "default")
+    assert held >= 1
+
+    class FakeWS:
+        def _client(self):
+            return self
+
+        def get_activities(self, **kw):
+            return {"edges": [{"node": {
+                "canonicalId": "fill-1",
+                "status": "FILLED",
+                "type": "SELL",
+                "assetQuantity": "-99",
+                "amount": "29700.0",
+                "assetSymbol": "SPY",
+                "expiryDate": buy.expiry,
+                "strikePrice": str(buy.strike),
+                "contractType": "CALL",
+                "occurredAt": "2026-09-24T01:00:00Z",
+            }}]}
+
+    class ResolveAccount:
+        def _resolve(self):
+            return [("default", "acct-1")]
+
+        def _client(self):
+            return FakeWS()
+
+    applied = mirror_real_trades(
+        cfg, store, ResolveAccount(), ledger
+    )
+    assert applied, "mirror applied nothing"
+    # position clamped at zero...
+    assert store.get_position(
+        "paper", buy.contract_key(), "default"
+    ) == 0
+    # ...and equity credited only the held quantity
+    remaining = store.paper_equity("default")
+    # bought `held` at 1.0 (100/contract), sold `held` at 3.0
+    expected = 10000.0 + held * (3.0 - 1.0) * 100
+    assert abs(remaining - expected) < 0.01, (remaining, expected)

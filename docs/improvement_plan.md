@@ -306,6 +306,38 @@ clean - three more rounds after the third-pass review:
   296 unit tests and the full e2e (68 checks incl. the ui
   suite) green on repeat runs. Nothing further found.
 
+**Deep find-fix loop (rounds 5-10):**
+
+- **R5 security**: the session signing key file now gets 0600
+  perms (was default-readable); the login-fail dict prunes
+  day-old entries (was unbounded under sustained attacks - the
+  first purge attempt was itself caught by the rate-limit
+  test: it deleted not-yet-locked entries); settings form
+  values are html-escaped (a hand-edited config could break
+  out of input attributes), with hostile-payload ui checks.
+- **R6 business logic (serious)**: option sells booked NO
+  realized p&l (they passed alert.entry, which is None for
+  plain sells) - so the loss-streak breaker never counted a
+  losing paper trade; stock closes booked p&l x100 (the
+  option multiplier hardcoded); and plain stock sells parsed
+  their own verb as the ticker (SOLD/GRAB/LOAD/DUMP/OUT/ALL
+  joined the stopword list) so "SOLD XYZ @ 12" no-oped
+  against every position. All fixed with regression tests.
+- **R7**: mirror sells of more contracts than the paper ledger
+  holds now credit only the held quantity (per-unit basis) -
+  the old code credited the full real fill while clamping the
+  position at zero.
+- **R8**: stop monitor math (hard stop, higher-of trailing,
+  peak seeded at entry) and the reader delivery logic
+  (expiring seen-set, retry-before-seen) verified clean.
+- **R9**: sell_only_if_held enforcement verified in the live
+  executor; performance scan clean (batched poll, caches,
+  small tables).
+- **R10 (migration)**: a pre-linking database (trades table
+  without message_key) CRASHED at Store init - the index
+  referenced a never-migrated column. Column now migrates
+  like the others, with an old-db regression test.
+
 **#6-#12 re-review (third pass):**
 
 - **#6 account.py split** - one real gap: the six ws_common

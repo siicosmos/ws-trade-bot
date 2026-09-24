@@ -860,7 +860,7 @@ document.getElementById("settings-revert").onclick = revertSettings;
 
 function _numField(id, label, value, tip, cls) {
   return '<div class="set-field"><label>' + esc(label) + '</label>' +
-    '<input id="' + id + '" type="number" step="any" value="' + (value ?? "") + '"' +
+    '<input id="' + id + '" type="number" step="any" value="' + esc(value ?? "") + '"' +
     (tip ? ' title="' + esc(tip) + '"' : "") +
     (cls ? ' class="' + cls + '"' : "") + '></div>';
 }
@@ -978,10 +978,10 @@ function renderSettings(s) {
     tiers += '<div class="set-field"><label' +
       ' title="alert size keywords map to these risk caps and contract bounds"' +
       '>' + esc(name) + '</label>' +
-      '<input id="tier-' + esc(name) + '-risk" type="number" step="any" value="' + tier.risk_pct_max + '" title="risk % cap">' +
+      '<input id="tier-' + esc(name) + '-risk" type="number" step="any" value="' + esc(tier.risk_pct_max) + '" title="risk % cap">' +
       '<div class="tier-row">' +
-      '<input id="tier-' + esc(name) + '-min" type="number" value="' + tier.contracts_min + '" title="min contracts">' +
-      '<input id="tier-' + esc(name) + '-max" type="number" value="' + tier.contracts_max + '" title="max contracts">' +
+      '<input id="tier-' + esc(name) + '-min" type="number" value="' + esc(tier.contracts_min) + '" title="min contracts">' +
+      '<input id="tier-' + esc(name) + '-max" type="number" value="' + esc(tier.contracts_max) + '" title="max contracts">' +
       '</div></div>';
   }
   tiers += '</div>';
