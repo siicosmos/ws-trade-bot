@@ -502,9 +502,21 @@ def _margin_metrics(ctx, label, value, live, sk, conv_fx,
     # utilization: the loan against available - ws's own bar
     # divides borrowing by borrowing + available
     margin_used = round(used, 2)
-    # NLV already nets the loan as negative cash, so
-    # availability is simply equity minus requirement
-    margin_available = round(value - margin_req, 2)
+    # ws's available: equity minus the requirement PLUS the
+    # current market value of the short structures (the credit
+    # side already collected stays spendable) - verified
+    # against ws's margin page to the cent
+    short_mv_cad = 0.0
+    if live is not None:
+        for r in live["positions"]:
+            if not r.get("short"):
+                continue
+            mv = r.get("market_value")
+            if mv:
+                short_mv_cad += abs(float(mv)) * conv_fx
+    margin_available = round(
+        value - margin_req + short_mv_cad, 2
+    )
     max_buying_power = (
         round(margin_available / default_rate, 2)
         if margin_available and margin_available > 0

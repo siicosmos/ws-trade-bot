@@ -4001,3 +4001,54 @@ def test_credit_spread_margin_full_width_and_used_bar():
     assert row["margin_used"] == 100.0
     # portfolio stays equity + the loan only
     assert row["portfolio_value"] == round(10000.0 + 100.0, 2)
+
+
+def test_margin_available_credits_short_market_value():
+    """ws's available: equity - requirement + the current value
+    of the short structures (1771.44 - 1724.85 + 53.04 =
+    99.62 on the user's account). requirement, used and
+    portfolio stay untouched."""
+    app, store, account = _make_app()
+    client = app.test_client()
+    account.open_option_positions = lambda: {
+        "Personal": {
+            "positions": [
+                # expired worthless: mv 0, still carries width
+                {"underlying": "SPX", "spread": True, "short": True,
+                 "strike": "7750/7755", "qty": 1,
+                 "risk_cad": round(200 * 1.41445, 2),
+                 "cost_cad": round(-300 * 1.41445, 2),
+                 "cost_usd": -300.0, "market_value": 0.0},
+                # losing credit spread: mv -37.50 usd
+                {"underlying": "SPY", "spread": True, "short": True,
+                 "strike": "790/791", "qty": 3,
+                 "risk_cad": round(264 * 1.41445, 2),
+                 "cost_cad": round(-36 * 1.41445, 2),
+                 "cost_usd": -36.0, "market_value": -37.50},
+            ],
+            "fx": 1.41445,
+        },
+    }
+    account.stock_holdings = lambda: {"Personal": []}
+    account.funding_balances = lambda: {
+        "Personal": [{"currency": "USD", "amount": -108.43}],
+    }
+    account.values = lambda: {"Personal": 1771.44}
+    account.account_type_map = lambda: {"pers": "PERSONAL"}
+    account._resolve = lambda: [("Personal", "pers")]
+    summary = client.get("/api/summary").get_json()
+    row = next(a for a in summary["accounts"] if a["label"] == "Personal")
+    full_width = (500 + 300) * 1.41445
+    assert row["margin_requirement"] == round(full_width, 2)
+    # available: nlv - requirement + |short mv| in cad
+    assert row["margin_available"] == round(
+        1771.44 - full_width + 37.50 * 1.41445, 2
+    )
+    # the used bar: the loan against available (61% on the
+    # user's real account with its stock requirement)
+    loan_cad = 108.43 * 1.41445
+    assert row["margin_used"] == round(loan_cad, 2)
+    # max buying power follows the available
+    assert row["max_buying_power"] == round(
+        row["margin_available"] / 0.30, 2
+    )
