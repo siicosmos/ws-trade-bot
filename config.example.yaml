@@ -63,6 +63,9 @@ reader:
   # click into the wanted channel when discord opens elsewhere
   # (e.g. the friends page after an update)
   auto_switch_channel: true
+  # the server to select when the wanted channel is not visible
+  # (a server's channels only appear once it is selected)
+  discord_server: "" 
   # custom launch command; the default is
   #   %LocalAppData%\Discord\Update.exe --processStart Discord.exe
   # discord_start_command: ""           # snap the Discord message pane to the

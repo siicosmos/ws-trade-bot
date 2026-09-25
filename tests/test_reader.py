@@ -1043,3 +1043,39 @@ def test_start_discord_rate_limited_and_command(monkeypatch):
         command=["C:\\custom\\Discord.exe"], log=lambda *a: None
     )
     assert ok and launched == [["C:\\custom\\Discord.exe"]]
+
+
+def test_kill_discord_terminates_only_discord(monkeypatch):
+    """A hung discord (running, never shows a window) gets
+    terminated so the restart path can bring it back."""
+    import importlib.util as _ilu
+    import types as _types
+
+    spec = _ilu.spec_from_file_location(
+        "inspect_discord_kill",
+        os.path.join(_READER_DIR, "inspect_discord.py"),
+    )
+    idisc = _ilu.module_from_spec(spec)
+    spec.loader.exec_module(idisc)
+
+    terminated = []
+
+    class P:
+        def __init__(self, name, pid):
+            self.info = {"name": name, "pid": pid}
+
+        def terminate(self):
+            terminated.append(self.info["pid"])
+
+    procs = [
+        P("Discord.exe", 1),
+        P("chrome.exe", 2),
+        P("DiscordUpdater.exe", 99),
+        types.SimpleNamespace(info={"name": "Code", "pid": 5}),
+    ]
+    monkeypatch.setattr(
+        idisc.psutil, "process_iter", lambda attrs: iter(procs)
+    )
+    killed = idisc.kill_discord(log=lambda *a: None)
+    # both discord-named processes terminate, nothing else
+    assert sorted(killed) == [1, 99]

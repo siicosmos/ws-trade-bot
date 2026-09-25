@@ -1,4 +1,5 @@
 import argparse
+import ctypes
 
 import psutil
 import uiautomation as auto
@@ -22,6 +23,7 @@ def discord_pids():
 
 
 _last_discord_start = 0.0
+_last_channel_click = 0.0
 
 
 def start_discord(command=None, log=print):
@@ -30,13 +32,14 @@ def start_discord(command=None, log=print):
     The default command drives discord's updater, which starts
     the app under the current version - re-running it while the
     app sits in the tray signals the single instance to show its
-    window. Rate limited to one attempt a minute."""
+    window. Rate limited to one attempt every 15s so a dead
+    discord comes back quickly."""
     import os
     import subprocess
     import time as _time
 
     global _last_discord_start
-    if _time.time() - _last_discord_start < 60:
+    if _time.time() - _last_discord_start < 15:
         return False
     _last_discord_start = _time.time()
     cmd = command or [
@@ -56,6 +59,62 @@ def start_discord(command=None, log=print):
     except Exception as e:
         log(f"discord start failed: {e}")
         return False
+
+
+def kill_discord(log=print):
+    """Terminate every discord process - used when the app is
+    running but never shows a window (hung update screen)."""
+    import time as _time
+
+    killed = []
+    for p in psutil.process_iter(["name", "pid"]):
+        try:
+            name = (p.info["name"] or "").lower()
+            if name.startswith("discord"):
+                p.terminate()
+                killed.append(p.pid)
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+    if killed:
+        log(
+            "terminated unresponsive discord process(es): "
+            + ", ".join(str(p) for p in killed)
+        )
+    _last_discord_start = _time.time()   # the restart starts fresh
+    return killed
+
+
+def close_extra_windows(window, log=print):
+    """Send WM_CLOSE to discord's OTHER top-level windows -
+    update banners and popups that block the message list."""
+    closed = []
+    pids = discord_pids()
+    try:
+        root = auto.GetRootControl()
+        windows = root.GetChildren()
+    except UIAError:
+        return []
+    main_pid = None
+    try:
+        main_pid = window.ProcessId if window is not None else None
+    except UIAError:
+        main_pid = None
+    for win in windows:
+        try:
+            if win.ControlType != auto.ControlType.WindowControl:
+                continue
+            pid = win.ProcessId
+            if pid not in pids or pid == main_pid:
+                continue
+            hwnd = win.NativeWindowHandle
+            if not hwnd:
+                continue
+            ctypes.windll.user32.PostMessageW(hwnd, 0x0010, 0, 0)
+            closed += 1
+            log(f"closed discord popup window {win.Name!r}")
+        except UIAError:
+            continue
+    return closed
 
 
 def find_discord_window():
@@ -82,6 +141,66 @@ def find_discord_window():
         except UIAError:
             continue
     return None
+
+
+def find_channel_control(window, channel_names):
+    """A clickable element in the discord ui tree whose name
+    matches one of the target channel names (sidebar entries are
+    named like '#player-alerts' or with emoji prefixes) - or
+    None when the channel is not in the current tree (wrong
+    server selected)."""
+    targets = [c.lower() for c in channel_names if c]
+    if not targets:
+        return None
+    try:
+        walker = auto.WalkControl(
+            window, includeTop=False, maxDepth=30
+        )
+        for ctrl, depth in walker:
+            try:
+                if ctrl.ControlType not in (
+                    auto.ControlType.ListItemControl,
+                    auto.ControlType.TreeItemControl,
+                    auto.ControlType.HyperlinkControl,
+                    auto.ControlType.ButtonControl,
+                    auto.ControlType.TabItemControl,
+                ):
+                    continue
+                name = ctrl.Name or ""
+            except UIAError:
+                continue
+            if not any(c in name.lower() for c in targets):
+                continue
+            try:
+                ctrl.GetClickablePoint()
+                return ctrl
+            except UIAError:
+                continue
+    except UIAError:
+        return None
+    return None
+
+
+_last_channel_click = 0.0
+
+
+def click_channel_control(ctrl, log=print):
+    """Click a channel entry; rate limited to one attempt a
+    minute to avoid fighting the user."""
+    import time as _time
+
+    global _last_channel_click
+    now = _time.time()
+    if now - _last_channel_click < 60:
+        return False
+    _last_channel_click = now
+    try:
+        ctrl.Click(simulateMove=False)
+        log("switched discord to the target channel")
+        return True
+    except Exception as e:
+        log(f"channel switch click failed: {e}")
+        return False
 
 
 def dump(control, depth, out, max_depth):
@@ -127,64 +246,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-def find_channel_control(window, channel_names, max_depth=30):
-    """A clickable element in the discord ui tree whose name
-    matches one of the target channel names (sidebar entries are
-    named like '#player-alerts' or with emoji prefixes) - or
-    None when the channel is not in the current tree (wrong
-    server selected)."""
-    targets = [c.lower() for c in channel_names if c]
-    if not targets:
-        return None
-    try:
-        walker = auto.WalkControl(
-            window, includeTop=False, maxDepth=30
-        )
-        for ctrl, depth in walker:
-            try:
-                if ctrl.ControlType not in (
-                    auto.ControlType.ListItemControl,
-                    auto.ControlType.TreeItemControl,
-                    auto.ControlType.HyperlinkControl,
-                    auto.ControlType.ButtonControl,
-                    auto.ControlType.TabItemControl,
-                ):
-                    continue
-                name = ctrl.Name or ""
-            except UIAError:
-                continue
-            low = name.lower()
-            if not any(c in name.lower() for c in targets):
-                continue
-            try:
-                ctrl.GetClickablePoint()
-                return ctrl
-            except UIAError:
-                continue
-    except UIAError:
-        return None
-    return None
-
-
-_last_channel_click = 0.0
-
-
-def click_channel_control(ctrl, log=print):
-    """Click a channel entry; rate limited to one attempt a
-    minute to avoid fighting the user."""
-    import time as _time
-
-    global _last_discord_start
-    now = _time.time()
-    if now - _last_discord_start < 60:
-        return False
-    _last_discord_start = now
-    try:
-        ctrl.Click(simulateMove=False)
-        log("switched discord to the target channel")
-        return True
-    except Exception as e:
-        log(f"channel switch click failed: {e}")
-        return False

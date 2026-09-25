@@ -17,9 +17,11 @@ except ImportError:
     UIAError = Exception
 
 from inspect_discord import (
+    close_extra_windows,
     find_channel_control,
     click_channel_control,
     find_discord_window,
+    kill_discord,
     start_discord,
 )
 
@@ -1044,6 +1046,7 @@ def main():
     auto_start_discord = bool(cfg.get("auto_start_discord", True))
     discord_start_command = cfg.get("discord_start_command") or None
     auto_switch_channel = bool(cfg.get("auto_switch_channel", True))
+    discord_server = str(cfg.get("discord_server") or "").strip()
     poll_interval = float(cfg.get("poll_interval", 0.5))
     max_items = int(cfg.get("max_items", 40))
     channels = sorted(
@@ -1213,6 +1216,22 @@ def main():
                     ctrl = find_channel_control(window, [target])
                     if ctrl is not None:
                         click_channel_control(ctrl)
+                    elif discord_server:
+                        # the channel lives on another server - a
+                        # server's channel list only appears in the
+                        # tree once that server is selected
+                        srv = find_channel_control(
+                            window, [discord_server]
+                        )
+                        if srv is not None:
+                            click_channel_control(srv)
+                        elif wait_attempts % 120 == 0:
+                            log(
+                                f"channel {title_channel!r} not "
+                                f"allowed; no {target!r} entry and "
+                                f"no server {discord_server!r} "
+                                f"visible in the discord tree"
+                            )
                     elif wait_attempts % 120 == 0:
                         log(
                             f"channel {title_channel!r} not allowed "
@@ -1249,6 +1268,8 @@ def main():
                             fresh = find_discord_window()
                             if fresh is not None:
                                 window = fresh
+                            elif auto_start_discord:
+                                close_extra_windows(window)
                         except UIAError:
                             pass
                     # first failure, then roughly every 10s, then a
@@ -1428,9 +1449,23 @@ def main():
                 window = None
             if window is None:
                 log("Discord window lost; waiting...")
+                lost_since = time.time()
+                restarted = False
                 while window is None:
                     if auto_start_discord:
                         start_discord(discord_start_command)
+                    # running but windowless for 90s = hung (stuck
+                    # update screen) - kill and let it restart
+                    if (
+                        not restarted
+                        and time.time() - lost_since > 90
+                    ):
+                        from inspect_discord import kill_discord
+
+                        if kill_discord():
+                            restarted = True
+                        start_discord(discord_start_command)
+                        lost_since = time.time()
                     time.sleep(2)
                     try:
                         window = find_discord_window()
