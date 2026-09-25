@@ -307,20 +307,25 @@ class PaperExecutor:
                 )
             breakdown = {}
             total = 0
-            # stock buys size from position_size_cad, with
-            # per-tier dollar budgets for sized alerts -
-            # separate from the option contract tiers
-            tier_name = (
-                (alert.size or "").lower() if alert.size else None
-            )
+            # stock buys size as a percent of the account value
+            # per tier (separate from the option contract
+            # tiers); unsized alerts default to the medium tier
             stock_tiers = getattr(
                 cfg.trading, "stock_size_tiers", None
             ) or {}
-            budget = float(cfg.trading.position_size_cad)
-            if tier_name and tier_name in stock_tiers:
-                budget = float(stock_tiers[tier_name])
+            tier_name = (
+                (alert.size or "").lower() if alert.size else "medium"
+            )
             for acct in effective_accounts(cfg):
                 label = account_label(acct)
+                pct = stock_tiers.get(
+                    tier_name, stock_tiers.get("medium")
+                )
+                if pct is not None:
+                    value = self.account.value(label)
+                    budget = max(0.0, float(value or 0) * pct / 100.0)
+                else:
+                    budget = float(cfg.trading.position_size_cad)
                 qty = max(0, int(budget / price))
                 if qty < 1:
                     breakdown[label] = "0 (position size too small)"
@@ -578,24 +583,32 @@ class WealthsimpleExecutor:
         total = 0
         order_ids = []
 
-        # stock buys size from position_size_cad, with per-tier
-        # dollar budgets for sized alerts - same as the paper
-        # path, separate from the option contract tiers
-        tier_name = (
-            (alert.size or "").lower() if alert.size else None
-        )
+        # stock buys size as a percent of the account value per
+        # tier - same as the paper path, separate from the
+        # option contract tiers; unsized alerts default to the
+        # medium tier
         stock_tiers = getattr(
             cfg.trading, "stock_size_tiers", None
         ) or {}
-        budget = float(cfg.trading.position_size_cad)
-        if tier_name and tier_name in stock_tiers:
-            budget = float(stock_tiers[tier_name])
+        tier_name = (
+            (alert.size or "").lower() if alert.size else "medium"
+        )
 
         for label, account_id, acct in self._account_ids(ws):
             if alert.action == "BUY":
                 if not price:
                     breakdown[label] = "no quote price available"
                     continue
+                pct = stock_tiers.get(
+                    tier_name, stock_tiers.get("medium")
+                )
+                if pct is not None:
+                    value = account.value(label)
+                    budget = max(
+                        0.0, float(value or 0) * pct / 100.0
+                    )
+                else:
+                    budget = float(cfg.trading.position_size_cad)
                 qty = int(budget / price)
                 if qty < 1:
                     breakdown[label] = "0 (position size too small)"

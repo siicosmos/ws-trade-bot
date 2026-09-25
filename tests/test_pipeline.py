@@ -3813,7 +3813,8 @@ def test_paper_stock_sell_realized_not_inflated():
     buy = parse_alert("BOUGHT XYZ @ 10")
     assert ex.execute(buy, cfg, store).ok
     held = store.get_position("paper", "XYZ", "default")
-    assert held == 10  # position_size_cad 100 / $10
+    # the medium stock tier: 10% of 10000 = 1000 / $10
+    assert held == 100
 
     sell = parse_alert("SOLD XYZ @ 12")
     assert ex.execute(sell, cfg, store).ok
@@ -3823,8 +3824,8 @@ def test_paper_stock_sell_realized_not_inflated():
         "WHERE mode = 'paper' AND contract_key = 'XYZ'"
     ).fetchone()
     assert row[0] == 0
-    # (12 - 10) * 10 shares = +20, not +2000
-    assert row[1] == 20.0
+    # (12 - 10) * 100 shares = +200, not x100-inflated
+    assert row[1] == 200.0
 
 
 def test_mirror_partial_holding_credits_only_held():
@@ -4075,22 +4076,26 @@ def test_open_risk_excludes_stock_positions():
 
 
 def test_stock_buys_use_stock_size_tiers():
-    """sized stock alerts take their dollar budget from the
-    stock tiers - separate from the option contract tiers."""
-    cfg, store, account, risk = _setup(
-        paper_account_value=10000, position_size_cad=100,
-        cooldown_seconds=0,
-    )
-    cfg.trading.stock_size_tiers = {"small": 50, "large": 1000}
-    ex = PaperExecutor(cfg, store, account)
+    """stock alerts size as a percent of the account value per
+    tier; unsized alerts default to the medium tier."""
+    from trader.trading.paper import PaperLedger
 
-    # unsized: the flat position size (100 / 25.7 -> 3)
-    assert ex.execute(parse_alert("BOUGHT LLYX @ 25.7"), cfg, store).qty == 3
-    # small: 50 / 25.7 -> 1
+    cfg, store, account, risk = _setup(
+        paper_account_value=10000, cooldown_seconds=0,
+    )
+    ledger = PaperLedger(cfg, store, account)
+    store.set_paper_equity(10000.0, "default")
+    ex = PaperExecutor(cfg, store, ledger)
+
+    # unsized: the medium tier (10% of 10000 = 1000 / 25.7 -> 38)
+    assert ex.execute(
+        parse_alert("BOUGHT LLYX @ 25.7"), cfg, store
+    ).qty == 38
+    # small: 5% = 500 / 25.7 -> 19
     assert ex.execute(
         parse_alert("BOUGHT LLYX @ 25.7 small size"), cfg, store
-    ).qty == 1
-    # large: 1000 / 25.7 -> 38
+    ).qty == 19
+    # large: 20% = 2000 / 25.7 -> 77
     assert ex.execute(
         parse_alert("BOUGHT LLYX @ 25.7 large size"), cfg, store
-    ).qty == 38
+    ).qty == 77

@@ -38,6 +38,18 @@ def _default_size_tiers() -> dict:
     }
 
 
+def _default_stock_size_tiers() -> dict:
+    # percent of the account value per size keyword - separate
+    # from the option contract tiers
+    return {
+        "tiny": 2.5,
+        "small": 5.0,
+        "medium": 10.0,
+        "large": 20.0,
+        "full": 50.0,
+    }
+
+
 def _norm_tier(d: dict) -> dict:
     return {
         "risk_pct_max": float(d.get("risk_pct_max", 5.0)),
@@ -63,9 +75,10 @@ class TradingConfig:
     order_type: str = "limit"
     limit_offset_pct: float = 0.5
     position_size_cad: float = 100.0
-    # per-tier dollar budget for stock buys (separate from the
-    # option contract tiers); {tier name: dollars}
-    stock_size_tiers: dict = field(default_factory=dict)
+    # per-tier percent-of-account-value budget for stock buys
+    # (separate from the option contract tiers); unsized stock
+    # alerts default to the medium tier
+    stock_size_tiers: dict = field(default_factory=_default_stock_size_tiers)
     risk_per_trade_pct: float = 5.0
     size_tiers: dict = field(default_factory=_default_size_tiers)
     max_contracts_per_trade: int = 10
@@ -229,7 +242,7 @@ def load_config(path: str) -> Config:
         trading_raw.get("stock_size_tiers") or {}
         if isinstance(trading_raw, dict) else {}
     )
-    stock_size_tiers = {}
+    stock_size_tiers = _default_stock_size_tiers()
     for k, v in raw_stock_tiers.items():
         name = str(k).strip().lower()
         if not name:

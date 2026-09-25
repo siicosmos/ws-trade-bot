@@ -1005,7 +1005,19 @@ function renderSettings(s) {
   let tiers = '<div class="set-grid">' +
     '<div class="set-field full" style="color:var(--muted);font-size:11px">' +
     'risk % cap / min / max contracts</div>';
-  for (const [name, tier] of Object.entries(t.size_tiers || {})) {
+  // canonical tier order: lotto, micro, tiny, small, medium,
+  // large, big, full - then any custom tiers
+  const tierOrder = [
+    "lotto", "micro", "tiny", "small", "medium", "large",
+    "big", "full",
+  ];
+  const tierEntries = Object.entries(t.size_tiers || {});
+  tierEntries.sort(function(a, b) {
+    const ia = tierOrder.indexOf(a[0]);
+    const ib = tierOrder.indexOf(b[0]);
+    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+  });
+  for (const [name, tier] of tierEntries) {
     tiers += '<div class="set-field"><label' +
       ' title="alert size keywords map to these risk caps and contract bounds"' +
       '>' + esc(name) + '</label>' +
@@ -1019,9 +1031,9 @@ function renderSettings(s) {
   const stockTierVal = Object.entries(t.stock_size_tiers || {})
     .map(([n, d]) => n + "=" + d).join(", ");
   tiers += '<div class="set-grid" style="margin-top:10px">' +
-    '<div class="set-field full"><label title="dollar budget per size keyword for STOCK buys - separate from the option tiers">' +
-    'stock tiers (tier=dollars, comma-separated)</label>' +
-    '<input id="set-stock_size_tiers" type="text" value="' + esc(stockTierVal) + '" placeholder="small=50, medium=200, large=500"></div>' +
+    '<div class="set-field full"><label title="percent of account value per size keyword for STOCK buys - separate from the option tiers; unsized stock alerts default to medium">' +
+    'stock tiers (tier=percent, comma-separated)</label>' +
+    '<input id="set-stock_size_tiers" type="text" value="' + esc(stockTierVal) + '" placeholder="tiny=2.5, small=5, medium=10, large=20, full=50"></div>' +
     '</div>';
   html += _section("size tiers", tiers);
 

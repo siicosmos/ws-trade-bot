@@ -221,10 +221,10 @@ def apply_settings(cfg, payload: dict, config_path=None) -> tuple:
                         f"not a number"
                     )
                     continue
-                if dollars < 0:
+                if not (0 <= dollars <= 100):
                     errors.append(
                         f"trading.stock_size_tiers.{tname}: "
-                        f"must be >= 0"
+                        f"must be a percent between 0 and 100"
                     )
                     continue
                 tiers_out[tname] = dollars
