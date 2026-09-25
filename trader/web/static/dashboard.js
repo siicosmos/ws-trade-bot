@@ -1051,6 +1051,18 @@ function renderSettings(s) {
       "how often the reader scans the discord window") +
     _numField("set-reader-max_items", "max messages kept", rd.max_items,
       "how many recent messages the reader scans each poll") +
+    '<div class="set-field"><label title="channel=server pairs; the reader selects the server before clicking the channel">' +
+    'channel \u2192 server pairs (comma-separated)</label>' +
+    '<input id="set-reader-channel_servers" type="text" value="' + esc(
+      Object.entries(rd.channel_servers || {})
+        .map(([c, s]) => c + "=" + s).join(", ")
+    ) + '" placeholder="player-alerts=SPX Plays"></div>' +
+    _numField("set-reader-discord_reopen_seconds", "discord reopen (s)",
+      rd.discord_reopen_seconds,
+      "seconds between attempts to start discord when no window shows") +
+    _numField("set-reader-discord_restart_seconds", "restart stuck discord (s)",
+      rd.discord_restart_seconds,
+      "kill and restart discord when it runs this long without a window (takes effect after reader restart)") +
     _txtField("set-reader-channels", "allowed channels (comma-separated)",
       (rd.channels || []).join(", "), "e.g. test-alerts, player-alerts",
       "only these discord channels are read; empty = any", true) +
@@ -1058,6 +1070,9 @@ function renderSettings(s) {
     '<div class="set-checks" style="margin:10px 0 0">' +
       _check("set-reader-auto_scroll", "auto scroll to newest message", rd.auto_scroll,
         "keep the discord window scrolled to the newest message") +
+      _check("set-reader-auto_switch", "auto-switch to the first allowed channel",
+        rd.auto_switch !== false,
+        "click into the wanted channel when discord opens elsewhere") +
     '</div>');
 
   // 7. automation: aligned grid like the other sections
@@ -1166,6 +1181,18 @@ async function saveSettings() {
       max_items: parseInt(val("set-reader-max_items")),
       channels: val("set-reader-channels").split(",").map(function(s) { return s.trim(); }).filter(Boolean),
       auto_scroll: document.getElementById("set-reader-auto_scroll").checked,
+      auto_switch: document.getElementById("set-reader-auto_switch").checked,
+      channel_servers: (function() {
+        const map = {};
+        val("set-reader-channel_servers").split(",").forEach(function(part) {
+          const name = part.split("=")[0].trim().toLowerCase();
+          const server = (part.split("=")[1] || "").trim();
+          if (name && server) map[name] = server;
+        });
+        return map;
+      })(),
+      discord_reopen_seconds: parseInt(val("set-reader-discord_reopen_seconds")),
+      discord_restart_seconds: parseInt(val("set-reader-discord_restart_seconds")),
     },
     auto_update: { enabled: document.getElementById("set-au-enabled").checked, interval_seconds: parseInt(val("set-au-interval")) },
     wealthsimple: {

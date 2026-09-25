@@ -25,8 +25,11 @@ EDITABLE_READER = {
     "channel_marker": ("str", 0, 100),
     "poll_interval": ("float", 0.2, 10),
     "max_items": ("int", 5, 200),
+    "discord_reopen_seconds": ("int", 5, 600),
+    "discord_restart_seconds": ("int", 30, 3600),
 }
 EDITABLE_READER_LISTS = ("channels",)
+EDITABLE_READER_MAP = ("channel_servers",)
 EDITABLE_ACCOUNT_NUMERIC = {
     "risk_per_trade_pct": (0.0, 100.0),
     "max_contracts_per_trade": (0, 1000),
@@ -47,6 +50,18 @@ def get_settings(cfg) -> dict:
     reader["auto_scroll"] = cfg.reader.auto_scroll
     for k in EDITABLE_READER_LISTS:
         reader[k] = getattr(cfg.reader, k)
+    reader["channel_servers"] = dict(
+        getattr(cfg.reader, "channel_servers", {}) or {}
+    )
+    reader["auto_switch"] = bool(
+        getattr(cfg.reader, "auto_switch_channel", True)
+    )
+    reader["discord_reopen_seconds"] = int(
+        getattr(cfg.reader, "discord_reopen_seconds", 15)
+    )
+    reader["discord_restart_seconds"] = int(
+        getattr(cfg.reader, "discord_restart_seconds", 90)
+    )
     accounts = [
         {
             "account_id": a.account_id,
@@ -231,6 +246,46 @@ def apply_settings(cfg, payload: dict, config_path=None) -> tuple:
         )
         setattr(cfg.reader, key, value)
         applied[f"reader.{key}"] = value
+
+    raw_servers = reader_payload.get("channel_servers")
+    if raw_servers is not None:
+        # accepts a mapping or "channel=server, channel=server"
+        if isinstance(raw_servers, dict):
+            pairs = list(raw_servers.items())
+        elif isinstance(raw_servers, str):
+            pairs = []
+            for part in raw_servers.split(","):
+                part = part.strip()
+                if not part:
+                    continue
+                name, sep, server = part.partition("=")
+                if not sep:
+                    errors.append(
+                        f"reader.channel_servers: {part!r} "
+                        f"is not channel=server"
+                    )
+                    continue
+                pairs.append((name, server))
+        else:
+            pairs = None
+        if pairs is None:
+            errors.append(
+                "reader.channel_servers: expected a mapping or a "
+                "comma-separated channel=server list"
+            )
+        else:
+            servers = {}
+            for k, v in pairs:
+                cname = str(k).strip().lower()[:100]
+                sname = str(v).strip()[:100]
+                if not cname or not sname:
+                    errors.append(
+                        "reader.channel_servers: bad pair"
+                    )
+                    continue
+                servers[cname] = sname
+            cfg.reader.channel_servers = servers
+            applied["reader.channel_servers"] = servers
 
     accounts_payload = payload.get("accounts")
     if isinstance(accounts_payload, list):
@@ -485,6 +540,8 @@ def _persist(cfg, config_path):
     for key in EDITABLE_READER_LISTS:
         reader[key] = getattr(cfg.reader, key)
     reader["auto_scroll"] = cfg.reader.auto_scroll
+    if getattr(cfg.reader, "channel_servers", None):
+        reader["channel_servers"] = cfg.reader.channel_servers
 
     dc = raw.setdefault("discord", {})
     for field in (

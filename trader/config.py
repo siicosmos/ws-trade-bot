@@ -122,6 +122,13 @@ class ReaderConfig:
     auth_token: str = ""
     channels: list = field(default_factory=list)
     auto_scroll: bool = True
+    # per-channel server mapping for auto navigation: the
+    # channel's server must be selected before its channels
+    # appear in discord's ui tree
+    channel_servers: dict = field(default_factory=dict)
+    auto_switch_channel: bool = True
+    discord_reopen_seconds: int = 15
+    discord_restart_seconds: int = 90
 
 
 @dataclass
@@ -328,6 +335,26 @@ def load_config(path: str) -> Config:
                 for c in (raw.get("reader") or {}).get("channels") or []
                 if str(c).strip()
             ],
+            channel_servers={
+                str(k).strip().lower(): str(v).strip()
+                for k, v in (
+                    (raw.get("reader") or {}).get("channel_servers")
+                    or {}
+                ).items()
+                if str(k).strip() and str(v).strip()
+            },
+            auto_switch_channel=bool(
+                _get(raw.get("reader") or {},
+                     "auto_switch_channel", True)
+            ),
+            discord_reopen_seconds=int(
+                _get(raw.get("reader") or {},
+                     "discord_reopen_seconds", 15)
+            ),
+            discord_restart_seconds=int(
+                _get(raw.get("reader") or {},
+                     "discord_restart_seconds", 90)
+            ),
             auto_scroll=bool(
                 _get(raw.get("reader") or {}, "auto_scroll", True)
             ),

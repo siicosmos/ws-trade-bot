@@ -1189,6 +1189,22 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                 "poll_interval": cfg.reader.poll_interval,
                 "max_items": cfg.reader.max_items,
                 "channels": cfg.reader.channels,
+                "channel_servers": getattr(
+                    cfg.reader, "channel_servers", {}
+                ),
+                "auto_switch": bool(
+                    getattr(
+                        cfg.reader, "auto_switch_channel", True
+                    )
+                ),
+                "discord_reopen_seconds": getattr(
+                    cfg.reader, "discord_reopen_seconds", 15
+                ),
+                "discord_restart_seconds": int(
+                    getattr(
+                        cfg.reader, "discord_restart_seconds", 90
+                    )
+                ),
             }
         )
 

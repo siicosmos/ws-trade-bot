@@ -26,7 +26,7 @@ _last_discord_start = 0.0
 _last_channel_click = 0.0
 
 
-def start_discord(command=None, log=print):
+def start_discord(command=None, log=print, cooldown=15):
     """Start (or foreground) discord when no window is available.
 
     The default command drives discord's updater, which starts
@@ -39,7 +39,7 @@ def start_discord(command=None, log=print):
     import time as _time
 
     global _last_discord_start
-    if _time.time() - _last_discord_start < 15:
+    if _time.time() - _last_discord_start < cooldown:
         return False
     _last_discord_start = _time.time()
     cmd = command or [

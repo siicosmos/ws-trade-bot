@@ -832,10 +832,44 @@ def channel_allowed(title_channel, channels, marker):
     return any(entry in name for entry in channels)
 
 
-def merged_config(resp, marker, poll_interval, max_items, channels):
+def merged_config(resp, marker, poll_interval, max_items, channels,
+                  channel_servers=None, reopen_seconds=15,
+                  restart_after=90, auto_switch=True):
     changed = False
     if resp is None:
-        return marker, poll_interval, max_items, channels, False
+        return (marker, poll_interval, max_items, channels,
+                channel_servers, reopen_seconds, restart_after,
+                auto_switch, False)
+    if "auto_switch" in resp:
+        want = bool(resp.get("auto_switch"))
+        if want != auto_switch:
+            auto_switch = want
+            changed = True
+    new_servers = resp.get("channel_servers")
+    if isinstance(new_servers, dict):
+        normalized = {
+            str(k).strip().lower(): str(v).strip()
+            for k, v in new_servers.items()
+            if str(k).strip() and str(v).strip()
+        }
+        if normalized != (channel_servers or {}):
+            channel_servers = normalized
+            changed = True
+    try:
+        r = int(resp.get("discord_reopen_seconds"))
+        if 5 <= r <= 600 and r != reopen_seconds:
+            reopen_seconds = r
+            changed = True
+    except (TypeError, ValueError):
+        pass
+    try:
+        r = int(resp.get("discord_restart_seconds"))
+        if 30 <= r <= 3600 and r != restart_after:
+            restart_after = r
+            changed = True
+    except (TypeError, ValueError):
+        pass
+    new_channels = resp.get("channels")
     new_marker = resp.get("channel_marker")
     if isinstance(new_marker, str) and new_marker != marker:
         marker = new_marker
@@ -864,7 +898,10 @@ def merged_config(resp, marker, poll_interval, max_items, channels):
             max_items = m
     except (TypeError, ValueError):
         pass
-    return marker, poll_interval, max_items, channels, changed
+    return (
+        marker, poll_interval, max_items, channels, channel_servers,
+        reopen_seconds, restart_after, auto_switch, changed,
+    )
 
 
 def repo_root():
@@ -1045,8 +1082,17 @@ def main():
     auto_scroll = bool(cfg.get("auto_scroll", True))
     auto_start_discord = bool(cfg.get("auto_start_discord", True))
     discord_start_command = cfg.get("discord_start_command") or None
-    auto_switch_channel = bool(cfg.get("auto_switch_channel", True))
+    auto_switch = bool(cfg.get("auto_switch_channel", True))
     discord_server = str(cfg.get("discord_server") or "").strip()
+    channel_servers = {
+        str(k).strip().lower(): str(v).strip()
+        for k, v in (cfg.get("channel_servers") or {}).items()
+        if str(k).strip() and str(v).strip()
+    }
+    reopen_seconds = max(5, int(cfg.get("discord_reopen_seconds", 15)))
+    restart_after = max(
+        30, int(cfg.get("discord_restart_seconds", 90))
+    )
     poll_interval = float(cfg.get("poll_interval", 0.5))
     max_items = int(cfg.get("max_items", 40))
     channels = sorted(
@@ -1202,43 +1248,41 @@ def main():
                 container = None
                 tail = []
                 resync = False
-                # actively switch to a channel we are allowed to
-                # read - discord opens wherever it last was (often
-                # the friends page after an update)
-                if (
-                    auto_switch_channel
-                    and allowed is not None
-                    and (channels or marker)
-                ):
-                    target = channels[0] if channels else (
-                        marker or ""
-                    )
-                    ctrl = find_channel_control(window, [target])
-                    if ctrl is not None:
-                        click_channel_control(ctrl)
-                    elif discord_server:
-                        # the channel lives on another server - a
-                        # server's channel list only appears in the
-                        # tree once that server is selected
-                        srv = find_channel_control(
-                            window, [discord_server]
-                        )
-                        if srv is not None:
-                            click_channel_control(srv)
-                        elif wait_attempts % 120 == 0:
-                            log(
-                                f"channel {title_channel!r} not "
-                                f"allowed; no {target!r} entry and "
-                                f"no server {discord_server!r} "
-                                f"visible in the discord tree"
-                            )
+            # actively reach a channel we are allowed to read:
+            # discord opens wherever it last was (often the
+            # friends page after an update), where the title has
+            # no channel at all
+            if (
+                auto_switch
+                and (channels or marker)
+                and (not title_channel or not allowed)
+            ):
+                target = channels[0] if channels else (marker or "")
+                server = channel_servers.get(
+                    target.lower()
+                ) or discord_server
+                ctrl = find_channel_control(window, [target])
+                if ctrl is not None:
+                    click_channel_control(ctrl)
+                elif server:
+                    # the channel lives on another server - a
+                    # server's channels only appear once selected
+                    srv = find_channel_control(window, [server])
+                    if srv is not None:
+                        click_channel_control(srv)
                     elif wait_attempts % 120 == 0:
                         log(
-                            f"channel {title_channel!r} not allowed "
-                            f"and no {channels[0]!r} entry visible - "
-                            f"select the server once so the channel "
-                            f"appears in the sidebar"
+                            f"no {target!r} entry and no server "
+                            f"{server!r} visible in the discord "
+                            f"tree"
                         )
+                elif wait_attempts % 120 == 0:
+                    log(
+                        f"channel {title_channel!r} not allowed "
+                        f"and no {target!r} entry visible - "
+                        f"select the server once so the channel "
+                        f"appears in the sidebar"
+                    )
             if title_channel:
                 last_title_channel = title_channel
 
@@ -1311,10 +1355,12 @@ def main():
                         *heartbeat_status(allowed, title_channel),
                         verify_tls,
                     )
-                    marker, poll_interval, max_items, channels, changed = (
-                        merged_config(
-                            resp, marker, poll_interval, max_items, channels
-                        )
+                    (marker, poll_interval, max_items, channels,
+                     channel_servers, reopen_seconds, restart_after,
+                     auto_switch, changed) = merged_config(
+                        resp, marker, poll_interval, max_items, channels,
+                        channel_servers, reopen_seconds, restart_after,
+                        auto_switch,
                     )
                     if changed:
                         log(
@@ -1353,16 +1399,22 @@ def main():
                     base_url, auth_token, current_channel,
                     container is not None, verify_tls,
                 )
-                new_marker, new_poll, new_max, new_channels, changed = (
-                    merged_config(
-                        resp, marker, poll_interval, max_items, channels
-                    )
+                (new_marker, new_poll, new_max, new_channels,
+                 new_servers, new_reopen, new_restart, new_switch,
+                 changed) = merged_config(
+                    resp, marker, poll_interval, max_items, channels,
+                    channel_servers, reopen_seconds, restart_after,
+                    auto_switch,
                 )
                 if changed:
                     marker = new_marker
                     channels = new_channels
+                    channel_servers = new_servers
                     poll_interval = new_poll
                     max_items = new_max
+                    reopen_seconds = new_reopen
+                    restart_after = new_restart
+                    auto_switch = new_auto_switch
                     container = None
                     log(
                         f"channel config -> marker={marker!r} "
@@ -1453,12 +1505,15 @@ def main():
                 restarted = False
                 while window is None:
                     if auto_start_discord:
-                        start_discord(discord_start_command)
-                    # running but windowless for 90s = hung (stuck
-                    # update screen) - kill and let it restart
+                        start_discord(
+                            discord_start_command,
+                            cooldown=reopen_seconds,
+                        )
+                    # running but windowless for restart_after (a
+                    # stuck update screen) - kill and restart
                     if (
                         not restarted
-                        and time.time() - lost_since > 90
+                        and time.time() - lost_since > restart_after
                     ):
                         from inspect_discord import kill_discord
 
