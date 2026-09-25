@@ -366,7 +366,13 @@ def _startup_banner():
         commit = head.stdout.strip() if head.returncode == 0 else ""
     except (OSError, subprocess.SubprocessError):
         commit = ""
-    line = f"reader starting - commit {commit or '?'}"
+    line = (
+        f"reader starting - commit {commit or '?'}"
+        + (
+            f' "{git_commit_line(root, commit)}"'
+            if commit and git_commit_line(root, commit) else ""
+        )
+    )
     try:
         with open(os.path.join(root, ".last_update.json")) as f:
             rec = json.load(f)
