@@ -16,7 +16,7 @@ try:
 except ImportError:
     UIAError = Exception
 
-from inspect_discord import find_discord_window
+from inspect_discord import find_discord_window, start_discord
 
 CHROME_RE = re.compile(
     "|".join(
@@ -1030,6 +1030,8 @@ def main():
     pipeline_url = cfg.get("pipeline_url", "http://localhost:8080/alert")
     marker = str(cfg.get("channel_marker", ""))
     auto_scroll = bool(cfg.get("auto_scroll", True))
+    auto_start_discord = bool(cfg.get("auto_start_discord", True))
+    discord_start_command = cfg.get("discord_start_command") or None
     poll_interval = float(cfg.get("poll_interval", 0.5))
     max_items = int(cfg.get("max_items", 40))
     channels = sorted(
@@ -1089,6 +1091,8 @@ def main():
     while window is None:
         window = find_discord_window()
         if window is None:
+            if auto_start_discord:
+                start_discord(discord_start_command)
             time.sleep(2)
 
     log(f"watching window {window.Name!r} (poll every {poll_interval}s)")
@@ -1390,6 +1394,8 @@ def main():
             if window is None:
                 log("Discord window lost; waiting...")
                 while window is None:
+                    if auto_start_discord:
+                        start_discord(discord_start_command)
                     time.sleep(2)
                     try:
                         window = find_discord_window()

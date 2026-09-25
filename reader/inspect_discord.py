@@ -21,6 +21,43 @@ def discord_pids():
     return pids
 
 
+_last_discord_start = 0.0
+
+
+def start_discord(command=None, log=print):
+    """Start (or foreground) discord when no window is available.
+
+    The default command drives discord's updater, which starts
+    the app under the current version - re-running it while the
+    app sits in the tray signals the single instance to show its
+    window. Rate limited to one attempt a minute."""
+    import os
+    import subprocess
+    import time as _time
+
+    global _last_discord_start
+    if _time.time() - _last_discord_start < 60:
+        return False
+    _last_discord_start = _time.time()
+    cmd = command or [
+        os.path.expandvars(
+            "%LocalAppData%\\Discord\\Update.exe"
+        ),
+        "--processStart", "Discord.exe",
+    ]
+    try:
+        subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        log(f"discord not showing a window - started {cmd[0]}")
+        return True
+    except Exception as e:
+        log(f"discord start failed: {e}")
+        return False
+
+
 def find_discord_window():
     pids = discord_pids()
     root = auto.GetRootControl()

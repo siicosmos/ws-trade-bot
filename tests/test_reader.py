@@ -1005,3 +1005,41 @@ def test_reader_log_file_written(tmp_path, monkeypatch):
     dr._append_reader_log("forced rotate")
     assert (tmp_path / "reader.log.1").exists()
     assert "forced rotate" in (tmp_path / "reader.log").read_text()
+
+
+def test_start_discord_rate_limited_and_command(monkeypatch):
+    """When discord shows no window the reader starts it (the
+    updater command also foregrounds a tray-minimized instance)
+    - at most once a minute."""
+    # the session stubbed this module for import-time use - load
+    # the real file directly
+    import importlib.util as _ilu
+    spec = _ilu.spec_from_file_location(
+        "inspect_discord_real",
+        os.path.join(_READER_DIR, "inspect_discord.py"),
+    )
+    idisc = _ilu.module_from_spec(spec)
+    spec.loader.exec_module(idisc)
+
+    import subprocess as _subprocess
+
+    launched = []
+    monkeypatch.setattr(
+        _subprocess, "Popen", lambda cmd, **kw: launched.append(cmd)
+    )
+    idisc._last_discord_start = 0.0
+
+    ok = idisc.start_discord(log=lambda *a: None)
+    assert ok and launched and launched[0][1] == "--processStart"
+
+    # inside the cooldown: no second launch
+    launched.clear()
+    assert idisc.start_discord(log=lambda *a: None) is False
+    assert launched == []
+
+    # a custom command is honored after the cooldown
+    idisc._last_discord_start = 0.0
+    ok = idisc.start_discord(
+        command=["C:\\custom\\Discord.exe"], log=lambda *a: None
+    )
+    assert ok and launched == [["C:\\custom\\Discord.exe"]]
