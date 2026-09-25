@@ -217,7 +217,11 @@ class PaperLedger:
                     "usd": bool(usd),
                     "qty": pos["qty"],
                     "avg": round(pos.get("avg_premium") or 0.0, 4),
+                    # realtime per-unit price and the (static)
+                    # total cost basis for the holdings table
+                    "price": round(price, 4),
                     "value": round(value, 2),
+                    "cost": round(cost, 2),
                     "pnl": pnl,
                 }
             )

@@ -3910,3 +3910,25 @@ class _FakeWsForQuotes:
 
     def values(self):
         return {"default": 10000.0}
+
+
+def test_paper_position_rows_carry_price_and_cost():
+    """The paper holdings table shows realtime Price $, Value $
+    and the static Total Cost $ - the rows must carry all of it."""
+    from trader.trading.paper import PaperLedger
+
+    cfg, store, account, risk = _setup(paper_account_value=10000)
+    ledger = PaperLedger(cfg, store, _FakeWsForQuotes())
+    store.set_paper_equity(10000.0, "default")
+
+    buy = parse_alert("BOUGHT 0DTE SPY 759c @ 1.0")
+    from trader.trading.executor import PaperExecutor
+
+    ex = PaperExecutor(cfg, store, ledger)
+    assert ex.execute(buy, cfg, store).ok
+
+    row = ledger.positions("default")[0]
+    assert row["price"] == 2.5      # realtime from the live quote
+    assert row["cost"] == 500.0     # 5 contracts x $1 x 100
+    assert row["value"] == 1250.0   # 5 x $2.50 x 100
+    assert row["pnl"] == 150.0      # percent

@@ -344,13 +344,16 @@ function renderSummary(data) {
           ? '<div class="sub"><span>margin available ' + (phidden? "••••••" : fmtMoney(a.paper_margin_available) + " cad") + '</span></div>'
           : '') + paperMarginUsageBar(a) +
         (open ? (rows.length ?
-          '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch"><table class="pos" style="margin-top:10px;font-size:12px"><tr><th>Holding</th><th class=num>Qty</th><th class=num>Avg $</th><th class=num>Value</th><th class=num>Return</th></tr>' +
+          '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch"><table class="pos" style="margin-top:10px;font-size:12px"><tr><th>Holding</th><th class=num>Qty</th><th class=num>Avg $</th><th class=num>Price $</th><th class=num>Value $</th><th class=num>Total Cost $</th><th class=num>Return</th></tr>' +
           rows.map(function(r) {
             const rc = r.pnl == null ? "var(--muted)" : r.pnl >= 0 ? "var(--green)" : "var(--red)";
+            const cur = r.usd ? " usd" : "";
             return '<tr><td>' + esc(r.contract_key) + '</td>' +
               '<td class=num>' + r.qty + '</td>' +
               '<td class=num>' + (r.avg != null ? "$" + r.avg : "—") + '</td>' +
+              '<td class=num>' + (phidden ? "••••••" : (r.price != null ? "$" + r.price.toLocaleString("en-CA", { maximumFractionDigits: 2 }) + cur : "—")) + '</td>' +
               '<td class=num>' + (phidden? "••••••" : fmtMoney(r.value)) + '</td>' +
+              '<td class=num>' + (phidden? "••••••" : (r.cost != null ? "$" + r.cost.toLocaleString("en-CA", { maximumFractionDigits: 2 }) + cur : "—")) + '</td>' +
               '<td class=num style="color:' + rc + '">' + (r.pnl == null ? "—" : (r.pnl >= 0 ? "+" : "") + r.pnl + "%") + '</td></tr>';
           }).join("") + '</table></div>' : '<div class="empty" style="font-size:12px;padding:8px">no positions</div>') : '');
       wrap.appendChild(pc);
@@ -428,7 +431,7 @@ function renderPositions(rows) {
 function renderPositionsInto(elId, rows, emptyText) {
   const el = document.getElementById(elId);
   if (!rows.length) { el.innerHTML = '<div class="empty">' + emptyText + '</div>'; return; }
-  let html = '<table class="pos"><tr><th>Account</th><th>Contract</th><th class=num>Qty</th><th class=num>Avg $</th><th class=num>Price $</th><th class=num>Return</th><th class=num>Total Cost $</th></tr>';
+  let html = '<table class="pos"><tr><th>Account</th><th>Contract</th><th class=num>Qty</th><th class=num>Avg $</th><th class=num>Price $</th><th class=num>Value $</th><th class=num>Total Cost $</th><th class=num>Return</th></tr>';
   for (const p of rows) {
     const ret = p.pct_return ?? null;
     const retColor = ret === null ? "var(--muted)" : ret >= 0 ? "var(--green)" : "var(--red)";
@@ -479,13 +482,18 @@ function renderPositionsInto(elId, rows, emptyText) {
             Math.abs(mv).toLocaleString("en-CA", { maximumFractionDigits: 2 }) + ")</span>"
           : "")
         : "—")) + "</td>" +
-      '<td class=num style="color:' + retColor + '">' + retMain + plSpan + "</td>" +
+      '<td class=num>' + ((p.current_price != null && !p.spread)
+        ? (p.short ? "-$" : "$") + Math.abs((p.qty || 0) * p.current_price * mult)
+            .toLocaleString("en-CA", { maximumFractionDigits: 2 }) + (isStock ? cur : "")
+        : (mv != null ? (p.short || (p.spread && mv < 0) ? "-$" : "$") +
+            Math.abs(mv).toLocaleString("en-CA", { maximumFractionDigits: 2 }) : "—")) + "</td>" +
       '<td class=num>' + (isStock
         ? (p.cost_usd != null ? "$" + p.cost_usd.toLocaleString("en-CA", { maximumFractionDigits: 2 }) + cur : "—") +
           (p.currency === "CAD" || p.cost_cad == null
             ? ""
             : '<span class="subv">(' + fmtMoney(p.cost_cad) + ')</span>')
-        : (p.cost_usd != null ? (p.spread ? fmtSigned(p.cost_usd) : (p.short ? "-" : "") + fmtMoney(p.cost_usd)) + (p.cost_cad != null ? '<span class="subv">(' + (p.spread ? fmtSigned(p.cost_cad) : fmtMoney(p.cost_cad)) + ')</span>' : "") : '<span class="subv">(' + fmtMoney(avgTotal) + ")</span>")) + "</td></tr>";
+        : (p.cost_usd != null ? (p.spread ? fmtSigned(p.cost_usd) : (p.short ? "-" : "") + fmtMoney(p.cost_usd)) + (p.cost_cad != null ? '<span class="subv">(' + (p.spread ? fmtSigned(p.cost_cad) : fmtMoney(p.cost_cad)) + ')</span>' : "") : '<span class="subv">(' + fmtMoney(avgTotal) + ")</span>")) + "</td>" +
+      '<td class=num style="color:' + retColor + '">' + retMain + plSpan + "</td></tr>";
   }
   el.innerHTML = html + "</table>";
 }
