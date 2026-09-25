@@ -127,3 +127,64 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+def find_channel_control(window, channel_names, max_depth=30):
+    """A clickable element in the discord ui tree whose name
+    matches one of the target channel names (sidebar entries are
+    named like '#player-alerts' or with emoji prefixes) - or
+    None when the channel is not in the current tree (wrong
+    server selected)."""
+    targets = [c.lower() for c in channel_names if c]
+    if not targets:
+        return None
+    try:
+        walker = auto.WalkControl(
+            window, includeTop=False, maxDepth=30
+        )
+        for ctrl, depth in walker:
+            try:
+                if ctrl.ControlType not in (
+                    auto.ControlType.ListItemControl,
+                    auto.ControlType.TreeItemControl,
+                    auto.ControlType.HyperlinkControl,
+                    auto.ControlType.ButtonControl,
+                    auto.ControlType.TabItemControl,
+                ):
+                    continue
+                name = ctrl.Name or ""
+            except UIAError:
+                continue
+            low = name.lower()
+            if not any(c in name.lower() for c in targets):
+                continue
+            try:
+                ctrl.GetClickablePoint()
+                return ctrl
+            except UIAError:
+                continue
+    except UIAError:
+        return None
+    return None
+
+
+_last_channel_click = 0.0
+
+
+def click_channel_control(ctrl, log=print):
+    """Click a channel entry; rate limited to one attempt a
+    minute to avoid fighting the user."""
+    import time as _time
+
+    global _last_discord_start
+    now = _time.time()
+    if now - _last_discord_start < 60:
+        return False
+    _last_discord_start = now
+    try:
+        ctrl.Click(simulateMove=False)
+        log("switched discord to the target channel")
+        return True
+    except Exception as e:
+        log(f"channel switch click failed: {e}")
+        return False

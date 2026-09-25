@@ -16,7 +16,12 @@ try:
 except ImportError:
     UIAError = Exception
 
-from inspect_discord import find_discord_window, start_discord
+from inspect_discord import (
+    find_channel_control,
+    click_channel_control,
+    find_discord_window,
+    start_discord,
+)
 
 CHROME_RE = re.compile(
     "|".join(
@@ -1038,6 +1043,7 @@ def main():
     auto_scroll = bool(cfg.get("auto_scroll", True))
     auto_start_discord = bool(cfg.get("auto_start_discord", True))
     discord_start_command = cfg.get("discord_start_command") or None
+    auto_switch_channel = bool(cfg.get("auto_switch_channel", True))
     poll_interval = float(cfg.get("poll_interval", 0.5))
     max_items = int(cfg.get("max_items", 40))
     channels = sorted(
@@ -1193,6 +1199,27 @@ def main():
                 container = None
                 tail = []
                 resync = False
+                # actively switch to a channel we are allowed to
+                # read - discord opens wherever it last was (often
+                # the friends page after an update)
+                if (
+                    auto_switch_channel
+                    and allowed is not None
+                    and (channels or marker)
+                ):
+                    target = channels[0] if channels else (
+                        marker or ""
+                    )
+                    ctrl = find_channel_control(window, [target])
+                    if ctrl is not None:
+                        click_channel_control(ctrl)
+                    elif wait_attempts % 120 == 0:
+                        log(
+                            f"channel {title_channel!r} not allowed "
+                            f"and no {channels[0]!r} entry visible - "
+                            f"select the server once so the channel "
+                            f"appears in the sidebar"
+                        )
             if title_channel:
                 last_title_channel = title_channel
 
@@ -1219,9 +1246,11 @@ def main():
                             "handle after a discord update)"
                         )
                         try:
-                            window = find_discord_window()
+                            fresh = find_discord_window()
+                            if fresh is not None:
+                                window = fresh
                         except UIAError:
-                            window = None
+                            pass
                     # first failure, then roughly every 10s, then a
                     # hint after 30s of not finding the pane
                     if allowed and (
