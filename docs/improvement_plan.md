@@ -38,24 +38,32 @@ already cover the users table; re-render on changes).
 
 ### Database (trades.db, sqlite WAL)
 
-Full sizing/maintenance reference stays in
-`docs/database_plan.md` (row sizes, the year-of-history
-table, backup guidance). Headlines:
+Row sizes measured with real alert shapes, indexes included:
+~**280 B** per `signals` row, ~**280 B** per `trades` row -
+~**850 B per actionable alert** (signal + notify row + paper
+row), ~**280 B per ignored chatter message**. One year of
+history:
 
-- Schema and sizing measured, not estimated: ~850 B per
-  actionable alert, ~280 B per chatter row; one year of
-  history lands at ~5 MB quiet / ~14 MB moderate / ~34 MB
-  heavy - trivial for sqlite
+| volume | chatter/day | alerts/day | steady-state size |
+|---|---|---|---|
+| quiet | 20 | 10 | ~5 MB |
+| moderate | 60 | 25 | ~14 MB |
+| heavy | 150 | 60 | ~34 MB |
+
+`positions`, `meta` and `users` are bounded small. Notes:
+
 - Per-thread connections (WAL + busy_timeout), writes
-  serialized, reads lock-free; backups via
-  `sqlite3 trades.db ".backup ..."` while running
+  serialized, reads lock-free
 - Indexes: trades(mode, ts), trades(dedupe_key, ts),
   trades(message_key), positions covered by its PK -
   EXPLAIN-verified in tests
 - Retention: daily prune of signals/trades past
   history_retention_days (365 default), riding both the write
   paths and the always-on health watchdog; the file plateaus
-  by design (freed pages are reused)
+  by design (freed pages are reused), no automated VACUUM
+- Backups: `sqlite3 trades.db ".backup backup.db"` while
+  running (a raw copy can miss WAL contents); clean slate via
+  `scripts/clean_start.py`
 - History search over the retained rows: merged alert/trade
   stream, the alert->trade link via message_key (indexed),
   LIKE-escaped free text with date ranges
