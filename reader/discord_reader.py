@@ -1197,6 +1197,21 @@ def main():
                     )
                 if container is None:
                     wait_attempts += 1
+                    # a discord update can orphan the held window
+                    # handle: the cached title still reads but the
+                    # ui tree walk returns nothing - re-acquire a
+                    # fresh window handle instead of polling a
+                    # zombie forever
+                    if wait_attempts == 20:
+                        log(
+                            "no message pane for 10s - re-acquiring "
+                            "the discord window (possible stale "
+                            "handle after a discord update)"
+                        )
+                        try:
+                            window = find_discord_window()
+                        except UIAError:
+                            window = None
                     # first failure, then roughly every 10s, then a
                     # hint after 30s of not finding the pane
                     if allowed and (

@@ -3710,8 +3710,10 @@ def test_notify_paper_respects_risk_gates():
         account,
     )
     assert r2["paper"]["ok"] is True
-    assert store.get_position("paper", "SPY-2026-09-24-759-C",
-                              "default") >= 1
+    from datetime import date
+
+    key = f"SPY-{date.today().isoformat()}-759-C"
+    assert store.get_position("paper", key, "default") >= 1
 
 
 def test_health_watchdog_rides_the_prune():
@@ -3887,6 +3889,7 @@ def test_paper_pricing_matches_alert_expiry_format():
     """The paper quote lookup keyed live expiryDates as full
     timestamps while positions carry plain dates - every option
     priced at cost and the return column stuck at 0%."""
+    from datetime import date
     from trader.trading.paper import PaperLedger
     import types as _types
 
@@ -3915,12 +3918,16 @@ class _FakeWsForQuotes:
     graphql timestamp format."""
 
     def _positions_raw(self):
+        from datetime import date
         return {"default": [{
             "security": {
                 "stock": {"symbol": "SPY"},
                 "optionDetails": {
                     "underlyingSecurity": {"stock": {"symbol": "SPY"}},
-                    "expiryDate": "2026-09-24T00:00:00.000-04:00",
+                    "expiryDate": (
+                        date.today().isoformat()
+                        + "T00:00:00.000-04:00"
+                    ),
                     "strikePrice": 759.0,
                     "optionType": "CALL",
                 },
