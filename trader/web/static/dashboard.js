@@ -151,6 +151,39 @@ function closeModal() {
   modalAction = null;
 }
 
+async function resizePaper(label) {
+  openModal(
+    "Resize paper stock trades",
+    "Re-size " + label + "'s past stock trades to the tier "
+      + "sizing (the original alert's size keyword applies; "
+      + "unsized alerts use medium)?",
+    "resize",
+    async function() { await doPaperResize(label); }
+  );
+}
+
+async function doPaperResize(label) {
+  try {
+    const res = await fetch("/api/paper-resize", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ label: label }),
+    });
+    if (res.status === 401) { location.href = "/login"; return; }
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 200 && (data.adjusted || []).length) {
+      openModal(
+        "Resized",
+        data.adjusted.join("\n"),
+        "ok",
+        async function() { closeModal(); }
+      );
+    }
+  } catch (e) { /* surfaced by the next refresh */ }
+  paperPositions = null;
+  load();
+}
+
 async function resetPaper(label) {
   openModal(
     "Reset paper ledger",
@@ -320,6 +353,7 @@ function renderSummary(data) {
         '<button class="mini-toggle" title="flip paper value currency" onclick="flipPaperCurrency(\'' + esc(a.label) + '\')">' + pcur.toUpperCase() + ' ⇄</button> ' +
         '<button class="mini-toggle" onclick="togglePaper(\'' + esc(a.label) + '\')">' + "holdings " + (open ? "▼" : "▲") + '</button> ' +
         (isAdmin() ? '<button class="mini-toggle" onclick="resetPaper(\'' + esc(a.label) + '\')">reset</button> ' : '') +
+        (isAdmin() ? '<button class="mini-toggle" title="bring past stock trades up to the tier sizing" onclick="resizePaper(\'' + esc(a.label) + '\')">resize</button> ' : '') +
         '<button class="mini-toggle" title="' + (phidden ? "show paper value" : "hide paper value") + '" onclick="togglePaperHidden(\'' + esc(a.label) + '\')">' + (phidden ? EYE_OFF_SVG : EYE_SVG) + '</button></span></div>' +
         '<div class="value" style="font-size:20px">' + (phidden? "••••••" : pshowUsd ? fmtMoney(a.paper_usd_value) + " USD" : fmtMoney(a.paper_value) + " CAD") +
         (!phidden && !pshowUsd && a.paper_usd_value ? ' <span style="font-size:12px;color:var(--muted)">$' + a.paper_usd_value.toLocaleString("en-CA", {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' USD</span>' : '') +
@@ -1028,13 +1062,25 @@ function renderSettings(s) {
       '</div></div>';
   }
   tiers += '</div>';
-  const stockTierVal = Object.entries(t.stock_size_tiers || {})
-    .map(([n, d]) => n + "=" + d).join(", ");
+  // stock tiers: one field per tier, like the option tiers -
+  // percent of account value; unsized stock alerts use medium
   tiers += '<div class="set-grid" style="margin-top:10px">' +
-    '<div class="set-field full"><label title="percent of account value per size keyword for STOCK buys - separate from the option tiers; unsized stock alerts default to medium">' +
-    'stock tiers (tier=percent, comma-separated)</label>' +
-    '<input id="set-stock_size_tiers" type="text" value="' + esc(stockTierVal) + '" placeholder="tiny=2.5, small=5, medium=10, large=20, full=50"></div>' +
-    '</div>';
+    '<div class="set-field full" style="color:var(--muted);font-size:11px">' +
+    'stock tiers - % of account value per size keyword (unsized = medium)</div>';
+  const stockOrder = ["tiny", "small", "medium", "large", "full"];
+  const stockCfg = t.stock_size_tiers || {};
+  for (const name of stockOrder) {
+    const val = stockCfg[name];
+    tiers += '<div class="set-field"><label>' + esc(name) + '</label>' +
+      '<input id="set-stocktier-' + esc(name) + '" type="number" step="any" value="' +
+      (val == null ? "" : val) + '" placeholder="\u2014"></div>';
+  }
+  for (const [name, val] of Object.entries(stockCfg)) {
+    if (stockOrder.indexOf(name) >= 0) continue;
+    tiers += '<div class="set-field"><label>' + esc(name) + '</label>' +
+      '<input id="set-stocktier-' + esc(name) + '" type="number" step="any" value="' + val + '"></div>';
+  }
+  tiers += '</div>';
   html += _section("size tiers", tiers);
 
   // 5. accounts: per-account overrides (empty = inherit global)
@@ -1179,10 +1225,10 @@ async function saveSettings() {
   trading.size_tiers = tiers;
   trading.stock_size_tiers = (function() {
     const map = {};
-    val("set-stock_size_tiers").split(",").forEach(function(part) {
-      const name = part.split("=")[0].trim().toLowerCase();
-      const dollars = parseFloat((part.split("=")[1] || "").trim());
-      if (name && !isNaN(dollars)) map[name] = dollars;
+    document.querySelectorAll("[id^=set-stocktier-]").forEach(function(inp) {
+      const name = inp.id.replace("set-stocktier-", "").toLowerCase();
+      const v = parseFloat(inp.value);
+      if (name && !isNaN(v)) map[name] = v;
     });
     return map;
   })();

@@ -1241,6 +1241,105 @@ def create_app(cfg, store: Store, risk, executor, account=None,
     def api_update_status():
         return jsonify(_update_status_payload(app))
 
+    @app.post("/api/paper-resize")
+    def api_paper_resize():
+        """Bring past paper stock positions up to the tier
+        sizing (older trades were sized with the flat dollar
+        budget). The original alert's size keyword is recovered
+        from the signal text; unsized alerts use the medium
+        tier."""
+        denied = _require_admin()
+        if denied:
+            return denied
+        if not getattr(
+            getattr(cfg, "paper", None), "enabled", False
+        ) and ctx.mode != "paper":
+            return jsonify(
+                {"error": "paper trading is not active"}
+            ), 400
+        ledger = getattr(executor, "account", None)
+        if ledger is None or not hasattr(ledger, "values"):
+            return jsonify({"error": "no paper ledger"}), 400
+        from ..trading.mirror import MirrorShim
+        from ..trading.parser import parse_alert
+
+        tiers = getattr(
+            cfg.trading, "stock_size_tiers", None
+        ) or {}
+        values = ledger.values() or {}
+        adjusted = []
+        for label, value in values.items():
+            if not value or value <= 0:
+                continue
+            for pos in store.list_positions("paper", label):
+                if pos.get("right"):
+                    continue   # options only
+                held = pos.get("qty") or 0
+                avg = pos.get("avg_premium") or 0
+                if held < 1 or not avg:
+                    continue
+                # the original alert's size keyword
+                trade_key = None
+                for t in store.recent_trades(200):
+                    if (
+                        t.get("mode") == "paper"
+                        and t.get("ticker") == pos.get("underlying")
+                        and t.get("action") == "BUY"
+                        and t.get("account") == label
+                    ):
+                        trade_key = t.get("message_key")
+                        break
+                size = None
+                text = store.signal_text(trade_key) if trade_key else None
+                if text:
+                    alert = parse_alert(text)
+                    if alert is not None:
+                        size = alert.size
+                tier = (size or "medium").lower()
+                pct = tiers.get(tier) or tiers.get("medium")
+                if pct is None:
+                    continue
+                intended = int(
+                    float(value) * (pct / 100.0) / avg
+                )
+                delta = int(intended - held)
+                if delta == 0:
+                    continue
+                shim = MirrorShim(
+                    action="BUY" if delta > 0 else "SELL",
+                    kind="stock",
+                    underlying=pos.get("underlying"),
+                    expiry=None, strike=None, right=None,
+                    premium=avg, entry=avg,
+                    stop_loss=None, take_profit=None,
+                    ts=str(time.time()),
+                )
+                shim.dedupe_key = (
+                    lambda k=label, u=pos.get("underlying"):
+                    f"RESIZE|{k}|{u}|{time.time()}"
+                )
+                store.apply_position(
+                    "paper", shim, delta, premium=avg, account=label
+                )
+                store.adjust_paper_equity(
+                    -delta * avg, label
+                )
+                store.record_trade(
+                    "paper", "BUY" if delta > 0 else "SELL",
+                    pos.get("underlying"), abs(delta), avg,
+                    shim, "executed",
+                    f"resized to {tier} tier: {held} -> {intended} "
+                    f"shares", trade_key,
+                )
+                adjusted.append(
+                    f"{label}: {pos.get('underlying')} "
+                    f"{held} -> {intended}"
+                )
+        ctx.summary_cache["ts"] = 0.0
+        return jsonify({
+            "status": "ok", "adjusted": adjusted,
+        })
+
     @app.get("/api/users")
     def api_users_get():
         denied = _require_admin()

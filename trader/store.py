@@ -498,6 +498,18 @@ class Store:
             row = self._conn.execute(query, params).fetchone()
         return float(row[0]) if row and row[0] is not None else 0.0
 
+    def signal_text(self, message_key: str):
+        """The original alert text for a message key (used to
+        recover the size keyword when re-sizing past trades)."""
+        if not message_key:
+            return None
+        with self._conn:
+            row = self._conn.execute(
+                "SELECT text FROM signals WHERE message_key = ?",
+                (message_key,),
+            ).fetchone()
+        return row[0] if row else None
+
     def recent_trades(self, limit=50):
         with self._conn:
             rows = self._conn.execute(

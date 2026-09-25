@@ -4099,3 +4099,67 @@ def test_stock_buys_use_stock_size_tiers():
     assert ex.execute(
         parse_alert("BOUGHT LLYX @ 25.7 large size"), cfg, store
     ).qty == 77
+
+
+def test_paper_resize_bring_stock_trades_to_tier_sizing():
+    """Older paper stock trades were sized with the flat dollar
+    budget - the resize action brings them to the tier sizing
+    using the original alert's size keyword (medium default)."""
+    cfg, store, account, risk = _setup(
+        paper_account_value=10000, cooldown_seconds=0,
+    )
+    from trader.trading.paper import PaperLedger
+
+    ledger = PaperLedger(cfg, store, account)
+    store.set_paper_equity(10000.0, "default")
+    ex = PaperExecutor(cfg, store, ledger)
+
+    # the historical trade: booked under the old flat sizing
+    # (no tiers configured -> position_size_cad -> 3 shares)
+    cfg.trading.stock_size_tiers = {}
+    text = "BOUGHT LLYX shares @ 25.7"
+    alert = parse_alert(text)
+    key = "resize-test-key"
+    store.record_signal(key, "a", text, True)
+    res = ex.execute(alert, cfg, store)
+    assert res.qty == 3
+    held = store.get_position("paper", "LLYX", "default")
+    assert held == 3
+
+    # the tiers arrive (a config/settings change)
+    cfg.trading.stock_size_tiers = {
+        "tiny": 2.5, "small": 5.0, "medium": 10.0,
+        "large": 20.0, "full": 50.0,
+    }
+
+    from trader.web.server import create_app
+
+    class Stub:
+        def __init__(self):
+            self.trading = cfg.trading
+            self.pipeline = type("P", (), {"auth_token": "t"})()
+            self.wealthsimple = cfg.wealthsimple
+            self.reader = cfg.reader
+            self.discord = cfg.discord
+            self.parser = cfg.parser
+            self.auto_update = cfg.auto_update
+            self.quotes = cfg.quotes
+            self.paper = type("PP", (), {"enabled": True})()
+
+    app = create_app(Stub(), store, None, ex, account)
+    client = app.test_client()
+    r = client.post(
+        "/api/paper-resize", json={"label": "default"},
+        headers={"X-Auth-Token": "t"},
+    )
+    assert r.status_code == 200
+    data = r.get_json()
+    # the medium tier: 10% of the ledger value / 25.7
+    intended = int(ledger.values()["default"] * 0.10 / 25.7)
+    assert held < intended
+    new_held = store.get_position("paper", "LLYX", "default")
+    assert new_held == intended, (new_held, intended)
+    assert any("LLYX" in a for a in data["adjusted"])
+    # the resize is recorded in the trade log
+    rows = [t for t in store.recent_trades(5) if t["mode"] == "paper"]
+    assert any("resized" in (t["detail"] or "") for t in rows)
