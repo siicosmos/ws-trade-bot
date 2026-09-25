@@ -3996,10 +3996,7 @@ def test_credit_spread_margin_nets_the_credit():
     row = next(a for a in summary["accounts"] if a["label"] == "Personal")
     # requirement: the ws-provided netted max loss in cad
     assert row["margin_requirement"] == round(240 * 1.41, 2)
-    # used-bar: the 100 loan plus the current market value of
-    # the short structure (what closing it costs today) - the
-    # spread is worthless here (market_value 0) so only the loan
+    # the utilization bar is the loan against available
     assert row["margin_used"] == 100.0
-    assert row["margin_used_total"] == 100.0
     # portfolio stays equity + the loan only
     assert row["portfolio_value"] == round(10000.0 + 100.0, 2)

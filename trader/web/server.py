@@ -525,19 +525,8 @@ def _margin_metrics(ctx, label, value, live, sk, conv_fx,
                 else:
                     used_cad_raw += -amt
                     used += -amt
-    # utilization the way ws reports it: borrowing plus the
-    # current market value of short structures (what it would
-    # cost to close them today) - the used-bar divides this by
-    # used + available. the plain margin_used (the loan) still
-    # feeds portfolio value.
-    used_total = used
-    if live is not None:
-        for r in live["positions"]:
-            if not r.get("short"):
-                continue
-            mv = r.get("market_value")
-            if mv:
-                used_total += abs(float(mv)) * conv_fx
+    # utilization: the loan against available - ws's own bar
+    # divides borrowing by borrowing + available
     margin_used = round(used, 2)
     # NLV already nets the loan as negative cash, so
     # availability is simply equity minus requirement
@@ -553,7 +542,6 @@ def _margin_metrics(ctx, label, value, live, sk, conv_fx,
         "margin_requirement": margin_req,
         "margin_breakdown": req_parts,
         "margin_used": margin_used,
-        "margin_used_total": round(used_total, 2),
         "margin_used_cad": round(used_cad_raw, 2)
         if used_cad_raw else 0.0,
         "margin_used_usd": round(used_usd_raw, 2)
