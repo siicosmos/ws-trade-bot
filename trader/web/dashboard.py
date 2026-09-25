@@ -21,8 +21,13 @@ DASHBOARD_CSS = _read("dashboard.css")
 DASHBOARD_JS = _read("dashboard.js")
 
 
-def LOGIN_HTML(error=None):
+def LOGIN_HTML(error=None, first=False):
     import html
+
+    intro = (
+        "<p>create the first admin account to secure this "
+        "dashboard</p>" if first else "<p>log in to continue</p>"
+    )
 
     message = (
         f'<p style="color:#f85149;margin:0 0 14px">{html.escape(str(error))}</p>'
@@ -64,11 +69,12 @@ def LOGIN_HTML(error=None):
 <body>
 <div class="card">
   <h1>WS Trade Bot</h1>
-  <p>enter your access token to continue</p>
+  {intro}
   {message}
   <form method="post" action="/login">
-    <input type="password" name="password" placeholder="access token" autofocus>
-    <button type="submit">Log in</button>
+    <input type="text" name="username" placeholder="username" autocomplete="username" autofocus>
+    <input type="password" name="password" placeholder="password" autocomplete="current-password">
+    <button type="submit">{'Create admin account' if first else 'Log in'}</button>
   </form>
 </div>
 </body>

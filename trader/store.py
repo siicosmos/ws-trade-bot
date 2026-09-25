@@ -1,4 +1,7 @@
+import hashlib
+import hmac
 import json
+import os
 import re
 import sqlite3
 import threading
@@ -82,6 +85,13 @@ class Store:
                 CREATE TABLE IF NOT EXISTS meta (
                     key TEXT PRIMARY KEY,
                     value TEXT
+                );
+                CREATE TABLE IF NOT EXISTS users (
+                    username TEXT PRIMARY KEY,
+                    password_hash TEXT NOT NULL,
+                    role TEXT NOT NULL DEFAULT 'viewer',
+                    created_ts TEXT,
+                    last_login_ts TEXT
                 );
                 """
             )
@@ -783,3 +793,121 @@ class Store:
         if current is None:
             return
         self.set_paper_equity(current + delta, label)
+
+
+    # ---- users ----
+
+    def user_count(self) -> int:
+        with self._conn:
+            return self._conn.execute(
+                "SELECT COUNT(*) FROM users"
+            ).fetchone()[0]
+
+    def create_user(self, username: str, password: str,
+                    role: str = "viewer") -> bool:
+        """Returns False when the username is taken."""
+        if not username or not password or role not in (
+            "admin", "viewer"
+        ):
+            return False
+        try:
+            with self._write_lock, self._conn:
+                self._conn.execute(
+                    "INSERT INTO users (username, password_hash, "
+                    "role, created_ts) VALUES (?, ?, ?, ?)",
+                    (
+                        username, _hash_password(password), role,
+                        self._now(),
+                    ),
+                )
+            return True
+        except sqlite3.IntegrityError:
+            return False
+
+    def get_user(self, username: str):
+        with self._conn:
+            row = self._conn.execute(
+                "SELECT username, password_hash, role FROM users "
+                "WHERE username = ?",
+                (username,),
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "username": row[0],
+            "password_hash": row[1],
+            "role": row[2],
+        }
+
+    def verify_user(self, username: str, password: str):
+        """The user dict (without the hash) on a match, else None."""
+        user = self.get_user(username)
+        if user is None or not _verify_password(
+            password, user["password_hash"]
+        ):
+            return None
+        with self._write_lock, self._conn:
+            self._conn.execute(
+                "UPDATE users SET last_login_ts = ? "
+                "WHERE username = ?",
+                (self._now(), username),
+            )
+        return {"username": user["username"], "role": user["role"]}
+
+    def list_users(self) -> list:
+        """No password hashes in listings."""
+        with self._conn:
+            rows = self._conn.execute(
+                "SELECT username, role, created_ts, last_login_ts "
+                "FROM users ORDER BY username"
+            ).fetchall()
+        keys = ["username", "role", "created_ts", "last_login_ts"]
+        return [dict(zip(keys, r)) for r in rows]
+
+    def delete_user(self, username: str) -> bool:
+        with self._write_lock, self._conn:
+            cur = self._conn.execute(
+                "DELETE FROM users WHERE username = ?", (username,)
+            )
+            return cur.rowcount > 0
+
+    def update_password(self, username: str, password: str) -> bool:
+        if not password:
+            return False
+        with self._write_lock, self._conn:
+            cur = self._conn.execute(
+                "UPDATE users SET password_hash = ? "
+                "WHERE username = ?",
+                (_hash_password(password), username),
+            )
+            return cur.rowcount > 0
+
+    def update_role(self, username: str, role: str) -> bool:
+        if role not in ("admin", "viewer"):
+            return False
+        with self._write_lock, self._conn:
+            cur = self._conn.execute(
+                "UPDATE users SET role = ? WHERE username = ?",
+                (role, username),
+            )
+            return cur.rowcount > 0
+
+
+def _hash_password(password: str) -> str:
+    salt = os.urandom(16)
+    digest = hashlib.pbkdf2_hmac(
+        "sha256", password.encode("utf-8"), salt, 200_000
+    )
+    return f"pbkdf2$200000${salt.hex()}${digest.hex()}"
+
+
+def _verify_password(password: str, stored: str) -> bool:
+    try:
+        _, iters, salt_hex, hash_hex = stored.split("$")
+        digest = hashlib.pbkdf2_hmac(
+            "sha256", password.encode("utf-8"),
+            bytes.fromhex(salt_hex), int(iters),
+        )
+        return hmac.compare_digest(digest.hex(), hash_hex)
+    except (ValueError, TypeError):
+        return False

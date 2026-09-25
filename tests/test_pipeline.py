@@ -20,7 +20,15 @@ class ConfigStub:
     def __init__(self, trading, accounts=None, auth_token=""):
         self.trading = trading
         self.pipeline = type("PI", (), {"auth_token": auth_token})()
-        self.discord = type("D", (), {"webhook_url": ""})()
+        self.auto_update = type("AU", (), {
+            "enabled": False, "interval_seconds": 600})()
+        self.quotes = type("Q", (), {
+            "enabled": False, "provider": "ws",
+            "moomoo_host": "", "moomoo_port": 11111})()
+        self.discord = type("D", (), {
+            "webhook_url": "", "reader_log_webhook_url": "",
+            "pipeline_log_webhook_url": "",
+            "update_webhook_url": "", "notify": True})()
         self.parser = type("P", (), {"custom_patterns": []})()
         self.wealthsimple = WealthsimpleConfig(accounts=accounts or [])
         self.reader = ReaderConfig()
@@ -704,16 +712,26 @@ def test_login_logout_flow():
     app, store, account = _make_app(auth_token="s3cret")
     client = app.test_client()
 
-    # wrong password stays on the login page
-    bad = client.post("/login", data={"password": "nope"})
+    # wrong credentials stay on the login page
+    bad = client.post("/login", data={"username": "admin",
+                                      "password": "nope"})
     assert bad.status_code == 200
-    assert "wrong access token" in bad.get_data(as_text=True)
+    assert "wrong username or password" in bad.get_data(as_text=True)
 
-    # correct password logs in and sets the session
-    ok = client.post("/login", data={"password": "s3cret"})
+    # the access token seeded the admin account - the token
+    # itself still works as a legacy owner login
+    ok = client.post("/login", data={"username": "",
+                                     "password": "s3cret"})
     assert ok.status_code == 302
     assert client.get("/").status_code == 200
     assert client.get("/api/summary").status_code == 200
+
+    # and the named admin account logs in with its password
+    client.get("/logout")
+    ok2 = client.post("/login", data={"username": "admin",
+                                      "password": "s3cret"})
+    assert ok2.status_code == 302
+    assert client.get("/api/dashboard").get_json()["me"]["role"] == "admin"
 
     # logout clears the session
     out = client.get("/logout")

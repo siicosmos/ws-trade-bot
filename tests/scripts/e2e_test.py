@@ -324,13 +324,17 @@ def run_auth_phase():
         )
         browser = requests.Session()
         login_page = browser.get(f"{_current_base()}/login", timeout=5, verify=False)
-        check("login page served", login_page.status_code == 200 and "access token" in login_page.text)
+        check("login page served", login_page.status_code == 200 and "username" in login_page.text)
         bad_login = browser.post(
-            f"{_current_base()}/login", data={"password": "wrong"}, timeout=5, verify=False
+            f"{_current_base()}/login",
+            data={"username": "admin", "password": "wrong"},
+            timeout=5, verify=False,
         )
-        check("wrong password rejected", "wrong access token" in bad_login.text)
+        check("wrong password rejected",
+              "wrong username or password" in bad_login.text)
         browser.post(
-            f"{_current_base()}/login", data={"password": "e2e-secret"},
+            f"{_current_base()}/login",
+            data={"username": "admin", "password": "e2e-secret"},
             timeout=5, verify=False, allow_redirects=False,
         )
         check(

@@ -1,12 +1,13 @@
 import hmac
 import logging
 import os
+import re
 import secrets
 import time
 from dataclasses import dataclass, field
 from datetime import timedelta
 
-from flask import Flask, Response, jsonify, redirect, request, session
+from flask import Flask, Response, g, jsonify, redirect, request, session
 
 from ..ws.account_types import REGISTERED_ACCOUNT_TYPES
 from .dashboard import LOGIN_HTML
@@ -899,6 +900,11 @@ def create_app(cfg, store: Store, risk, executor, account=None,
     app.reader_state = ctx.reader_state
     app._summary_cache = ctx.summary_cache
 
+    # first boot: the access token becomes the admin password so
+    # the existing workflow keeps working
+    if store.user_count() == 0 and cfg.pipeline.auth_token:
+        store.create_user("admin", cfg.pipeline.auth_token, "admin")
+
     # the 5s dashboard polls otherwise flood pipeline.log with
     # access lines for every api call
     logging.getLogger("werkzeug").setLevel(logging.ERROR)
@@ -906,12 +912,18 @@ def create_app(cfg, store: Store, risk, executor, account=None,
     @app.before_request
     def auth_guard():
         token = cfg.pipeline.auth_token
-        if not token or request.path in ("/health", "/favicon.ico", "/login"):
+        if request.path in ("/health", "/favicon.ico", "/login"):
+            return None
+        if not token and store.user_count() == 0:
+            # legacy install (no token, no users): open access,
+            # exactly as before user accounts existed; /login
+            # remains reachable to bootstrap the first admin
             return None
         if session.get("auth"):
             return None
         supplied = request.headers.get("X-Auth-Token", "")
-        if supplied and hmac.compare_digest(supplied, token):
+        if supplied and token and hmac.compare_digest(supplied, token):
+            g.admin = True
             return None
         if request.path.startswith("/api/") or request.path == "/alert":
             return jsonify({"error": "unauthorized"}), 401
@@ -920,43 +932,76 @@ def create_app(cfg, store: Store, risk, executor, account=None,
     @app.route("/login", methods=["GET", "POST"])
     def login():
         token = cfg.pipeline.auth_token
-        if not token:
-            return redirect("/")
+        first = store.user_count() == 0
         ip = request.remote_addr or "?"
         now = time.time()
         _purge_login_fails(now)
         entry = _LOGIN_FAILS.get(ip)
         if entry and entry.get("locked_until", 0) > now:
             return Response(
-                LOGIN_HTML("too many attempts - try again later"),
+                LOGIN_HTML("too many attempts - try again later",
+                           first=first),
                 403,
                 mimetype="text/html",
                 headers={"Cache-Control": "no-store"},
             )
         error = None
         if request.method == "POST":
+            username = str(request.form.get("username") or "").strip()
             supplied = request.form.get("password", "")
-            if supplied and hmac.compare_digest(supplied, token):
+
+            def _fail(label):
+                nonlocal error
+                count = (entry or {}).get("count", 0) + 1
+                if count >= LOGIN_FAIL_LIMIT:
+                    _LOGIN_FAILS[ip] = {
+                        "count": count,
+                        "locked_until": now + LOCKOUT_SECONDS,
+                        "ts": now,
+                    }
+                    error = "too many attempts - try again later"
+                else:
+                    _LOGIN_FAILS[ip] = {
+                        "count": count, "locked_until": 0, "ts": now,
+                    }
+                    error = label
+                time.sleep(1)
+
+            if first:
+                # claim the first admin account
+                if not re.fullmatch(r"[A-Za-z0-9_-]{1,32}", username):
+                    _fail("pick a username (letters, digits, - _)")
+                elif len(supplied) < 6:
+                    _fail("password must be at least 6 characters")
+                else:
+                    store.create_user(username, supplied, "admin")
+                    _LOGIN_FAILS.pop(ip, None)
+                    session.permanent = True
+                    session["auth"] = True
+                    session["user"] = {
+                        "username": username, "role": "admin",
+                    }
+                    return redirect("/")
+            elif not username and token and hmac.compare_digest(
+                supplied, token
+            ):
+                # legacy: the bare access token still opens an
+                # owner session (scripts, old bookmarks)
                 _LOGIN_FAILS.pop(ip, None)
                 session.permanent = True
                 session["auth"] = True
                 return redirect("/")
-            count = (entry or {}).get("count", 0) + 1
-            if count >= LOGIN_FAIL_LIMIT:
-                _LOGIN_FAILS[ip] = {
-                    "count": count,
-                    "locked_until": now + LOCKOUT_SECONDS,
-                    "ts": now,
-                }
-                error = "too many attempts - try again later"
             else:
-                _LOGIN_FAILS[ip] = {
-                    "count": count, "locked_until": 0, "ts": now,
-                }
-                error = "wrong access token"
-            time.sleep(1)
+                user = store.verify_user(username, supplied)
+                if user is not None:
+                    _LOGIN_FAILS.pop(ip, None)
+                    session.permanent = True
+                    session["auth"] = True
+                    session["user"] = user
+                    return redirect("/")
+                _fail("wrong username or password")
         return Response(
-            LOGIN_HTML(error), mimetype="text/html",
+            LOGIN_HTML(error, first=first), mimetype="text/html",
             headers={"Cache-Control": "no-store"},
         )
 
@@ -984,6 +1029,28 @@ def create_app(cfg, store: Store, risk, executor, account=None,
     def favicon():
         return Response(status=204)
 
+    def _me():
+        return session.get("user")
+
+    def _is_admin() -> bool:
+        # a legacy open install (no token, no users yet) is the
+        # owner's single-user setup - full access until an
+        # admin account is claimed
+        if not cfg.pipeline.auth_token and store.user_count() == 0:
+            return True
+        if getattr(g, "admin", False):
+            return True
+        user = session.get("user")
+        if user:
+            return user.get("role") == "admin"
+        # legacy sessions (pre-users) were the owner's
+        return bool(session.get("auth"))
+
+    def _require_admin():
+        if not _is_admin():
+            return jsonify({"error": "admin required"}), 403
+        return None
+
     @app.get("/api/summary")
     def api_summary():
         payload = _summary_payload(ctx)
@@ -993,6 +1060,9 @@ def create_app(cfg, store: Store, risk, executor, account=None,
 
     @app.post("/api/paper-reset")
     def api_paper_reset():
+        denied = _require_admin()
+        if denied:
+            return denied
         if not getattr(
             getattr(cfg, "paper", None), "enabled", False
         ) and ctx.mode != "paper":
@@ -1082,11 +1152,15 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                 "trades": store.recent_trades(50),
                 "settings": get_settings(cfg),
                 "update_status": _update_status_payload(app),
+                "me": _me(),
             }
         )
 
     @app.post("/api/settings")
     def api_settings_post():
+        denied = _require_admin()
+        if denied:
+            return denied
         from ..settings import apply_settings
 
         payload = request.get_json(silent=True) or {}
@@ -1131,6 +1205,91 @@ def create_app(cfg, store: Store, risk, executor, account=None,
     @app.get("/api/update_status")
     def api_update_status():
         return jsonify(_update_status_payload(app))
+
+    @app.get("/api/users")
+    def api_users_get():
+        denied = _require_admin()
+        if denied:
+            return denied
+        return jsonify(store.list_users())
+
+    @app.post("/api/users")
+    def api_users_post():
+        me = _me()
+        if me is None:
+            # legacy token sessions act as the owner
+            me = {"username": "admin", "role": "admin"} \
+                if _is_admin() else None
+        if me is None:
+            return jsonify({"error": "unauthorized"}), 401
+        admin = me.get("role") == "admin"
+        data = request.get_json(silent=True) or {}
+        action = str(data.get("action") or "")
+        target = str(data.get("username") or "").strip()
+
+        if action == "create":
+            if not admin:
+                return jsonify({"error": "admin required"}), 403
+            username = target
+            if not re.fullmatch(r"[A-Za-z0-9_-]{1,32}", username):
+                return jsonify({"error": "bad username"}), 400
+            password = str(data.get("password") or "")
+            if len(password) < 6:
+                return jsonify(
+                    {"error": "password must be at least 6 characters"}
+                ), 400
+            role = str(data.get("role") or "viewer")
+            if not store.create_user(username, password, role):
+                return jsonify(
+                    {"error": "username taken or bad role"}
+                ), 400
+            return jsonify({"status": "ok"})
+
+        if action == "delete":
+            if not admin:
+                return jsonify({"error": "admin required"}), 403
+            if target == me.get("username"):
+                return jsonify({"error": "cannot delete yourself"}), 400
+            admins = [u for u in store.list_users()
+                      if u["role"] == "admin"]
+            if len(admins) == 1 and admins[0]["username"] == target:
+                return jsonify(
+                    {"error": "cannot delete the last admin"}
+                ), 400
+            if not store.delete_user(target):
+                return jsonify({"error": "unknown user"}), 404
+            return jsonify({"status": "ok"})
+
+        if action == "set_password":
+            new_password = str(data.get("password") or "")
+            if len(new_password) < 6:
+                return jsonify(
+                    {"error": "password must be at least 6 characters"}
+                ), 400
+            if target != me.get("username"):
+                if not admin:
+                    return jsonify(
+                        {"error": "admin required"}
+                    ), 403
+            if target != me.get("username") or admin:
+                if not admin:
+                    return jsonify({"error": "admin required"}), 403
+                if not store.get_user(target):
+                    return jsonify({"error": "unknown user"}), 404
+                if not store.update_password(target, new_password):
+                    return jsonify({"error": "update failed"}), 400
+                return jsonify({"status": "ok"})
+            # self change requires the current password
+            current = str(data.get("current_password") or "")
+            user = store.verify_user(me.get("username"), current)
+            if user is None:
+                return jsonify(
+                    {"error": "current password is wrong"}
+                ), 403
+            store.update_password(target, new_password)
+            return jsonify({"status": "ok"})
+
+        return jsonify({"error": "unknown action"}), 400
 
     @app.post("/alert")
     def alert():

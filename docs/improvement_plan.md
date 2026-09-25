@@ -188,6 +188,24 @@ of retention lands at ~5 MB quiet / ~14 MB moderate /
 the maintenance guidance (free-page plateau, WAL bounds,
 consistent backups) and the FTS5 recommendation for #12.
 
+## 14. User login and access model - DONE
+
+Per-user accounts in the database (pbkdf2-hashed passwords,
+salted, constant-time verify) with two roles: admin and
+viewer. The dashboard login takes username + password; the
+access token seeds the first admin account on upgrade (same
+password, nothing breaks) and still works as a legacy owner
+login and as the machine credential for the reader and
+scripts (X-Auth-Token = admin). Viewers read everything but
+cannot save settings, reset paper ledgers, or manage users
+(enforced server-side; the ui hides the admin buttons).
+Admins manage users in a header popup: create, remove (never
+yourself, never the last admin), change passwords (self
+change verifies the current password). Fresh installs claim
+the first admin at /login; a token-less install with no users
+keeps its legacy open behavior but the claim form remains
+reachable.
+
 ## Reviews - all findings resolved
 
 A second review after #1-#5 landed, then a full #1-#12

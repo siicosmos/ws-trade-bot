@@ -119,6 +119,12 @@ try {
   }
 } catch (e) { paperOpen = []; }
 let paperPositions = null;
+let me = null;          // {username, role} or null
+function isAdmin() {
+  // null (pre-first-poll) assumes the owner's browser - the
+  // server still enforces every write
+  return !me || me.role === "admin";
+}
 
 let pmbdOpen = null;
 
@@ -313,7 +319,7 @@ function renderSummary(data) {
         '<span style="display:flex;gap:4px;flex-shrink:0;align-items:center">' +
         '<button class="mini-toggle" title="flip paper value currency" onclick="flipPaperCurrency(\'' + esc(a.label) + '\')">' + pcur.toUpperCase() + ' ⇄</button> ' +
         '<button class="mini-toggle" onclick="togglePaper(\'' + esc(a.label) + '\')">' + "holdings " + (open ? "▼" : "▲") + '</button> ' +
-        '<button class="mini-toggle" onclick="resetPaper(\'' + esc(a.label) + '\')">reset</button> ' +
+        (isAdmin() ? '<button class="mini-toggle" onclick="resetPaper(\'' + esc(a.label) + '\')">reset</button> ' : '') +
         '<button class="mini-toggle" title="' + (phidden ? "show paper value" : "hide paper value") + '" onclick="togglePaperHidden(\'' + esc(a.label) + '\')">' + (phidden ? EYE_OFF_SVG : EYE_SVG) + '</button></span></div>' +
         '<div class="value" style="font-size:20px">' + (phidden? "••••••" : pshowUsd ? fmtMoney(a.paper_usd_value) + " USD" : fmtMoney(a.paper_value) + " CAD") +
         (!phidden && !pshowUsd && a.paper_usd_value ? ' <span style="font-size:12px;color:var(--muted)">$' + a.paper_usd_value.toLocaleString("en-CA", {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' USD</span>' : '') +
@@ -1201,6 +1207,8 @@ async function saveSettings() {
 async function load() {
   try {
     const data = await api("/api/dashboard");
+    me = data.me || null;
+    renderMe();
     paperPositions = data.paper_positions || {};
     renderSummary(data.summary);
     renderPositions(data.positions || []);
@@ -1246,6 +1254,100 @@ for (const id of ["hs-q", "hs-ticker"]) {
 }
 for (const id of ["hs-status", "hs-since", "hs-until"]) {
   document.getElementById(id).addEventListener("change", runHistorySearch);
+}
+
+function renderMe() {
+  const el = document.getElementById("me");
+  if (!el) return;
+  if (me) {
+    el.innerHTML = '<span class="tag ignored mini">' + esc(me.username) +
+      '</span>';
+    const ub = document.getElementById("users-btn");
+    if (ub) ub.style.display = isAdmin() ? "" : "none";
+  }
+  // viewer sessions: hide the admin-only actions (server 403s
+  // them anyway - this keeps the ui honest)
+  const save = document.getElementById("settings-save");
+  const revert = document.getElementById("settings-revert");
+  if (save) save.style.display = isAdmin() ? "" : "none";
+  if (revert) revert.style.display = isAdmin() ? "" : "none";
+}
+
+async function openUsers() {
+  document.getElementById("usersBackdrop").style.display = "flex";
+  await refreshUsers();
+}
+
+function closeUsers() {
+  document.getElementById("usersBackdrop").style.display = "none";
+}
+
+async function refreshUsers() {
+  try {
+    const users = await api("/api/users");
+    const el = document.getElementById("users-list");
+    let html = "<table><tr><th>User</th><th>Role</th><th>Last login</th><th></th></tr>";
+    for (const u of users) {
+      html += "<tr><td>" + esc(u.username) + "</td>" +
+        '<td><span class="role-' + esc(u.role) + '">' + esc(u.role) + "</span></td>" +
+        "<td>" + (u.last_login_ts ? fmtIso(u.last_login_ts).slice(0, 16) : "never") + "</td>" +
+        '<td>' + (u.username === (me && me.username) ? "" :
+          '<button onclick="deleteUser(\'' + esc(u.username) + '\')">remove</button>') +
+        "</td></tr>";
+    }
+    el.innerHTML = html + "</table>";
+  } catch (e) { /* surfaced by the banner */ }
+}
+
+async function usersPost(payload) {
+  const res = await fetch("/api/users", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json().catch(() => ({}));
+  const msg = document.getElementById("users-msg");
+  if (msg) msg.textContent = res.status === 200 ? "" : (data.error || "failed");
+  if (res.status === 200) await refreshUsers();
+}
+
+function createUser() {
+  usersPost({
+    action: "create",
+    username: document.getElementById("nu-name").value.trim(),
+    password: document.getElementById("nu-pass").value,
+    role: document.getElementById("nu-role").value,
+  });
+}
+
+function deleteUser(username) {
+  openModal(
+    "Remove user",
+    "Remove " + username + "? They will lose access immediately.",
+    "remove",
+    async function() { await usersPost({ action: "delete", username: username }); }
+  );
+}
+
+async function changeMyPassword() {
+  const res = await fetch("/api/users", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action: "set_password",
+      username: me ? me.username : "",
+      current_password: document.getElementById("pw-current").value,
+      password: document.getElementById("pw-new").value,
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  const msg = document.getElementById("users-msg");
+  if (msg) msg.textContent = res.status === 200
+    ? "password changed" : (data.error || "failed");
+  if (res.status === 200) {
+    document.getElementById("pw-current").value = "";
+    document.getElementById("pw-new").value = "";
+  }
 }
 
 renderReader();
