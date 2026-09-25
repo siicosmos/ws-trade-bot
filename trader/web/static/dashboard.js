@@ -344,7 +344,7 @@ function renderSummary(data) {
           ? '<div class="sub"><span>margin available ' + (phidden? "••••••" : fmtMoney(a.paper_margin_available) + " cad") + '</span></div>'
           : '') + paperMarginUsageBar(a) +
         (open ? (rows.length ?
-          '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch"><table class="pos" style="margin-top:10px;font-size:12px"><tr><th>Holding</th><th class=num>Qty</th><th class=num>Avg $</th><th class=num>Price $</th><th class=num>Value $</th><th class=num>Total Cost $</th><th class=num>Return</th></tr>' +
+          '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch"><table class="pos" style="margin-top:10px;font-size:12px"><tr><th>Positions &amp; Holdings</th><th class=num>Qty</th><th class=num>Avg $</th><th class=num>Price $</th><th class=num>Value $</th><th class=num>Total Cost $</th><th class=num>Return</th></tr>' +
           rows.map(function(r) {
             const rc = r.pnl == null ? "var(--muted)" : r.pnl >= 0 ? "var(--green)" : "var(--red)";
             const cur = r.usd ? " usd" : "";
@@ -489,16 +489,20 @@ function renderPositionsInto(elId, rows, emptyText) {
             : "—")
         : (p.current_price != null
         ? (p.spread ? fmtSigned(p.current_price) : "$" + p.current_price) +
-          '<span class="subv">($' + Math.abs(p.current_price * 100).toLocaleString("en-CA", { maximumFractionDigits: 0 }) + ")</span>" + (mv != null
-          ? '<span class="subv">(' + (p.short || (p.spread && mv < 0) ? "-$" : "$") +
-            Math.abs(mv).toLocaleString("en-CA", { maximumFractionDigits: 2 }) + ")</span>"
-          : "")
+          '<span class="subv">($' + Math.abs(p.current_price * 100).toLocaleString("en-CA", { maximumFractionDigits: 0 }) + ")</span>"
         : "—")) + "</td>" +
-      '<td class=num>' + ((p.current_price != null && !p.spread)
-        ? (p.short ? "-$" : "$") + Math.abs((p.qty || 0) * p.current_price * mult)
-            .toLocaleString("en-CA", { maximumFractionDigits: 2 }) + (isStock ? cur : "")
-        : (mv != null ? (p.short || (p.spread && mv < 0) ? "-$" : "$") +
-            Math.abs(mv).toLocaleString("en-CA", { maximumFractionDigits: 2 }) : "—")) + "</td>" +
+      '<td class=num>' + (function() {
+        const val = (p.current_price != null && !p.spread)
+          ? (p.short ? -1 : 1) * Math.abs((p.qty || 0) * p.current_price * mult)
+          : (mv != null ? (p.short || (p.spread && mv < 0) ? -mv : mv) : null);
+        if (val == null) return "—";
+        const sign = val < 0 ? "-$" : "$";
+        const fx = (p.cost_usd && p.cost_cad) ? p.cost_cad / p.cost_usd : null;
+        const cad = fx ? Math.abs(val) * fx : null;
+        return sign + Math.abs(val).toLocaleString("en-CA", { maximumFractionDigits: 2 }) +
+          (isStock ? cur : "") +
+          (cad != null && !isStock ? ' <span class="subv">($' + cad.toLocaleString("en-CA", { maximumFractionDigits: 2 }) + ")</span>" : "");
+      })() + "</td>" +
       '<td class=num>' + (isStock
         ? (p.cost_usd != null ? "$" + p.cost_usd.toLocaleString("en-CA", { maximumFractionDigits: 2 }) + cur : "—") +
           (p.currency === "CAD" || p.cost_cad == null
