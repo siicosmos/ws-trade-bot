@@ -339,3 +339,10 @@
     padding-left: 26px;
     border-left: 2px solid var(--accent, #1f6feb);
   }
+
+  /* card titles shrink with an ellipsis instead of running
+     under the header buttons at two-column widths */
+  .cardtitle {
+    overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; min-width: 0; flex: 1 1 auto;
+  }

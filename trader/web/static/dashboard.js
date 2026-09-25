@@ -241,8 +241,9 @@ function renderSummary(data) {
     const card = document.createElement("div");
     card.className = "card";
     card.innerHTML =
-      '<div class="label">' + esc(a.label) +
-      '<span style="float:right">' +
+      '<div class="label" style="display:flex;justify-content:space-between;align-items:center;gap:6px;min-width:0">' +
+      '<span class="cardtitle" title="' + esc(a.label) + '">' + esc(a.label) + '</span>' +
+      '<span style="display:flex;gap:4px;flex-shrink:0;align-items:center">' +
       '<button class="cur-toggle" style="padding:1px 8px;margin:0" title="flip account value currency" onclick="flipCardCurrency(\'' + esc(a.label) + '\')">' + cur.toUpperCase() + ' ⇄</button> ' +
       '<button class="cur-toggle" style="padding:1px 7px;margin:0" title="' + (hidden ? "show account value" : "hide account value") + '" onclick="toggleCardHidden(\'' + esc(a.label) + '\')">' + (hidden ? EYE_OFF_SVG : EYE_SVG) + '</button>' +
       '</span></div>' +
@@ -308,7 +309,7 @@ function renderSummary(data) {
           : fmtMoney(cad) + " cad · " + fmtMoney(usd) + " usd";
       };
       pc.innerHTML =
-        '<div class="label" style="display:flex;justify-content:space-between;align-items:center;gap:6px;min-width:0">paper · <span class="ptitle">' + esc(a.label).replace(/-/g, "\u2011") + '</span>' +
+        '<div class="label" style="display:flex;justify-content:space-between;align-items:center;gap:6px;min-width:0"><span class="cardtitle">paper · ' + esc(a.label).replace(/-/g, "\u2011") + '</span>' +
         '<span style="display:flex;gap:4px;flex-shrink:0;align-items:center">' +
         '<button class="mini-toggle" title="flip paper value currency" onclick="flipPaperCurrency(\'' + esc(a.label) + '\')">' + pcur.toUpperCase() + ' ⇄</button> ' +
         '<button class="mini-toggle" onclick="togglePaper(\'' + esc(a.label) + '\')">' + "holdings " + (open ? "▼" : "▲") + '</button> ' +
