@@ -317,6 +317,7 @@ def parse_alert(text: str, custom_patterns: Optional[List[str]] = None) -> Optio
     return Alert(
         action=action,
         ticker=ticker,
+        size=size,
         entry=_num(ENTRY_RE.search(text).group(1)) if ENTRY_RE.search(text) else None,
         stop_loss=_num(STOP_RE.search(text).group(1)) if STOP_RE.search(text) else None,
         take_profit=_num(TP_RE.search(text).group(1)) if TP_RE.search(text) else None,

@@ -483,9 +483,12 @@ class Store:
             )
 
     def open_risk(self, mode: str, account=None) -> float:
+        # option positions only: stocks carry no option-style
+        # open risk (and the x100 multiplier is options-specific)
         query = (
             "SELECT SUM(qty * COALESCE(avg_premium, 0) * 100) "
-            "FROM positions WHERE mode = ? AND qty > 0"
+            "FROM positions "
+            "WHERE mode = ? AND qty > 0 AND right IS NOT NULL"
         )
         params = [mode]
         if account is not None:

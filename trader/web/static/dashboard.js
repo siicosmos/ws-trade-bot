@@ -1016,6 +1016,13 @@ function renderSettings(s) {
       '</div></div>';
   }
   tiers += '</div>';
+  const stockTierVal = Object.entries(t.stock_size_tiers || {})
+    .map(([n, d]) => n + "=" + d).join(", ");
+  tiers += '<div class="set-grid" style="margin-top:10px">' +
+    '<div class="set-field full"><label title="dollar budget per size keyword for STOCK buys - separate from the option tiers">' +
+    'stock tiers (tier=dollars, comma-separated)</label>' +
+    '<input id="set-stock_size_tiers" type="text" value="' + esc(stockTierVal) + '" placeholder="small=50, medium=200, large=500"></div>' +
+    '</div>';
   html += _section("size tiers", tiers);
 
   // 5. accounts: per-account overrides (empty = inherit global)
@@ -1158,6 +1165,15 @@ async function saveSettings() {
     tiers[name] = { risk_pct_max: num("tier-" + name + "-risk"), contracts_min: parseInt(val("tier-" + name + "-min")), contracts_max: parseInt(val("tier-" + name + "-max")) };
   }
   trading.size_tiers = tiers;
+  trading.stock_size_tiers = (function() {
+    const map = {};
+    val("set-stock_size_tiers").split(",").forEach(function(part) {
+      const name = part.split("=")[0].trim().toLowerCase();
+      const dollars = parseFloat((part.split("=")[1] || "").trim());
+      if (name && !isNaN(dollars)) map[name] = dollars;
+    });
+    return map;
+  })();
   const accounts = (lastSettings.accounts || []).map((a, i) => {
     const numOrNull = (id) => {
       const v = val(id);

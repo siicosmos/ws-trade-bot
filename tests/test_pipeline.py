@@ -4052,3 +4052,45 @@ def test_margin_available_credits_short_market_value():
     assert row["max_buying_power"] == round(
         row["margin_available"] / 0.30, 2
     )
+
+
+def test_open_risk_excludes_stock_positions():
+    """stocks carry no option-style open risk (the x100
+    multiplier made 3 shares of LLYX read as $7,710)."""
+    cfg, store, account, risk = _setup(paper_account_value=10000)
+    ex = PaperExecutor(cfg, store, account)
+
+    # a stock buy books a position...
+    stock_buy = parse_alert("BOUGHT LLYX @ 25.7")
+    res = ex.execute(stock_buy, cfg, store)
+    assert res.ok
+    assert store.get_position("paper", "LLYX", "default") >= 1
+    # ...but it adds no open risk
+    assert store.open_risk("paper", "default") == 0.0
+
+    # an option buy does
+    opt_buy = parse_alert("BOUGHT 0DTE SPY 759c @ 1.5")
+    assert ex.execute(opt_buy, cfg, store).ok
+    assert store.open_risk("paper", "default") > 0
+
+
+def test_stock_buys_use_stock_size_tiers():
+    """sized stock alerts take their dollar budget from the
+    stock tiers - separate from the option contract tiers."""
+    cfg, store, account, risk = _setup(
+        paper_account_value=10000, position_size_cad=100,
+        cooldown_seconds=0,
+    )
+    cfg.trading.stock_size_tiers = {"small": 50, "large": 1000}
+    ex = PaperExecutor(cfg, store, account)
+
+    # unsized: the flat position size (100 / 25.7 -> 3)
+    assert ex.execute(parse_alert("BOUGHT LLYX @ 25.7"), cfg, store).qty == 3
+    # small: 50 / 25.7 -> 1
+    assert ex.execute(
+        parse_alert("BOUGHT LLYX @ 25.7 small size"), cfg, store
+    ).qty == 1
+    # large: 1000 / 25.7 -> 38
+    assert ex.execute(
+        parse_alert("BOUGHT LLYX @ 25.7 large size"), cfg, store
+    ).qty == 38

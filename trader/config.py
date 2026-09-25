@@ -63,6 +63,9 @@ class TradingConfig:
     order_type: str = "limit"
     limit_offset_pct: float = 0.5
     position_size_cad: float = 100.0
+    # per-tier dollar budget for stock buys (separate from the
+    # option contract tiers); {tier name: dollars}
+    stock_size_tiers: dict = field(default_factory=dict)
     risk_per_trade_pct: float = 5.0
     size_tiers: dict = field(default_factory=_default_size_tiers)
     max_contracts_per_trade: int = 10
@@ -222,12 +225,27 @@ def load_config(path: str) -> Config:
         for tier_name, tier_raw in raw_tiers.items():
             size_tiers[str(tier_name).lower()] = _norm_tier(tier_raw)
 
+    raw_stock_tiers = (
+        trading_raw.get("stock_size_tiers") or {}
+        if isinstance(trading_raw, dict) else {}
+    )
+    stock_size_tiers = {}
+    for k, v in raw_stock_tiers.items():
+        name = str(k).strip().lower()
+        if not name:
+            continue
+        try:
+            stock_size_tiers[name] = float(v)
+        except (TypeError, ValueError):
+            continue
+
     trading = TradingConfig(
         mode=mode,
         dry_run=mode != "live",
         order_type=str(_get(trading_raw, "order_type", "limit")).lower(),
         limit_offset_pct=float(_get(trading_raw, "limit_offset_pct", 0.5)),
         position_size_cad=float(_get(trading_raw, "position_size_cad", 100.0)),
+        stock_size_tiers=stock_size_tiers,
         risk_per_trade_pct=float(_get(trading_raw, "risk_per_trade_pct", 5.0)),
         max_contracts_per_trade=int(
             _get(trading_raw, "max_contracts_per_trade", 10)

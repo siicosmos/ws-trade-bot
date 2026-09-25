@@ -46,6 +46,9 @@ def get_settings(cfg) -> dict:
     for k in EDITABLE_LISTS:
         trading[k] = getattr(cfg.trading, k)
     trading["size_tiers"] = cfg.trading.size_tiers
+    trading["stock_size_tiers"] = dict(
+        getattr(cfg.trading, "stock_size_tiers", {}) or {}
+    )
     reader = {k: getattr(cfg.reader, k) for k in EDITABLE_READER}
     reader["auto_scroll"] = cfg.reader.auto_scroll
     for k in EDITABLE_READER_LISTS:
@@ -179,6 +182,54 @@ def apply_settings(cfg, payload: dict, config_path=None) -> tuple:
             continue
         setattr(cfg.trading, key, items)
         applied[f"trading.{key}"] = items
+
+    raw_stock = trading_payload.get("stock_size_tiers")
+    if raw_stock is not None:
+        # a mapping or "tier=dollars, tier=dollars"
+        if isinstance(raw_stock, dict):
+            pairs = list(raw_stock.items())
+        elif isinstance(raw_stock, str):
+            pairs = []
+            for part in raw_stock.split(","):
+                part = part.strip()
+                if not part:
+                    continue
+                name, sep, dollars = part.partition("=")
+                if not sep:
+                    errors.append(
+                        f"trading.stock_size_tiers: {part!r} "
+                        f"is not tier=dollars"
+                    )
+                    continue
+                pairs.append((name, dollars))
+        else:
+            pairs = None
+        if pairs is None:
+            errors.append(
+                "trading.stock_size_tiers: expected a mapping or a "
+                "comma-separated tier=dollars list"
+            )
+        else:
+            tiers_out = {}
+            for k, v in pairs:
+                tname = str(k).strip().lower()[:32]
+                try:
+                    dollars = float(v)
+                except (TypeError, ValueError):
+                    errors.append(
+                        f"trading.stock_size_tiers.{tname}: "
+                        f"not a number"
+                    )
+                    continue
+                if dollars < 0:
+                    errors.append(
+                        f"trading.stock_size_tiers.{tname}: "
+                        f"must be >= 0"
+                    )
+                    continue
+                tiers_out[tname] = dollars
+            cfg.trading.stock_size_tiers = tiers_out
+            applied["trading.stock_size_tiers"] = tiers_out
 
     tiers = trading_payload.get("size_tiers")
     if isinstance(tiers, dict):
@@ -480,6 +531,11 @@ def _persist(cfg, config_path):
     for key in EDITABLE_LISTS:
         trading[key] = getattr(cfg.trading, key)
     trading["size_tiers"] = cfg.trading.size_tiers
+    if getattr(cfg.trading, "stock_size_tiers", None):
+        trading["stock_size_tiers"] = cfg.trading.stock_size_tiers
+    trading["stock_size_tiers"] = dict(
+        getattr(cfg.trading, "stock_size_tiers", {}) or {}
+    )
 
     dc = raw.setdefault("discord", {})
     for field in (

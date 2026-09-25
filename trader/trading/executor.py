@@ -307,9 +307,21 @@ class PaperExecutor:
                 )
             breakdown = {}
             total = 0
+            # stock buys size from position_size_cad, with
+            # per-tier dollar budgets for sized alerts -
+            # separate from the option contract tiers
+            tier_name = (
+                (alert.size or "").lower() if alert.size else None
+            )
+            stock_tiers = getattr(
+                cfg.trading, "stock_size_tiers", None
+            ) or {}
+            budget = float(cfg.trading.position_size_cad)
+            if tier_name and tier_name in stock_tiers:
+                budget = float(stock_tiers[tier_name])
             for acct in effective_accounts(cfg):
                 label = account_label(acct)
-                qty = max(0, int(cfg.trading.position_size_cad / price))
+                qty = max(0, int(budget / price))
                 if qty < 1:
                     breakdown[label] = "0 (position size too small)"
                     continue
@@ -566,12 +578,25 @@ class WealthsimpleExecutor:
         total = 0
         order_ids = []
 
+        # stock buys size from position_size_cad, with per-tier
+        # dollar budgets for sized alerts - same as the paper
+        # path, separate from the option contract tiers
+        tier_name = (
+            (alert.size or "").lower() if alert.size else None
+        )
+        stock_tiers = getattr(
+            cfg.trading, "stock_size_tiers", None
+        ) or {}
+        budget = float(cfg.trading.position_size_cad)
+        if tier_name and tier_name in stock_tiers:
+            budget = float(stock_tiers[tier_name])
+
         for label, account_id, acct in self._account_ids(ws):
             if alert.action == "BUY":
                 if not price:
                     breakdown[label] = "no quote price available"
                     continue
-                qty = int(cfg.trading.position_size_cad / price)
+                qty = int(budget / price)
                 if qty < 1:
                     breakdown[label] = "0 (position size too small)"
                     continue

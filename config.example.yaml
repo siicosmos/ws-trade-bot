@@ -110,6 +110,12 @@ trading:
 
   # size tiers - risk caps by the size word in the alert
   # (any tiers you omit inherit these defaults; you can add custom names)
+  # dollar budget per size keyword for STOCK buys (separate
+  # from the option size tiers)
+  # stock_size_tiers:
+  #   small: 50
+  #   medium: 200
+  #   large: 500
   size_tiers:
     lotto:  { risk_pct_max: 0.5,  contracts_min: 1, contracts_max: 1 }
     micro:  { risk_pct_max: 0.5,  contracts_min: 1, contracts_max: 1 }
