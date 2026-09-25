@@ -159,7 +159,10 @@
   .pos th:nth-child(1), .pos td:nth-child(1),
   .pos th:nth-child(2), .pos td:nth-child(2) { white-space: normal;
     word-break: break-word; }
-  .papercard .pos { min-width: 0; }
+  /* the paper table lives in a card: give it a real floor so
+     its scroll wrapper engages instead of crushing columns to
+     one character per line */
+  .papercard .pos { min-width: 560px; }
   /* strategy badges stack under the qty instead of painting
      over the next column in the fixed-layout table */
   .pos .cellbadges { display: flex; flex-wrap: wrap;
