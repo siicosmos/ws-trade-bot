@@ -72,7 +72,7 @@ def kill_discord(log=print):
             name = (p.info["name"] or "").lower()
             if name.startswith("discord"):
                 p.terminate()
-                killed.append(p.pid)
+                killed.append(p.info["pid"])
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             continue
     if killed:
