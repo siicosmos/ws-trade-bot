@@ -1953,13 +1953,15 @@ def test_margin_requirement_breakdown():
     assert any("VDY" in p for p in row["margin_breakdown"])
 
 
-def test_spread_requirement_uses_full_width():
+def test_spread_requirement_uses_netted_max_loss():
     app, store, account = _make_app()
     client = app.test_client()
     account.open_option_positions = lambda: {
         "Personal": {
             "positions": [
-                # 5-point wide credit spread, 18 credit, settled
+                # 5-point wide credit spread, 18 credit, settled:
+                # ws's own requirement (risk_cad, the netted max
+                # loss) wins over the raw wing width
                 {"underlying": "SPX", "spread": True, "short": True,
                  "strike": "6100/6105", "qty": 1,
                  "risk_cad": round(482 * 1.403, 2),
@@ -1979,12 +1981,11 @@ def test_spread_requirement_uses_full_width():
     account._resolve = lambda: [("Personal", "pers")]
     summary = client.get("/api/summary").get_json()
     row = next(a for a in summary["accounts"] if a["label"] == "Personal")
-    # full width: 5 x 100 x 1 x 1.403 - not width minus the credit
-    assert row["margin_requirement"] == round(5 * 100 * 1.403, 2)
+    # the ws-provided netted max loss, not the raw width
+    assert row["margin_requirement"] == round(482 * 1.403, 2)
     assert row["margin_available"] == round(
-        1767.30 - round(5 * 100 * 1.403, 2), 2
+        1767.30 - round(482 * 1.403, 2), 2
     )
-    assert any("width" in p for p in row["margin_breakdown"])
 
 
 def test_update_relevance_gating(monkeypatch, tmp_path):
@@ -3962,3 +3963,44 @@ def test_paper_position_rows_carry_price_and_cost():
     assert row["cost"] == 500.0     # 5 contracts x $1 x 100
     assert row["value"] == 1250.0   # 5 x $2.50 x 100
     assert row["pnl"] == 150.0      # percent
+
+
+def test_credit_spread_margin_nets_the_credit():
+    """WS's defined-risk rule: a sold spread's requirement is
+    the max loss (width less the credit received), not the raw
+    wing width - and the used-bar counts borrowing plus the
+    capital committed by short structures."""
+    app, store, account = _make_app()
+    client = app.test_client()
+    # 5-wide credit spread sold at 2.60: max loss = 240 usd
+    account.open_option_positions = lambda: {
+        "Personal": {
+            "positions": [
+                {"underlying": "SPX", "spread": True, "short": True,
+                 "strike": "7750/7755", "qty": 1,
+                 "risk_cad": round(240 * 1.41, 2),
+                 "cost_cad": round(-260 * 1.41, 2),
+                 "cost_usd": -260.0, "market_value": 0.0},
+            ],
+            "fx": 1.41,
+        },
+    }
+    account.stock_holdings = lambda: {"Personal": []}
+    account.funding_balances = lambda: {
+        "Personal": [{"currency": "CAD", "amount": -100.0}],
+    }
+    account.values = lambda: {"Personal": 10000.0}
+    account.account_type_map = lambda: {"pers": "PERSONAL"}
+    account._resolve = lambda: [("Personal", "pers")]
+    summary = client.get("/api/summary").get_json()
+    row = next(a for a in summary["accounts"] if a["label"] == "Personal")
+    # requirement: the ws-provided netted max loss in cad
+    assert row["margin_requirement"] == round(240 * 1.41, 2)
+    # used-bar: the 100 loan plus the 240usd committed by the
+    # short spread (in cad)
+    assert row["margin_used"] == 100.0
+    assert row["margin_used_total"] == round(
+        100.0 + 240 * 1.41, 2
+    )
+    # portfolio stays equity + the loan only
+    assert row["portfolio_value"] == round(10000.0 + 100.0, 2)

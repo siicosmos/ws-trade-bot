@@ -238,6 +238,28 @@ def _paper_card_metrics(
             "vertical", "butterfly", "condor",
             "iron fly", "ratio",
         ):
+            # the requirement is the max loss (wing width less
+            # the credit received) for sold structures - the
+            # same rule as the real account's ws rows. legs are
+            # the ledger positions: signed qty, per-unit avg.
+            net_cost = 0.0
+            for leg in legs:
+                row = by_key.get(leg.get("contract_key")) or {}
+                try:
+                    qty = float(leg["qty"] or 0)
+                except (TypeError, ValueError):
+                    continue
+                per_unit = float(row.get("avg") or 0)
+                # a leg's cost in the same sign convention as the
+                # real rows: long pays, short collects
+                net_cost += qty * per_unit * 100
+            amount = None
+            width_total = (info.get("width") or 0) * 100 * (
+                info.get("qty") or 0
+            )
+            if net_cost < 0:
+                # credit structure: width less the credit
+                amount = max(0.0, width_total - abs(net_cost))
             holdings.append(
                 Holding(
                     symbol=sym,
@@ -246,6 +268,7 @@ def _paper_card_metrics(
                     structure=info.get("name"),
                     qty=info.get("qty") or 0,
                     width=info.get("width") or 0,
+                    amount_native=amount,
                 )
             )
         else:
@@ -421,8 +444,11 @@ def _margin_metrics(ctx, label, value, live, sk, conv_fx,
             )
             cur_fx = conv_fx if cur == "usd" else 1.0
             if r.get("spread"):
-                # WS charges spreads the full width
-                # without netting the premium
+                # ws's defined-risk rule: the requirement is the
+                # max loss - the width less the credit received
+                # (risk_cad carries ws's own amount or the
+                # mapping's netted derivation, both in cad).
+                # the raw width is only the last-resort floor.
                 width = None
                 try:
                     s1, s2 = str(
@@ -431,21 +457,26 @@ def _margin_metrics(ctx, label, value, live, sk, conv_fx,
                     width = abs(float(s2) - float(s1))
                 except (ValueError, AttributeError):
                     width = None
-                amount = None
-                if not width:
-                    # no derivable width - fall back
-                    # to defined risk / full value
-                    if r.get("short"):
-                        amount = (
-                            (r.get("risk_cad") or 0)
-                            + abs(
-                                r.get("cost_cad") or 0
-                            )
-                        ) / cur_fx
-                    else:
-                        amount = abs(
-                            r.get("market_value") or 0
-                        )
+                risk_cad = r.get("risk_cad")
+                if risk_cad:
+                    # native amount for compute_requirement
+                    amount = float(risk_cad) / cur_fx
+                elif r.get("short"):
+                    credit_cad = abs(
+                        r.get("cost_cad") or 0
+                    )
+                    width_total_cad = (
+                        (width or 0) * 100
+                        * (r.get("qty") or 1) * cur_fx
+                    )
+                    amount = max(
+                        0.0,
+                        width_total_cad - credit_cad,
+                    ) / cur_fx
+                else:
+                    amount = abs(
+                        r.get("market_value") or 0
+                    )
                 holdings.append(
                     Holding(
                         symbol=r.get("underlying") or "?",
@@ -494,6 +525,18 @@ def _margin_metrics(ctx, label, value, live, sk, conv_fx,
                 else:
                     used_cad_raw += -amt
                     used += -amt
+    # utilization the way ws reports it: borrowing plus the
+    # capital committed by short (credit) structures - the
+    # used-bar divides this by used + available. the plain
+    # margin_used (the loan) still feeds portfolio value.
+    used_total = used
+    if live is not None:
+        for r in live["positions"]:
+            if not (r.get("spread") and r.get("short")):
+                continue
+            risk_cad = r.get("risk_cad")
+            if risk_cad:
+                used_total += float(risk_cad)
     margin_used = round(used, 2)
     # NLV already nets the loan as negative cash, so
     # availability is simply equity minus requirement
@@ -509,6 +552,7 @@ def _margin_metrics(ctx, label, value, live, sk, conv_fx,
         "margin_requirement": margin_req,
         "margin_breakdown": req_parts,
         "margin_used": margin_used,
+        "margin_used_total": round(used_total, 2),
         "margin_used_cad": round(used_cad_raw, 2)
         if used_cad_raw else 0.0,
         "margin_used_usd": round(used_usd_raw, 2)

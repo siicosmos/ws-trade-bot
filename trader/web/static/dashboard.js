@@ -405,7 +405,7 @@ function paperMarginUsageBar(a) {
 
 function marginUsageBar(a) {
   if (a.margin_available == null || isNaN(a.margin_available)) return "";
-  const used = a.margin_used || 0;
+  const used = a.margin_used_total != null ? a.margin_used_total : (a.margin_used || 0);
   const total = used + a.margin_available;
   const pct = total > 0 ? Math.min(100, used / total * 100) : 0;
   const color = pct >= 80 ? "#f85149" : pct >= 50 ? "#d29922" : "#3fb950";

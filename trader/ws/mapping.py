@@ -256,9 +256,25 @@ def map_options(raw, usd_cad_quote):
                 risk_cad = None
                 risk_m = margin_amount
                 if risk_m is None and cost_usd is not None:
-                    # debit spread: the debit is the max loss
-                    if not market_value or market_value <= cost_usd:
-                        risk_m = abs(cost_usd)
+                    if cost_usd >= 0:
+                        # debit spread: the debit is the max loss
+                        if (not market_value
+                                or market_value <= cost_usd):
+                            risk_m = abs(cost_usd)
+                    else:
+                        # credit spread: max loss is the width
+                        # less the credit received - never the
+                        # credit amount itself
+                        width_total = (
+                            (strikes[-1] - strikes[0])
+                            * 100 * qty
+                            if strikes and qty else None
+                        )
+                        if width_total is not None:
+                            risk_m = max(
+                                0.0,
+                                width_total - abs(cost_usd),
+                            )
                 if risk_m is not None:
                     risk_cad = round(
                         risk_m * (
@@ -270,15 +286,13 @@ def map_options(raw, usd_cad_quote):
                     )
                 market_pct = None
                 if market_value is not None and cost_usd:
+                    # return on the premium at risk: the debit
+                    # for bought structures, the credit for sold
+                    # ones (an expired credit keeps +100%)
                     profit = market_value - cost_usd
-                    if risk_m:
-                        market_pct = round(
-                            profit / risk_m * 100, 1
-                        )
-                    elif cost_usd:
-                        market_pct = round(
-                            profit / abs(cost_usd) * 100, 1
-                        )
+                    market_pct = round(
+                        profit / abs(cost_usd) * 100, 1
+                    )
                 per_unit = (
                     cost_usd / (qty * 100)
                     if cost_usd and qty else None
