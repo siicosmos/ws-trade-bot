@@ -2667,9 +2667,14 @@ def test_paper_positions_detail():
     r = rows[0]
     assert r["contract_key"] == "SPX-2026-09-25-6000-C"
     assert r["qty"] == 2
-    assert r["avg"] == 1.0
-    # live quote 1.5 usd x 100 x 2 x fx 1.4
-    assert r["value"] == round(2 * 1.5 * 100 * 1.4, 2)
+    # live quote 1.5 usd x 100 x 2 = 300 usd; cad in brackets
+    assert r["value"] == 300.0
+    assert r["value_cad"] == round(2 * 1.5 * 100 * 1.4, 2)
+    assert r["cost"] == 200.0
+    assert r["cost_cad"] == 280.0
+    assert r["price"] == 1.5
+    assert r["pnl"] == 50.0
+    assert r["pnl_dollars"] == 100.0
     # cost 2 x 1.0 x 100 x 1.4 -> +50%
     assert r["pnl"] == 50.0
 

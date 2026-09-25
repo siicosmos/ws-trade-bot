@@ -197,13 +197,14 @@ class PaperLedger:
             else:
                 price = quote["price"]
                 usd = quote.get("usd", is_option)
+            # usd rows quote in usd and book in cad - the ui shows
+            # the usd amounts with the cad value in brackets, so
+            # value/cost stay in the quote currency here
             mult = 100 if is_option else 1
-            value = (pos["qty"] or 0) * price * mult * (
-                fx if usd else 1.0
-            )
+            value = (pos["qty"] or 0) * price * mult
             cost = (
                 (pos["qty"] or 0) * (pos.get("avg_premium") or 0.0)
-                * mult * (fx if usd else 1.0)
+                * mult
             )
             pnl = (
                 round((value / cost - 1) * 100, 1)
@@ -218,11 +219,19 @@ class PaperLedger:
                     "qty": pos["qty"],
                     "avg": round(pos.get("avg_premium") or 0.0, 4),
                     # realtime per-unit price and the (static)
-                    # total cost basis for the holdings table
+                    # total cost basis for the holdings table,
+                    # plus the cad conversion for the brackets
                     "price": round(price, 4),
                     "value": round(value, 2),
                     "cost": round(cost, 2),
+                    "value_cad": round(
+                        value * (fx if usd else 1.0), 2
+                    ),
+                    "cost_cad": round(
+                        cost * (fx if usd else 1.0), 2
+                    ),
                     "pnl": pnl,
+                    "pnl_dollars": round(value - cost, 2),
                 }
             )
         return rows

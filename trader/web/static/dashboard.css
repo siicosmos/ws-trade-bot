@@ -145,7 +145,13 @@
   #modalBox .mrow { display: flex; gap: 8px; justify-content: flex-end; }
   #positions, #stock-positions { overflow-x: auto;
     -webkit-overflow-scrolling: touch; }
-  .pos { table-layout: fixed; font-size: 12px; min-width: 620px; }
+  /* wide screens: no horizontal scroll - adaptive column
+     widths spread across the full panel */
+  @media (min-width: 641px) {
+    #positions, #stock-positions { overflow-x: visible; }
+    .pos { table-layout: auto; min-width: 0; width: 100%; }
+  }
+  .pos { font-size: 12px; min-width: 620px; }
   .pos th, .pos td { padding: 6px 5px; white-space: nowrap; }
   /* the account and contract columns are the ones allowed to
      wrap - labels, keys and strategy tags grow long; the rest

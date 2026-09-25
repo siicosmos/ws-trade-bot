@@ -213,11 +213,10 @@ def test_positions_table_always_fits_panel():
     import trader.web.dashboard as dash
 
     html = dash.DASHBOARD_HTML + dash.DASHBOARD_CSS
-    # fixed layout makes the table mathematically unable to exceed
-    # its container, and the panels got wider
-    assert "table-layout: fixed" in html
-    assert 'class="pos"' in dash.DASHBOARD_JS
-    assert "max-width: 1400px" in html
+    # scroll on small screens, adaptive widths on wide ones
+    assert "table-layout: auto" in html
+    assert "@media (min-width: 641px)" in html
+    assert "#positions, #stock-positions { overflow-x: visible; }" in html
 
 
 def test_badges_do_not_wrap():

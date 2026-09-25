@@ -348,13 +348,24 @@ function renderSummary(data) {
           rows.map(function(r) {
             const rc = r.pnl == null ? "var(--muted)" : r.pnl >= 0 ? "var(--green)" : "var(--red)";
             const cur = r.usd ? " usd" : "";
+            const isOpt = r.kind === "option";
+            // unified: $usd ($cad) for totals, per-contract
+            // bracket on option prices, $% (+$$) for returns
+            const cadB = (v) => (r.usd && v != null
+              ? ' <span class="subv">($' + v.toLocaleString("en-CA", { maximumFractionDigits: 2 }) + ")</span>" : "");
+            const priceCell = r.price == null ? "—" :
+              "$" + r.price.toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) +
+              (isOpt && !phidden ? ' <span class="subv">($' + (r.price * 100).toLocaleString("en-CA", { maximumFractionDigits: 0 }) + ")</span>" : "");
             return '<tr><td>' + esc(r.contract_key) + '</td>' +
               '<td class=num>' + r.qty + '</td>' +
               '<td class=num>' + (r.avg != null ? "$" + r.avg : "—") + '</td>' +
-              '<td class=num>' + (phidden ? "••••••" : (r.price != null ? "$" + r.price.toLocaleString("en-CA", { maximumFractionDigits: 2 }) + cur : "—")) + '</td>' +
-              '<td class=num>' + (phidden? "••••••" : fmtMoney(r.value)) + '</td>' +
-              '<td class=num>' + (phidden? "••••••" : (r.cost != null ? "$" + r.cost.toLocaleString("en-CA", { maximumFractionDigits: 2 }) + cur : "—")) + '</td>' +
-              '<td class=num style="color:' + rc + '">' + (r.pnl == null ? "—" : (r.pnl >= 0 ? "+" : "") + r.pnl + "%") + '</td></tr>';
+              '<td class=num>' + (phidden ? "••••••" : priceCell) + '</td>' +
+              '<td class=num>' + (phidden ? "••••••" : fmtMoney(r.value) + cadB(r.value_cad)) + '</td>' +
+              '<td class=num>' + (phidden ? "••••••" : (r.cost != null ? fmtMoney(r.cost) + cadB(r.cost_cad) : "—")) + '</td>' +
+              '<td class=num style="color:' + rc + '">' + (r.pnl == null ? "—" :
+                (r.pnl >= 0 ? "+" : "") + r.pnl.toFixed(1) + "%" +
+                (phidden ? "" : ' <span class="subv">(' + (r.pnl_dollars >= 0 ? "+" : "-$") +
+                  Math.abs(r.pnl_dollars).toLocaleString("en-CA", { maximumFractionDigits: 2 }) + ")</span>")) + '</td></tr>';
           }).join("") + '</table></div>' : '<div class="empty" style="font-size:12px;padding:8px">no positions</div>') : '');
       wrap.appendChild(pc);
     }
@@ -477,7 +488,8 @@ function renderPositionsInto(elId, rows, emptyText) {
             ? "$" + p.current_price.toLocaleString("en-CA", { maximumFractionDigits: 2 }) + cur
             : "—")
         : (p.current_price != null
-        ? (p.spread ? fmtSigned(p.current_price) : "$" + p.current_price) + (mv != null
+        ? (p.spread ? fmtSigned(p.current_price) : "$" + p.current_price) +
+          '<span class="subv">($' + Math.abs(p.current_price * 100).toLocaleString("en-CA", { maximumFractionDigits: 0 }) + ")</span>" + (mv != null
           ? '<span class="subv">(' + (p.short || (p.spread && mv < 0) ? "-$" : "$") +
             Math.abs(mv).toLocaleString("en-CA", { maximumFractionDigits: 2 }) + ")</span>"
           : "")
