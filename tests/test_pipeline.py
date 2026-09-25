@@ -1953,15 +1953,15 @@ def test_margin_requirement_breakdown():
     assert any("VDY" in p for p in row["margin_breakdown"])
 
 
-def test_spread_requirement_uses_netted_max_loss():
+def test_spread_requirement_uses_full_width():
     app, store, account = _make_app()
     client = app.test_client()
     account.open_option_positions = lambda: {
         "Personal": {
             "positions": [
                 # 5-point wide credit spread, 18 credit, settled:
-                # ws's own requirement (risk_cad, the netted max
-                # loss) wins over the raw wing width
+                # ws charges the FULL width even when the credit
+                # was kept (verified against ws's margin page)
                 {"underlying": "SPX", "spread": True, "short": True,
                  "strike": "6100/6105", "qty": 1,
                  "risk_cad": round(482 * 1.403, 2),
@@ -1981,11 +1981,13 @@ def test_spread_requirement_uses_netted_max_loss():
     account._resolve = lambda: [("Personal", "pers")]
     summary = client.get("/api/summary").get_json()
     row = next(a for a in summary["accounts"] if a["label"] == "Personal")
-    # the ws-provided netted max loss, not the raw width
-    assert row["margin_requirement"] == round(482 * 1.403, 2)
+    # full width: 5 x 100 x 1 x 1.403 - risk_cad is not the
+    # requirement, it is the netted max-loss display metric
+    assert row["margin_requirement"] == round(5 * 100 * 1.403, 2)
     assert row["margin_available"] == round(
-        1767.30 - round(482 * 1.403, 2), 2
+        1767.30 - round(5 * 100 * 1.403, 2), 2
     )
+    assert any("width" in p for p in row["margin_breakdown"])
 
 
 def test_update_relevance_gating(monkeypatch, tmp_path):
@@ -3965,14 +3967,13 @@ def test_paper_position_rows_carry_price_and_cost():
     assert row["pnl"] == 150.0      # percent
 
 
-def test_credit_spread_margin_nets_the_credit():
-    """WS's defined-risk rule: a sold spread's requirement is
-    the max loss (width less the credit received), not the raw
-    wing width - and the used-bar counts borrowing plus the
-    capital committed by short structures."""
+def test_credit_spread_margin_full_width_and_used_bar():
+    """ws's margin page verified: sold spreads carry the FULL
+    wing width (even expired ones at 100% return); the
+    utilization bar is the loan against available."""
     app, store, account = _make_app()
     client = app.test_client()
-    # 5-wide credit spread sold at 2.60: max loss = 240 usd
+    # 5-wide credit spread sold at 2.60, expired worthless
     account.open_option_positions = lambda: {
         "Personal": {
             "positions": [
@@ -3994,8 +3995,8 @@ def test_credit_spread_margin_nets_the_credit():
     account._resolve = lambda: [("Personal", "pers")]
     summary = client.get("/api/summary").get_json()
     row = next(a for a in summary["accounts"] if a["label"] == "Personal")
-    # requirement: the ws-provided netted max loss in cad
-    assert row["margin_requirement"] == round(240 * 1.41, 2)
+    # full width, not the netted max loss
+    assert row["margin_requirement"] == round(500 * 1.41, 2)
     # the utilization bar is the loan against available
     assert row["margin_used"] == 100.0
     # portfolio stays equity + the loan only

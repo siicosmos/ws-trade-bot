@@ -238,28 +238,8 @@ def _paper_card_metrics(
             "vertical", "butterfly", "condor",
             "iron fly", "ratio",
         ):
-            # the requirement is the max loss (wing width less
-            # the credit received) for sold structures - the
-            # same rule as the real account's ws rows. legs are
-            # the ledger positions: signed qty, per-unit avg.
-            net_cost = 0.0
-            for leg in legs:
-                row = by_key.get(leg.get("contract_key")) or {}
-                try:
-                    qty = float(leg["qty"] or 0)
-                except (TypeError, ValueError):
-                    continue
-                per_unit = float(row.get("avg") or 0)
-                # a leg's cost in the same sign convention as the
-                # real rows: long pays, short collects
-                net_cost += qty * per_unit * 100
-            amount = None
-            width_total = (info.get("width") or 0) * 100 * (
-                info.get("qty") or 0
-            )
-            if net_cost < 0:
-                # credit structure: width less the credit
-                amount = max(0.0, width_total - abs(net_cost))
+            # ws's maintenance rule: sold spreads carry the full
+            # wing width - the same rule as the real account
             holdings.append(
                 Holding(
                     symbol=sym,
@@ -268,7 +248,6 @@ def _paper_card_metrics(
                     structure=info.get("name"),
                     qty=info.get("qty") or 0,
                     width=info.get("width") or 0,
-                    amount_native=amount,
                 )
             )
         else:
@@ -444,11 +423,11 @@ def _margin_metrics(ctx, label, value, live, sk, conv_fx,
             )
             cur_fx = conv_fx if cur == "usd" else 1.0
             if r.get("spread"):
-                # ws's defined-risk rule: the requirement is the
-                # max loss - the width less the credit received
-                # (risk_cad carries ws's own amount or the
-                # mapping's netted derivation, both in cad).
-                # the raw width is only the last-resort floor.
+                # ws's maintenance rule: sold spreads carry the
+                # FULL wing width (verified against ws's margin
+                # page: stocks at 30% + width x 100 x qty = the
+                # reported total). risk_cad (the netted max loss)
+                # stays a display metric, not the requirement.
                 width = None
                 try:
                     s1, s2 = str(
@@ -457,26 +436,21 @@ def _margin_metrics(ctx, label, value, live, sk, conv_fx,
                     width = abs(float(s2) - float(s1))
                 except (ValueError, AttributeError):
                     width = None
-                risk_cad = r.get("risk_cad")
-                if risk_cad:
-                    # native amount for compute_requirement
-                    amount = float(risk_cad) / cur_fx
-                elif r.get("short"):
-                    credit_cad = abs(
-                        r.get("cost_cad") or 0
-                    )
-                    width_total_cad = (
-                        (width or 0) * 100
-                        * (r.get("qty") or 1) * cur_fx
-                    )
-                    amount = max(
-                        0.0,
-                        width_total_cad - credit_cad,
-                    ) / cur_fx
-                else:
-                    amount = abs(
-                        r.get("market_value") or 0
-                    )
+                amount = None
+                if not width:
+                    # no derivable width - fall back to the
+                    # full width implied by risk + credit
+                    if r.get("short"):
+                        amount = (
+                            (r.get("risk_cad") or 0)
+                            + abs(
+                                r.get("cost_cad") or 0
+                            )
+                        ) / cur_fx
+                    else:
+                        amount = abs(
+                            r.get("market_value") or 0
+                        )
                 holdings.append(
                     Holding(
                         symbol=r.get("underlying") or "?",

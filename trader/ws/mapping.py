@@ -262,9 +262,11 @@ def map_options(raw, usd_cad_quote):
                                 or market_value <= cost_usd):
                             risk_m = abs(cost_usd)
                     else:
-                        # credit spread: max loss is the width
-                        # less the credit received - never the
-                        # credit amount itself
+                        # credit spread: the max loss (a display
+                        # metric for open risk) is the width less
+                        # the credit received - the margin
+                        # requirement itself stays the full width
+                        # (charged in the web layer)
                         width_total = (
                             (strikes[-1] - strikes[0])
                             * 100 * qty
