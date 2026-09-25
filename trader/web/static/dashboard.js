@@ -1051,12 +1051,12 @@ function renderSettings(s) {
       "how often the reader scans the discord window") +
     _numField("set-reader-max_items", "max messages kept", rd.max_items,
       "how many recent messages the reader scans each poll") +
-    '<div class="set-field"><label title="channel=server pairs; the reader selects the server before clicking the channel">' +
-    'channel \u2192 server pairs (comma-separated)</label>' +
+    '<div class="set-field"><label title="server=channel pairs: the reader selects the server first, then clicks the channel">' +
+    'server \u2192 channel pairs (comma-separated)</label>' +
     '<input id="set-reader-channel_servers" type="text" value="' + esc(
       Object.entries(rd.channel_servers || {})
-        .map(([c, s]) => c + "=" + s).join(", ")
-    ) + '" placeholder="player-alerts=SPX Plays"></div>' +
+        .map(([c, s]) => s + "=" + c).join(", ")
+    ) + '" placeholder="SPX Plays=player-alerts"></div>' +
     _numField("set-reader-discord_reopen_seconds", "discord reopen (s)",
       rd.discord_reopen_seconds,
       "seconds between attempts to start discord when no window shows") +
@@ -1185,8 +1185,8 @@ async function saveSettings() {
       channel_servers: (function() {
         const map = {};
         val("set-reader-channel_servers").split(",").forEach(function(part) {
-          const name = part.split("=")[0].trim().toLowerCase();
-          const server = (part.split("=")[1] || "").trim();
+          const server = part.split("=")[0].trim();
+          const name = (part.split("=")[1] || "").trim().toLowerCase();
           if (name && server) map[name] = server;
         });
         return map;
@@ -1289,9 +1289,12 @@ function renderMe() {
   if (me) {
     el.innerHTML = '<span class="tag ignored mini">' + esc(me.username) +
       '</span>';
-    const ub = document.getElementById("users-btn");
-    if (ub) ub.style.display = isAdmin() ? "" : "none";
   }
+  // legacy token sessions have no user record - the users
+  // button must still appear for the owner (isAdmin() covers
+  // the legacy and pre-poll cases)
+  const ub = document.getElementById("users-btn");
+  if (ub) ub.style.display = isAdmin() ? "" : "none";
   // viewer sessions: hide the admin-only actions (server 403s
   // them anyway - this keeps the ui honest)
   const save = document.getElementById("settings-save");

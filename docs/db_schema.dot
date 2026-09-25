@@ -58,6 +58,15 @@ digraph db_schema {
       <TR><TD ALIGN="LEFT">value</TD><TD ALIGN="LEFT">TEXT</TD></TR>
     </TABLE>>];
 
+  users [label=<
+    <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4" BGCOLOR="white">
+      <TR><TD BGCOLOR="#8957e5" COLSPAN="2"><FONT COLOR="white"><B>users</B></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT"><B>username</B></TD><TD ALIGN="LEFT">PK</TD></TR>
+      <TR><TD ALIGN="LEFT">password_hash</TD><TD ALIGN="LEFT">pbkdf2 · 200k iters</TD></TR>
+      <TR><TD ALIGN="LEFT">role</TD><TD ALIGN="LEFT">TEXT · admin</TD></TR>
+      <TR><TD ALIGN="LEFT">created_ts / last_login_ts</TD><TD ALIGN="LEFT">TEXT · UTC</TD></TR>
+    </TABLE>>];
+
   signals -> trades [arrowhead=crow, arrowtail=none, dir=both,
     label="1 signal · 0..* trades\nmessage_key / dedupe_key"];
 }

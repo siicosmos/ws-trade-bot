@@ -73,3 +73,11 @@ and open positions - kilobytes.
 - `idx_trades_mode_ts` already backs date-ranged scans
 - `received_ts` is NULL on signals recorded before that column
   existed - treat it as unknown, do not sort on it
+
+## Users table (access model)
+
+One row per human account - `username` (PK), a salted
+pbkdf2-hashed password (200k iterations), `role` and login
+timestamps. At this project's scale (a handful of users) it is
+a few KB; no maintenance needed. Passwords never leave the
+hash: verification is constant-time, listings omit the hash.
