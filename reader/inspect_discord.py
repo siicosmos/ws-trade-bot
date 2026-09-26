@@ -246,3 +246,36 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+def tree_entry_names(window, sample=12):
+    """Named clickable entries in the window's ui tree - the
+    diagnostic for why a channel/server entry cannot be
+    found."""
+    import inspect_discord as _self
+
+    names = []
+    try:
+        walker = auto.WalkControl(
+            window, includeTop=False, maxDepth=30
+        )
+        for ctrl, depth in walker:
+            if len(names) >= sample:
+                break
+            try:
+                if ctrl.ControlType not in (
+                    auto.ControlType.ListItemControl,
+                    auto.ControlType.TreeItemControl,
+                    auto.ControlType.HyperlinkControl,
+                    auto.ControlType.ButtonControl,
+                    auto.ControlType.TabItemControl,
+                ):
+                    continue
+                name = (ctrl.Name or "").strip()
+            except UIAError:
+                continue
+            if name and name not in names:
+                names.append(name[:40])
+    except UIAError:
+        pass
+    return names

@@ -18,6 +18,7 @@ except ImportError:
 
 from inspect_discord import (
     close_extra_windows,
+    tree_entry_names,
     find_channel_control,
     click_channel_control,
     find_discord_window,
@@ -1163,6 +1164,13 @@ def main():
         log("channel marker empty - following whatever channel is open")
     if channels:
         log(f"allowed channels: {channels}")
+    if channel_servers:
+        log(f"channel servers: {channel_servers}")
+    else:
+        log(
+            "channel servers: none - set server->channel pairs in "
+            "the settings so the reader can switch servers"
+        )
 
     container = None
     current_channel = None
@@ -1274,14 +1282,17 @@ def main():
                         log(
                             f"no {target!r} entry and no server "
                             f"{server!r} visible in the discord "
-                            f"tree"
+                            f"tree; clickable entries: "
+                            f"{tree_entry_names(window)}"
                         )
                 elif wait_attempts % 120 == 0:
                     log(
-                        f"channel {title_channel!r} not allowed "
-                        f"and no {target!r} entry visible - "
-                        f"select the server once so the channel "
-                        f"appears in the sidebar"
+                        f"channel {title_channel!r} not allowed and "
+                        f"no {target!r} entry visible - set a "
+                        f"server->channel pair in the settings "
+                        f"(e.g. 'SPX Plays=player-alerts'); "
+                        f"clickable entries: "
+                        f"{tree_entry_names(window)}"
                     )
             if title_channel:
                 last_title_channel = title_channel
