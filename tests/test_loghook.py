@@ -38,11 +38,18 @@ def test_batcher_no_url_is_noop():
 
 
 def test_tee_stream_forwards_and_batches():
+    import re as _re
+
     out = io.StringIO()
     batcher = WebhookBatcher("")
     tee = TeeStream(out, batcher)
     tee.write("hello\n")
     tee.write("")
     tee.write("\n")
-    assert out.getvalue() == "hello\n\n"
+    # every console line carries the log timestamp
+    lines = out.getvalue().splitlines()
+    assert len(lines) == 2
+    for line in lines:
+        assert _re.match(r"\d{2}/[A-Za-z]{3}/\d{4} \d{2}:\d{2}:\d{2} ", line)
+    assert lines[0].endswith("hello")
     tee.flush()

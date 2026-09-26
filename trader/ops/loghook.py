@@ -91,27 +91,29 @@ class TeeStream:
         self._buf = ""
 
     def write(self, s):
-        self._original.write(s)
-        # line-buffered: stamp every complete line (banners,
-        # tracebacks, library logs) with the log format
+        # line-buffered: every complete line (console, webhook
+        # and file copies) is stamped with the log format
         self._buf += s
         while "\n" in self._buf:
             line, self._buf = self._buf.split("\n", 1)
             self._emit(line)
 
     def _emit(self, line):
-        if not line.strip():
-            return
         stamped = (
             time.strftime("%d/%b/%Y %H:%M:%S") + " " + line
         )
-        if self._batcher is not None:
-            self._batcher.add(stamped)
-        if self._log_file is not None:
-            self._log_file.add(stamped)
+        self._original.write(stamped + "\n")
+        if line.strip():
+            if self._batcher is not None:
+                self._batcher.add(stamped)
+            if self._log_file is not None:
+                self._log_file.add(stamped)
 
     def flush(self):
         self._original.flush()
+        if self._buf:
+            line, self._buf = self._buf, ""
+            self._emit(line)
 
     def __getattr__(self, name):
         return getattr(self._original, name)
