@@ -1266,7 +1266,12 @@ def create_app(cfg, store: Store, risk, executor, account=None,
         tiers = getattr(
             cfg.trading, "stock_size_tiers", None
         ) or {}
+        target_label = str(
+            (request.get_json(silent=True) or {}).get("label") or ""
+        ).strip()
         values = ledger.values() or {}
+        if target_label and target_label in values:
+            values = {target_label: values[target_label]}
         adjusted = []
         for label, value in values.items():
             if not value or value <= 0:

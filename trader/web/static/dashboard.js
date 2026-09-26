@@ -266,6 +266,12 @@ function renderSummary(data) {
     });
   }
   const el = document.getElementById("accounts");
+  // preserve the horizontal scroll of the holdings tables
+  // across the 5s re-render
+  const scrollMap = {};
+  el.querySelectorAll(".pos-scroll[data-scrollkey]").forEach(function(w) {
+    if (w.scrollLeft) scrollMap[w.dataset.scrollkey] = w.scrollLeft;
+  });
   el.innerHTML = "";
   let cardIdx = 0;
   for (const a of data.accounts) {
@@ -385,7 +391,7 @@ function renderSummary(data) {
           ? '<div class="sub"><span>margin available ' + (phidden? "••••••" : fmtMoney(a.paper_margin_available) + " cad") + '</span></div>'
           : '') + paperMarginUsageBar(a) +
         (open ? (rows.length ?
-          '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch"><table class="pos" style="margin-top:10px;font-size:12px"><tr><th>Positions &amp; Holdings</th><th class=num>Qty</th><th class=num>Avg $</th><th class=num>Price $</th><th class=num>Value $</th><th class=num>Total Cost $</th><th class=num>Return</th></tr>' +
+          '<div class="pos-scroll" data-scrollkey="paper:' + esc(a.label) + '" style="overflow-x:auto;-webkit-overflow-scrolling:touch"><table class="pos" style="margin-top:10px;font-size:12px"><tr><th>Positions &amp; Holdings</th><th class=num>Qty</th><th class=num>Avg $</th><th class=num>Price $</th><th class=num>Value $</th><th class=num>Total Cost $</th><th class=num>Return</th></tr>' +
           rows.map(function(r) {
             const rc = r.pnl == null ? "var(--muted)" : r.pnl >= 0 ? "var(--green)" : "var(--red)";
             const cur = r.usd ? " usd" : "";
@@ -413,6 +419,10 @@ function renderSummary(data) {
     el.appendChild(wrap);
     cardIdx += 1;
   }
+  el.querySelectorAll(".pos-scroll[data-scrollkey]").forEach(function(w) {
+    const sl = scrollMap[w.dataset.scrollkey];
+    if (sl) w.scrollLeft = sl;
+  });
 }
 
 function paperAllocBar(a) {
@@ -480,9 +490,18 @@ function renderPositions(rows) {
   }
 }
 
+function keepScroll(el, fn) {
+  // the 5s poll rebuilds the tables - keep the horizontal
+  // scroll position where the user left it
+  const sl = el.scrollLeft;
+  fn();
+  el.scrollLeft = sl;
+}
+
 function renderPositionsInto(elId, rows, emptyText) {
   const el = document.getElementById(elId);
   if (!rows.length) { el.innerHTML = '<div class="empty">' + emptyText + '</div>'; return; }
+  keepScroll(el, function() {
   let html = '<table class="pos"><tr><th>Account</th><th>Contract</th><th class=num>Qty</th><th class=num>Avg $</th><th class=num>Price $</th><th class=num>Value $</th><th class=num>Total Cost $</th><th class=num>Return</th></tr>';
   for (const p of rows) {
     const ret = p.pct_return ?? null;
@@ -553,6 +572,7 @@ function renderPositionsInto(elId, rows, emptyText) {
       '<td class=num style="color:' + retColor + '">' + retMain + plSpan + "</td></tr>";
   }
   el.innerHTML = html + "</table>";
+  });
 }
 
 function openSettings() {
@@ -777,6 +797,7 @@ window.addEventListener("resize", function() {
 function renderTrades(rows) {
   const el = document.getElementById("trades");
   if (!rows.length) { el.innerHTML = '<div class="empty">no trades yet</div>'; return; }
+  keepScroll(el, function() {
   let html = "<table class=\"tlog\"><tr><th>Time</th><th>Mode</th><th>Action</th><th class=num>Qty</th><th>Ticker</th><th class=num>Price</th><th>Status</th><th>Detail</th></tr>";
   for (const t of rows) {
     const actionTag = t.action === "BUY" ? "buy" : "sell";
@@ -793,6 +814,7 @@ function renderTrades(rows) {
       '<td class="detail">' + esc(t.detail || "") + "</td></tr>";
   }
   el.innerHTML = html + "</table>";
+  });
 }
 
 let historyOffset = 0;

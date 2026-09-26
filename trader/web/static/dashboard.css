@@ -205,11 +205,12 @@
   @media (max-width: 640px) {
     .tlog th:nth-child(2), .tlog td:nth-child(2) { display: none; }
     .tlog { min-width: 460px; font-size: 12px; }
-    /* 8 columns now - the account and contract columns need
-       real room instead of being squeezed to their minimum */
-    .pos { min-width: 760px; }
-    .pos th:nth-child(1), .pos td:nth-child(1) { min-width: 120px; }
-    .pos th:nth-child(2), .pos td:nth-child(2) { min-width: 140px; }
+    /* phones: tables size to their content (no leftover
+       whitespace in the wrapping columns) and scroll in their
+       container - max-content also makes column crushing
+       impossible */
+    .pos { min-width: 540px; width: max-content; }
+    .papercard .pos { min-width: 0; }
     .sub.mrow .cell { flex-direction: column; align-items: flex-start;
       gap: 1px; flex: 1 1 0; }
     .sub.mrow .cell:last-child { align-items: flex-end;
