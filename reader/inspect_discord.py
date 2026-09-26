@@ -194,12 +194,26 @@ def click_channel_control(ctrl, log=print):
     if now - _last_channel_click < 60:
         return False
     _last_channel_click = now
+    # ui-automation activation first: no cursor movement, so a
+    # user moving their physical mouse cannot break the switch
+    try:
+        ctrl.DoDefaultAction()
+        log("switched discord to the target channel (uia action)")
+        return True
+    except Exception:
+        pass
+    try:
+        ctrl.GetInvokePattern().Invoke()
+        log("switched discord to the target channel (invoke)")
+        return True
+    except Exception:
+        pass
     try:
         ctrl.Click(simulateMove=False)
-        log("switched discord to the target channel")
+        log("switched discord to the target channel (mouse)")
         return True
     except Exception as e:
-        log(f"channel switch click failed: {e}")
+        log(f"channel switch failed: {e}")
         return False
 
 

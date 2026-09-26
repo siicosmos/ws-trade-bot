@@ -612,6 +612,12 @@ def find_message_container(window, marker, title_channel="", diag=None,
     best_score = 0
     fallback = None
     fallback_score = 0
+    # the message list control is unnamed in some discord
+    # builds - track the best unnamed candidate separately so
+    # the strict path can still attach when the WINDOW title
+    # already matches the wanted channel
+    best_unnamed = None
+    best_unnamed_score = 0
     for ctrl in candidates:
         try:
             ctrl_name = ctrl.Name or ""
@@ -631,12 +637,19 @@ def find_message_container(window, marker, title_channel="", diag=None,
         if matches_title and score >= best_score:
             best = ctrl
             best_score = score
+        if not ctrl_name and score > best_unnamed_score:
+            best_unnamed = ctrl
+            best_unnamed_score = score
         if not strict_title and score > 0 and score >= fallback_score:
             fallback = ctrl
             fallback_score = score
     if best is not None:
         return best
-    return None if strict_title else fallback
+    if strict_title:
+        # the window title already matches the wanted channel:
+        # a solid unnamed list is the target's message list
+        return best_unnamed if best_unnamed_score >= 3 else None
+    return fallback
 
 
 def message_items(container):

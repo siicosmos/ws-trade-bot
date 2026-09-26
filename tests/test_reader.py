@@ -1101,3 +1101,34 @@ def test_kill_discord_terminates_only_discord(monkeypatch):
     killed = idisc.kill_discord(log=lambda *a: None)
     # both discord-named processes terminate, nothing else
     assert sorted(killed) == [1, 99]
+
+
+def test_find_message_container_unnamed_list_strict(monkeypatch):
+    """Some discord builds expose an UNNAMED message list - when
+    the window title already matches the wanted channel, the
+    strict path must attach to the best-scoring unnamed list
+    instead of reporting no pane forever."""
+    named_sidebar = _fake_ctrl(
+        name="频道",
+        children=[_item(text="#player-alerts")],
+    )
+    unnamed_list = _fake_ctrl(
+        name="",
+        children=[
+            _item(text="BOUGHT 0DTE SPX 7750c @ 3.00"),
+            _item(text="SOLD 1/4 0DTE SPX 7650c @ 2.32"),
+            _item(text="waiting for the open"),
+        ],
+    )
+    monkeypatch.setattr(
+        dr.auto, "WalkControl",
+        lambda *a, **k: [
+            (named_sidebar, 1), (unnamed_list, 1),
+        ],
+    )
+    monkeypatch.setattr(dr, "item_text", lambda it: it.text)
+    # strict: the window title matches the channel
+    got = dr.find_message_container(
+        object(), "", "#🚨│player-alerts", strict_title=True
+    )
+    assert got is unnamed_list
