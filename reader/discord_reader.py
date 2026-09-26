@@ -1069,7 +1069,20 @@ def _terminate_stale_reader():
         )
 
 
+def _log_previous_exit():
+    """The .bat restart loop writes the exit code; surface it
+    (timestamped + webhooked) on the next start."""
+    path = os.path.join(repo_root(), "reader_exit.txt")
+    try:
+        with open(path, encoding="utf-8") as f:
+            log(f"previous run: " + f.read().strip())
+        os.remove(path)
+    except OSError:
+        pass
+
+
 def main():
+    _log_previous_exit()
     _terminate_stale_reader()
     raw_cfg = load_config()
     cfg = raw_cfg.get("reader") or {}
@@ -1154,7 +1167,10 @@ def main():
         window = find_discord_window()
         if window is None:
             if auto_start_discord:
-                start_discord(discord_start_command)
+                start_discord(
+                    discord_start_command, log=log,
+                    cooldown=reopen_seconds,
+                )
             time.sleep(2)
 
     log(f"watching window {window.Name!r} (poll every {poll_interval}s)")
@@ -1271,13 +1287,13 @@ def main():
                 ) or discord_server
                 ctrl = find_channel_control(window, [target])
                 if ctrl is not None:
-                    click_channel_control(ctrl)
+                    click_channel_control(ctrl, log=log)
                 elif server:
                     # the channel lives on another server - a
                     # server's channels only appear once selected
                     srv = find_channel_control(window, [server])
                     if srv is not None:
-                        click_channel_control(srv)
+                        click_channel_control(srv, log=log)
                     elif wait_attempts % 120 == 0:
                         log(
                             f"no {target!r} entry and no server "
@@ -1324,7 +1340,7 @@ def main():
                             if fresh is not None:
                                 window = fresh
                             elif auto_start_discord:
-                                close_extra_windows(window)
+                                close_extra_windows(window, log=log)
                         except UIAError:
                             pass
                     # first failure, then roughly every 10s, then a
@@ -1376,7 +1392,8 @@ def main():
                     if changed:
                         log(
                             f"channel config -> marker={marker!r} "
-                            f"channels={channels}"
+                            f"channels={channels} "
+                            f"servers={channel_servers}"
                         )
                     time.sleep(5)
                     continue
@@ -1429,7 +1446,8 @@ def main():
                     container = None
                     log(
                         f"channel config -> marker={marker!r} "
-                        f"channels={channels}"
+                        f"channels={channels} "
+                        f"servers={channel_servers}"
                     )
                     time.sleep(poll_interval)
                     continue
@@ -1528,9 +1546,12 @@ def main():
                     ):
                         from inspect_discord import kill_discord
 
-                        if kill_discord():
+                        if kill_discord(log=log):
                             restarted = True
-                        start_discord(discord_start_command)
+                        start_discord(
+                            discord_start_command, log=log,
+                            cooldown=reopen_seconds,
+                        )
                         lost_since = time.time()
                     time.sleep(2)
                     try:
@@ -1546,3 +1567,10 @@ if __name__ == "__main__":
         main()
     except KeyboardInterrupt:
         log("reader stopped")
+    except SystemExit:
+        raise
+    except Exception:
+        import traceback
+
+        log("reader crashed:\n" + traceback.format_exc())
+        sys.exit(1)

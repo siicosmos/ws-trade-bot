@@ -49,6 +49,15 @@ def main():
 
     from trader.ops.loghook import install_log_webhook
 
+    # the .bat restart loop writes the exit code; surface it
+    exit_file = os.path.join(ROOT, "pipeline_exit.txt")
+    try:
+        with open(exit_file) as f:
+            print("previous run: " + f.read().strip())
+        os.remove(exit_file)
+    except OSError:
+        pass
+
     install_log_webhook(
         cfg.discord.pipeline_log_webhook_url,
         log_path=os.path.join(
