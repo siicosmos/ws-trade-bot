@@ -1414,7 +1414,7 @@ def main():
                     max_items = new_max
                     reopen_seconds = new_reopen
                     restart_after = new_restart
-                    auto_switch = new_auto_switch
+                    auto_switch = new_switch
                     container = None
                     log(
                         f"channel config -> marker={marker!r} "
