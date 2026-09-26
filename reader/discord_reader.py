@@ -321,6 +321,11 @@ class WebhookLog:
         self.lock = threading.Lock()
         if url:
             _supervised_thread("reader-webhook", self._run)
+            # the final lines ("reader stopped", a crash
+            # traceback) must survive the process exit
+            import atexit
+
+            atexit.register(self.flush_now)
 
     def add(self, line):
         if not self.url:

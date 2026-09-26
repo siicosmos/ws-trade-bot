@@ -16,6 +16,12 @@ class WebhookBatcher:
             from .supervise import supervised
 
             supervised("webhook-batcher", self._run, url)
+            # buffered lines must survive the process: the last
+            # log ("stopped", a crash traceback) dies with the
+            # 3s background flush otherwise
+            import atexit
+
+            atexit.register(self.flush_now)
 
     def add(self, line):
         with self.lock:
