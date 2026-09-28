@@ -216,7 +216,8 @@ def _ensure_on_screen(ctrl, log=print):
         top = ctrl.GetTopLevelControl()
         hwnd = top.NativeWindowHandle
         ctypes.windll.user32.ShowWindow(hwnd, 9)   # SW_RESTORE
-        _time.sleep(0.8)
+        # the restore + ui tree refresh takes a moment
+        _time.sleep(1.5)
         pt = ctrl.GetClickablePoint()
         if pt and (pt[0] > 0 or pt[1] > 0):
             log("restored the discord window (was minimized)")

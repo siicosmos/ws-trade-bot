@@ -1488,6 +1488,15 @@ def main():
                     log_fn=lambda msg: log(msg),
                 )
 
+            # mid-navigation (friends page, no channel open): the
+            # ui lists score like message containers and their
+            # strings would be posted as alerts - read nothing
+            # until a real channel is open
+            if not title_channel and not marker:
+                container = None
+                time.sleep(poll_interval)
+                continue
+
             msgs = current_messages(container, max_items, day_floor)
             summary = (
                 f"{len(msgs)} message(s) read"
