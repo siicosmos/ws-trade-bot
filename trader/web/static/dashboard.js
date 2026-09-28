@@ -1438,10 +1438,18 @@ async function openLevels() {
       levelsStale = !!data.stale;
       levelsError = data.error || null;
       if (changed) renderLevelsChart();
+      // the spot refresh rides the position refresh setting
+      const interval = (data.refresh_seconds || 30) * 1000;
+      if (levelsPoll && levelsPoll._period !== interval) {
+        clearInterval(levelsPoll);
+        levelsPoll = setInterval(poll, interval);
+        levelsPoll._period = interval;
+      }
     } catch (e) { /* the banner surfaces network issues */ }
   };
   poll();
-  levelsPoll = setInterval(poll, 5000);
+  levelsPoll = setInterval(poll, 30000);
+  levelsPoll._period = 30000;
 }
 
 function closeLevels() {

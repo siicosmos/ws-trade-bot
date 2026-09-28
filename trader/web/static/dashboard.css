@@ -432,31 +432,51 @@
   #levelsScroll button:hover { border-color: #8b949e; }
   #levels-chart { margin-top: 14px; }
   .levels-ladder {
-    position: relative; height: 420px;
+    position: relative; height: 440px;
     border-left: 2px solid var(--border);
     margin: 10px 0 10px 6px;
+    background: linear-gradient(
+      to bottom,
+      rgba(248,81,73,.05) 0%,
+      rgba(248,81,73,.02) 45%,
+      rgba(63,185,80,.02) 55%,
+      rgba(63,185,80,.05) 100%
+    );
+    border-radius: 0 8px 8px 0;
   }
   .levels-row {
     position: absolute; left: 0; right: 0; height: 0;
-    display: flex; align-items: center; gap: 8px;
+    display: flex; align-items: center; gap: 10px;
     transform: translateY(-50%);
   }
   .levels-chip {
     flex: 0 0 auto; font-size: 11px; font-weight: 700;
-    border-radius: 4px; padding: 2px 8px; min-width: 42px;
-    text-align: center;
+    border-radius: 5px; padding: 3px 10px; min-width: 46px;
+    text-align: center; letter-spacing: .5px;
   }
-  .levels-chip.r { background: rgba(248,81,73,.15); color: #f85149; }
-  .levels-chip.s { background: rgba(63,185,80,.15); color: #3fb950; }
-  .levels-chip.p { background: rgba(136,132,216,.2); color: #8f97f8; }
+  .levels-chip.r { background: rgba(248,81,73,.18); color: #f85149; }
+  .levels-chip.s { background: rgba(63,185,80,.18); color: #3fb950; }
+  .levels-chip.p { background: rgba(136,132,216,.25); color: #a5a6f8; }
+  .levels-chip.now { background: #1f6feb; color: #fff; }
   .levels-price {
-    flex: 0 0 auto; font-size: 13px; font-weight: 600;
+    flex: 0 0 auto; font-size: 14px; font-weight: 700;
     font-variant-numeric: tabular-nums; color: var(--text);
   }
-  .levels-line { flex: 1 1 auto; height: 1px; }
-  .levels-line.r { background: rgba(248,81,73,.45); }
-  .levels-line.s { background: rgba(63,185,80,.45); }
-  .levels-line.p { background: rgba(136,132,216,.55); }
+  .levels-line { flex: 1 1 auto; height: 2px; border-radius: 1px; }
+  .levels-line.r {
+    background: linear-gradient(to right, rgba(248,81,73,.55), rgba(248,81,73,.15));
+  }
+  .levels-line.s {
+    background: linear-gradient(to right, rgba(63,185,80,.55), rgba(63,185,80,.15));
+  }
+  .levels-line.p {
+    background: linear-gradient(to right, rgba(136,132,216,.65), rgba(136,132,216,.15));
+  }
+  .levels-line.now {
+    background: #1f6feb;
+    box-shadow: 0 0 8px rgba(31,111,235,.6);
+    height: 2px;
+  }
 
   /* spx/spy ladder toggle */
   .levels-toggles { display: flex; gap: 6px; margin-bottom: 10px; }

@@ -1360,16 +1360,16 @@ def main():
                         # stale - re-acquire everything fresh
                         window = None
                 elif server:
-                    # the channel lives on another server - a
-                    # server's channels only appear once selected
-                    srv = find_channel_control(window, [server])
-                    if srv is not None:
-                        click_channel_control(srv, window=window, log=log)
+                    # the channel lives on another server: cycle
+                    # the server rail via discord's own hotkeys
+                    # (mouse clicks are unreliable across
+                    # monitors, dpi scales and rendering glitches)
+                    if switch_server_keyboard(window, server, log=log):
+                        container = None
                     elif wait_attempts % 120 == 0:
                         log(
                             f"no {target!r} entry and no server "
-                            f"{server!r} visible in the discord "
-                            f"tree; clickable entries: "
+                            f"{server!r} reachable; clickable entries: "
                             f"{tree_entry_names(window)}"
                         )
                 elif wait_attempts % 120 == 0:

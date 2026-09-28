@@ -445,3 +445,40 @@ def ensure_visible(control, window=None, log=print):
     except Exception as e:
         log(f"discord restore check failed: {e}")
     return False
+
+
+def server_from_title(title):
+    """The server name from '<channel> | <server> - Discord'."""
+    if not title or "|" not in title:
+        return ""
+    tail = title.rsplit("|", 1)[1]
+    return tail.replace("- Discord", "").strip()
+
+
+def switch_server_keyboard(window, target_server, log=print):
+    """Cycle the server rail with discord's ctrl+alt+down
+    hotkey until the window title shows the target server -
+    immune to mouse position, dpi and rendering issues. Takes
+    focus: keyboard navigation needs the discord window
+    foregrounded."""
+    import time as _time
+
+    try:
+        hwnd = window.NativeWindowHandle
+        if hwnd:
+            ctypes.windll.user32.SetForegroundWindow(hwnd)
+    except Exception:
+        pass
+    log(f"navigating to server {target_server!r} via the keyboard")
+    for _ in range(15):
+        try:
+            server = server_from_title(window.Name or "")
+        except UIAError:
+            server = ""
+        if server and target_server.lower() in server.lower():
+            log(f"switched to server {server!r}")
+            return True
+        auto.SendKeys("^%{down}", waitTime=0.3)
+        _time.sleep(0.4)
+    log(f"server {target_server!r} not reached via the keyboard")
+    return False
