@@ -10,6 +10,23 @@ except ImportError:
     UIAError = Exception
 
 
+def _make_dpi_aware():
+    """Without this, windows virtualizes ui coordinates on
+    scaled displays and every synthetic mouse click lands at
+    the wrong physical position - the channel switch clicks
+    into empty space."""
+    try:
+        ctypes.windll.shcore.SetProcessDpiAwareness(2)
+    except Exception:
+        try:
+            ctypes.windll.user32.SetProcessDPIAware()
+        except Exception:
+            pass
+
+
+_make_dpi_aware()
+
+
 def discord_pids():
     pids = set()
     for p in psutil.process_iter(["name"]):
@@ -209,8 +226,12 @@ def click_channel_control(ctrl, log=print):
     except Exception:
         pass
     try:
+        pt = ctrl.GetClickablePoint()
         ctrl.Click(simulateMove=False)
-        log("switched discord to the target channel (mouse)")
+        log(
+            "switched discord to the target channel (mouse at "
+            f"{int(pt[0])},{int(pt[1])})"
+        )
         return True
     except Exception as e:
         log(f"channel switch failed: {e}")
