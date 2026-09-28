@@ -192,11 +192,10 @@ def find_channel_control(window, channel_names):
                 continue
             if not any(c in name.lower() for c in targets):
                 continue
-            try:
-                ctrl.GetClickablePoint()
-                return ctrl
-            except UIAError:
-                continue
+            # no clickable-point check here: the point may only
+            # resolve once the window is restored/foregrounded -
+            # click_channel_control handles that
+            return ctrl
     except UIAError:
         return None
     return None
@@ -318,7 +317,7 @@ if __name__ == "__main__":
     main()
 
 
-def tree_entry_names(window, sample=12):
+def tree_entry_names(window, sample=30):
     """Named clickable entries in the window's ui tree - the
     diagnostic for why a channel/server entry cannot be
     found."""
