@@ -18,6 +18,7 @@ except ImportError:
 
 from inspect_discord import (
     close_extra_windows,
+    ensure_visible,
     tree_entry_names,
     find_channel_control,
     click_channel_control,
@@ -1506,6 +1507,9 @@ def main():
                 log(f"pane: {summary}")
                 last_read_summary = summary
             if not msgs:
+                # a minimized discord renders nothing - restore
+                # it so the message list can be read
+                ensure_visible(container, log=log)
                 empty_polls += 1
                 if empty_polls >= 10:
                     container = None

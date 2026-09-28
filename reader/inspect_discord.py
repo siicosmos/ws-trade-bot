@@ -346,3 +346,24 @@ def tree_entry_names(window, sample=12):
     except UIAError:
         pass
     return names
+
+
+def ensure_visible(control, log=print):
+    """A minimized electron window renders nothing - its ui
+    tree exposes an empty message list. Restore it so messages
+    can be read (behind other windows is fine; minimized is
+    not)."""
+    try:
+        top = control.GetTopLevelControl()
+        hwnd = top.NativeWindowHandle
+        if ctypes.windll.user32.IsIconic(hwnd):
+            ctypes.windll.user32.ShowWindow(hwnd, 9)   # SW_RESTORE
+            _time.sleep(1.5)
+            log(
+                "discord was minimized - restored it (a minimized "
+                "window cannot be read)"
+            )
+            return True
+    except Exception as e:
+        log(f"discord restore check failed: {e}")
+    return False
