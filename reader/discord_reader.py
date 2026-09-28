@@ -1509,9 +1509,12 @@ def main():
                 log(f"pane: {summary}")
                 last_read_summary = summary
             if not msgs:
-                # a minimized discord renders nothing - restore
-                # it so the message list can be read
-                ensure_visible(container, log=log)
+                # a minimized or hidden discord renders nothing -
+                # restore it, and drop the held container: its
+                # subtree was torn down while hidden and the
+                # stale element never re-attaches
+                if ensure_visible(container, log=log):
+                    container = None
                 empty_polls += 1
                 if empty_polls >= 10:
                     container = None
