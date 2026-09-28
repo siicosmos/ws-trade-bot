@@ -740,6 +740,19 @@ def new_messages(current, tail):
     return []
 
 
+def post_raw_alert(url, text):
+    """Copy-paste feed: the raw alert text to its own channel -
+    fire and forget, no retry (it is a convenience copy)."""
+    if not url:
+        return
+    try:
+        requests.post(
+            url, json={"content": str(text)[:1900]}, timeout=10
+        )
+    except requests.RequestException:
+        pass
+
+
 def post_message(url, text, token="", ts=None, verify=True, channel=""):
     headers = {"X-Auth-Token": token} if token else {}
     sent = ts.strftime("%m-%d %H:%M") if ts else None
@@ -1118,6 +1131,9 @@ def main():
     cfg = raw_cfg.get("reader") or {}
     discord_cfg = raw_cfg.get("discord") or {}
     webhook_url = str(discord_cfg.get("webhook_url") or "")
+    raw_alert_webhook_url = str(
+        discord_cfg.get("raw_alert_webhook_url") or ""
+    )
     update_webhook_url = (
         str(discord_cfg.get("update_webhook_url") or "") or webhook_url
     )
@@ -1612,6 +1628,7 @@ def main():
                         pipeline_url, text, auth_token, ts, verify_tls, chan
                     ):
                         mark_seen(text)
+                        post_raw_alert(raw_alert_webhook_url, text)
                     else:
                         retry.append((text, ts, chan))
                 pending = retry
@@ -1635,6 +1652,7 @@ def main():
                         current_channel or "",
                     ):
                         mark_seen(text)
+                        post_raw_alert(raw_alert_webhook_url, text)
                     else:
                         pending.append((text, ts, current_channel or ""))
             elif msgs != tail:

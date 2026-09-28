@@ -94,6 +94,9 @@ discord:
   pipeline_log_webhook_url: ""  # pipeline log lines (optional)
   update_webhook_url: ""        # server update/restart notices;
                                # empty = use the main webhook channel
+  raw_alert_webhook_url: ""     # raw alert copy-paste feed: every
+                               # alert the reader delivers, as plain
+                               # text; empty = off
 
 # ---------------------------------------------------------------------------
 # trading - how alerts are sized, executed, and risk-managed

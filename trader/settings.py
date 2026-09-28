@@ -125,6 +125,9 @@ def get_settings(cfg) -> dict:
                 cfg.discord.pipeline_log_webhook_url
             ),
             "update_webhook_url": cfg.discord.update_webhook_url,
+            "raw_alert_webhook_url": getattr(
+                cfg.discord, "raw_alert_webhook_url", ""
+            ),
         },
     }
 
@@ -455,6 +458,7 @@ def apply_settings(cfg, payload: dict, config_path=None) -> tuple:
         "reader_log_webhook_url",
         "pipeline_log_webhook_url",
         "update_webhook_url",
+        "raw_alert_webhook_url",
     ):
         if field in discord_payload:
             url = str(discord_payload[field]).strip()
@@ -543,6 +547,7 @@ def _persist(cfg, config_path):
         "reader_log_webhook_url",
         "pipeline_log_webhook_url",
         "update_webhook_url",
+        "raw_alert_webhook_url",
     ):
         if field in raw.get("discord", {}) or getattr(
             cfg.discord, field, ""
@@ -605,6 +610,7 @@ def _persist(cfg, config_path):
         "reader_log_webhook_url",
         "pipeline_log_webhook_url",
         "update_webhook_url",
+        "raw_alert_webhook_url",
     ):
         if field in raw.get("discord", {}) or getattr(
             cfg.discord, field, ""

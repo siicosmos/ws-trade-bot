@@ -1205,6 +1205,9 @@ function renderSettings(s) {
     ["set-discord-update_webhook_url", "update notices",
       "restart and update notices; empty = the trade alerts channel",
       "empty = trade alerts channel", dc.update_webhook_url || ""],
+    ["set-discord-raw_alert_webhook_url", "raw alerts",
+      "copy-paste feed: every alert the reader delivers, as raw text",
+      "empty = off", dc.raw_alert_webhook_url || ""],
   ];
   html += _section("discord webhooks (take effect after restart)",
     '<div class="set-grid wide">' +
@@ -1302,6 +1305,7 @@ async function saveSettings() {
       reader_log_webhook_url: val("set-discord-reader_log_webhook_url").trim(),
       pipeline_log_webhook_url: val("set-discord-pipeline_log_webhook_url").trim(),
       update_webhook_url: val("set-discord-update_webhook_url").trim(),
+      raw_alert_webhook_url: val("set-discord-raw_alert_webhook_url").trim(),
     },
     quotes: {
       enabled: document.getElementById("set-quotes-enabled").checked,

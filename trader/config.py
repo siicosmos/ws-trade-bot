@@ -20,6 +20,9 @@ class DiscordConfig:
     reader_log_webhook_url: str = ""
     pipeline_log_webhook_url: str = ""
     update_webhook_url: str = ""
+    # raw alert copy-paste feed: every alert the reader delivers
+    # is posted here as plain text
+    raw_alert_webhook_url: str = ""
     # send parsed alerts to the webhook
     notify: bool = True
 
@@ -312,6 +315,9 @@ def load_config(path: str) -> Config:
             ),
             update_webhook_url=str(
                 _get(discord_raw, "update_webhook_url", "")
+            ),
+            raw_alert_webhook_url=str(
+                _get(discord_raw, "raw_alert_webhook_url", "")
             ),
         ),
         trading=trading,
