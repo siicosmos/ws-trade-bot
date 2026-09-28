@@ -4294,6 +4294,6 @@ def test_spx_levels_text_roundtrip():
 
     data = client.get("/api/spx", headers=hdr).get_json()
     assert data["text"] == text
-    # no provider configured: the error says so instead of
+    # no provider and no ws spot: the error says so instead of
     # silently omitting the marker
-    assert "no quote provider" in (data["error"] or "")
+    assert "no spx spot" in (data["error"] or "")
