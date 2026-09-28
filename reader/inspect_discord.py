@@ -182,6 +182,9 @@ def find_channel_control(window, channel_names):
                     auto.ControlType.HyperlinkControl,
                     auto.ControlType.ButtonControl,
                     auto.ControlType.TabItemControl,
+                    # this discord build exposes the server rail
+                    # entries and channel entries as groups
+                    auto.ControlType.GroupControl,
                 ):
                     continue
                 name = ctrl.Name or ""
@@ -336,6 +339,7 @@ def tree_entry_names(window, sample=12):
                     auto.ControlType.HyperlinkControl,
                     auto.ControlType.ButtonControl,
                     auto.ControlType.TabItemControl,
+                    auto.ControlType.GroupControl,
                 ):
                     continue
                 name = (ctrl.Name or "").strip()
@@ -353,6 +357,8 @@ def _window_readable(control):
     and minimized windows render nothing."""
     try:
         top = control.GetTopLevelControl()
+        if top is None:
+            return False
         hwnd = top.NativeWindowHandle
         return (
             bool(ctypes.windll.user32.IsWindowVisible(hwnd))
