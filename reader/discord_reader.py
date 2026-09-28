@@ -1522,6 +1522,48 @@ def main():
                 time.sleep(poll_interval)
                 continue
 
+            # the window title goes stale on full-page views
+            # (the discovery page keeps the last channel title):
+            # verify the channel's sidebar entry is present and
+            # selected before reading anything
+            if title_channel and not marker and container is not None:
+                bare = next(
+                    (c for c in channels
+                     if c in title_channel.lower()),
+                    title_channel.lstrip("#").lower(),
+                )
+                entry = find_channel_control(window, [bare])
+                if entry is None:
+                    # the channel's sidebar entry is gone: a
+                    # full-page view is open - go back through
+                    # the mapped server rail
+                    container = None
+                    server = (
+                        channel_servers.get(bare) or discord_server
+                    )
+                    srv = (
+                        find_channel_control(window, [server])
+                        if server else None
+                    )
+                    if srv is not None:
+                        click_channel_control(srv, log=log)
+                    elif wait_attempts % 120 == 0:
+                        log(
+                            f"the {title_channel!r} sidebar is not "
+                            f"in the tree (a full-page view is "
+                            f"open) - open the channel once"
+                        )
+                    time.sleep(poll_interval)
+                    continue
+                try:
+                    if not entry.GetSelectionItemPattern().IsSelected:
+                        click_channel_control(entry, log=log)
+                        container = None
+                        time.sleep(poll_interval)
+                        continue
+                except Exception:
+                    pass   # pattern unavailable - read as before
+
             msgs = current_messages(container, max_items, day_floor)
             summary = (
                 f"{len(msgs)} message(s) read"
