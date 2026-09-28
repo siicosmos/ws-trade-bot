@@ -94,14 +94,22 @@ class MoomooQuoteProvider:
         price = None
         try:
             ret, data = self._context().get_market_snapshot(codes)
-            if ret == 0 and data is not None and not data.empty:
+            if ret != 0:
+                # the feed refused: surface it in /api/spx
+                self._index_error = f"snapshot ret={ret}"
+            elif data is not None and not data.empty:
                 for i in range(len(data)):
                     price = self.extract_price(data.iloc[i])
                     if price:
                         break
                 if not price:
+                    self._index_error = "no usable price in the snapshot"
                     # one-time diagnostic: what did the feed give
                     self._log_index_snapshot(data)
+                else:
+                    self._index_error = None
+            else:
+                self._index_error = "empty snapshot"
         except Exception as e:
             # the reconnect path (same as option quotes)
             self._index_error = str(e)

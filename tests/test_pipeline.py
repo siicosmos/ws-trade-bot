@@ -4257,3 +4257,43 @@ def test_index_quote_reads_us_spx():
             sys.modules["moomoo"] = real
         else:
             sys.modules.pop("moomoo", None)
+
+
+def test_spx_levels_text_roundtrip():
+    """the pasted levels text is the cross-device source of
+    truth: saved through /api/spx-levels, served back on
+    /api/spx for every device's popup."""
+    from trader.config import (
+        AutoUpdateConfig, DiscordConfig, QuotesConfig, ReaderConfig,
+        TradingConfig, WealthsimpleConfig,
+    )
+    from trader.web.server import create_app
+
+    class Stub:
+        def __init__(self):
+            self.trading = TradingConfig(mode="notify")
+            self.pipeline = type("P", (), {"auth_token": "t"})()
+            self.wealthsimple = WealthsimpleConfig(accounts=[])
+            self.reader = ReaderConfig()
+            self.discord = DiscordConfig()
+            self.parser = type("P2", (), {"custom_patterns": []})()
+            self.auto_update = AutoUpdateConfig()
+            self.quotes = QuotesConfig()
+            self.paper = None
+
+    store = _fresh_store()
+    app = create_app(Stub(), store, None, None, None)
+    client = app.test_client()
+    hdr = {"X-Auth-Token": "t"}
+
+    text = "🔄 Pivot: 7704\n📈 Resistance: 7712 (R1), 7753 (R2)"
+    r = client.post(
+        "/api/spx-levels", json={"text": text}, headers=hdr
+    )
+    assert r.status_code == 200
+
+    data = client.get("/api/spx", headers=hdr).get_json()
+    assert data["text"] == text
+    # no provider configured: the error says so instead of
+    # silently omitting the marker
+    assert "no quote provider" in (data["error"] or "")

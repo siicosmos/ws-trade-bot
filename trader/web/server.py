@@ -1146,12 +1146,25 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                 price = None
                 error = str(e)
         # stale = outside trading hours: the last close shows
-        # marked as 'last' instead of 'now'
+        # marked as 'last' instead of 'now'. the saved levels
+        # text rides along: it is the cross-device source of
+        # truth for the ladder
         return jsonify({
             "price": price, "age": age, "error": error,
             "stale": bool(age and age > 120),
+            "text": store.meta_get("spx_levels_text"),
             "ts": time.time(),
         })
+
+    @app.post("/api/spx-levels")
+    def api_spx_levels():
+        """Save the pasted levels text - every device's popup
+        loads it from here (planned item #17: per-item state in
+        the database)."""
+        data = request.get_json(silent=True) or {}
+        text = str(data.get("text") or "")[:8000]
+        store.meta_set("spx_levels_text", text)
+        return jsonify({"status": "ok"})
 
     @app.get("/api/history")
     def api_history():

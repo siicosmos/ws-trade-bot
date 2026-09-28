@@ -1408,11 +1408,25 @@ let levelsStale = false;
 let levelsError = null;
 let levelsPoll = null;
 
-function openLevels() {
+async function openLevels() {
   document.getElementById("levelsBackdrop").style.display = "flex";
+  // the local copy renders instantly; the server copy (shared
+  // across devices) replaces it when it differs
   const saved = localStorage.getItem("spx_levels_raw") || "";
   document.getElementById("levels-input").value = saved;
   renderLevelsChart();
+  try {
+    const data = await api("/api/spx");
+    if (data.text != null && data.text !== "" && data.text !== saved) {
+      document.getElementById("levels-input").value = data.text;
+      localStorage.setItem("spx_levels_raw", data.text);
+      const parsed = parseLevelsText(data.text);
+      if (parsed.levels.length || parsed.pivot != null) {
+        localStorage.setItem("spx_levels", JSON.stringify(parsed));
+      }
+      renderLevelsChart();
+    }
+  } catch (e) { /* the banner surfaces network issues */ }
   // realtime spx spot while the popup is open
   clearInterval(levelsPoll);
   const poll = async function() {
@@ -1482,7 +1496,7 @@ function parseLevelsText(text) {
   return out;
 }
 
-function parseLevels() {
+async function parseLevels() {
   const text = document.getElementById("levels-input").value;
   const data = parseLevelsText(text);
   const err = document.getElementById("levels-error");
@@ -1494,6 +1508,15 @@ function parseLevels() {
   localStorage.setItem("spx_levels_raw", text);
   localStorage.setItem("spx_levels", JSON.stringify(data));
   renderLevelsChart();
+  // share across devices: the server copy is what every
+  // browser loads on open
+  try {
+    await fetch("/api/spx-levels", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: text }),
+    });
+  } catch (e) { /* the local copy still works */ }
 }
 
 let levelsView = null;
