@@ -1133,12 +1133,20 @@ def create_app(cfg, store: Store, risk, executor, account=None,
 
         provider = ACTIVE_QUOTE_PROVIDER
         price = None
+        age = None
         if provider is not None and hasattr(provider, "index_quote"):
             try:
                 price = provider.index_quote("SPX")
+                age = max(0, int(time.time() - provider._index_ts))
             except Exception:
                 price = None
-        return jsonify({"price": price, "ts": time.time()})
+        # stale = outside trading hours: the last close shows
+        # marked as 'last' instead of 'now'
+        return jsonify({
+            "price": price, "age": age,
+            "stale": bool(age and age > 120),
+            "ts": time.time(),
+        })
 
     @app.get("/api/history")
     def api_history():

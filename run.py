@@ -58,7 +58,7 @@ def main():
     except OSError:
         pass
 
-    install_log_webhook(
+    log_batcher = install_log_webhook(
         cfg.discord.pipeline_log_webhook_url,
         log_path=os.path.join(
             os.path.dirname(os.path.abspath(args.db)),
@@ -173,9 +173,18 @@ def main():
 
     startup_banner("pipeline", ROOT)
 
+    def _restart_pipeline():
+        # the update restart exits via os._exit, which bypasses
+        # atexit - flush the log batcher so the restart lines
+        # reach the webhook
+        if log_batcher is not None:
+            log_batcher.flush_now()
+        os._exit(77)
+
     updater = AutoUpdater(
         cfg, ROOT,
         cfg.discord.update_webhook_url or cfg.discord.webhook_url,
+        restart=_restart_pipeline,
     )
     updater.start()
     if cfg.auto_update.enabled:

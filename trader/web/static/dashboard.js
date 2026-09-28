@@ -1404,6 +1404,7 @@ function renderMe() {
 }
 
 let levelsNow = null;
+let levelsStale = false;
 let levelsPoll = null;
 
 function openLevels() {
@@ -1416,8 +1417,10 @@ function openLevels() {
   const poll = async function() {
     try {
       const data = await api("/api/spx");
-      const changed = data.price !== levelsNow;
+      const changed = data.price !== levelsNow
+        || data.stale !== levelsStale;
       levelsNow = data.price;
+      levelsStale = !!data.stale;
       if (changed) renderLevelsChart();
     } catch (e) { /* the banner surfaces network issues */ }
   };
@@ -1536,16 +1539,18 @@ function renderLevelsChart() {
   const span = (max - min) || 1;
   let html = "";
   if (levelsNow != null) {
-    html += '<div class="levels-nowline">SPX now: <b>' +
+    const tag = levelsStale ? "last" : "now";
+    html += '<div class="levels-nowline">SPX ' + tag + ': <b>' +
       levelsNow.toLocaleString("en-CA", { minimumFractionDigits: 2 }) +
-      "</b></div>";
+      "</b>" + (levelsStale ? " (market closed)" : "") + "</div>";
   }
   html += '<div class="levels-ladder">';
-  // the realtime spot marker, inside the level range
+  // the spot marker, inside the level range
   if (levelsNow != null && levelsNow >= min && levelsNow <= max) {
     const nowPct = ((max - levelsNow) / span * 100).toFixed(1);
+    const tag = levelsStale ? "last" : "now";
     html += '<div class="levels-row now" style="top:' + nowPct + '%">' +
-      '<span class="levels-chip now">now</span>' +
+      '<span class="levels-chip now">' + tag + '</span>' +
       '<span class="levels-price">' +
       levelsNow.toLocaleString("en-CA", { minimumFractionDigits: 2 }) +
       '</span><div class="levels-line now"></div></div>';

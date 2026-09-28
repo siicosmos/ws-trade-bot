@@ -76,6 +76,10 @@ class MoomooQuoteProvider:
         self._ctx = None
         self._index_cache = None
         self._index_ts = 0.0
+        # the last positive spot: outside trading hours the
+        # snapshot returns nothing positive, but the ladder
+        # should still show the last close (marked stale)
+        self._index_last = None
 
     def index_quote(self, symbol="SPX"):
         """Index spot (US.SPX) for the levels ladder - cached
@@ -98,9 +102,11 @@ class MoomooQuoteProvider:
         price = None
         if ret == 0 and data is not None and not data.empty:
             price = self.extract_price(data.iloc[0])
-        self._index_cache = price
+        if price:
+            self._index_last = price
+        self._index_cache = self._index_last
         self._index_ts = now
-        return price
+        return self._index_last
 
     def _context(self):
         if self._ctx is None:
