@@ -3004,6 +3004,60 @@ def test_mirror_option_expiry_normalized():
     assert shim["expiry"] == "2026-09-25"
 
 
+def test_paper_only_contract_priced_from_ws_chain():
+    """paper-only trades (notify mode) have no live node to
+    carry a quote - without moomoo they must fall back to the
+    ws option chains, so the paper price matches what the real
+    card shows for the same contract."""
+    from types import SimpleNamespace
+
+    from trader.ws.account import PaperLedger
+
+    store = _fresh_store()
+    buy = parse_alert("BOUGHT 10/02 AAOI 105c @ 2.0")
+    store.apply_position(
+        "paper", buy, 1, premium=2.0, account="default"
+    )
+
+    class FakeWS:
+        def get_ticker_id(self, ticker, hint):
+            return "sec1"
+
+        def get_positions(self, account_ids=None):
+            return []
+
+        def search_securities(self, ticker, **kw):
+            return [{"id": "sec1",
+                     "stock": {"symbol": ticker}}]
+
+        def get_option_expiry_dates(self, sec_id):
+            return [buy.expiry]
+
+        def get_option_chain(self, sec_id, expiry, opt_type):
+            return [{
+                "id": "opt1",
+                "strikePrice": {"amount": "105"},
+                "quote": {"bid": "2.15"},
+            }]
+
+    class FakeWSAccount:
+        def _client(self):
+            return FakeWS()
+
+    class FakeWSAccount:
+        def _client(self):
+            return FakeWS()
+
+    ledger = PaperLedger(
+        SimpleNamespace(wealthsimple=SimpleNamespace(exchange_hint="")),
+        store, FakeWSAccount(),
+    )
+    rows = ledger.positions("default")
+    assert rows[0]["price"] == 2.15, rows
+    # a successful sweep must not trip the backoff
+    assert ledger._chain_backoff_until == 0.0
+
+
 def test_clean_start_script(tmp_path):
     import sqlite3
     import subprocess

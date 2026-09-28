@@ -1560,7 +1560,7 @@ function setLevelsView(ticker) {
   renderLevelsChart();
 }
 
-function buildLevelsLadder(host, ticker, rows, pivot, errorLine) {
+function buildLevelsLadder(host, ticker, rows, pivot, headerHtml) {
   rows = rows.slice();
   if (pivot != null) {
     // the pivot is an spx level: convert it for the spy ladder
@@ -1577,27 +1577,24 @@ function buildLevelsLadder(host, ticker, rows, pivot, errorLine) {
   const min = Math.min.apply(null, prices);
   const span = (max - min) || 1;
   let html = "";
-  if (errorLine) {
-    html += '<div class="levels-nowline" style="color:#f85149">' +
-      esc(errorLine) + "</div>";
+  if (headerHtml) {
+    html += '<div class="levels-nowline">' + headerHtml + "</div>";
   }
-  if (levelsNow != null && ticker === "SPX") {
-    const tag = levelsStale ? "last" : "now";
-    html += '<div class="levels-nowline">SPX ' + tag + ': <b>' +
-      levelsNow.toLocaleString("en-CA", { minimumFractionDigits: 2 }) +
-      "</b>" + (levelsStale ? " (market closed)" : "") + "</div>";
-  }
+  // the realtime spot: spx quotes directly, spy derives from it
+  const ratio = ticker === "SPY" ? 10.0391 : 1.0;
+  const nowPrice = levelsNow == null ? null : levelsNow / ratio;
   html += '<div class="levels-ladder">';
   // the spot marker, inside the level range
-  if (levelsNow != null && ticker === "SPX" &&
-      levelsNow >= min && levelsNow <= max) {
-    const nowPct = ((max - levelsNow) / span * 100).toFixed(1);
+  if (nowPrice != null && nowPrice >= min && nowPrice <= max) {
+    const nowPct = ((max - nowPrice) / span * 100).toFixed(1);
     const tag = levelsStale ? "last" : "now";
+    // the price rides mid-line so it never overlaps the level
+    // labels on the left edge
     html += '<div class="levels-row now" style="top:' + nowPct + '%">' +
       '<span class="levels-chip now">' + tag + '</span>' +
-      '<span class="levels-price">' +
-      levelsNow.toLocaleString("en-CA", { minimumFractionDigits: 2 }) +
-      '</span><div class="levels-line now"></div></div>';
+      '<div class="levels-line now"><span class="levels-nowprice">' +
+      nowPrice.toLocaleString("en-CA", { minimumFractionDigits: 2 }) +
+      "</span></div></div>";
   }
   for (const r of rows) {
     const topPct = ((max - r.price) / span * 100).toFixed(1);
@@ -1645,6 +1642,8 @@ function renderLevelsChart() {
     duo.appendChild(pane);
     const host = document.createElement("div");
     pane.appendChild(host);
+    // generated html (ticker + spot number); error strings are
+    // escaped where they are appended
     buildLevelsLadder(host, t, rows, data.pivot,
       headerParts.join(" · ") || null);
   }

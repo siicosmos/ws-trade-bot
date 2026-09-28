@@ -75,6 +75,7 @@ class PaperLedger:
         self.ws_account = ws_account
         self._quote_cache = None
         self._quote_ts = 0.0
+        self._chain_backoff_until = 0.0
 
     def _moomoo_quotes(self, quotes):
         """Mark paper option positions from the moomoo feed:
@@ -116,6 +117,83 @@ class PaperLedger:
                         quotes[key] = {"price": p, "usd": True}
         except Exception:
             pass
+        return quotes
+
+    def _ws_chain_quotes(self, quotes):
+        """Paper-only contracts priced from the ws option chains.
+
+        Without moomoo there is no feed to ride for paper-only
+        trades (notify mode never executed them, so no live
+        node carries their quote) - resolve each contract the
+        same way the executor does and take its bid. This keeps
+        the paper price consistent with what the real account
+        card shows for the same contract."""
+        if self.ws_account is None:
+            return quotes
+        pending = []
+        for pos in self.store.list_positions("paper"):
+            if not pos.get("right"):
+                continue
+            key = _position_key(pos)
+            if key in quotes:
+                continue
+            if len(str(pos.get("expiry") or "")) != 10:
+                continue
+            pending.append((key, pos))
+        if not pending:
+            return quotes
+        if time.time() < self._chain_backoff_until:
+            return quotes
+        try:
+            from .executor import WealthsimpleExecutor
+
+            resolver = WealthsimpleExecutor(self.cfg, self.ws_account)
+            # the account's own client - a fresh WealthsimpleV2
+            # would be unauthenticated
+            ws = self.ws_account._client()
+        except Exception:
+            # ws down - back off so the dashboard payload is not
+            # stalling on network timeouts every refresh
+            self._chain_backoff_until = time.time() + 600
+            return quotes
+        added = False
+        for key, pos in pending:
+            try:
+                sec_id = resolver._resolve_security(
+                    ws, pos["underlying"]
+                )
+                if not sec_id:
+                    continue
+                from .parser import Alert
+
+                alert = Alert(
+                    action="SELL",
+                    ticker=pos["underlying"],
+                    kind="option",
+                    underlying=pos["underlying"],
+                    expiry=pos["expiry"],
+                    strike=pos.get("strike"),
+                    right=pos.get("right"),
+                )
+                opt, _ = resolver._resolve_option(ws, sec_id, alert)
+                if not opt:
+                    continue
+                quote = opt.get("quote") or {}
+                price = (
+                    quote.get("price")
+                    or quote.get("last")
+                    or quote.get("bid")
+                    or quote.get("ask")
+                )
+                if price:
+                    quotes.setdefault(
+                        key, {"price": float(price), "usd": True}
+                    )
+                    added = True
+            except Exception:
+                continue
+        if not added:
+            self._chain_backoff_until = time.time() + 300
         return quotes
 
     def _quotes(self):
@@ -189,6 +267,10 @@ class PaperLedger:
                 pass
         try:
             quotes = self._moomoo_quotes(quotes)
+        except Exception:
+            pass
+        try:
+            quotes = self._ws_chain_quotes(quotes)
         except Exception:
             pass
         self._quote_cache = quotes
