@@ -201,6 +201,30 @@ def find_channel_control(window, channel_names):
 _last_channel_click = 0.0
 
 
+def _ensure_on_screen(ctrl, log=print):
+    """A minimized (or tray) discord reports (0,0) clickable
+    points - every synthetic click lands on nothing. Restore
+    the window so the points map to the screen."""
+    try:
+        pt = ctrl.GetClickablePoint()
+    except Exception:
+        pt = None
+    if pt and (pt[0] > 0 or pt[1] > 0):
+        return True
+    try:
+        top = ctrl.GetTopLevelControl()
+        hwnd = top.NativeWindowHandle
+        ctypes.windll.user32.ShowWindow(hwnd, 9)   # SW_RESTORE
+        _time.sleep(0.8)
+        pt = ctrl.GetClickablePoint()
+        if pt and (pt[0] > 0 or pt[1] > 0):
+            log("restored the discord window (was minimized)")
+            return True
+    except Exception as e:
+        log(f"discord restore failed: {e}")
+    return False
+
+
 def click_channel_control(ctrl, log=print):
     """Click a channel entry; rate limited to one attempt a
     minute to avoid fighting the user."""
@@ -211,6 +235,12 @@ def click_channel_control(ctrl, log=print):
     if now - _last_channel_click < 60:
         return False
     _last_channel_click = now
+    if not _ensure_on_screen(ctrl, log):
+        log(
+            "channel switch skipped: discord is minimized or "
+            "offscreen"
+        )
+        return False
     # ui-automation activation first: no cursor movement, so a
     # user moving their physical mouse cannot break the switch
     try:

@@ -1239,6 +1239,8 @@ def main():
                         f"code updated to {head[:8]}",
                         commits=git_commit_line(repo_root(), head),
                     )
+                    if _log_hook is not None:
+                        _log_hook.flush_now()
                     os._exit(77)
                 # the pull only touched files the reader does not
                 # execute - keep the process running (logged at
