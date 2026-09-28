@@ -324,10 +324,18 @@ class WebhookLog:
         if url:
             _supervised_thread("reader-webhook", self._run)
             # the final lines ("reader stopped", a crash
-            # traceback) must survive the process exit
+            # traceback) must survive the process exit - best
+            # effort: a ctrl+c landing inside the flush is
+            # swallowed rather than dumping a traceback
             import atexit
 
-            atexit.register(self.flush_now)
+            def _flush_quiet():
+                try:
+                    self.flush_now()
+                except BaseException:
+                    pass
+
+            atexit.register(_flush_quiet)
 
     def add(self, line):
         if not self.url:
