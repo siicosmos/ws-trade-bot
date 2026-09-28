@@ -230,6 +230,11 @@ def _ensure_on_screen(ctrl, window=None, log=print):
             return False
         ctypes.windll.user32.ShowWindow(hwnd, 9)   # SW_RESTORE
         ctypes.windll.user32.SetForegroundWindow(hwnd)
+        # electron keeps its renderer suspended after a hide:
+        # the single-instance start signal makes discord show
+        # and repaint its window properly (same as double
+        # clicking the tray icon)
+        start_discord(log=log)
         # the restore + ui tree refresh takes a moment
         _time.sleep(1.5)
         if _readable():

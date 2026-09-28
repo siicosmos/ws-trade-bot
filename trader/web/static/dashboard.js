@@ -1405,6 +1405,7 @@ function renderMe() {
 
 let levelsNow = null;
 let levelsStale = false;
+let levelsError = null;
 let levelsPoll = null;
 
 function openLevels() {
@@ -1421,6 +1422,7 @@ function openLevels() {
         || data.stale !== levelsStale;
       levelsNow = data.price;
       levelsStale = !!data.stale;
+      levelsError = data.error || null;
       if (changed) renderLevelsChart();
     } catch (e) { /* the banner surfaces network issues */ }
   };
@@ -1538,6 +1540,10 @@ function renderLevelsChart() {
   const min = Math.min.apply(null, prices);
   const span = (max - min) || 1;
   let html = "";
+  if (levelsError) {
+    html += '<div class="levels-nowline" style="color:#f85149">spx spot unavailable: ' +
+      esc(levelsError) + "</div>";
+  }
   if (levelsNow != null) {
     const tag = levelsStale ? "last" : "now";
     html += '<div class="levels-nowline">SPX ' + tag + ': <b>' +

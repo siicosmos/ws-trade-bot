@@ -1134,16 +1134,21 @@ def create_app(cfg, store: Store, risk, executor, account=None,
         provider = ACTIVE_QUOTE_PROVIDER
         price = None
         age = None
-        if provider is not None and hasattr(provider, "index_quote"):
+        error = None
+        if provider is None:
+            error = "no quote provider (moomoo not configured)"
+        elif hasattr(provider, "index_quote"):
             try:
                 price = provider.index_quote("SPX")
                 age = max(0, int(time.time() - provider._index_ts))
-            except Exception:
+                error = getattr(provider, "_index_error", None)
+            except Exception as e:
                 price = None
+                error = str(e)
         # stale = outside trading hours: the last close shows
         # marked as 'last' instead of 'now'
         return jsonify({
-            "price": price, "age": age,
+            "price": price, "age": age, "error": error,
             "stale": bool(age and age > 120),
             "ts": time.time(),
         })
