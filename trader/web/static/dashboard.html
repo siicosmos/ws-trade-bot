@@ -25,6 +25,7 @@
   </div>
   <div class="headrow" style="justify-content:flex-end;gap:10px">
     <span id="me"></span>
+    <button id="levels-btn" onclick="openLevels()">spx levels</button>
     <button id="users-btn" onclick="openUsers()" style="display:none">users</button>
     <button id="settings-btn" onclick="openSettings()">settings</button>
     <a href="/logout" id="logout">log out</a>
@@ -62,6 +63,20 @@
 </div>
 <div id="history-results"></div>
 
+<div id="levelsBackdrop" onclick="if(event.target===this) closeLevels()">
+  <div id="levelsPanel">
+    <div id="levelsHead"><span>SPX Levels</span><button id="levelsClose" onclick="closeLevels()">&#215;</button></div>
+    <div id="levelsScroll">
+      <div class="set-section">
+        <div class="set-title">paste tomorrow's levels</div>
+        <textarea id="levels-input" rows="8" placeholder="paste the daily plan message here..."></textarea>
+        <div style="margin-top:10px"><button onclick="parseLevels()">parse &amp; show</button></div>
+        <div class="set-hint" id="levels-error"></div>
+      </div>
+      <div id="levels-chart"></div>
+    </div>
+  </div>
+</div>
 <div id="usersBackdrop" onclick="if(event.target===this) closeUsers()">
   <div id="usersPanel">
     <div id="usersHead"><span>Users</span><button id="usersClose" onclick="closeUsers()">&#215;</button></div>

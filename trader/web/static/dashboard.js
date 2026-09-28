@@ -1403,6 +1403,78 @@ function renderMe() {
   if (revert) revert.style.display = isAdmin() ? "" : "none";
 }
 
+async function openLevels() {
+  document.getElementById("levelsBackdrop").style.display = "flex";
+  const saved = localStorage.getItem("spx_levels_raw") || "";
+  document.getElementById("levels-input").value = saved;
+  renderLevelsChart();
+}
+
+function closeLevels() {
+  document.getElementById("levelsBackdrop").style.display = "none";
+}
+
+function parseLevelsText(text) {
+  // pivot: "🔄 Pivot: 7704"
+  // levels: "📈 Resistance: 7712 (R1), 7753 (R2), ..."
+  const out = { pivot: null, levels: [] };
+  const pivotM = text.match(/Pivot:\s*([\d.]+)/i);
+  if (pivotM) out.pivot = parseFloat(pivotM[1]);
+  const re = /([\d.]+)\s*\((R\d+|S\d+)\)/gi;
+  let m;
+  while ((m = re.exec(text))) {
+    out.levels.push({
+      label: m[2].toUpperCase(),
+      price: parseFloat(m[1]),
+    });
+  }
+  return out;
+}
+
+function parseLevels() {
+  const text = document.getElementById("levels-input").value;
+  const data = parseLevelsText(text);
+  const err = document.getElementById("levels-error");
+  if (!data.levels.length && data.pivot == null) {
+    err.textContent = "no levels found - paste the daily plan with the Pivot/Resistance/Support lines";
+    return;
+  }
+  err.textContent = "";
+  localStorage.setItem("spx_levels_raw", text);
+  localStorage.setItem("spx_levels", JSON.stringify(data));
+  renderLevelsChart();
+}
+
+function renderLevelsChart() {
+  const el = document.getElementById("levels-chart");
+  let data = null;
+  try { data = JSON.parse(localStorage.getItem("spx_levels") || "null"); } catch (e) {}
+  if (!data || (!data.levels.length && data.pivot == null)) {
+    el.innerHTML = '<div class="empty">no levels parsed yet</div>';
+    return;
+  }
+  const rows = data.levels.slice();
+  if (data.pivot != null) {
+    rows.push({ label: "Pivot", price: data.pivot, pivot: true });
+  }
+  rows.sort(function(a, b) { return b.price - a.price; });
+  const prices = rows.map(function(r) { return r.price; });
+  const max = Math.max.apply(null, prices);
+  const min = Math.min.apply(null, prices);
+  const span = (max - min) || 1;
+  let html = '<div class="levels-ladder">';
+  for (const r of rows) {
+    const topPct = ((max - r.price) / span * 100).toFixed(1);
+    const kind = r.label.charAt(0).toLowerCase();   // r / s / pivot
+    html += '<div class="levels-row" style="top:' + topPct + '%">' +
+      '<span class="levels-chip ' + kind + '">' + esc(r.label) + "</span>" +
+      '<span class="levels-price">' + r.price.toLocaleString("en-CA", { minimumFractionDigits: 0 }) + "</span>" +
+      '<div class="levels-line ' + kind + '"></div></div>';
+  }
+  html += "</div>";
+  el.innerHTML = html;
+}
+
 async function openUsers() {
   document.getElementById("usersBackdrop").style.display = "flex";
   await refreshUsers();

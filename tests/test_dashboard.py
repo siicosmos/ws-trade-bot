@@ -50,7 +50,9 @@ def test_header_rows_and_mobile_wrap():
     assert '<span id="updated">data refreshed</span>' in html
     css = dash.DASHBOARD_CSS
     assert 'id="settings-btn" onclick="openSettings()"' in html
-    assert "#settings-btn {" in css
+    # the header buttons share one styled rule
+    assert "#settings-btn, #users-btn, #levels-btn {" in css
+    assert 'id="levels-btn"' in html
     assert "justify-content:flex-end" in html
     assert "#logout {" in css
     assert "#f85149" in css
