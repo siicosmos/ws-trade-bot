@@ -113,7 +113,10 @@ class MoomooQuoteProvider:
                 self._ctx = None
                 return None
             if ret != 0:
-                self._index_error = f"snapshot ret={ret}"
+                # opend puts the failure reason in data
+                self._index_error = (
+                    f"snapshot ret={ret}: {str(data)[:120]}"
+                )
                 continue
             if data is None or data.empty:
                 self._index_error = "empty snapshot"

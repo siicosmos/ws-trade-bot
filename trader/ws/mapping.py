@@ -190,11 +190,17 @@ def map_options(raw, usd_cad_quote):
                 expiry = None
                 right = ""
                 underlying = ""
+                under_quote_val = None
                 for leg in legs_data:
                     lsec = leg.get("security") or {}
                     lod = lsec.get("optionDetails") or {}
                     if not lod:
                         continue
+                    if under_quote_val is None:
+                        under_quote_val = _quote_price(
+                            ((lod.get("underlyingSecurity") or {})
+                             .get("stock") or {}).get("quoteV2")
+                        )
                     expiry = expiry or lod.get("expiryDate")
                     if lod.get("strikePrice") is not None:
                         try:
@@ -286,6 +292,11 @@ def map_options(raw, usd_cad_quote):
                             ) else 1
                         ), 2,
                     )
+                # the underlying's own quote rides the option
+                # security node - the spx levels ladder uses it
+                # as the index spot when the moomoo index feed
+                # is unavailable
+                under_quote = under_quote_val
                 market_pct = None
                 if market_value is not None and cost_usd:
                     # return on the premium at risk: the debit
@@ -333,6 +344,9 @@ def map_options(raw, usd_cad_quote):
                         "pct_return": market_pct,
                         "margin_req_amount": margin_amount,
                         "margin_req_currency": margin_currency,
+                        "underlying_price": (
+                            round(under_quote, 2) if under_quote else None
+                        ),
                     }
                 )
                 continue

@@ -1562,8 +1562,10 @@ function setLevelsView(ticker) {
 
 function buildLevelsLadder(host, ticker, rows, pivot, errorLine) {
   rows = rows.slice();
-  if (pivot != null && ticker === "SPX") {
-    rows.push({ label: "Pivot", price: pivot, pivot: true });
+  if (pivot != null) {
+    // the pivot is an spx level: convert it for the spy ladder
+    const p = ticker === "SPY" ? Math.round(pivot / 10.0391 * 100) / 100 : pivot;
+    rows.push({ label: "Pivot", price: p, pivot: true });
   }
   if (!rows.length) {
     host.innerHTML = '<div class="empty">no levels</div>';

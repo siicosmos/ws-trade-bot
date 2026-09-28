@@ -1135,9 +1135,7 @@ def create_app(cfg, store: Store, risk, executor, account=None,
         price = None
         age = None
         error = None
-        if provider is None:
-            error = "no quote provider (moomoo not configured)"
-        elif hasattr(provider, "index_quote"):
+        if provider is not None and hasattr(provider, "index_quote"):
             try:
                 price = provider.index_quote("SPX")
                 age = max(0, int(time.time() - provider._index_ts))
@@ -1145,6 +1143,26 @@ def create_app(cfg, store: Store, risk, executor, account=None,
             except Exception as e:
                 price = None
                 error = str(e)
+        if not price:
+            # ws fallback: the option positions carry the
+            # underlying's own quote (the spx index spot)
+            try:
+                for row in (_real_positions() or {}).values():
+                    if not row:
+                        continue
+                    for r in row["positions"]:
+                        u = (r.get("underlying") or "").upper()
+                        up = r.get("underlying_price")
+                        if u == "SPX" and up:
+                            price = up
+                            error = None
+                            break
+                    if price:
+                        break
+            except Exception:
+                pass
+        if not price:
+            error = error or "no spx spot from moomoo or ws"
         # stale = outside trading hours: the last close shows
         # marked as 'last' instead of 'now'. the saved levels
         # text rides along: it is the cross-device source of
