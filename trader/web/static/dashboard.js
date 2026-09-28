@@ -1415,9 +1415,9 @@ function closeLevels() {
 }
 
 function parseLevelsText(text) {
-  // pivot: "🔄 Pivot: 7704"
-  // levels: "📈 Resistance: 7712 (R1), 7753 (R2), ..."
-  const out = { pivot: null, levels: [] };
+  // format A: "🔄 Pivot: 7704" +
+  // "📈 Resistance: 7712 (R1), 7753 (R2), ..."
+  const out = { pivot: null, levels: [], tickers: {} };
   const pivotM = text.match(/Pivot:\s*([\d.]+)/i);
   if (pivotM) out.pivot = parseFloat(pivotM[1]);
   const re = /([\d.]+)\s*\((R\d+|S\d+)\)/gi;
@@ -1428,6 +1428,35 @@ function parseLevelsText(text) {
       price: parseFloat(m[1]),
     });
   }
+  if (out.levels.length) return out;
+
+  // format B: a KEY LEVELS block with per-ticker chains
+  //   Support:
+  //   SPX: 7712 \u2794 7687 \u2794 7662
+  // supports count up from S1 in the given order; resistances
+  // count up from R1
+  let section = null;
+  for (const rawLine of text.split("\n")) {
+    const line = rawLine.trim();
+    if (/^Resistance\b/i.test(line)) { section = "R"; continue; }
+    if (/^Support\b/i.test(line)) { section = "S"; continue; }
+    if (!section) continue;
+    if (!line) { section = null; continue; }
+    const tm = line.match(/^(SPX|SPY)\b/i);
+    if (!tm) continue;
+    const nums = (line.match(/\d+(?:\.\d+)?/g) || [])
+      .map(parseFloat);
+    const ticker = tm[1].toUpperCase();
+    out.tickers[ticker] = out.tickers[ticker] || [];
+    nums.forEach(function(p, i) {
+      out.tickers[ticker].push({
+        label: section + (i + 1),
+        price: p,
+      });
+    });
+  }
+  if (out.tickers.SPX) out.levels = out.tickers.SPX;
+  else if (out.tickers.SPY) out.levels = out.tickers.SPY;
   return out;
 }
 
@@ -1445,6 +1474,13 @@ function parseLevels() {
   renderLevelsChart();
 }
 
+let levelsView = null;
+
+function setLevelsView(ticker) {
+  levelsView = ticker;
+  renderLevelsChart();
+}
+
 function renderLevelsChart() {
   const el = document.getElementById("levels-chart");
   let data = null;
@@ -1453,10 +1489,29 @@ function renderLevelsChart() {
     el.innerHTML = '<div class="empty">no levels parsed yet</div>';
     return;
   }
-  const rows = data.levels.slice();
-  if (data.pivot != null) {
+  const tickers = Object.keys(data.tickers || {});
+  const view = levelsView && tickers.indexOf(levelsView) >= 0
+    ? levelsView
+    : (tickers.indexOf("SPX") >= 0 ? "SPX" : (tickers[0] || null));
+  const rows = (view && data.tickers[view] ? data.tickers[view] : data.levels).slice();
+  // the pivot belongs to the spx plan
+  if (data.pivot != null && (!view || view === "SPX" || !tickers.length)) {
     rows.push({ label: "Pivot", price: data.pivot, pivot: true });
   }
+  // the ticker toggle when both chains were parsed
+  let toggles = "";
+  if (tickers.length > 1) {
+    toggles = '<div class="levels-toggles">';
+    for (const t of tickers) {
+      toggles += '<button class="lv-toggle' + (t === view ? " on" : "") +
+        '" onclick="setLevelsView(\'' + t + '\')">' + t + '</button>';
+    }
+    toggles += '</div>';
+  }
+  el.innerHTML = toggles;
+  const chartHost = document.createElement("div");
+  el.appendChild(chartHost);
+  const build = function(host) {
   rows.sort(function(a, b) { return b.price - a.price; });
   const prices = rows.map(function(r) { return r.price; });
   const max = Math.max.apply(null, prices);
@@ -1465,14 +1520,16 @@ function renderLevelsChart() {
   let html = '<div class="levels-ladder">';
   for (const r of rows) {
     const topPct = ((max - r.price) / span * 100).toFixed(1);
-    const kind = r.label.charAt(0).toLowerCase();   // r / s / pivot
+    const kind = r.pivot ? "p" : r.label.charAt(0).toLowerCase();
     html += '<div class="levels-row" style="top:' + topPct + '%">' +
       '<span class="levels-chip ' + kind + '">' + esc(r.label) + "</span>" +
       '<span class="levels-price">' + r.price.toLocaleString("en-CA", { minimumFractionDigits: 0 }) + "</span>" +
       '<div class="levels-line ' + kind + '"></div></div>';
   }
   html += "</div>";
-  el.innerHTML = html;
+  host.innerHTML = html;
+  };
+  build(chartHost);
 }
 
 async function openUsers() {
