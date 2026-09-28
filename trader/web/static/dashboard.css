@@ -382,10 +382,13 @@
     padding: 6px 8px; font-size: 12px; text-align: left;
     border-bottom: 1px solid var(--border);
   }
-  #users-list button {
+  #users-list button, #usersScroll button {
     background: #21262d; color: var(--text);
     border: 1px solid var(--border); border-radius: 6px;
     padding: 3px 10px; font-size: 11px; cursor: pointer;
+  }
+  #users-list button:hover, #usersScroll button:hover {
+    border-color: #8b949e;
   }
   #users-list .role-admin { color: #f0883e; font-weight: 600; }
   #users-list .role-viewer { color: var(--muted); }

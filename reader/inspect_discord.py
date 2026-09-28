@@ -208,14 +208,18 @@ def _ensure_on_screen(ctrl, window=None, log=print):
     """A minimized (or tray) discord reports (0,0) clickable
     points - every synthetic click lands on nothing. Restore
     the window so the points map to the screen. The hwnd comes
-    from the WINDOW control: child elements (channel entries)
-    report NativeWindowHandle 0, which makes ShowWindow a
-    silent no-op."""
-    try:
-        pt = ctrl.GetClickablePoint()
-    except Exception:
-        pt = None
-    if pt and (pt[0] > 0 or pt[1] > 0):
+    from the WINDOW control (child elements report
+    NativeWindowHandle 0, which makes ShowWindow a silent
+    no-op), and the verdict is the window's own iconic/visible
+    state - an element's clickable point can lag the restore."""
+    def _readable():
+        try:
+            target = window if window is not None else ctrl
+            return _window_readable(target)
+        except Exception:
+            return False
+
+    if _readable():
         return True
     try:
         target = window if window is not None else ctrl
@@ -228,9 +232,14 @@ def _ensure_on_screen(ctrl, window=None, log=print):
         ctypes.windll.user32.SetForegroundWindow(hwnd)
         # the restore + ui tree refresh takes a moment
         _time.sleep(1.5)
-        pt = ctrl.GetClickablePoint()
-        if pt and (pt[0] > 0 or pt[1] > 0):
+        if _readable():
             log("restored the discord window (was minimized)")
+            return True
+        # one more nudge: some builds need a second restore
+        ctypes.windll.user32.ShowWindow(hwnd, 9)
+        _time.sleep(1.0)
+        if _readable():
+            log("restored the discord window (second attempt)")
             return True
     except Exception as e:
         log(f"discord restore failed: {e}")
@@ -244,7 +253,7 @@ def click_channel_control(ctrl, window=None, log=print):
 
     global _last_channel_click
     now = _time.time()
-    if now - _last_channel_click < 60:
+    if now - _last_channel_click < 15:
         return False
     _last_channel_click = now
     if not _ensure_on_screen(ctrl, window=window, log=log):
