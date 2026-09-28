@@ -1,5 +1,6 @@
 import argparse
 import ctypes
+import time as _time
 
 import psutil
 import uiautomation as auto

@@ -1349,7 +1349,7 @@ def main():
                     # ui tree walk returns nothing - re-acquire a
                     # fresh window handle instead of polling a
                     # zombie forever
-                    if wait_attempts == 20:
+                    if wait_attempts and wait_attempts % 20 == 0:
                         log(
                             "no message pane for 10s - re-acquiring "
                             "the discord window (possible stale "
@@ -1360,7 +1360,14 @@ def main():
                             if fresh is not None:
                                 window = fresh
                             elif auto_start_discord:
+                                # no window at all: the process was
+                                # killed or is hung - popups get
+                                # closed, then a fresh start
                                 close_extra_windows(window, log=log)
+                                start_discord(
+                                    discord_start_command, log=log,
+                                    cooldown=reopen_seconds,
+                                )
                         except UIAError:
                             pass
                     # first failure, then roughly every 10s, then a
