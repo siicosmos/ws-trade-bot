@@ -424,6 +424,12 @@
     resize: vertical; min-height: 120px;
   }
   #levels-input:focus { outline: none; border-color: #8b949e; }
+  #levelsScroll button {
+    background: #21262d; color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 5px 14px; font-size: 12px; cursor: pointer;
+  }
+  #levelsScroll button:hover { border-color: #8b949e; }
   #levels-chart { margin-top: 14px; }
   .levels-ladder {
     position: relative; height: 420px;

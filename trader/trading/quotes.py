@@ -76,6 +76,7 @@ class MoomooQuoteProvider:
         self._ctx = None
         self._index_cache = None
         self._index_ts = 0.0
+        self._index_proxy = False
         # the last positive spot: outside trading hours the
         # snapshot returns nothing positive, but the ladder
         # should still show the last close (marked stale)
@@ -84,14 +85,19 @@ class MoomooQuoteProvider:
     def index_quote(self, symbol="SPX"):
         """Index spot for the levels ladder - cached briefly;
         snapshot calls are cheap but the dashboard polls. Tries
-        both index code forms and reports what the feed returns
-        (once) when nothing comes back."""
+        the index code forms, then falls back to the etf proxy
+        (spy x 10 tracks the spx closely enough to point at the
+        right level) when the index snapshot is refused."""
         now = time.time()
         if self._index_cache is not None and now - self._index_ts < 5:
             return self._index_cache
         sym = symbol.upper()
+        proxy = {"SPX": "SPY"}.get(sym)
         codes = [f"US.{sym}", f"{sym}.US"]
+        if proxy:
+            codes += [f"US.{proxy}", f"{proxy}.US"]
         price = None
+        proxy_price = None
         try:
             ret, data = self._context().get_market_snapshot(codes)
             if ret != 0:
@@ -99,15 +105,27 @@ class MoomooQuoteProvider:
                 self._index_error = f"snapshot ret={ret}"
             elif data is not None and not data.empty:
                 for i in range(len(data)):
-                    price = self.extract_price(data.iloc[i])
-                    if price:
-                        break
-                if not price:
-                    self._index_error = "no usable price in the snapshot"
+                    row = data.iloc[i]
+                    code = str(row.get("code") or "").upper()
+                    p = self.extract_price(row)
+                    if not p:
+                        continue
+                    if proxy and proxy in code:
+                        proxy_price = proxy_price or p
+                    else:
+                        price = price or p
+                if price:
+                    self._index_error = None
+                elif proxy_price:
+                    price = round(proxy_price * 10, 2)
+                    self._index_error = None
+                    self._index_proxy = True
+                else:
+                    self._index_error = (
+                        "no usable price in the snapshot"
+                    )
                     # one-time diagnostic: what did the feed give
                     self._log_index_snapshot(data)
-                else:
-                    self._index_error = None
             else:
                 self._index_error = "empty snapshot"
         except Exception as e:
@@ -121,6 +139,7 @@ class MoomooQuoteProvider:
             return None
         if price:
             self._index_last = price
+            self._index_proxy = getattr(self, "_index_proxy", False)
         self._index_cache = self._index_last
         self._index_ts = now
         return self._index_last

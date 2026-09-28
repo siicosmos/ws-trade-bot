@@ -299,8 +299,11 @@ def click_channel_control(ctrl, window=None, log=print):
     if not pt or (pt[0] <= 0 and pt[1] <= 0):
         try:
             rect = ctrl.BoundingRectangle
+            # the rail groups span the icon plus a (usually
+            # hidden) label - aim at the icon at the left edge,
+            # not the group center which can sit over nothing
             pt = (
-                (rect.left + rect.right) / 2,
+                rect.left + min(20, max(8, (rect.right - rect.left) / 4)),
                 (rect.top + rect.bottom) / 2,
             )
         except Exception:
