@@ -1258,6 +1258,23 @@ def main():
                     _stayup_log_ts = now
                 start_head = head
 
+        # a failed navigation drops the window handle - re-find
+        # it before anything touches window.Name
+        if window is None:
+            try:
+                window = find_discord_window()
+            except UIAError:
+                window = None
+            if window is None:
+                if auto_start_discord:
+                    start_discord(
+                        discord_start_command, log=log,
+                        cooldown=reopen_seconds,
+                    )
+                log("Discord window lost; waiting...")
+                time.sleep(2)
+                continue
+
         try:
             try:
                 title_channel = channel_from_title(window.Name)
