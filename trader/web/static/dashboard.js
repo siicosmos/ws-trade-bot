@@ -1472,7 +1472,20 @@ function parseLevelsText(text) {
       price: parseFloat(m[1]),
     });
   }
-  if (out.levels.length) return out;
+  if (out.levels.length) {
+    // format A: derive the spy ladder when the plan has no
+    // spy chain (spy = spx / 10.0391, the converter ratio)
+    if (!out.tickers.SPY) {
+      out.derived_spy = true;
+      out.tickers.SPY = out.levels.map(function(l) {
+        return {
+          label: l.label,
+          price: Math.round(l.price / 10.0391 * 100) / 100,
+        };
+      });
+    }
+    return out;
+  }
 
   // format B: a KEY LEVELS block with per-ticker chains
   //   Support:
@@ -1497,6 +1510,17 @@ function parseLevelsText(text) {
         label: section + (i + 1),
         price: p,
       });
+    });
+  }
+  // the spy ladder derives from spx when the plan has no spy
+  // chain: spy = spx / 10.0391 (the spxplays converter ratio)
+  if (out.tickers.SPX && !out.tickers.SPY) {
+    out.derived_spy = true;
+    out.tickers.SPY = out.tickers.SPX.map(function(l) {
+      return {
+        label: l.label,
+        price: Math.round(l.price / 10.0391 * 100) / 100,
+      };
     });
   }
   if (out.tickers.SPX) out.levels = out.tickers.SPX;
@@ -1534,48 +1558,26 @@ function setLevelsView(ticker) {
   renderLevelsChart();
 }
 
-function renderLevelsChart() {
-  const el = document.getElementById("levels-chart");
-  let data = null;
-  try { data = JSON.parse(localStorage.getItem("spx_levels") || "null"); } catch (e) {}
-  if (!data || (!data.levels.length && data.pivot == null)) {
-    el.innerHTML = '<div class="empty">no levels parsed yet</div>';
+function buildLevelsLadder(host, ticker, rows, pivot, errorLine) {
+  rows = rows.slice();
+  if (pivot != null && ticker === "SPX") {
+    rows.push({ label: "Pivot", price: pivot, pivot: true });
+  }
+  if (!rows.length) {
+    host.innerHTML = '<div class="empty">no levels</div>';
     return;
   }
-  const tickers = Object.keys(data.tickers || {});
-  const view = levelsView && tickers.indexOf(levelsView) >= 0
-    ? levelsView
-    : (tickers.indexOf("SPX") >= 0 ? "SPX" : (tickers[0] || null));
-  const rows = (view && data.tickers[view] ? data.tickers[view] : data.levels).slice();
-  // the pivot belongs to the spx plan
-  if (data.pivot != null && (!view || view === "SPX" || !tickers.length)) {
-    rows.push({ label: "Pivot", price: data.pivot, pivot: true });
-  }
-  // the ticker toggle when both chains were parsed
-  let toggles = "";
-  if (tickers.length > 1) {
-    toggles = '<div class="levels-toggles">';
-    for (const t of tickers) {
-      toggles += '<button class="lv-toggle' + (t === view ? " on" : "") +
-        '" onclick="setLevelsView(\'' + t + '\')">' + t + '</button>';
-    }
-    toggles += '</div>';
-  }
-  el.innerHTML = toggles;
-  const chartHost = document.createElement("div");
-  el.appendChild(chartHost);
-  const build = function(host) {
   rows.sort(function(a, b) { return b.price - a.price; });
   const prices = rows.map(function(r) { return r.price; });
   const max = Math.max.apply(null, prices);
   const min = Math.min.apply(null, prices);
   const span = (max - min) || 1;
   let html = "";
-  if (levelsError) {
-    html += '<div class="levels-nowline" style="color:#f85149">spx spot unavailable: ' +
-      esc(levelsError) + "</div>";
+  if (errorLine) {
+    html += '<div class="levels-nowline" style="color:#f85149">' +
+      esc(errorLine) + "</div>";
   }
-  if (levelsNow != null) {
+  if (levelsNow != null && ticker === "SPX") {
     const tag = levelsStale ? "last" : "now";
     html += '<div class="levels-nowline">SPX ' + tag + ': <b>' +
       levelsNow.toLocaleString("en-CA", { minimumFractionDigits: 2 }) +
@@ -1583,7 +1585,8 @@ function renderLevelsChart() {
   }
   html += '<div class="levels-ladder">';
   // the spot marker, inside the level range
-  if (levelsNow != null && levelsNow >= min && levelsNow <= max) {
+  if (levelsNow != null && ticker === "SPX" &&
+      levelsNow >= min && levelsNow <= max) {
     const nowPct = ((max - levelsNow) / span * 100).toFixed(1);
     const tag = levelsStale ? "last" : "now";
     html += '<div class="levels-row now" style="top:' + nowPct + '%">' +
@@ -1602,8 +1605,41 @@ function renderLevelsChart() {
   }
   html += "</div>";
   host.innerHTML = html;
-  };
-  build(chartHost);
+}
+
+function renderLevelsChart() {
+  const el = document.getElementById("levels-chart");
+  let data = null;
+  try { data = JSON.parse(localStorage.getItem("spx_levels") || "null"); } catch (e) {}
+  if (!data || (!data.levels.length && data.pivot == null &&
+      !(data.tickers && Object.keys(data.tickers).length))) {
+    el.innerHTML = '<div class="empty">no levels parsed yet</div>';
+    return;
+  }
+  const tickers = Object.keys(data.tickers || {});
+  const errorLine = levelsError
+    ? "spx spot unavailable: " + levelsError : null;
+  const nowLine = levelsNow != null
+    ? "SPX " + (levelsStale ? "last" : "now") + ": <b>" +
+      levelsNow.toLocaleString("en-CA", { minimumFractionDigits: 2 }) +
+      "</b>" + (levelsStale ? " (market closed)" : "")
+    : null;
+  // both ladders side by side: spx left, spy right
+  el.innerHTML = '<div class="levels-duo" id="levels-duo"></div>';
+  const duo = document.getElementById("levels-duo");
+  const views = tickers.length ? tickers : ["SPX"];
+  for (const t of views) {
+    const rows = (data.tickers && data.tickers[t] ? data.tickers[t] : data.levels).slice();
+    const pane = document.createElement("div");
+    pane.className = "levels-pane";
+    pane.innerHTML = '<div class="levels-pane-title">' + esc(t) +
+      (t === "SPY" && data.derived_spy ? ' <span class="subv">(converted)</span>' : "") +
+      '</div>';
+    duo.appendChild(pane);
+    const host = document.createElement("div");
+    pane.appendChild(host);
+    buildLevelsLadder(host, t, rows, data.pivot, nowLine + (errorLine && t === "SPX" ? " · " + errorLine : ""));
+  }
 }
 
 async function openUsers() {

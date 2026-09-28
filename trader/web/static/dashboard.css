@@ -495,3 +495,16 @@
   .levels-nowline b { color: #58a6ff; font-variant-numeric: tabular-nums; }
   .levels-chip.now { background: #1f6feb; color: #fff; }
   .levels-line.now { background: #1f6feb; height: 2px; }
+
+  /* side-by-side ladders */
+  .levels-duo {
+    display: grid; gap: 14px;
+    grid-template-columns: 1fr 1fr;
+  }
+  @media (max-width: 700px) {
+    .levels-duo { grid-template-columns: 1fr; }
+  }
+  .levels-pane-title {
+    color: var(--muted); font-size: 11px; text-transform: uppercase;
+    letter-spacing: .8px; font-weight: 600; margin-bottom: 6px;
+  }
