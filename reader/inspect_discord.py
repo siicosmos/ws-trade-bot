@@ -367,19 +367,22 @@ def _window_readable(control):
         return False
 
 
-def ensure_visible(control, log=print):
+def ensure_visible(control, window=None, log=print):
     """A minimized OR tray-hidden electron window renders
     nothing - its ui tree exposes an empty message list.
     Restore/unhide it so messages can be read (behind other
-    windows is fine; hidden is not)."""
+    windows is fine; hidden is not). The WINDOW's readability
+    is the verdict: a stale container element (normal after a
+    switch re-render) must not read as a lost window."""
     try:
-        if _window_readable(control):
+        target = window if window is not None else control
+        if _window_readable(target):
             return False
-        top = control.GetTopLevelControl()
+        top = target.GetTopLevelControl() or target
         hwnd = top.NativeWindowHandle
         ctypes.windll.user32.ShowWindow(hwnd, 9)   # SW_RESTORE
-        _time.sleep(1.5)
-        if _window_readable(control):
+        _time.sleep(2.5)
+        if _window_readable(target):
             log(
                 "discord was hidden or minimized - restored it "
                 "(a hidden window cannot be read)"

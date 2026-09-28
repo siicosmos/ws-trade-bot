@@ -1574,18 +1574,18 @@ def main():
                 last_read_summary = summary
             if not msgs:
                 # a minimized or hidden discord renders nothing -
-                # restore it, and drop the held container: its
-                # subtree was torn down while hidden and the
-                # stale element never re-attaches. a restore that
-                # still cannot make the window readable means the
-                # window is gone (closed to tray, killed) - drop
-                # the window too so the auto-start kicks in now
-                # instead of waiting out the re-acquire timer
-                if ensure_visible(container, log=log):
+                # restore it. the window's readability is the
+                # verdict: a stale container (normal after a
+                # switch re-render) only drops the container; the
+                # window handle drops only when the window itself
+                # is gone or hidden
+                if ensure_visible(container, window=window, log=log):
                     container = None
-                else:
+                elif not _window_readable(window):
                     container = None
                     window = None
+                else:
+                    container = None
                 empty_polls += 1
                 if empty_polls >= 10:
                     container = None
