@@ -82,31 +82,55 @@ class MoomooQuoteProvider:
         self._index_last = None
 
     def index_quote(self, symbol="SPX"):
-        """Index spot (US.SPX) for the levels ladder - cached
-        briefly; snapshot calls are cheap but the dashboard
-        polls."""
+        """Index spot for the levels ladder - cached briefly;
+        snapshot calls are cheap but the dashboard polls. Tries
+        both index code forms and reports what the feed returns
+        (once) when nothing comes back."""
         now = time.time()
         if self._index_cache is not None and now - self._index_ts < 5:
             return self._index_cache
-        code = f"US.{symbol.upper()}"
+        sym = symbol.upper()
+        codes = [f"US.{sym}", f"{sym}.US"]
+        price = None
         try:
-            ret, data = self._context().get_market_snapshot([code])
-        except Exception:
+            ret, data = self._context().get_market_snapshot(codes)
+            if ret == 0 and data is not None and not data.empty:
+                for i in range(len(data)):
+                    price = self.extract_price(data.iloc[i])
+                    if price:
+                        break
+                if not price:
+                    # one-time diagnostic: what did the feed give
+                    self._log_index_snapshot(data)
+        except Exception as e:
             # the reconnect path (same as option quotes)
+            self._index_error = str(e)
             try:
                 self._ctx.close()
             except Exception:
                 pass
             self._ctx = None
             return None
-        price = None
-        if ret == 0 and data is not None and not data.empty:
-            price = self.extract_price(data.iloc[0])
         if price:
             self._index_last = price
         self._index_cache = self._index_last
         self._index_ts = now
         return self._index_last
+
+    def _log_index_snapshot(self, data, log=print):
+        import time as _time
+
+        if _time.time() - getattr(self, "_index_diag_ts", 0) < 300:
+            return
+        self._index_diag_ts = _time.time()
+        try:
+            cols = list(data.columns)
+            log(
+                f"spx index snapshot returned no usable price - "
+                f"columns: {cols[:8]}"
+            )
+        except Exception:
+            pass
 
     def _context(self):
         if self._ctx is None:

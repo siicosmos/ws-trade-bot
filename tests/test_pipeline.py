@@ -4217,6 +4217,9 @@ def test_index_quote_reads_us_spx():
     class _Data:
         empty = False
 
+        def __len__(self):
+            return 1
+
         class _Iloc:
             @staticmethod
             def __getitem__(i):
@@ -4229,7 +4232,7 @@ def test_index_quote_reads_us_spx():
             pass
 
         def get_market_snapshot(self, codes):
-            assert codes == ["US.SPX"]
+            assert codes[0] == "US.SPX"
             return 0, _Data()
 
         def close(self):

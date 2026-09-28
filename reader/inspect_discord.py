@@ -263,7 +263,15 @@ def click_channel_control(ctrl, window=None, log=print):
         )
         return False
     # ui-automation activation first: no cursor movement, so a
-    # user moving their physical mouse cannot break the switch
+    # user moving their physical mouse cannot break the switch.
+    # sidebar entries are selection items - selecting is the
+    # proper activation
+    try:
+        ctrl.GetSelectionItemPattern().Select()
+        log("switched discord to the target channel (select)")
+        return True
+    except Exception:
+        pass
     try:
         ctrl.DoDefaultAction()
         log("switched discord to the target channel (uia action)")
@@ -276,8 +284,29 @@ def click_channel_control(ctrl, window=None, log=print):
         return True
     except Exception:
         pass
+    # mouse last: it clicks whatever is visually on top, so
+    # discord must be foregrounded, and a (0,0) point (an
+    # element with no resolvable position) is refused
     try:
         pt = ctrl.GetClickablePoint()
+    except Exception:
+        pt = None
+    if not pt or (pt[0] <= 0 and pt[1] <= 0):
+        try:
+            rect = ctrl.BoundingRectangle
+            pt = (
+                (rect.left + rect.right) / 2,
+                (rect.top + rect.bottom) / 2,
+            )
+        except Exception:
+            pt = None
+    if not pt or (pt[0] <= 0 and pt[1] <= 0):
+        log(
+            "channel switch failed: the entry has no usable "
+            "position (mouse click refused)"
+        )
+        return False
+    try:
         ctrl.Click(simulateMove=False)
         log(
             "switched discord to the target channel (mouse at "
