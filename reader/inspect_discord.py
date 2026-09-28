@@ -204,10 +204,13 @@ def find_channel_control(window, channel_names):
 _last_channel_click = 0.0
 
 
-def _ensure_on_screen(ctrl, log=print):
+def _ensure_on_screen(ctrl, window=None, log=print):
     """A minimized (or tray) discord reports (0,0) clickable
     points - every synthetic click lands on nothing. Restore
-    the window so the points map to the screen."""
+    the window so the points map to the screen. The hwnd comes
+    from the WINDOW control: child elements (channel entries)
+    report NativeWindowHandle 0, which makes ShowWindow a
+    silent no-op."""
     try:
         pt = ctrl.GetClickablePoint()
     except Exception:
@@ -215,9 +218,14 @@ def _ensure_on_screen(ctrl, log=print):
     if pt and (pt[0] > 0 or pt[1] > 0):
         return True
     try:
-        top = ctrl.GetTopLevelControl()
+        target = window if window is not None else ctrl
+        top = target.GetTopLevelControl() or target
         hwnd = top.NativeWindowHandle
+        if not hwnd:
+            log("discord restore failed: no window handle")
+            return False
         ctypes.windll.user32.ShowWindow(hwnd, 9)   # SW_RESTORE
+        ctypes.windll.user32.SetForegroundWindow(hwnd)
         # the restore + ui tree refresh takes a moment
         _time.sleep(1.5)
         pt = ctrl.GetClickablePoint()
@@ -229,7 +237,7 @@ def _ensure_on_screen(ctrl, log=print):
     return False
 
 
-def click_channel_control(ctrl, log=print):
+def click_channel_control(ctrl, window=None, log=print):
     """Click a channel entry; rate limited to one attempt a
     minute to avoid fighting the user."""
     import time as _time
@@ -239,7 +247,7 @@ def click_channel_control(ctrl, log=print):
     if now - _last_channel_click < 60:
         return False
     _last_channel_click = now
-    if not _ensure_on_screen(ctrl, log):
+    if not _ensure_on_screen(ctrl, window=window, log=log):
         log(
             "channel switch skipped: discord is minimized or "
             "offscreen"

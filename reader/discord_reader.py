@@ -1352,7 +1352,9 @@ def main():
                 ) or discord_server
                 ctrl = find_channel_control(window, [target])
                 if ctrl is not None:
-                    if not click_channel_control(ctrl, log=log):
+                    if not click_channel_control(
+                        ctrl, window=window, log=log,
+                    ):
                         # a skipped/failed switch after a hide
                         # cycle means the held window tree is
                         # stale - re-acquire everything fresh
@@ -1362,7 +1364,7 @@ def main():
                     # server's channels only appear once selected
                     srv = find_channel_control(window, [server])
                     if srv is not None:
-                        click_channel_control(srv, log=log)
+                        click_channel_control(srv, window=window, log=log)
                     elif wait_attempts % 120 == 0:
                         log(
                             f"no {target!r} entry and no server "
@@ -1570,7 +1572,7 @@ def main():
                         if server else None
                     )
                     if srv is not None:
-                        click_channel_control(srv, log=log)
+                        click_channel_control(srv, window=window, log=log)
                     elif wait_attempts % 120 == 0:
                         log(
                             f"the {title_channel!r} sidebar is not "
