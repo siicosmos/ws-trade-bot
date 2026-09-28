@@ -50,6 +50,8 @@ class StopMonitor:
         if t.stop_loss_pct <= 0:
             return
         for pos in self.store.list_positions(self.trader.mode):
+            if not pos.get("right"):
+                continue   # the stop monitor watches options only
             try:
                 bid = self.quote_fn(pos)
             except Exception:

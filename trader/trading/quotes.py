@@ -1,4 +1,10 @@
+import time
+
 from .parser import Alert
+
+# the live quote provider, held for the web layer (the spx
+# levels ladder polls the index spot through it)
+ACTIVE_QUOTE_PROVIDER = None
 
 
 def make_quote_provider(cfg, account):
@@ -10,9 +16,11 @@ def make_quote_provider(cfg, account):
         return None
     provider = (cfg.quotes.provider or "ws").lower()
     if provider == "moomoo":
+        global ACTIVE_QUOTE_PROVIDER
         try:
             moomoo = MoomooQuoteProvider(cfg)
             moomoo._context()
+            ACTIVE_QUOTE_PROVIDER = moomoo
             print(
                 f"quotes: moomoo OpenD at {cfg.quotes.moomoo_host}:"
                 f"{cfg.quotes.moomoo_port}"
@@ -66,6 +74,33 @@ class MoomooQuoteProvider:
     def __init__(self, cfg):
         self.cfg = cfg
         self._ctx = None
+        self._index_cache = None
+        self._index_ts = 0.0
+
+    def index_quote(self, symbol="SPX"):
+        """Index spot (US.SPX) for the levels ladder - cached
+        briefly; snapshot calls are cheap but the dashboard
+        polls."""
+        now = time.time()
+        if self._index_cache is not None and now - self._index_ts < 5:
+            return self._index_cache
+        code = f"US.{symbol.upper()}"
+        try:
+            ret, data = self._context().get_market_snapshot([code])
+        except Exception:
+            # the reconnect path (same as option quotes)
+            try:
+                self._ctx.close()
+            except Exception:
+                pass
+            self._ctx = None
+            return None
+        price = None
+        if ret == 0 and data is not None and not data.empty:
+            price = self.extract_price(data.iloc[0])
+        self._index_cache = price
+        self._index_ts = now
+        return price
 
     def _context(self):
         if self._ctx is None:

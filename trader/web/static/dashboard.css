@@ -458,3 +458,11 @@
     cursor: pointer;
   }
   .lv-toggle.on { color: #fff; background: #1f6feb; border-color: #1f6feb; }
+
+  /* the realtime spot marker on the levels ladder */
+  .levels-nowline {
+    color: var(--muted); font-size: 12px; margin-bottom: 8px;
+  }
+  .levels-nowline b { color: #58a6ff; font-variant-numeric: tabular-nums; }
+  .levels-chip.now { background: #1f6feb; color: #fff; }
+  .levels-line.now { background: #1f6feb; height: 2px; }

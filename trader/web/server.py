@@ -1125,6 +1125,21 @@ def create_app(cfg, store: Store, risk, executor, account=None,
         limit = request.args.get("limit", default=50, type=int)
         return jsonify(store.recent_trades(limit))
 
+    @app.get("/api/spx")
+    def api_spx():
+        """Realtime SPX index spot for the levels ladder (from
+        the moomoo feed when configured)."""
+        from ..trading.quotes import ACTIVE_QUOTE_PROVIDER
+
+        provider = ACTIVE_QUOTE_PROVIDER
+        price = None
+        if provider is not None and hasattr(provider, "index_quote"):
+            try:
+                price = provider.index_quote("SPX")
+            except Exception:
+                price = None
+        return jsonify({"price": price, "ts": time.time()})
+
     @app.get("/api/history")
     def api_history():
         kind = request.args.get("kind", "trades")

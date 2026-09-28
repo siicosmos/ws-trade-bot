@@ -33,12 +33,15 @@ class RiskEngine:
                             f"({int(t.cooldown_seconds - elapsed)}s left)"
                         )
 
-            if t.max_consecutive_losses > 0:
+            # the loss-streak breaker gates OPTIONS only - stock
+            # alerts stay takeable (the streak itself clears the
+            # next day)
+            if t.max_consecutive_losses > 0 and alert.kind == "option":
                 streak = self.store.loss_streak(mode)
                 if streak >= t.max_consecutive_losses:
                     return False, (
                         f"loss-streak breaker: {streak} consecutive losing "
-                        f"trades - buys resume tomorrow"
+                        f"trades - option buys resume tomorrow"
                     )
 
             if (

@@ -4163,3 +4163,94 @@ def test_paper_resize_bring_stock_trades_to_tier_sizing():
     # the resize is recorded in the trade log
     rows = [t for t in store.recent_trades(5) if t["mode"] == "paper"]
     assert any("resized" in (t["detail"] or "") for t in rows)
+
+
+def test_loss_streak_breaker_gates_options_only():
+    """the loss-streak breaker blocks option buys but stock
+    alerts stay takeable; the streak clears the next day."""
+    from datetime import datetime, timezone
+
+    cfg, store, account, risk = _setup(
+        paper_account_value=10000, max_consecutive_losses=2,
+        cooldown_seconds=0,
+    )
+    ex = PaperExecutor(cfg, store, account)
+
+    # two losing option closes -> the streak hits the cap
+    for i, premium in enumerate(("2.0", "2.0")):
+        buy = parse_alert(f"BOUGHT 0DTE SPY 759c @ {premium}")
+        assert ex.execute(buy, cfg, store).ok
+        sell = parse_alert(f"SOLD 0DTE SPY 759c @ 1.0")
+        assert ex.execute(sell, cfg, store).ok
+    assert store.loss_streak("paper") == 2
+
+    # option buys blocked at the cap
+    ok, reason = risk.evaluate(parse_alert("BOUGHT 0DTE SPY 760c @ 1.0"))
+    assert not ok and "loss-streak" in reason
+
+    # stock alerts still takeable
+    res = ex.execute(parse_alert("BOUGHT LLYX @ 25.7"), cfg, store)
+    assert res.ok
+
+    # the streak clears the next day (no overnight carry)
+    store._record_close("paper", -100.0)   # same-day loss keeps it
+    assert store.loss_streak("paper") == 3
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    store.meta_set("loss_streak:paper", '{"count": 2, "date": "2000-01-01"}')
+    assert store.loss_streak("paper") == 0
+
+
+def test_index_quote_reads_us_spx():
+    """the levels ladder polls the spx index spot through the
+    moomoo feed (US.SPX snapshot)."""
+    import sys
+    import types as _types
+
+    real = sys.modules.get("moomoo")
+    stub = _types.ModuleType("moomoo")
+
+    class _Row:
+        @staticmethod
+        def get(key):
+            return {"last_price": 6789.25}.get(key)
+
+    class _Data:
+        empty = False
+
+        class _Iloc:
+            @staticmethod
+            def __getitem__(i):
+                return _Row()
+
+        iloc = _Iloc()
+
+    class _Ctx:
+        def __init__(self, host, port):
+            pass
+
+        def get_market_snapshot(self, codes):
+            assert codes == ["US.SPX"]
+            return 0, _Data()
+
+        def close(self):
+            pass
+
+    stub.OpenQuoteContext = _Ctx
+    sys.modules["moomoo"] = stub
+    try:
+        from trader.trading.quotes import MoomooQuoteProvider
+
+        cfg = _types.SimpleNamespace(
+            quotes=_types.SimpleNamespace(
+                moomoo_host="127.0.0.1", moomoo_port=11111
+            )
+        )
+        p = MoomooQuoteProvider(cfg)
+        assert p.index_quote("SPX") == 6789.25
+        # cached for 5s
+        assert p.index_quote("SPX") == 6789.25
+    finally:
+        if real is not None:
+            sys.modules["moomoo"] = real
+        else:
+            sys.modules.pop("moomoo", None)

@@ -1403,15 +1403,32 @@ function renderMe() {
   if (revert) revert.style.display = isAdmin() ? "" : "none";
 }
 
-async function openLevels() {
+let levelsNow = null;
+let levelsPoll = null;
+
+function openLevels() {
   document.getElementById("levelsBackdrop").style.display = "flex";
   const saved = localStorage.getItem("spx_levels_raw") || "";
   document.getElementById("levels-input").value = saved;
   renderLevelsChart();
+  // realtime spx spot while the popup is open
+  clearInterval(levelsPoll);
+  const poll = async function() {
+    try {
+      const data = await api("/api/spx");
+      const changed = data.price !== levelsNow;
+      levelsNow = data.price;
+      if (changed) renderLevelsChart();
+    } catch (e) { /* the banner surfaces network issues */ }
+  };
+  poll();
+  levelsPoll = setInterval(poll, 5000);
 }
 
 function closeLevels() {
   document.getElementById("levelsBackdrop").style.display = "none";
+  clearInterval(levelsPoll);
+  levelsPoll = null;
 }
 
 function parseLevelsText(text) {
@@ -1517,7 +1534,22 @@ function renderLevelsChart() {
   const max = Math.max.apply(null, prices);
   const min = Math.min.apply(null, prices);
   const span = (max - min) || 1;
-  let html = '<div class="levels-ladder">';
+  let html = "";
+  if (levelsNow != null) {
+    html += '<div class="levels-nowline">SPX now: <b>' +
+      levelsNow.toLocaleString("en-CA", { minimumFractionDigits: 2 }) +
+      "</b></div>";
+  }
+  html += '<div class="levels-ladder">';
+  // the realtime spot marker, inside the level range
+  if (levelsNow != null && levelsNow >= min && levelsNow <= max) {
+    const nowPct = ((max - levelsNow) / span * 100).toFixed(1);
+    html += '<div class="levels-row now" style="top:' + nowPct + '%">' +
+      '<span class="levels-chip now">now</span>' +
+      '<span class="levels-price">' +
+      levelsNow.toLocaleString("en-CA", { minimumFractionDigits: 2 }) +
+      '</span><div class="levels-line now"></div></div>';
+  }
   for (const r of rows) {
     const topPct = ((max - r.price) / span * 100).toFixed(1);
     const kind = r.pivot ? "p" : r.label.charAt(0).toLowerCase();
