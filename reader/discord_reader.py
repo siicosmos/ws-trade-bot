@@ -789,7 +789,6 @@ def snap_to_bottom(container, log_fn=None):
     viewport exists in the accessibility tree, so a pane left higher
     up hides the newest alerts. Snap it (or a scrollable ancestor)
     to the bottom."""
-    global _snap_warn_ts
     node = container
     pattern = None
     for _ in range(4):
@@ -805,39 +804,63 @@ def snap_to_bottom(container, log_fn=None):
             node = node.GetParentControl()
         except Exception:
             node = None
-    if not pattern:
-        # fallback: focus the pane and send End - Discord jumps the
-        # chat to the newest messages, materializing them in the tree
-        if not ensure_visible(container, log=log_fn or print):
-            return
+
+    def _warn(msg, period=3600):
+        global _snap_warn_ts
+        if log_fn and time.time() - _snap_warn_ts > period:
+            log_fn(msg)
+            _snap_warn_ts = time.time()
+
+    if pattern is not None:
         try:
-            container.SetFocus()
-            auto.SendKeys("{End}", waitTime=0.05)
-            if log_fn and time.time() - _snap_warn_ts > 3600:
-                log_fn(
-                    "no scroll pattern - using End key to jump to "
-                    "latest messages"
-                )
-                _snap_warn_ts = time.time()
-        except Exception as e:
-            if log_fn and time.time() - _snap_warn_ts > 600:
-                log_fn(f"auto-scroll fallback failed: {e}")
-                _snap_warn_ts = time.time()
-        return
-    try:
-        visible = _uia_prop(pattern, "VerticalViewSize")
-        if visible is not None and visible >= 100:
-            return
-        pct = _uia_prop(pattern, "VerticalScrollPercent")
-        if pct is None or pct < 98:
-            pattern.SetScrollPercent(-1, 100)
+            visible = _uia_prop(pattern, "VerticalViewSize")
+            if visible is not None and visible >= 100:
+                return
+            pct = _uia_prop(pattern, "VerticalScrollPercent")
+            if pct is None or pct >= 98:
+                return
             if log_fn:
                 log_fn(
                     f"pane at {pct if pct is not None else '?'}% - "
                     f"scrolling to latest"
                 )
-    except Exception:
-        pass
+            try:
+                pattern.SetScrollPercent(-1, 100)
+            except Exception:
+                pass
+            time.sleep(0.3)
+            now_pct = _uia_prop(pattern, "VerticalScrollPercent")
+            if now_pct is not None and now_pct >= 98:
+                return
+            # some discord builds accept SetScrollPercent but
+            # ignore it (chromium) - wheel the pane down before
+            # reaching for the keyboard
+            try:
+                container.WheelDown(
+                    wheelTimes=25, interval=0.02, waitTime=0.05
+                )
+            except Exception:
+                pass
+            time.sleep(0.3)
+            time.sleep(0.3)
+            now_pct = _uia_prop(pattern, "VerticalScrollPercent")
+            if now_pct is None or now_pct >= 98:
+                return
+            _warn("pane still not at the bottom after scrolling")
+        except Exception:
+            pass
+    # fallback: focus the pane and send End - Discord jumps the
+    # chat to the newest messages, materializing them in the tree
+    # (a readable window does not need the restore attempt)
+    ensure_visible(container, log=log_fn or print)
+    try:
+        container.SetFocus()
+        auto.SendKeys("{End}", waitTime=0.05)
+        _warn(
+            "scroll failed - using End key to jump to latest messages"
+        )
+    except Exception as e:
+        _warn(f"auto-scroll fallback failed: {e}", period=600)
 
 
 def heartbeat_status(allowed, title_channel):
@@ -1565,7 +1588,7 @@ def main():
                 max_items = new_max
 
             scroll_counter += 1
-            if auto_scroll and scroll_counter % 10 == 0:
+            if auto_scroll and scroll_counter % 5 == 0:
                 snap_to_bottom(
                     container,
                     log_fn=lambda msg: log(msg),

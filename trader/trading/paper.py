@@ -15,6 +15,27 @@ from ..ws.ws_common import (
 )
 
 
+def _position_key(pos):
+    """Canonical quote-map key for a stored position row.
+
+    Older seeds stored the raw graphql expiry timestamp in the
+    contract key; the live quotes are keyed by the plain date
+    (see _quotes) - normalize on lookup so the paper price
+    always matches the real account's quote."""
+    expiry = str(pos.get("expiry") or "")[:10]
+    strike = pos.get("strike")
+    right = pos.get("right")
+    if not expiry or strike is None or not right:
+        return pos["contract_key"]
+    try:
+        return (
+            f"{pos['underlying']}-{expiry}"
+            f"-{float(strike):g}-{right}"
+        )
+    except (TypeError, ValueError):
+        return pos["contract_key"]
+
+
 class PaperAccount:
     def __init__(self, cfg, store):
         self.cfg = cfg
@@ -54,6 +75,48 @@ class PaperLedger:
         self.ws_account = ws_account
         self._quote_cache = None
         self._quote_ts = 0.0
+
+    def _moomoo_quotes(self, quotes):
+        """Mark paper option positions from the moomoo feed:
+        paper-only trades (notify mode never executed them) have
+        no live-account counterpart, so the ws positions path
+        can't price them - one batch snapshot covers every
+        paper contract."""
+        from .quotes import ACTIVE_QUOTE_PROVIDER
+
+        provider = ACTIVE_QUOTE_PROVIDER
+        if provider is None or not hasattr(provider, "candidate_codes"):
+            return quotes
+        codes = []
+        by_code = []
+        try:
+            for pos in self.store.list_positions("paper"):
+                if not pos.get("right"):
+                    continue
+                key = _position_key(pos)
+                if key in quotes:
+                    continue   # already priced from ws
+                probe = dict(pos, expiry=str(pos.get("expiry") or "")[:10])
+                for c in provider.candidate_codes(probe):
+                    codes.append(c)
+                    by_code.append((key, c.upper()))
+            if not codes:
+                return quotes
+            ret, data = provider._context().get_market_snapshot(codes)
+            if ret != 0 or data is None or data.empty:
+                return quotes
+            for i in range(len(data)):
+                row = data.iloc[i]
+                p = type(provider).extract_price(row)
+                if not p:
+                    continue
+                code = str(row.get("code") or "").upper()
+                for key, c in by_code:
+                    if c == code and key not in quotes:
+                        quotes[key] = {"price": p, "usd": True}
+        except Exception:
+            pass
+        return quotes
 
     def _quotes(self):
         """{contract_key: price} from live positions, cached."""
@@ -124,6 +187,10 @@ class PaperLedger:
                             quotes[key] = {"price": price, "usd": usd}
             except Exception:
                 pass
+        try:
+            quotes = self._moomoo_quotes(quotes)
+        except Exception:
+            pass
         self._quote_cache = quotes
         self._quote_ts = now
         return quotes
@@ -167,7 +234,9 @@ class PaperLedger:
         fx = self.fx()
         total = cash
         for pos in self.store.list_positions("paper", label):
-            quote = quotes.get(pos["contract_key"])
+            quote = quotes.get(_position_key(pos)) or quotes.get(
+                pos["contract_key"]
+            )
             if quote is None:
                 quote = {
                     "price": pos.get("avg_premium") or 0.0,
@@ -189,7 +258,9 @@ class PaperLedger:
         fx = self.fx()
         rows = []
         for pos in self.store.list_positions("paper", label):
-            quote = quotes.get(pos["contract_key"])
+            quote = quotes.get(_position_key(pos)) or quotes.get(
+                pos["contract_key"]
+            )
             is_option = pos.get("right") not in (None, "", "?")
             if quote is None:
                 price = pos.get("avg_premium") or 0.0
@@ -316,13 +387,18 @@ def seed_paper_accounts(cfg, store, ws_account):
                     avg = abs(market_book) / (qty * 100) if qty else None
                 # value in CAD for the seed cash
                 conv = leg_fx or 1.0
+                # keys and stored expiries use the plain date -
+                # the raw graphql value is a full timestamp,
+                # which never matched the quote map and froze
+                # the paper price at cost basis
+                expiry_date = str(od.get("expiryDate") or "")[:10]
                 if not short and qty > 0:
                     positions_value += abs(mv) * conv
                     longs.append(
                         (
-                            f"{underlying}-{od.get('expiryDate', '')}"
+                            f"{underlying}-{expiry_date}"
                             f"-{strike:g}-{right}",
-                            underlying, od.get("expiryDate", ""),
+                            underlying, expiry_date,
                             strike, right, int(qty), avg,
                         )
                     )

@@ -2901,6 +2901,109 @@ def test_paper_positions_include_kind():
     assert kinds["ZWC"] == "stock"
 
 
+def test_paper_prices_match_live_quote_expiry_keys():
+    """seeded rows carry the raw graphql expiry timestamp in
+    their contract key; the live quote map keys the plain date.
+    the lookup must normalize, or the paper price freezes at
+    cost basis while the real account shows the live quote."""
+    from trader.ws.account import PaperLedger
+
+    store = _fresh_store()
+    store.seed_position(
+        "paper", "Personal",
+        "SPX-2026-09-25T00:00:00.000-04:00-6000-C",
+        "SPX", "2026-09-25T00:00:00.000-04:00", 6000.0, "C",
+        2, 5.0,
+    )
+    store.set_paper_equity(10000.0, "Personal")
+
+    class FakeWS:
+        def _positions_raw(self):
+            return {"Personal": [{
+                "quantity": 2,
+                "security": {
+                    "optionDetails": {
+                        "optionType": "CALL",
+                        "strikePrice": 6000,
+                        "expiryDate":
+                            "2026-09-25T00:00:00.000-04:00",
+                        "underlyingSecurity": {
+                            "stock": {"symbol": "SPX"},
+                        },
+                    },
+                    "quoteV2": {"price": "7.5"},
+                },
+            }]}
+
+    ledger = PaperLedger(cfg=None, store=store, ws_account=FakeWS())
+    rows = ledger.positions("Personal")
+    assert rows[0]["price"] == 7.5
+    assert rows[0]["pnl"] == 50.0
+    # the ledger value marks the position to the live quote too
+    assert ledger.value("Personal") == 10000.0 + 2 * 7.5 * 100
+
+
+def test_seed_paper_keys_use_plain_date_expiry():
+    """new seeds key and store the plain date - a timestamp
+    expiry never matched the quote map (the frozen-price bug)."""
+    from trader.ws.account import seed_paper_accounts
+
+    store = _fresh_store()
+    ts_expiry = "2026-09-25T00:00:00.000-04:00"
+
+    class FakeWSAccount:
+        def values(self):
+            return {"Personal": 20000.0}
+
+        def _positions_raw(self):
+            return {"Personal": [{
+                "quantity": 2,
+                "totalValue": {"amount": "1500.0",
+                               "currency": "CAD"},
+                "averagePrice": {"amount": "5.0",
+                                 "currency": "USD"},
+                "security": {
+                    "optionDetails": {
+                        "optionType": "CALL",
+                        "strikePrice": 6000,
+                        "expiryDate": ts_expiry,
+                        "underlyingSecurity": {
+                            "stock": {"symbol": "SPX"},
+                        },
+                    },
+                },
+            }]}
+
+        def _resolve(self):
+            return [("Personal", "a1")]
+
+    class PaperCfg:
+        enabled = True
+        mirror = True
+
+    class Cfg:
+        paper = PaperCfg()
+
+    assert seed_paper_accounts(
+        Cfg(), store, FakeWSAccount()
+    ) == ["Personal"]
+    rows = store.list_positions("paper", "Personal")
+    assert rows[0]["contract_key"] == "SPX-2026-09-25-6000-C"
+    assert rows[0]["expiry"] == "2026-09-25"
+
+
+def test_mirror_option_expiry_normalized():
+    from trader.trading.mirror import _option_shim
+
+    shim = _option_shim({
+        "strikePrice": "6000",
+        "contractType": "CALL",
+        "assetSymbol": "SPX",
+        "expiryDate": "2026-09-25T00:00:00.000-04:00",
+    })
+    assert shim["expiry"] == "2026-09-25"
+
+
 def test_clean_start_script(tmp_path):
     import sqlite3
     import subprocess
@@ -4202,7 +4305,7 @@ def test_loss_streak_breaker_gates_options_only():
 
 def test_index_quote_reads_us_spx():
     """the levels ladder polls the spx index spot through the
-    moomoo feed (US.SPX snapshot)."""
+    moomoo feed (the .SPX index code)."""
     import sys
     import types as _types
 
@@ -4232,7 +4335,7 @@ def test_index_quote_reads_us_spx():
             pass
 
         def get_market_snapshot(self, codes):
-            assert codes[0] == "US.SPX"
+            assert codes[0] == ".SPX"
             return 0, _Data()
 
         def close(self):
@@ -4297,3 +4400,82 @@ def test_spx_levels_text_roundtrip():
     # no provider and no ws spot: the error says so instead of
     # silently omitting the marker
     assert "no spx spot" in (data["error"] or "")
+
+
+def test_paper_positions_priced_from_moomoo():
+    """paper-only trades (notify mode) have no live-account
+    counterpart - the moomoo feed prices them so the holdings
+    show live values instead of the cost basis."""
+    import sys
+    import types as _types
+
+    real = sys.modules.get("moomoo")
+    stub = _types.ModuleType("moomoo")
+
+    from trader.trading.paper import PaperLedger
+
+    cfg, store, account, risk = _setup(paper_account_value=10000)
+    ledger = PaperLedger(cfg, store, None)   # no ws account
+    store.set_paper_equity(10000.0, "default")
+
+    buy = parse_alert("BOUGHT 10/02 AAOI 105c @ 2.0")
+    from trader.trading.executor import PaperExecutor
+
+    ex = PaperExecutor(cfg, store, ledger)
+    assert ex.execute(buy, cfg, store).ok
+
+    # without a quote source: cost basis
+    rows = ledger.positions("default")
+    assert rows[0]["price"] == 2.0
+
+    class _Row:
+        def __init__(self, code, price):
+            self._code, self._price = code, price
+
+        def get(self, key):
+            return {"code": self._code, "last_price": self._price}.get(key)
+
+    class _Data:
+        empty = False
+
+        def __len__(self):
+            return 1
+
+        class _Iloc:
+            def __getitem__(self, i):
+                return _Row("US.AAOI261002C00105000", 2.15)
+
+        iloc = _Iloc()
+
+    class _Ctx:
+        def __init__(self, host, port):
+            pass
+
+        def get_market_snapshot(self, codes):
+            assert any("AAOI" in c for c in codes)
+            return 0, _Data()
+
+        def close(self):
+            pass
+
+    stub.OpenQuoteContext = _Ctx
+    sys.modules["moomoo"] = stub
+    from trader.trading import quotes as q
+
+    provider = q.MoomooQuoteProvider(cfg)
+    q.ACTIVE_QUOTE_PROVIDER = provider
+    try:
+        # bust the quote cache
+        ledger._quote_cache = None
+        ledger._quote_ts = 0.0
+        rows = ledger.positions("default")
+        assert rows[0]["price"] == 2.15, rows
+        # the unsized alert affordable-sizes to 2 contracts
+        # (5% of 10000 = 500 / 200 per contract)
+        assert rows[0]["value"] == 430.0   # 2 contracts x 2.15 x 100
+    finally:
+        if real is not None:
+            sys.modules["moomoo"] = real
+        else:
+            sys.modules.pop("moomoo", None)
+        q.ACTIVE_QUOTE_PROVIDER = None

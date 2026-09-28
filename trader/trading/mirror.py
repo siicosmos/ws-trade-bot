@@ -41,7 +41,9 @@ def _option_shim(act):
     return {
         "kind": "option",
         "underlying": str(act.get("assetSymbol") or ""),
-        "expiry": act.get("expiryDate") or "",
+        # plain date - the raw value is a full timestamp and
+        # would never match the quote map's keys
+        "expiry": str(act.get("expiryDate") or "")[:10],
         "strike": strike,
         "right": right,
     }

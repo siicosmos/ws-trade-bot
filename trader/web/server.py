@@ -356,6 +356,38 @@ def _real_stocks(ctx):
         return None
 
 
+def _ws_index_quote(account, symbol="SPX"):
+    """Index spot from the ws quote api when the moomoo feed is
+    unavailable: the index itself when listed, else the spy etf
+    quote x the ladder's converter ratio (spy = spx / 10.0391)."""
+    if account is None or not hasattr(account, "_client"):
+        return None
+    for ticker, mult in ((symbol, 1.0), ("SPY", 10.0391)):
+        try:
+            ws = account._client()
+            sec_id = ws.get_ticker_id(ticker, None)
+        except Exception:
+            sec_id = None
+        if not sec_id:
+            continue
+        try:
+            quote = ws.get_security_quote(sec_id) or {}
+        except Exception:
+            continue
+        price = (
+            quote.get("price")
+            or quote.get("lastPrice")
+            or quote.get("ask")
+            or quote.get("bid")
+        )
+        if price:
+            try:
+                return round(float(price) * mult, 2)
+            except (TypeError, ValueError):
+                continue
+    return None
+
+
 def _registered_plan(account, label):
     type_map_fn = getattr(account, "account_type_map", None)
     resolve_fn = getattr(account, "_resolve", None)
@@ -1128,7 +1160,8 @@ def create_app(cfg, store: Store, risk, executor, account=None,
     @app.get("/api/spx")
     def api_spx():
         """Realtime SPX index spot for the levels ladder (from
-        the moomoo feed when configured)."""
+        the moomoo feed when configured, the ws quote api
+        otherwise)."""
         from ..trading.quotes import ACTIVE_QUOTE_PROVIDER
 
         provider = ACTIVE_QUOTE_PROVIDER
@@ -1144,8 +1177,18 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                 price = None
                 error = str(e)
         if not price:
-            # ws fallback: the option positions carry the
-            # underlying's own quote (the spx index spot)
+            # ws fallback: a live quote straight from the ws api
+            # (the index when listed, else the spy etf x ratio)
+            try:
+                price = _ws_index_quote(account)
+                if price:
+                    error = None
+                    age = None
+            except Exception:
+                pass
+        if not price:
+            # last resort: option positions carry the underlying's
+            # own quote (the spx index spot)
             try:
                 for row in (_real_positions() or {}).values():
                     if not row:
@@ -1156,6 +1199,7 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                         if u == "SPX" and up:
                             price = up
                             error = None
+                            age = None
                             break
                     if price:
                         break

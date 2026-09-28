@@ -173,8 +173,8 @@ class Store:
                         PRIMARY KEY (mode, account, contract_key)
                     );
                     INSERT INTO positions_new
-                        (mode, account, contract_key, underlying, expiry, strike,
-                         right, qty, updated_ts, avg_premium)
+                        (mode, account, contract_key, underlying, expiry,
+                         strike, right, qty, updated_ts, avg_premium)
                     SELECT mode, 'default', contract_key, underlying, expiry,
                            strike, right, qty, updated_ts, avg_premium
                     FROM positions;
@@ -182,6 +182,70 @@ class Store:
                     ALTER TABLE positions_new RENAME TO positions;
                     COMMIT;
                     """
+                )
+            # heal option rows keyed by the raw graphql expiry
+            # timestamp: the quote map (and every alert) keys the
+            # plain date, so those rows never matched a live quote
+            # and froze at cost basis
+            rows = self._conn.execute(
+                "SELECT rowid, mode, account, contract_key, underlying, "
+                "expiry, strike, right, qty, updated_ts, avg_premium, "
+                "realized, peak_bid FROM positions "
+                "WHERE expiry IS NOT NULL AND strike IS NOT NULL "
+                "AND right IS NOT NULL AND length(expiry) > 10"
+            ).fetchall()
+            for row in rows:
+                (rowid, mode, account, _key, underlying, expiry,
+                 strike, right, qty, updated_ts, avg_premium,
+                 realized, peak_bid) = row
+                try:
+                    new_key = (
+                        f"{underlying}-{str(expiry)[:10]}"
+                        f"-{float(strike):g}-{right}"
+                    )
+                except (TypeError, ValueError):
+                    continue
+                clash = self._conn.execute(
+                    "SELECT rowid, qty, avg_premium, realized, peak_bid, "
+                    "updated_ts FROM positions "
+                    "WHERE mode = ? AND account = ? AND contract_key = ?",
+                    (mode, account, new_key),
+                ).fetchone()
+                if clash is None:
+                    self._conn.execute(
+                        "UPDATE positions SET expiry = ?, "
+                        "contract_key = ? WHERE rowid = ?",
+                        (str(expiry)[:10], new_key, rowid),
+                    )
+                    continue
+                # a plain-date row for the same contract already
+                # exists: fold the timestamp-keyed row into it
+                clash_rowid, ex_qty, ex_avg, ex_realized, ex_peak, ex_ts = (
+                    clash
+                )
+                total = int(ex_qty or 0) + int(qty or 0)
+                if total:
+                    merged_avg = (
+                        (int(ex_qty or 0) * (ex_avg or 0.0)
+                         + int(qty or 0) * (avg_premium or 0.0))
+                        / total
+                    )
+                else:
+                    merged_avg = avg_premium
+                self._conn.execute(
+                    "UPDATE positions SET qty = ?, avg_premium = ?, "
+                    "realized = COALESCE(realized, 0) + ?, "
+                    "peak_bid = MAX(COALESCE(peak_bid, 0), ?), "
+                    "updated_ts = MAX(COALESCE(updated_ts, ''), ?) "
+                    "WHERE rowid = ?",
+                    (
+                        total, merged_avg if total else avg_premium,
+                        realized or 0.0, peak_bid or 0.0,
+                        updated_ts or "", clash_rowid,
+                    ),
+                )
+                self._conn.execute(
+                    "DELETE FROM positions WHERE rowid = ?", (rowid,)
                 )
 
     @staticmethod

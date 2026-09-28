@@ -95,11 +95,13 @@ class MoomooQuoteProvider:
         proxy = {"SPX": "SPY"}.get(sym)
         price = None
         proxy_price = None
-        # request the index and the proxy separately: an invalid
-        # index code fails the WHOLE snapshot request otherwise
-        groups = [[f"US.{sym}", f"{sym}.US"]]
+        # the index itself: moomoo lists the spx index as ".SPX"
+        # (the US.-prefixed and .US-suffixed forms kept for other
+        # opend builds). requests are grouped per code family: an
+        # invalid index code fails the WHOLE snapshot request
+        groups = [[f".{sym}", f"US.{sym}", f"{sym}.US"]]
         if proxy:
-            groups.append([f"US.{proxy}", f"{proxy}.US"])
+            groups.append([proxy, f"US.{proxy}", f"{proxy}.US"])
         for gi, codes in enumerate(groups):
             try:
                 ret, data = self._context().get_market_snapshot(codes)
@@ -156,10 +158,16 @@ class MoomooQuoteProvider:
             return
         self._index_diag_ts = _time.time()
         try:
-            cols = list(data.columns)
+            rows = []
+            for i in range(len(data)):
+                row = data.iloc[i]
+                code = str(row.get("code") or "?")
+                last = row.get("last_price")
+                bid = row.get("bid_price")
+                rows.append(f"{code} last={last} bid={bid}")
             log(
-                f"spx index snapshot returned no usable price - "
-                f"columns: {cols[:8]}"
+                "spx index snapshot returned no usable price - rows: "
+                + " | ".join(rows[:6])
             )
         except Exception:
             pass

@@ -890,6 +890,8 @@ def test_snap_to_bottom_scrolls_only_when_needed():
 
         def SetScrollPercent(self, h, v):
             self.called = v
+            # a working chromium pattern actually moves the pane
+            self._pct = v
 
     class Container:
         def __init__(self, pattern):
@@ -914,6 +916,59 @@ def test_snap_to_bottom_scrolls_only_when_needed():
     p3 = Pattern(100, 0)
     dr.snap_to_bottom(Container(p3))
     assert p3.called is None
+
+
+def test_snap_verifies_then_falls_back_to_end_key(monkeypatch):
+    """SetScrollPercent that is accepted but ignored (some
+    chromium builds) must not end the snap: wheel, then the
+    End key, so the newest message still enters the tree."""
+    import discord_reader as dr
+
+    class Pattern:
+        def __init__(self):
+            self.pct = 40.0
+            self.set_calls = []
+
+        @property
+        def VerticalViewSize(self):
+            return 30
+
+        @property
+        def VerticalScrollPercent(self):
+            return self.pct
+
+        def SetScrollPercent(self, h, v):
+            # accepted but ignored - discord never moves
+            self.set_calls = self.set_calls + [v] if hasattr(
+                self, "set_calls"
+            ) else [v]
+
+    class Container:
+        def __init__(self, pattern):
+            self._pattern = pattern
+
+        def GetScrollPattern(self):
+            return self._pattern
+
+        def WheelDown(self, **kwargs):
+            Container.wheeled = True
+
+        def SetFocus(self):
+            Container.focused = True
+
+    p = Pattern()
+    p.set_calls = []
+    Container.focused = False
+    Container.wheeled = False
+    sent = []
+    monkeypatch.setattr(dr.auto, "SendKeys",
+                        lambda keys, waitTime=None: sent.append(keys))
+
+    dr.snap_to_bottom(Container(p))
+    # both programmatic paths were tried before the keyboard
+    assert p.set_calls == [100]
+    assert Container.focused
+    assert sent == ["{End}"]
 
 
 def test_store_keeps_message_time():
