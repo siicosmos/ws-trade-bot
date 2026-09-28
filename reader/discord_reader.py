@@ -17,6 +17,7 @@ except ImportError:
     UIAError = Exception
 
 from inspect_discord import (
+    _window_readable,
     close_extra_windows,
     ensure_visible,
     tree_entry_names,
@@ -1310,7 +1311,11 @@ def main():
                 ) or discord_server
                 ctrl = find_channel_control(window, [target])
                 if ctrl is not None:
-                    click_channel_control(ctrl, log=log)
+                    if not click_channel_control(ctrl, log=log):
+                        # a skipped/failed switch after a hide
+                        # cycle means the held window tree is
+                        # stale - re-acquire everything fresh
+                        window = None
                 elif server:
                     # the channel lives on another server - a
                     # server's channels only appear once selected
@@ -1512,9 +1517,16 @@ def main():
                 # a minimized or hidden discord renders nothing -
                 # restore it, and drop the held container: its
                 # subtree was torn down while hidden and the
-                # stale element never re-attaches
+                # stale element never re-attaches. a restore that
+                # still cannot make the window readable means the
+                # window is gone (closed to tray, killed) - drop
+                # the window too so the auto-start kicks in now
+                # instead of waiting out the re-acquire timer
                 if ensure_visible(container, log=log):
                     container = None
+                else:
+                    container = None
+                    window = None
                 empty_polls += 1
                 if empty_polls >= 10:
                     container = None
