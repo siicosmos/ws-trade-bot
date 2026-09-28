@@ -1393,6 +1393,38 @@ def main():
                         diag,
                         strict_title=bool(channels) and not marker,
                     )
+                # attach-time verification: the window title goes
+                # stale on full-page views (the discovery page
+                # keeps the last channel title), so the channel's
+                # sidebar entry must be present and selected
+                # before attaching. while attached, reads proceed
+                # ungated - a display-off screen must not block
+                # the reader
+                if (
+                    container is not None
+                    and not marker
+                    and title_channel
+                ):
+                    bare = next(
+                        (c for c in channels
+                         if c in title_channel.lower()),
+                        title_channel.lstrip("#").lower(),
+                    )
+                    entry = find_channel_control(window, [bare])
+                    if entry is None:
+                        container = None
+                    else:
+                        try:
+                            selected = (
+                                entry.GetSelectionItemPattern().IsSelected
+                            )
+                        except Exception:
+                            selected = True
+                        if not selected:
+                            click_channel_control(
+                                entry, window=window, log=log
+                            )
+                            container = None
                 if container is None:
                     wait_attempts += 1
                     # a discord update can orphan the held window
@@ -1547,48 +1579,6 @@ def main():
                 container = None
                 time.sleep(poll_interval)
                 continue
-
-            # the window title goes stale on full-page views
-            # (the discovery page keeps the last channel title):
-            # verify the channel's sidebar entry is present and
-            # selected before reading anything
-            if title_channel and not marker and container is not None:
-                bare = next(
-                    (c for c in channels
-                     if c in title_channel.lower()),
-                    title_channel.lstrip("#").lower(),
-                )
-                entry = find_channel_control(window, [bare])
-                if entry is None:
-                    # the channel's sidebar entry is gone: a
-                    # full-page view is open - go back through
-                    # the mapped server rail
-                    container = None
-                    server = (
-                        channel_servers.get(bare) or discord_server
-                    )
-                    srv = (
-                        find_channel_control(window, [server])
-                        if server else None
-                    )
-                    if srv is not None:
-                        click_channel_control(srv, window=window, log=log)
-                    elif wait_attempts % 120 == 0:
-                        log(
-                            f"the {title_channel!r} sidebar is not "
-                            f"in the tree (a full-page view is "
-                            f"open) - open the channel once"
-                        )
-                    time.sleep(poll_interval)
-                    continue
-                try:
-                    if not entry.GetSelectionItemPattern().IsSelected:
-                        click_channel_control(entry, log=log)
-                        container = None
-                        time.sleep(poll_interval)
-                        continue
-                except Exception:
-                    pass   # pattern unavailable - read as before
 
             msgs = current_messages(container, max_items, day_floor)
             summary = (

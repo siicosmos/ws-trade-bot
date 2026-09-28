@@ -93,53 +93,55 @@ class MoomooQuoteProvider:
             return self._index_cache
         sym = symbol.upper()
         proxy = {"SPX": "SPY"}.get(sym)
-        codes = [f"US.{sym}", f"{sym}.US"]
-        if proxy:
-            codes += [f"US.{proxy}", f"{proxy}.US"]
         price = None
         proxy_price = None
-        try:
-            ret, data = self._context().get_market_snapshot(codes)
-            if ret != 0:
-                # the feed refused: surface it in /api/spx
-                self._index_error = f"snapshot ret={ret}"
-            elif data is not None and not data.empty:
-                for i in range(len(data)):
-                    row = data.iloc[i]
-                    code = str(row.get("code") or "").upper()
-                    p = self.extract_price(row)
-                    if not p:
-                        continue
-                    if proxy and proxy in code:
-                        proxy_price = proxy_price or p
-                    else:
-                        price = price or p
-                if price:
-                    self._index_error = None
-                elif proxy_price:
-                    price = round(proxy_price * 10, 2)
-                    self._index_error = None
-                    self._index_proxy = True
-                else:
-                    self._index_error = (
-                        "no usable price in the snapshot"
-                    )
-                    # one-time diagnostic: what did the feed give
-                    self._log_index_snapshot(data)
-            else:
-                self._index_error = "empty snapshot"
-        except Exception as e:
-            # the reconnect path (same as option quotes)
-            self._index_error = str(e)
+        # request the index and the proxy separately: an invalid
+        # index code fails the WHOLE snapshot request otherwise
+        groups = [[f"US.{sym}", f"{sym}.US"]]
+        if proxy:
+            groups.append([f"US.{proxy}", f"{proxy}.US"])
+        for gi, codes in enumerate(groups):
             try:
-                self._ctx.close()
-            except Exception:
-                pass
-            self._ctx = None
-            return None
+                ret, data = self._context().get_market_snapshot(codes)
+            except Exception as e:
+                # the reconnect path (same as option quotes)
+                self._index_error = str(e)
+                try:
+                    self._ctx.close()
+                except Exception:
+                    pass
+                self._ctx = None
+                return None
+            if ret != 0:
+                self._index_error = f"snapshot ret={ret}"
+                continue
+            if data is None or data.empty:
+                self._index_error = "empty snapshot"
+                continue
+            for i in range(len(data)):
+                row = data.iloc[i]
+                code = str(row.get("code") or "").upper()
+                p = self.extract_price(row)
+                if not p:
+                    continue
+                if proxy and proxy in code:
+                    proxy_price = proxy_price or p
+                else:
+                    price = price or p
+            if price:
+                self._index_error = None
+                break
+            if gi == 0 and proxy_price:
+                # the index snapshot failed but the proxy quoted:
+                # spx ~ spy x 10
+                price = round(proxy_price * 10, 2)
+                self._index_error = None
+                self._index_proxy = True
+            if gi == 0 and price is None:
+                self._index_error = "no usable price in the snapshot"
+                self._log_index_snapshot(data)
         if price:
             self._index_last = price
-            self._index_proxy = getattr(self, "_index_proxy", False)
         self._index_cache = self._index_last
         self._index_ts = now
         return self._index_last

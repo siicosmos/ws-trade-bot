@@ -1473,8 +1473,10 @@ function parseLevelsText(text) {
     });
   }
   if (out.levels.length) {
-    // format A: derive the spy ladder when the plan has no
-    // spy chain (spy = spx / 10.0391, the converter ratio)
+    // format A's levels are spx levels: keep the spx ticker
+    out.tickers.SPX = out.levels;
+    // derive the spy ladder when the plan has no spy chain
+    // (spy = spx / 10.0391, the converter ratio)
     if (!out.tickers.SPY) {
       out.derived_spy = true;
       out.tickers.SPY = out.levels.map(function(l) {
@@ -1617,19 +1619,22 @@ function renderLevelsChart() {
     return;
   }
   const tickers = Object.keys(data.tickers || {});
-  const errorLine = levelsError
-    ? "spx spot unavailable: " + levelsError : null;
-  const nowLine = levelsNow != null
-    ? "SPX " + (levelsStale ? "last" : "now") + ": <b>" +
-      levelsNow.toLocaleString("en-CA", { minimumFractionDigits: 2 }) +
-      "</b>" + (levelsStale ? " (market closed)" : "")
-    : null;
   // both ladders side by side: spx left, spy right
   el.innerHTML = '<div class="levels-duo" id="levels-duo"></div>';
   const duo = document.getElementById("levels-duo");
   const views = tickers.length ? tickers : ["SPX"];
   for (const t of views) {
     const rows = (data.tickers && data.tickers[t] ? data.tickers[t] : data.levels).slice();
+    const headerParts = [];
+    if (t === "SPX") {
+      if (levelsError) {
+        headerParts.push('<span style="color:#f85149">spx spot unavailable: ' + esc(levelsError) + "</span>");
+      } else if (levelsNow != null) {
+        headerParts.push("SPX " + (levelsStale ? "last" : "now") + ": <b>" +
+          levelsNow.toLocaleString("en-CA", { minimumFractionDigits: 2 }) + "</b>" +
+          (levelsStale ? " (market closed)" : ""));
+      }
+    }
     const pane = document.createElement("div");
     pane.className = "levels-pane";
     pane.innerHTML = '<div class="levels-pane-title">' + esc(t) +
@@ -1638,7 +1643,8 @@ function renderLevelsChart() {
     duo.appendChild(pane);
     const host = document.createElement("div");
     pane.appendChild(host);
-    buildLevelsLadder(host, t, rows, data.pivot, nowLine + (errorLine && t === "SPX" ? " · " + errorLine : ""));
+    buildLevelsLadder(host, t, rows, data.pivot,
+      headerParts.join(" · ") || null);
   }
 }
 
