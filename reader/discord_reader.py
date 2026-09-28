@@ -786,6 +786,8 @@ def snap_to_bottom(container, log_fn=None):
     if not pattern:
         # fallback: focus the pane and send End - Discord jumps the
         # chat to the newest messages, materializing them in the tree
+        if not ensure_visible(container, log=log_fn or print):
+            return
         try:
             container.SetFocus()
             auto.SendKeys("{End}", waitTime=0.05)

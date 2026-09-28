@@ -348,20 +348,36 @@ def tree_entry_names(window, sample=12):
     return names
 
 
-def ensure_visible(control, log=print):
-    """A minimized electron window renders nothing - its ui
-    tree exposes an empty message list. Restore it so messages
-    can be read (behind other windows is fine; minimized is
-    not)."""
+def _window_readable(control):
+    """True when discord's window is on screen: hidden (tray)
+    and minimized windows render nothing."""
     try:
         top = control.GetTopLevelControl()
         hwnd = top.NativeWindowHandle
-        if ctypes.windll.user32.IsIconic(hwnd):
-            ctypes.windll.user32.ShowWindow(hwnd, 9)   # SW_RESTORE
-            _time.sleep(1.5)
+        return (
+            bool(ctypes.windll.user32.IsWindowVisible(hwnd))
+            and not ctypes.windll.user32.IsIconic(hwnd)
+        )
+    except Exception:
+        return False
+
+
+def ensure_visible(control, log=print):
+    """A minimized OR tray-hidden electron window renders
+    nothing - its ui tree exposes an empty message list.
+    Restore/unhide it so messages can be read (behind other
+    windows is fine; hidden is not)."""
+    try:
+        if _window_readable(control):
+            return False
+        top = control.GetTopLevelControl()
+        hwnd = top.NativeWindowHandle
+        ctypes.windll.user32.ShowWindow(hwnd, 9)   # SW_RESTORE
+        _time.sleep(1.5)
+        if _window_readable(control):
             log(
-                "discord was minimized - restored it (a minimized "
-                "window cannot be read)"
+                "discord was hidden or minimized - restored it "
+                "(a hidden window cannot be read)"
             )
             return True
     except Exception as e:
