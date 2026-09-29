@@ -73,13 +73,26 @@
     background: var(--panel); border: 1px solid var(--border);
     border-radius: 10px; padding: 18px;
   }
-  #settings-btn, #users-btn, #levels-btn {
+  /* ---- unified controls: every button and text field on the
+     site shares this treatment (neutral #21262d buttons, dark
+     bordered inputs, 6px radius, #8b949e hover, #58a6ff focus) ---- */
+  .btn {
     background: #21262d; color: var(--text);
     border: 1px solid var(--border); border-radius: 6px;
     padding: 3px 12px; font-size: 12px; cursor: pointer;
   }
-  #settings-btn:hover, #users-btn:hover, #levels-btn:hover {
-    border-color: #8b949e;
+  .btn:hover { border-color: #8b949e; }
+  .btn.danger {
+    background: #da3633; color: #fff; border-color: #da3633;
+    font-weight: 700;
+  }
+  .btn.danger:hover { background: #b62324; }
+  .btn.sm { padding: 3px 10px; font-size: 11px; }
+  .btn:focus-visible, .set-field input:focus,
+  .set-field select:focus, .set-field textarea:focus,
+  #history-search input:focus, #history-search select:focus,
+  #levels-input:focus, #users-list input:focus {
+    outline: none; border-color: #58a6ff;
   }
   #settingsBackdrop {
     display: none; position: fixed; inset: 0;
@@ -97,12 +110,9 @@
     padding: 14px 18px; border-bottom: 1px solid var(--border);
     font-weight: 600;
   }
-  #settingsClose {
-    background: #21262d; color: var(--text);
-    border: 1px solid var(--border); border-radius: 6px;
-    padding: 2px 10px; font-size: 14px; cursor: pointer;
+  #settingsClose, #usersClose, #levelsClose {
+    padding: 2px 10px; font-size: 14px;
   }
-  #settingsClose:hover { border-color: #8b949e; }
   #settingsScroll { overflow-y: auto; padding: 16px 18px; }
   #settings-float {
     display: none; gap: 10px; padding: 12px 18px;
@@ -118,10 +128,11 @@
   .cur-toggle {
     color: #fff; font-size: 11px; font-weight: 700;
     background: var(--panel); border: 1px solid var(--border);
-    border-radius: 6px; padding: 3px 10px; cursor: pointer;
-    margin-bottom: 8px; letter-spacing: .5px;
+    border-radius: 6px; padding: 1px 8px; cursor: pointer;
+    margin: 0; letter-spacing: .5px; white-space: nowrap;
   }
   .cur-toggle:hover { border-color: var(--muted); }
+  .mini-toggle.danger { color: #f85149; }
   .card .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .8px; margin-bottom: 6px; }
   .card .value { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
   .riskbar { height: 6px; background: #21262d; border-radius: 3px; margin-top: 12px; overflow: hidden; }
@@ -132,6 +143,8 @@
     color: var(--muted); margin: 30px 0 10px;
     border-top: 1px solid var(--border); padding-top: 20px;
   }
+  /* section headers with controls on the right */
+  .h2row { display: flex; justify-content: space-between; align-items: center; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   #modalBackdrop {
     display: none; position: fixed; inset: 0;
@@ -213,6 +226,7 @@
     border-radius: 6px; padding: 2px 8px; cursor: pointer;
     letter-spacing: .3px; white-space: nowrap;
   }
+  .mini-toggle:hover { border-color: var(--muted); }
   @media (max-width: 640px) {
     .tlog th:nth-child(2), .tlog td:nth-child(2) { display: none; }
     .tlog { min-width: 460px; font-size: 12px; }
@@ -241,7 +255,7 @@
   .ptitle { flex: 1 1 auto; min-width: 0; white-space: normal;
     overflow-wrap: normal; hyphens: none; }
   .mini-toggle { padding: 1px 6px; font-size: 10px; }
-    .cur-toggle { padding: 1px 6px; margin-bottom: 4px; font-size: 10px; }
+    .cur-toggle { padding: 1px 6px; font-size: 10px; }
   }
   .empty { color: var(--muted); font-size: 13px; padding: 14px; text-align: center; background: var(--panel); border-radius: 8px; }
   .num { text-align: right; }
@@ -254,11 +268,7 @@
     padding: 5px 8px; font-size: 12px;
     color-scheme: dark;
   }
-  #history-search button {
-    background: #21262d; color: var(--text);
-    border: 1px solid var(--border); border-radius: 6px;
-    padding: 5px 14px; font-size: 12px; cursor: pointer;
-  }
+  #history-search button:hover { border-color: #8b949e; }
   #history-results table { width: 100%; border-collapse: collapse; }
   #history-results td, #history-results th {
     padding: 5px 8px; font-size: 12px;
@@ -266,11 +276,6 @@
     text-align: left; vertical-align: top;
   }
   #history-results .meta { color: var(--muted); font-size: 11px; margin: 6px 0; }
-  #history-results .nav-btns button {
-    background: #21262d; color: var(--text);
-    border: 1px solid var(--border); border-radius: 6px;
-    padding: 3px 10px; font-size: 11px; cursor: pointer;
-  }
 
   /* settings popup: unified section styles */
   .set-section {
@@ -390,24 +395,11 @@
     padding: 14px 18px; border-bottom: 1px solid var(--border);
     font-weight: 600;
   }
-  #usersClose {
-    background: #21262d; color: var(--text);
-    border: 1px solid var(--border); border-radius: 6px;
-    padding: 2px 10px; font-size: 14px; cursor: pointer;
-  }
   #usersScroll { overflow-y: auto; padding: 16px 18px; }
   #users-list table { width: 100%; border-collapse: collapse; }
   #users-list td, #users-list th {
     padding: 6px 8px; font-size: 12px; text-align: left;
     border-bottom: 1px solid var(--border);
-  }
-  #users-list button, #usersScroll button {
-    background: #21262d; color: var(--text);
-    border: 1px solid var(--border); border-radius: 6px;
-    padding: 3px 10px; font-size: 11px; cursor: pointer;
-  }
-  #users-list button:hover, #usersScroll button:hover {
-    border-color: #8b949e;
   }
   #users-list .role-admin { color: #f0883e; font-weight: 600; }
   #users-list .role-viewer { color: var(--muted); }
@@ -436,11 +428,7 @@
     padding: 14px 18px; border-bottom: 1px solid var(--border);
     font-weight: 600;
   }
-  #levelsClose {
-    background: #21262d; color: var(--text);
-    border: 1px solid var(--border); border-radius: 6px;
-    padding: 2px 10px; font-size: 14px; cursor: pointer;
-  }
+  #levelsClose { padding: 2px 10px; font-size: 14px; }
   #levelsScroll { overflow-y: auto; padding: 16px 18px; }
   #levels-input {
     width: 100%; box-sizing: border-box; background: #0d1117;
@@ -448,13 +436,7 @@
     padding: 8px; font-size: 12px; font-family: inherit;
     resize: vertical; min-height: 120px;
   }
-  #levels-input:focus { outline: none; border-color: #8b949e; }
-  #levelsScroll button {
-    background: #21262d; color: var(--text);
-    border: 1px solid var(--border); border-radius: 6px;
-    padding: 5px 14px; font-size: 12px; cursor: pointer;
-  }
-  #levelsScroll button:hover { border-color: #8b949e; }
+  #levelsScroll button { padding: 5px 14px; }
   #levels-chart { margin-top: 14px; }
   .levels-ladder {
     position: relative; height: 440px;
@@ -502,16 +484,6 @@
     box-shadow: 0 0 8px rgba(31,111,235,.6);
     height: 2px;
   }
-
-  /* spx/spy ladder toggle */
-  .levels-toggles { display: flex; gap: 6px; margin-bottom: 10px; }
-  .lv-toggle {
-    background: #21262d; color: var(--muted);
-    border: 1px solid var(--border); border-radius: 6px;
-    padding: 3px 12px; font-size: 11px; font-weight: 700;
-    cursor: pointer;
-  }
-  .lv-toggle.on { color: #fff; background: #1f6feb; border-color: #1f6feb; }
 
   /* the realtime spot marker on the levels ladder */
   .levels-nowline {

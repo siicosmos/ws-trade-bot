@@ -51,9 +51,9 @@ def test_header_rows_and_mobile_wrap():
     # to their own right-aligned row, logout in danger red
     assert '<span id="updated">data refreshed</span>' in html
     css = dash.DASHBOARD_CSS
-    assert 'id="settings-btn" onclick="openSettings()"' in html
-    # the header buttons share one styled rule
-    assert "#settings-btn, #users-btn, #levels-btn {" in css
+    assert 'id="settings-btn" class="btn" onclick="openSettings()"' in html
+    # every button on the site shares the .btn treatment
+    assert ".btn {" in css
     assert 'id="levels-btn"' in html
     assert "justify-content:flex-end" in html
     assert "#logout {" in css
@@ -1570,6 +1570,41 @@ def test_settings_automation_subsections():
     for fid in ("set-ws-positions", "set-ws-values",
                 "set-ws-margin-rate"):
         assert fid in spans[5]
+
+
+def test_unified_button_and_section_styles():
+    """every control shares one visual language: the .btn class
+    (neutral dark, #8b949e hover) with .danger and .sm variants,
+    the h2 rows use the .h2row flex helper, and no button carries
+    a duplicated inline background style."""
+    import trader.web.dashboard as dash
+
+    html = dash.DASHBOARD_HTML
+    js = dash.DASHBOARD_JS
+    css = dash.DASHBOARD_CSS
+    # the shared classes exist
+    assert ".btn {" in css
+    assert ".btn.danger {" in css
+    assert ".btn.sm {" in css
+    assert ".h2row {" in css
+    assert ".mini-toggle.danger {" in css
+    # the html uses them: no button carries an inline background
+    assert 'style="background:#21262d' not in html
+    assert 'style="background:#da3633' not in html
+    # the section toggle buttons ride .btn
+    for bid in ("toggle-stocks", "toggle-alerts", "toggle-ignored",
+                "toggle-trades"):
+        assert f'id="{bid}" class="btn"' in html
+    # the modal buttons are cancel (neutral) + go (danger)
+    assert '<button onclick="closeModal()" class="btn">' in html
+    assert 'id="mGo" class="btn danger"' in html
+    # the js-rendered controls share the same classes
+    assert 'class="btn sm" onclick="historyNav' in js
+    assert 'class="mini-toggle danger"' in js
+    # the cur-toggle lost its per-instance inline overrides
+    assert 'cur-toggle" style=' not in js
+    # dead levels ladder toggle styles are gone
+    assert ".lv-toggle" not in css
 
 
 def test_real_card_today_gain_above_risk_bar():

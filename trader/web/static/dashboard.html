@@ -25,9 +25,9 @@
   </div>
   <div class="headrow" style="justify-content:flex-end;gap:10px">
     <span id="me"></span>
-    <button id="levels-btn" onclick="openLevels()">spx levels</button>
-    <button id="users-btn" onclick="openUsers()" style="display:none">users</button>
-    <button id="settings-btn" onclick="openSettings()">settings</button>
+    <button id="levels-btn" class="btn" onclick="openLevels()">spx levels</button>
+    <button id="users-btn" class="btn" onclick="openUsers()" style="display:none">users</button>
+    <button id="settings-btn" class="btn" onclick="openSettings()">settings</button>
     <a href="/logout" id="logout">log out</a>
   </div>
 </header>
@@ -38,13 +38,13 @@
 <h2>Open Positions</h2>
 <div id="positions"></div>
 
-<h2 style="display:flex;justify-content:space-between;align-items:center"><span>Stock Holdings</span><button id="toggle-stocks" onclick="toggleStocks()" style="background:#21262d;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 14px;font-size:12px;cursor:pointer">Show holdings</button></h2>
+<h2 class="h2row"><span>Stock Holdings</span><button id="toggle-stocks" class="btn" onclick="toggleStocks()">Show holdings</button></h2>
 <div id="stock-positions"></div>
 
-<h2 style="display:flex;justify-content:space-between;align-items:center"><span>Recent Alerts</span><span><button id="toggle-alerts" onclick="toggleAlerts()" style="background:#21262d;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 14px;font-size:12px;cursor:pointer">Hide</button> <button id="toggle-ignored" onclick="toggleIgnored()" style="background:#21262d;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 14px;font-size:12px;cursor:pointer">Hide ignored</button></span></h2>
+<h2 class="h2row"><span>Recent Alerts</span><span><button id="toggle-alerts" class="btn" onclick="toggleAlerts()">Hide</button> <button id="toggle-ignored" class="btn" onclick="toggleIgnored()">Hide ignored</button></span></h2>
 <div id="signals"></div>
 
-<h2 style="display:flex;justify-content:space-between;align-items:center"><span>Trade Log</span><button id="toggle-trades" onclick="toggleTrades()" style="background:#21262d;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 14px;font-size:12px;cursor:pointer">Hide</button></h2>
+<h2 class="h2row"><span>Trade Log</span><button id="toggle-trades" class="btn" onclick="toggleTrades()">Hide</button></h2>
 <div id="trades"></div>
 
 <h2>History Search</h2>
@@ -60,19 +60,19 @@
   </select>
   <input type="date" id="hs-since" title="from date">
   <input type="date" id="hs-until" title="to date (inclusive)">
-  <button onclick="clearHistorySearch()">Clear</button>
+  <button onclick="clearHistorySearch()" class="btn">Clear</button>
 </div>
 <div id="history-results"></div>
 </main>
 
 <div id="levelsBackdrop" onclick="if(event.target===this) closeLevels()">
   <div id="levelsPanel">
-    <div id="levelsHead"><span>SPX Levels</span><button id="levelsClose" onclick="closeLevels()">&#215;</button></div>
+    <div id="levelsHead"><span>SPX Levels</span><button id="levelsClose" class="btn" onclick="closeLevels()">&#215;</button></div>
     <div id="levelsScroll">
       <div class="set-section">
         <div class="set-title">paste tomorrow's levels</div>
         <textarea id="levels-input" rows="8" placeholder="paste the daily plan message here..."></textarea>
-        <div style="margin-top:10px"><button onclick="parseLevels()">parse &amp; show</button></div>
+        <div style="margin-top:10px"><button onclick="parseLevels()" class="btn">parse &amp; show</button></div>
         <div class="set-hint" id="levels-error"></div>
       </div>
       <div id="levels-chart"></div>
@@ -81,7 +81,7 @@
 </div>
 <div id="usersBackdrop" onclick="if(event.target===this) closeUsers()">
   <div id="usersPanel">
-    <div id="usersHead"><span>Users</span><button id="usersClose" onclick="closeUsers()">&#215;</button></div>
+    <div id="usersHead"><span>Users</span><button id="usersClose" class="btn" onclick="closeUsers()">&#215;</button></div>
     <div id="usersScroll">
       <div id="users-list"></div>
       <div id="users-form" class="set-section">
@@ -91,7 +91,7 @@
           <div class="set-field"><label>password (min 6)</label><input id="nu-pass" type="password"></div>
           <div class="set-field"><label>role</label><select id="nu-role"><option value="viewer">viewer</option><option value="admin">admin</option></select></div>
         </div>
-        <div style="margin-top:10px"><button onclick="createUser()">add user</button></div>
+        <div style="margin-top:10px"><button onclick="createUser()" class="btn sm">add user</button></div>
         <div class="set-hint" id="users-msg"></div>
       </div>
       <div id="pw-form" class="set-section">
@@ -100,14 +100,14 @@
           <div class="set-field"><label>current password</label><input id="pw-current" type="password"></div>
           <div class="set-field"><label>new password (min 6)</label><input id="pw-new" type="password"></div>
         </div>
-        <div style="margin-top:10px"><button onclick="changeMyPassword()">change password</button></div>
+        <div style="margin-top:10px"><button onclick="changeMyPassword()" class="btn sm">change password</button></div>
       </div>
     </div>
   </div>
 </div>
 <div id="settingsBackdrop" onclick="if(event.target===this) requestCloseSettings()">
   <div id="settingsPanel">
-    <div id="settingsHead"><span>Settings</span><button id="settingsClose" onclick="requestCloseSettings()">&#215;</button></div>
+    <div id="settingsHead"><span>Settings</span><button id="settingsClose" class="btn" onclick="requestCloseSettings()">&#215;</button></div>
     <div id="settingsScroll"><div id="settings" class="card"></div></div>
     <div id="settings-float">
       <button id="settings-revert">Revert</button>
@@ -120,10 +120,8 @@
     <div class="mtitle" id="mTitle"></div>
     <div class="mtext" id="mText"></div>
     <div class="mrow">
-      <button onclick="closeModal()"
-        style="background:#21262d;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 14px;font-size:13px;cursor:pointer">cancel</button>
-      <button id="mGo" onclick="var a=modalAction; closeModal(); if(a) a();"
-        style="background:#da3633;color:#fff;border:1px solid #da3633;border-radius:6px;padding:6px 14px;font-size:13px;cursor:pointer">reset</button>
+      <button onclick="closeModal()" class="btn">cancel</button>
+      <button id="mGo" class="btn danger" onclick="var a=modalAction; closeModal(); if(a) a();">reset</button>
     </div>
   </div>
 </div>

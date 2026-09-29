@@ -342,8 +342,8 @@ function renderSummary(data) {
       '<div class="label" style="display:flex;justify-content:space-between;align-items:center;gap:6px;min-width:0">' +
       '<span class="cardtitle" title="' + esc(a.label) + '">' + esc(a.label) + '</span>' +
       '<span style="display:flex;gap:4px;flex-shrink:0;align-items:center">' +
-      '<button class="cur-toggle" style="padding:1px 8px;margin:0" title="flip account value currency" onclick="flipCardCurrency(\'' + esc(a.label) + '\')">' + cur.toUpperCase() + ' ⇄</button> ' +
-      '<button class="cur-toggle" style="padding:1px 7px;margin:0" title="' + (hidden ? "show account value" : "hide account value") + '" onclick="toggleCardHidden(\'' + esc(a.label) + '\')">' + (hidden ? EYE_OFF_SVG : EYE_SVG) + '</button>' +
+      '<button class="cur-toggle" title="flip account value currency" onclick="flipCardCurrency(\'' + esc(a.label) + '\')">' + cur.toUpperCase() + ' ⇄</button> ' +
+      '<button class="cur-toggle" title="' + (hidden ? "show account value" : "hide account value") + '" onclick="toggleCardHidden(\'' + esc(a.label) + '\')">' + (hidden ? EYE_OFF_SVG : EYE_SVG) + '</button>' +
       '</span></div>' +
       '<div class="value">' + (hidden ? "••••••" :
         (showUsd ? fmtMoney(a.usd_value) + " USD" : fmtMoney(a.value) + " CAD") +
@@ -463,7 +463,7 @@ function renderSummary(data) {
               "$" + r.price.toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) +
               (isOpt && !phidden ? ' <span class="subv">($' + (r.price * 100).toLocaleString("en-CA", { maximumFractionDigits: 0 }) + ")</span>" : "");
             const sellCell = isAdmin() && r.qty > 0
-              ? '<td class=num><button class="mini-toggle" style="color:#f85149" title="sell at the live price" onclick="sellPaper(\'' + esc(a.label) + '\', \'' + esc(r.contract_key) + '\', ' + r.qty + ', ' + (r.price == null ? "null" : r.price) + ')">sell</button></td>'
+              ? '<td class=num><button class="mini-toggle danger" title="sell at the live price" onclick="sellPaper(\'' + esc(a.label) + '\', \'' + esc(r.contract_key) + '\', ' + r.qty + ', ' + (r.price == null ? "null" : r.price) + ')">sell</button></td>'
               : '<td></td>';
             return '<tr><td>' + esc(r.contract_key) + '</td>' +
               '<td class=num>' + r.qty + '</td>' +
@@ -942,8 +942,8 @@ function renderHistoryResults(data) {
   }
   let html = '<div class="meta">' + meta +
     ' <span class="nav-btns">' +
-    (data.offset > 0 ? '<button onclick="historyNav(-1)">&#8592; newer</button> ' : "") +
-    (data.offset + data.rows.length < data.total ? '<button onclick="historyNav(1)">older &#8594;</button>' : "") +
+    (data.offset > 0 ? '<button class="btn sm" onclick="historyNav(-1)">&#8592; newer</button> ' : "") +
+    (data.offset + data.rows.length < data.total ? '<button class="btn sm" onclick="historyNav(1)">older &#8594;</button>' : "") +
     "</span></div>";
   if (!data.rows.length) {
     el.innerHTML = html + '<div class="empty">no matches</div>';
@@ -1836,7 +1836,7 @@ async function refreshUsers() {
         '<td><span class="role-' + esc(u.role) + '">' + esc(u.role) + "</span></td>" +
         "<td>" + (u.last_login_ts ? fmtIso(u.last_login_ts).slice(0, 16) : "never") + "</td>" +
         '<td>' + (u.username === (me && me.username) ? "" :
-          '<button onclick="deleteUser(\'' + esc(u.username) + '\')">remove</button>') +
+          '<button class="btn sm" onclick="deleteUser(\'' + esc(u.username) + '\')">remove</button>') +
         "</td></tr>";
     }
     el.innerHTML = html + "</table>";
