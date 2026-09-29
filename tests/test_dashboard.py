@@ -1033,3 +1033,60 @@ def test_no_eval_or_string_timers_in_shipped_pages():
         # inline event handlers and the single external script
         # are fine - string evaluation is not
         assert "javascript:" not in html
+
+
+def test_lighthouse_render_and_cls_findings():
+    """/static/dashboard.js was render-blocking (750ms of the
+    lighthouse critical path) and the empty-to-filled tables
+    shifted the page (CLS 0.394). the script is deferred now and
+    the tables reserve their block; the payload ships gzipped."""
+    assert '<script src="/static/dashboard.js" defer></script>' in DASHBOARD_HTML
+    # reserved blocks: the tables must not jump when the first
+    # payload lands
+    assert "#signals, #trades { min-height:" in DASHBOARD_CSS
+
+
+def test_text_responses_ship_gzipped():
+    """lighthouse flagged 'no compression applied' - text
+    payloads (html/css/js/json) must ship gzipped when the
+    client accepts it, and untouched otherwise."""
+    import gzip as gzip_mod
+    import tempfile
+
+    from trader.config import (
+        AutoUpdateConfig, DiscordConfig, QuotesConfig, ReaderConfig,
+        TradingConfig, WealthsimpleConfig,
+    )
+    from trader.store import Store
+    from trader.web.server import create_app
+
+    class Stub:
+        def __init__(self):
+            self.trading = TradingConfig(mode="notify")
+            self.pipeline = type("P", (), {"auth_token": "t"})()
+            self.wealthsimple = WealthsimpleConfig(accounts=[])
+            self.reader = ReaderConfig()
+            self.discord = DiscordConfig()
+            self.parser = type("P2", (), {"custom_patterns": []})()
+            self.auto_update = AutoUpdateConfig()
+            self.quotes = QuotesConfig()
+            self.paper = None
+
+    fd, path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    app = create_app(Stub(), Store(path), None, None, None)
+    client = app.test_client()
+    hdr = {"X-Auth-Token": "t", "Accept-Encoding": "gzip"}
+
+    r = client.get("/static/dashboard.js", headers=hdr)
+    assert r.headers.get("Content-Encoding") == "gzip"
+    assert "Accept-Encoding" in (r.headers.get("Vary") or "")
+    body = gzip_mod.decompress(r.data)
+    assert body.startswith(b"/*") or b"function" in body[:2000]
+
+    # a client without gzip support gets plain bytes
+    r2 = client.get(
+        "/static/dashboard.js", headers={"X-Auth-Token": "t"},
+    )
+    assert r2.headers.get("Content-Encoding") is None
+    assert r2.data == body

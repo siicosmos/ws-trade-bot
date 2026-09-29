@@ -1,3 +1,4 @@
+import gzip
 import hmac
 import logging
 import os
@@ -1206,6 +1207,30 @@ def create_app(cfg, store: Store, risk, executor, account=None,
         # unconditional: flask's static handler sets no-cache,
         # and the page must never serve stale after an update
         resp.headers["Cache-Control"] = "no-store"
+        # gzip the text payloads (the dashboard js alone is
+        # ~80 kb and phones on the lan pull it every reload)
+        try:
+            compressible = (
+                "text/" in resp.content_type
+                or "javascript" in resp.content_type
+                or resp.content_type == "application/json"
+            )
+            accepts = request.headers.get("Accept-Encoding", "")
+            if (
+                "gzip" in accepts.lower()
+                and compressible
+                and resp.content_length
+                and resp.content_length > 500
+            ):
+                resp.direct_passthrough = False
+                body = gzip.compress(resp.get_data(), 6)
+                if len(body) < resp.content_length:
+                    resp.set_data(body)
+                    resp.headers["Content-Encoding"] = "gzip"
+                    resp.headers["Content-Length"] = str(len(body))
+            resp.headers.setdefault("Vary", "Accept-Encoding")
+        except Exception:
+            pass
         return resp
 
     @app.get("/")
