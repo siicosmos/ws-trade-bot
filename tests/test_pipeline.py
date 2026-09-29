@@ -4540,3 +4540,63 @@ def test_paper_positions_priced_from_moomoo():
         else:
             sys.modules.pop("moomoo", None)
         q.ACTIVE_QUOTE_PROVIDER = None
+
+
+def test_stock_quote_reads_etf_snapshot():
+    """the spy ladder spot rides the moomoo stock snapshot (the
+    etf keeps trading overnight) - cached briefly like the
+    index quote."""
+    import sys
+    import types as _types
+
+    from trader.trading.quotes import MoomooQuoteProvider
+
+    real = sys.modules.get("moomoo")
+    cfg = _types.SimpleNamespace(
+        quotes=_types.SimpleNamespace(
+            moomoo_host="127.0.0.1", moomoo_port=11111
+        )
+    )
+    p = MoomooQuoteProvider(cfg)
+    stub = _types.ModuleType("moomoo")
+
+    class _Row:
+        @staticmethod
+        def get(key):
+            return {"code": "SPY", "last_price": 764.85}.get(key)
+
+    class _Data:
+        empty = False
+
+        def __len__(self):
+            return 1
+
+        class _Iloc:
+            @staticmethod
+            def __getitem__(i):
+                return _Row()
+
+        iloc = _Iloc()
+
+    class _Ctx:
+        def __init__(self, host, port):
+            pass
+
+        def get_market_snapshot(self, codes):
+            assert codes[0] == "SPY"
+            return 0, _Data()
+
+        def close(self):
+            pass
+
+    stub.OpenQuoteContext = _Ctx
+    sys.modules["moomoo"] = stub
+    try:
+        assert p.stock_quote("SPY") == 764.85
+        # second read rides the short cache (no new snapshot)
+        assert p.stock_quote("SPY") == 764.85
+    finally:
+        if real is not None:
+            sys.modules["moomoo"] = real
+        else:
+            sys.modules.pop("moomoo", None)

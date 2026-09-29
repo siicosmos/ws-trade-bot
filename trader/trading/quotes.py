@@ -81,6 +81,54 @@ class MoomooQuoteProvider:
         # snapshot returns nothing positive, but the ladder
         # should still show the last close (marked stale)
         self._index_last = None
+        self._stock_cache = {}   # symbol -> (ts, price)
+
+    def stock_quote(self, symbol, ttl=5.0):
+        """Realtime stock/etf spot from the snapshot, cached
+        briefly like the index quote. US stocks keep trading in
+        the overnight and post-market sessions, so this stays
+        live when the index itself is closed - the spy ladder
+        rides it instead of the slow ws quote api."""
+        sym = str(symbol or "").upper()
+        if not sym:
+            return None
+        now = time.time()
+        hit = self._stock_cache.get(sym)
+        if hit and now - hit[0] < ttl:
+            return hit[1]
+        try:
+            ret, data = self._context().get_market_snapshot(
+                [sym, f"US.{sym}", f"{sym}.US"]
+            )
+        except Exception:
+            # OpenD can drop the connection (restart, machine
+            # sleep) - drop the cached context so the next poll
+            # reconnects instead of staying blind
+            try:
+                self._ctx.close()
+            except Exception:
+                pass
+            self._ctx = None
+            return None
+        if ret != 0 or data is None:
+            return None
+        try:
+            if hasattr(data, "empty") and data.empty:
+                return None
+            price = None
+            for i in range(len(data)):
+                row = data.iloc[i]
+                code = str(row.get("code") or "").upper()
+                if sym in code:
+                    p = self.extract_price(row)
+                    if p:
+                        price = p
+                        break
+        except Exception:
+            return None
+        if price:
+            self._stock_cache[sym] = (now, price)
+        return price
 
     def index_quote(self, symbol="SPX"):
         """Index spot for the levels ladder - cached briefly;

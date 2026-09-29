@@ -1377,15 +1377,24 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                 pass
         if not price:
             error = error or "no spx spot from moomoo or ws"
-        # spy's own realtime quote: it trades overnight and
-        # post-market, so the spy ladder keeps a live marker
-        # when the index itself is closed
-        try:
-            spy_q = _ws_stock_quote(account, "SPY")
-        except Exception:
-            spy_q = None
-        spy = spy_q[0] if spy_q else None
-        spy_status = spy_q[1] if spy_q else None
+        # spy's own realtime quote: moomoo first (local opend,
+        # live through the overnight session, no ws round trips),
+        # the bounded ws quote as fallback. the moomoo quote
+        # carries no market status - the ui treats it as live
+        spy = None
+        spy_status = None
+        if provider is not None and hasattr(provider, "stock_quote"):
+            try:
+                spy = provider.stock_quote("SPY")
+            except Exception:
+                spy = None
+        if not spy:
+            try:
+                spy_q = _ws_stock_quote(account, "SPY")
+            except Exception:
+                spy_q = None
+            spy = spy_q[0] if spy_q else None
+            spy_status = spy_q[1] if spy_q else None
         # stale = the market is not trading: the close shows
         # marked as 'close' instead of 'now' (the moomoo feed
         # reports an age, ws reports the market status)

@@ -846,3 +846,81 @@ def test_ws_http_shim_injects_timeout(monkeypatch):
     finally:
         client_mod.requests = saved
         ws_http._installed = False
+
+
+def test_spx_endpoint_prefers_moomoo_spy(monkeypatch):
+    """moomoo opend is local and fast - the spy ladder spot rides
+    it when available and the slow ws quote api is not consulted
+    (moomoo carries no market status: the ui treats it as live)."""
+    import tempfile
+    import types
+
+    from trader.config import (
+        AutoUpdateConfig, DiscordConfig, QuotesConfig, ReaderConfig,
+        TradingConfig, WealthsimpleConfig,
+    )
+    from trader.store import Store
+    from trader.web.server import create_app
+
+    class Stub:
+        def __init__(self):
+            self.trading = TradingConfig(mode="notify")
+            self.pipeline = type("P", (), {"auth_token": "t"})()
+            self.wealthsimple = WealthsimpleConfig(accounts=[])
+            self.reader = ReaderConfig()
+            self.discord = DiscordConfig()
+            self.parser = type("P2", (), {"custom_patterns": []})()
+            self.auto_update = AutoUpdateConfig()
+            self.quotes = QuotesConfig()
+            self.paper = None
+
+    class StubProvider:
+        _index_ts = 0.0
+        _index_error = None
+
+        def index_quote(self, symbol="SPX"):
+            return 7683.69
+
+        def stock_quote(self, symbol):
+            assert symbol == "SPY"
+            return 764.85
+
+    class SentinelAccount:
+        """the ws quote api must not be reached when moomoo
+        quotes spy"""
+
+        def _client(self):
+            class FakeWS:
+                def get_ticker_id(self, ticker, hint=None):
+                    return "sec-" + ticker
+
+                def get_security_quote(self, sec_id):
+                    return {"price": "999.99",
+                            "marketStatus": "CLOSED"}
+
+            return FakeWS()
+
+    import trader.trading.quotes as quotes_mod
+    import trader.web.server as srv
+    saved = quotes_mod.ACTIVE_QUOTE_PROVIDER
+    quotes_mod.ACTIVE_QUOTE_PROVIDER = StubProvider()
+    srv._sec_id_cache.clear()
+    srv._ws_quote_cache.clear()
+    srv._ws_quote_fail_ts.clear()
+    try:
+        fd, path = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        app = create_app(
+            Stub(), Store(path), None, None, SentinelAccount()
+        )
+        client = app.test_client()
+        data = client.get(
+            "/api/spx", headers={"X-Auth-Token": "t"},
+        ).get_json()
+    finally:
+        quotes_mod.ACTIVE_QUOTE_PROVIDER = saved
+
+    assert data["price"] == 7683.69     # moomoo index quote
+    assert data["spy"] == 764.85        # moomoo stock quote
+    assert data["spy_status"] is None   # no status -> live tag
+    assert data["error"] is None
