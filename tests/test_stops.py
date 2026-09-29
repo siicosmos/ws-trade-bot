@@ -398,3 +398,22 @@ def test_per_size_stop_fires_for_lotto_width():
     trades = [t for t in store.recent_trades(20)
               if "[STOP]" in (t["detail"] or "")]
     assert trades, "lotto stop should have fired"
+
+
+def test_realized_today_per_account():
+    """the daily realized counter is keyed per account (the
+    account cards show each label's own today) on top of the
+    mode aggregate the lotto budget reads."""
+    store = _fresh_store()
+    buy = parse_alert("BOUGHT 0DTE SPY 759c @ 1.5")
+    store.apply_position("paper", buy, 5, premium=1.5, account="RRSP")
+    store.apply_position("paper", parse_alert("SOLD 0DTE SPY 759c @ 2.5"),
+                         -2, premium=2.5, account="RRSP")
+    store.apply_position("paper", parse_alert("BOUGHT 0DTE SPY 769c @ 1.0"),
+                         2, premium=1.0, account="default")
+    store.apply_position("paper", parse_alert("SOLD 0DTE SPY 759c @ 2.0"),
+                         -1, premium=1.0, account="default")
+    # RRSP booked +2x(2.5-1.5)x100 = +200
+    assert abs(store.realized_today("paper", "RRSP") - 200.0) < 0.01
+    # the mode aggregate covers every account (lotto budget)
+    assert abs(store.realized_today("paper") - 200.0) < 0.01

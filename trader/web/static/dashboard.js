@@ -347,6 +347,9 @@ function renderSummary(data) {
       '<div class="riskbar"><div style="width:' + pct + '%;background:' + color + '"></div></div>' +
       '<div class="sub"><span style="color:' + color + (pct >= (a.max_open_risk_pct || 30) ? ';font-weight:700' : '') + '">open risk ' + (hidden ? "••••••" : fmtMoney(risk) + " " + (showUsd ? "usd" : "cad")) + ' (' + (a.open_risk_pct ?? 0) + '%)</span>' +
       '<span>cap ' + (a.max_open_risk_pct) + '%</span></div>' +
+      (a.paper_realized_today != null
+        ? '<div class="sub"><span style="color:' + (a.paper_realized_today >= 0 ? "var(--green)" : "var(--red)") + '">today ' + (hidden ? "\u2022\u2022\u2022\u2022\u2022\u2022" : (a.paper_realized_today >= 0 ? "+" : "\u2212") + fmtMoney(Math.abs(a.paper_realized_today))) + '</span><span>realized</span></div>'
+        : '') +
       ((a.margin_requirement != null && !isNaN(a.margin_requirement))
         ? '<div class="sub mrow"><span class="cell"><span class="lab">total margin used</span><span class="val">' + (hidden ? "••••••" :
             fmtMoney(a.margin_used_usd || 0) + ' usd' +
@@ -413,6 +416,9 @@ function renderSummary(data) {
         (pnl == null ? '' :
           '<div class="sub"><span style="color:' + pnlColor + '">return ' + (phidden? "••••••" : (pnl >= 0 ? "+" : "") + fmtMoney(pnl)) +
           (pnlPct != null ? ' (' + (pnl >= 0 ? "+" : "") + pnlPct.toFixed(1) + '%)' : '') + '</span></div>') +
+        (a.paper_realized_today != null
+          ? '<div class="sub"><span style="color:' + (a.paper_realized_today >= 0 ? "var(--green)" : "var(--red)") + '">today ' + (phidden? "••••••" : (a.paper_realized_today >= 0 ? "+" : "\u2212") + fmtMoney(Math.abs(a.paper_realized_today))) + '</span><span>realized</span></div>'
+          : '') +
         '<div class="riskbar"><div style="width:' + Math.min(100, Math.round(a.paper_open_risk_pct || 0)) + '%;background:' + (a.paper_open_risk_pct >= (a.max_open_risk_pct || 30) ? "#f85149" : a.paper_open_risk_pct > (a.max_open_risk_pct || 30) * 0.6 ? "#d29922" : "#3fb950") + '"></div></div>' +
         '<div class="sub"><span style="color:' + paperRiskColor + (paperRiskAtCap ? ';font-weight:700' : '') + '">open risk ' + (phidden? "••••••" : fmtMoney(a.paper_open_risk || 0) + " cad") + ' (' + (a.paper_open_risk_pct ?? 0) + '%)</span>' +
         '<span>cap ' + (a.max_open_risk_pct ?? 30) + '%</span></div>' +
@@ -1054,9 +1060,15 @@ function renderSettings(s) {
       _numField("set-max_open_risk_pct", "open risk cap %", t.max_open_risk_pct,
         "stop opening new risk once deployed capital exceeds this % of account value", "big") +
       _numField("set-stop_loss_pct", "stop loss %", t.stop_loss_pct,
-        "hard stop distance below entry; 0 disables the stop monitor", "big") +
+        "global stop loss % below entry (per-size overrides live in the size tiers below)", "big") +
       _numField("set-trailing_stop_pct", "trailing stop %", t.trailing_stop_pct,
         "trailing stop distance once in profit; 0 disables", "big") +
+      _check("set-back_to_entry_enabled", "auto b2e sell on 0dte",
+        t.back_to_entry_enabled !== false,
+        "sell a 0dte option back to its entry when the day's gain evaporates (per-tier override in the size tiers)") +
+      _numField("set-lotto_gain_budget_pct", "lotto budget %",
+        t.lotto_gain_budget_pct,
+        "hero-or-zero / profits-only buys may spend at most this % of today's realized sell gains", "big") +
     '</div>');
 
   // 2. trading limits
@@ -1108,7 +1120,7 @@ function renderSettings(s) {
   // 4. size tiers
   let tiers = '<div class="set-grid">' +
     '<div class="set-field full" style="color:var(--muted);font-size:11px">' +
-    'risk % cap / min / max contracts</div>';
+    'risk % cap / min / max contracts / stop loss % (empty = global)</div>';
   // canonical tier order: lotto, micro, tiny, small, medium,
   // large, big, full - then any custom tiers
   const tierOrder = [
@@ -1129,7 +1141,14 @@ function renderSettings(s) {
       '<div class="tier-row">' +
       '<input id="tier-' + esc(name) + '-min" type="number" value="' + esc(tier.contracts_min) + '" title="min contracts">' +
       '<input id="tier-' + esc(name) + '-max" type="number" value="' + esc(tier.contracts_max) + '" title="max contracts">' +
-      '</div></div>';
+      '</div>' +
+      '<input id="tier-' + esc(name) + '-stop" type="number" step="any" value="' +
+      (tier.stop_loss_pct == null ? "" : esc(tier.stop_loss_pct)) +
+      '" placeholder="\u2014" title="per-size stop loss % (empty = the global stop applies)">' +
+      (tier.back_to_entry != null
+        ? '<label style="font-size:10px;display:flex;gap:3px;align-items:center"><input type="checkbox" id="tier-' + esc(name) + '-b2e"' + (tier.back_to_entry ? " checked" : "") + ' title="0dte back-to-entry sell for this size">b2e</label>'
+        : '') +
+      '</div>';
   }
   tiers += '</div>';
   // stock tiers: one field per tier, like the option tiers -
@@ -1279,12 +1298,13 @@ async function saveSettings() {
   const val = (id) => document.getElementById(id).value;
   const num = (id) => parseFloat(val(id));
   const trading = {};
-  for (const k of ["risk_per_trade_pct","max_contracts_per_trade","max_open_risk_pct","stop_loss_pct","trailing_stop_pct","stop_check_seconds","max_consecutive_losses","min_dte_days","max_trades_per_day","cooldown_seconds","dedupe_window_minutes","limit_offset_pct","history_retention_days"]) {
+  for (const k of ["risk_per_trade_pct","max_contracts_per_trade","max_open_risk_pct","stop_loss_pct","trailing_stop_pct","stop_check_seconds","max_consecutive_losses","min_dte_days","max_trades_per_day","cooldown_seconds","dedupe_window_minutes","limit_offset_pct","history_retention_days","lotto_gain_budget_pct"]) {
     trading[k] = num("set-" + k);
   }
   trading.order_type = val("set-order_type");
   trading.place_stop_loss = document.getElementById("set-place_stop_loss").checked;
   trading.sell_only_if_held = document.getElementById("set-sell_only_if_held").checked;
+  trading.back_to_entry_enabled = document.getElementById("set-back_to_entry_enabled").checked;
   const toList = (id) => val(id).split(",").map(function(s) { return s.trim(); }).filter(Boolean);
   trading.ticker_whitelist = toList("set-ticker_whitelist");
   trading.skip_underlyings = toList("set-skip_underlyings");
@@ -1294,6 +1314,12 @@ async function saveSettings() {
   document.querySelectorAll("[id^=tier-]").forEach(el => names.add(el.id.split("-")[1]));
   for (const name of names) {
     tiers[name] = { risk_pct_max: num("tier-" + name + "-risk"), contracts_min: parseInt(val("tier-" + name + "-min")), contracts_max: parseInt(val("tier-" + name + "-max")) };
+    // per-size stop loss: empty = the global stop applies
+    const stopV = val("tier-" + name + "-stop");
+    if (stopV !== "") tiers[name].stop_loss_pct = parseFloat(stopV);
+    // per-size back-to-entry: only sent when the tier exposes it
+    const b2e = document.getElementById("tier-" + name + "-b2e");
+    if (b2e) tiers[name].back_to_entry = b2e.checked;
   }
   trading.size_tiers = tiers;
   trading.stock_size_tiers = (function() {

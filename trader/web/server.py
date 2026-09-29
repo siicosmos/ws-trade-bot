@@ -762,6 +762,12 @@ def _account_summary(ctx, snap, label, value):
         "stock_value": stock_value,
         "option_value": option_value,
         "alloc_base": alloc_base,
+        # today's realized sell gains minus sell losses, as the
+        # paper ledger books them for this account (mirrored real
+        # fills included) - the lotto budget rides the same number
+        "paper_realized_today": round(
+            store.realized_today("paper", label), 2
+        ),
         "paper_value": paper_values.get(label),
         "paper_initial": paper_initials.get(label),
         # prefer wealthsimple's own conversion for

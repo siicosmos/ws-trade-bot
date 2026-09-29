@@ -500,28 +500,38 @@ class Store:
 
             # accumulate the realized pnl per day (sells only) -
             # lotto / profits-only sizing is capped by today's
-            # realized gain
+            # realized gain and the account cards show it per label
             if delta < 0 and realized != old_realized:
                 today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-                meta_key = f"realized_today:{mode}:{today}"
-                prev = self._conn.execute(
-                    "SELECT value FROM meta WHERE key = ?", (meta_key,)
-                ).fetchone()
-                prev_val = 0.0
-                try:
-                    prev_val = float(json.loads(prev[0])) if prev else 0.0
-                except (TypeError, ValueError):
-                    pass
-                self._conn.execute(
-                    "INSERT INTO meta (key, value) VALUES (?, ?) "
-                    "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-                    (
-                        meta_key,
-                        json.dumps(
-                            round(prev_val + (realized - old_realized), 2)
+                delta_realized = round(realized - old_realized, 2)
+                for meta_key in (
+                    f"realized_today:{mode}:{today}",
+                    f"realized_today:{mode}:{account}:{today}",
+                ):
+                    prev = self._conn.execute(
+                        "SELECT value FROM meta WHERE key = ?",
+                        (meta_key,),
+                    ).fetchone()
+                    prev_val = 0.0
+                    try:
+                        prev_val = (
+                            float(json.loads(prev[0])) if prev else 0.0
+                        )
+                    except (TypeError, ValueError):
+                        pass
+                    self._conn.execute(
+                        "INSERT INTO meta (key, value) VALUES (?, ?) "
+                        "ON CONFLICT(key) DO UPDATE SET "
+                        "value = excluded.value",
+                        (
+                            meta_key,
+                            json.dumps(
+                                round(
+                                    prev_val + delta_realized, 2
+                                )
+                            ),
                         ),
-                    ),
-                )
+                    )
 
             if old_qty > 0 and new_qty == 0:
                 self._record_close(mode, realized)
@@ -908,13 +918,18 @@ class Store:
             return
         self.set_paper_equity(current + delta, label)
 
-    def realized_today(self, mode: str) -> float:
-        """Realized pnl booked today (sells minus losses) - the
-        budget lotto / profits-only alerts spend against."""
+    def realized_today(self, mode: str, account=None) -> float:
+        """Realized pnl booked today (sell gains minus sell
+        losses) - the account card shows it per label and the
+        lotto / profits-only budget reads the mode aggregate."""
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        key = (
+            f"realized_today:{mode}:{account}:{today}"
+            if account
+            else f"realized_today:{mode}:{today}"
+        )
         row = self._conn.execute(
-            "SELECT value FROM meta WHERE key = ?",
-            (f"realized_today:{mode}:{today}",),
+            "SELECT value FROM meta WHERE key = ?", (key,),
         ).fetchone()
         try:
             return float(json.loads(row[0])) if row else 0.0

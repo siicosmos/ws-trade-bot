@@ -1,6 +1,7 @@
 import os
 import sys
 import tempfile
+import types
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -933,3 +934,125 @@ def test_new_fields_persist_to_config_file():
     assert raw["trading"]["place_stop_loss"] is True
     assert raw["trading"]["sell_only_if_held"] is False
     os.unlink(cfg_path)
+
+
+def test_size_tier_stop_loss_roundtrip():
+    """per-size stop losses and back-to-entry survive the
+    settings round trip: applied into cfg and served back by
+    get_settings."""
+    import tempfile
+
+    from trader.config import (
+        AutoUpdateConfig, DiscordConfig, QuotesConfig, ReaderConfig,
+        TradingConfig, WealthsimpleConfig,
+    )
+    from trader.settings import apply_settings, get_settings
+
+    class Stub:
+        def __init__(self):
+            self.trading = TradingConfig(mode="notify")
+            self.pipeline = type("P", (), {"auth_token": "t"})()
+            self.wealthsimple = WealthsimpleConfig(accounts=[])
+            self.reader = ReaderConfig()
+            self.discord = DiscordConfig()
+            self.parser = type("P2", (), {"custom_patterns": []})()
+            self.auto_update = AutoUpdateConfig()
+            self.quotes = QuotesConfig()
+
+    cfg = Stub()
+    cfg_path = tempfile.mkstemp(suffix=".yaml")[1]
+    app, errs = apply_settings(cfg, {
+        "trading": {
+            "back_to_entry_enabled": True,
+            "lotto_gain_budget_pct": 60,
+            "size_tiers": {
+                "lotto": {
+                    "risk_pct_max": 0.5, "contracts_min": 1,
+                    "contracts_max": 1, "stop_loss_pct": 55,
+                    "back_to_entry": True,
+                },
+                "medium": {
+                    "risk_pct_max": 5, "contracts_min": 1,
+                    "contracts_max": 4, "stop_loss_pct": 22,
+                },
+            },
+        },
+    }, config_path=cfg_path)
+    assert not errs, errs
+    tier = cfg.trading.size_tiers["lotto"]
+    assert tier["stop_loss_pct"] == 55
+    assert tier["back_to_entry"] is True
+    med = cfg.trading.size_tiers["medium"]
+    assert med["stop_loss_pct"] == 22
+    assert abs(cfg.trading.lotto_gain_budget_pct - 60) < 0.01
+    assert cfg.trading.back_to_entry_enabled is True
+
+    # the settings payload serves the tier stops back
+    s = __import__(
+        "trader.settings", fromlist=["get_settings"]
+    ).get_settings(cfg)
+    assert s["trading"]["size_tiers"]["lotto"]["stop_loss_pct"] == 55
+    assert s["trading"]["back_to_entry_enabled"] is True
+
+
+def test_account_summary_carries_realized_today():
+    """each account card payload carries the account's realized
+    gain of the day (sell gains minus sell losses)."""
+    import tempfile
+    import types as _types
+
+    from trader.config import (
+        AutoUpdateConfig, DiscordConfig, QuotesConfig, ReaderConfig,
+        TradingConfig, WealthsimpleConfig,
+    )
+    from trader.store import Store
+    from trader.trading.parser import parse_alert
+    from trader.web.server import create_app
+
+    class Stub:
+        def __init__(self):
+            self.trading = TradingConfig(mode="notify")
+            self.pipeline = type("P", (), {"auth_token": "t"})()
+            self.wealthsimple = WealthsimpleConfig(accounts=[])
+            self.reader = ReaderConfig()
+            self.discord = DiscordConfig()
+            self.parser = type("P2", (), {"custom_patterns": []})()
+            self.auto_update = AutoUpdateConfig()
+            self.quotes = QuotesConfig()
+            self.paper = types.SimpleNamespace(enabled=True)
+
+    fd, path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    store = Store(path)
+    from trader.trading.parser import parse_alert
+
+    store.apply_position(
+        "paper", parse_alert("BOUGHT 10/02 AAOI 105c @ 2.0"), 4,
+        premium=2.0, account="RRSP",
+    )
+    store.apply_position(
+        "paper", parse_alert("SOLD 10/02 AAOI 105c @ 2.5"), -2,
+        premium=2.5, account="RRSP",
+    )
+    class StubAccount:
+        def values(self):
+            return {"RRSP": 5000.0}
+
+        def open_option_positions(self):
+            return {}
+
+        def stock_holdings(self):
+            return {}
+
+    app = create_app(Stub(), store, None, None, StubAccount())
+    client = app.test_client()
+    data = client.get(
+        "/api/dashboard", headers={"X-Auth-Token": "t"},
+    ).get_json()
+    acct = next(
+        a for a in data["summary"]["accounts"]
+        if a["label"] == "RRSP"
+    )
+    assert "paper_realized_today" in acct
+    # 2x(2.5-2.0)x100 = +100 booked for RRSP today
+    assert abs((acct["paper_realized_today"] or 0.0) - 100.0) < 0.01

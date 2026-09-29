@@ -10,6 +10,7 @@ EDITABLE_SCALARS = {
     "stop_loss_pct": ("float", 0, 100),
     "trailing_stop_pct": ("float", 0, 100),
     "stop_check_seconds": ("int", 5, 3600),
+    "lotto_gain_budget_pct": ("float", 0, 100),
     "max_consecutive_losses": ("int", 0, 100),
     "min_dte_days": ("int", 0, 365),
     "max_trades_per_day": ("int", 0, 1000),
@@ -19,7 +20,9 @@ EDITABLE_SCALARS = {
     "history_retention_days": ("int", 0, 3650),
 }
 EDITABLE_ENUMS = {"order_type": ("market", "limit")}
-EDITABLE_BOOLS = ("place_stop_loss", "sell_only_if_held")
+EDITABLE_BOOLS = (
+    "place_stop_loss", "sell_only_if_held", "back_to_entry_enabled",
+)
 EDITABLE_LISTS = ("ticker_whitelist", "skip_underlyings")
 EDITABLE_READER = {
     "channel_marker": ("str", 0, 100),
@@ -259,6 +262,24 @@ def apply_settings(cfg, payload: dict, config_path=None) -> tuple:
                     f"trading.size_tiers.{name}: invalid contract range"
                 )
                 continue
+            # optional per-size stop loss - absent means the
+            # global stop applies
+            if spec.get("stop_loss_pct") not in (None, ""):
+                try:
+                    tier["stop_loss_pct"] = float(spec["stop_loss_pct"])
+                except (TypeError, ValueError):
+                    errors.append(
+                        f"trading.size_tiers.{name}: bad stop_loss_pct"
+                    )
+                    continue
+                if not (0 < tier["stop_loss_pct"] <= 100):
+                    errors.append(
+                        f"trading.size_tiers.{name}.stop_loss_pct "
+                        f"must be 0-100"
+                    )
+                    continue
+            if "back_to_entry" in spec:
+                tier["back_to_entry"] = bool(spec["back_to_entry"])
             cfg.trading.size_tiers[str(name).lower()] = tier
             applied[f"trading.size_tiers.{name}"] = tier
 
