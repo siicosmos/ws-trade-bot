@@ -26,6 +26,7 @@ from inspect_discord import (
     find_discord_window,
     kill_discord,
     start_discord,
+    switch_server_keyboard,
 )
 
 CHROME_RE = re.compile(
