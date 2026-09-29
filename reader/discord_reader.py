@@ -18,6 +18,7 @@ except ImportError:
 
 from inspect_discord import (
     _window_readable,
+    _foreground_discord,
     close_extra_windows,
     ensure_visible,
     tree_entry_names,
@@ -782,6 +783,24 @@ def _uia_prop(obj, name):
     return value() if callable(value) else value
 
 
+def switch_server(window, server, log=print):
+    """Reach another server: cycle the rail with discord's own
+    hotkeys first (mouse clicks are unreliable across monitors,
+    dpi scales and rendering glitches), then fall back to
+    clicking the server rail entry - it stays in the ui tree
+    even when the hotkey never lands (focus withheld or the
+    keybind swallowed elsewhere)."""
+    if switch_server_keyboard(window, server, log=log):
+        return True
+    srv = find_channel_control(window, [server])
+    if srv is not None and click_channel_control(
+        srv, window=window, log=log,
+    ):
+        log(f"switched to server {server!r} via the rail click")
+        return True
+    return False
+
+
 _snap_warn_ts = 0.0
 
 
@@ -855,11 +874,35 @@ def snap_to_bottom(container, log_fn=None):
     # (a readable window does not need the restore attempt)
     ensure_visible(container, log=log_fn or print)
     try:
+        window = container.GetTopLevelControl()
+    except Exception:
+        window = None
+    if window is None or not _foreground_discord(
+        window, log=log_fn or print,
+    ):
+        _warn(
+            "End-key fallback skipped - discord would not take "
+            "focus (keys would land in another window)"
+        )
+        return
+    try:
         container.SetFocus()
         auto.SendKeys("{End}", waitTime=0.05)
         _warn(
             "scroll failed - using End key to jump to latest messages"
         )
+        if pattern is not None:
+            time.sleep(0.5)
+            try:
+                now_pct = _uia_prop(pattern, "VerticalScrollPercent")
+                if now_pct is not None and now_pct < 98:
+                    _warn(
+                        f"End key did not reach the bottom "
+                        f"(pane at {now_pct}%)",
+                        period=600,
+                    )
+            except Exception:
+                pass
     except Exception as e:
         _warn(f"auto-scroll fallback failed: {e}", period=600)
 
@@ -1384,11 +1427,7 @@ def main():
                         # stale - re-acquire everything fresh
                         window = None
                 elif server:
-                    # the channel lives on another server: cycle
-                    # the server rail via discord's own hotkeys
-                    # (mouse clicks are unreliable across
-                    # monitors, dpi scales and rendering glitches)
-                    if switch_server_keyboard(window, server, log=log):
+                    if switch_server(window, server, log=log):
                         container = None
                     elif wait_attempts % 120 == 0:
                         log(

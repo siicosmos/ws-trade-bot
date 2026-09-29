@@ -424,7 +424,16 @@ class WealthsimpleExecutor:
         chain = ws.get_option_chain(sec_id, chosen, opt_type) or []
         for opt in chain:
             try:
-                strike = float(opt["strikePrice"]["amount"])
+                # the chain nests the strike under optionDetails
+                # as a plain string ("102") - older shapes wrapped
+                # it in {amount} or left it top-level
+                od = opt.get("optionDetails") or {}
+                strike = od.get(
+                    "strikePrice", opt.get("strikePrice")
+                )
+                if isinstance(strike, dict):
+                    strike = strike.get("amount")
+                strike = float(strike)
             except (KeyError, TypeError, ValueError):
                 continue
             if abs(strike - (alert.strike or 0)) < 0.001:

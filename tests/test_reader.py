@@ -956,18 +956,27 @@ def test_snap_verifies_then_falls_back_to_end_key(monkeypatch):
         def SetFocus(self):
             Container.focused = True
 
+        def GetTopLevelControl(self):
+            return types.SimpleNamespace(NativeWindowHandle=1)
+
     p = Pattern()
     p.set_calls = []
     Container.focused = False
     Container.wheeled = False
     sent = []
+    fg = []
     monkeypatch.setattr(dr.auto, "SendKeys",
                         lambda keys, waitTime=None: sent.append(keys))
+    # the End key only goes out once discord is verified
+    # foreground - otherwise it lands in another window
+    monkeypatch.setattr(dr, "_foreground_discord",
+                        lambda w, log=print: fg.append(w) or True)
 
     dr.snap_to_bottom(Container(p))
     # both programmatic paths were tried before the keyboard
     assert p.set_calls == [100]
     assert Container.focused
+    assert fg
     assert sent == ["{End}"]
 
 
@@ -1005,14 +1014,21 @@ def test_snap_falls_back_to_end_key(monkeypatch):
         def SetFocus(self):
             NoScroll.focused = True
 
+        def GetTopLevelControl(self):
+            return types.SimpleNamespace(NativeWindowHandle=1)
+
     NoScroll.focused = False
     sent = []
+    fg = []
     monkeypatch.setattr(dr.auto, "SendKeys",
                         lambda keys, waitTime=None: sent.append(keys))
+    monkeypatch.setattr(dr, "_foreground_discord",
+                        lambda w, log=print: fg.append(w) or True)
 
     logs = []
     dr.snap_to_bottom(NoScroll(), log_fn=logs.append)
     assert NoScroll.focused
+    assert fg
     assert sent == ["{End}"]
 
 

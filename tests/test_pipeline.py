@@ -3034,15 +3034,22 @@ def test_paper_only_contract_priced_from_ws_chain():
             return [buy.expiry]
 
         def get_option_chain(self, sec_id, expiry, opt_type):
+            # the real chain shape: strike nested under
+            # optionDetails as a plain string, quote under
+            # quoteV2 (verified against the live gateway)
             return [{
                 "id": "opt1",
-                "strikePrice": {"amount": "105"},
-                "quote": {"bid": "2.15"},
+                "optionDetails": {
+                    "strikePrice": "105",
+                    "optionType": "CALL",
+                },
+                "quoteV2": {
+                    "price": "2.15",
+                    "last": "2.22",
+                    "bid": "1.95",
+                    "ask": "2.35",
+                },
             }]
-
-    class FakeWSAccount:
-        def _client(self):
-            return FakeWS()
 
     class FakeWSAccount:
         def _client(self):

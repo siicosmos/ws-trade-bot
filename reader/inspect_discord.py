@@ -437,6 +437,14 @@ def ensure_visible(control, window=None, log=print):
         ctypes.windll.user32.ShowWindow(hwnd, 9)   # SW_RESTORE
         _time.sleep(2.5)
         if _window_readable(target):
+            # a restored tray window may still carry a suspended
+            # renderer (its ui tree goes stale or empty) - the
+            # single-instance start signal makes discord show and
+            # repaint properly (same as double clicking the tray)
+            try:
+                start_discord(log=log)
+            except Exception:
+                pass
             log(
                 "discord was hidden or minimized - restored it "
                 "(a hidden window cannot be read)"
@@ -455,21 +463,46 @@ def server_from_title(title):
     return tail.replace("- Discord", "").strip()
 
 
+def _foreground_discord(window, log=print):
+    """Bring the discord window to the foreground and verify it
+    actually took focus - keyboard input goes wherever the focus
+    is, and windows' foreground lock silently rejects a plain
+    SetForegroundWindow from a background process (SetActive
+    attaches to the foreground thread's input queue, which is
+    allowed to hand focus over)."""
+    try:
+        hwnd = window.NativeWindowHandle
+    except UIAError:
+        hwnd = 0
+    if not hwnd:
+        log("discord focus failed: no window handle")
+        return False
+    fg = ctypes.windll.user32.GetForegroundWindow
+    for attempt in range(3):
+        if fg() == hwnd:
+            return True
+        try:
+            window.SetActive()
+        except Exception as e:
+            log(f"discord focus attempt {attempt + 1} failed: {e}")
+        _time.sleep(0.4)
+    if fg() != hwnd:
+        log("discord did not take focus - keys would land elsewhere")
+        return False
+    return True
+
+
 def switch_server_keyboard(window, target_server, log=print):
     """Cycle the server rail with discord's ctrl+alt+down
     hotkey until the window title shows the target server -
     immune to mouse position, dpi and rendering issues. Takes
     focus: keyboard navigation needs the discord window
-    foregrounded."""
-    import time as _time
-
-    try:
-        hwnd = window.NativeWindowHandle
-        if hwnd:
-            ctypes.windll.user32.SetForegroundWindow(hwnd)
-    except Exception:
-        pass
+    foregrounded - keys sent while another window is focused
+    go to that window instead."""
+    if not _foreground_discord(window, log=log):
+        return False
     log(f"navigating to server {target_server!r} via the keyboard")
+    pressed = 0
     for _ in range(15):
         try:
             server = server_from_title(window.Name or "")
@@ -479,6 +512,15 @@ def switch_server_keyboard(window, target_server, log=print):
             log(f"switched to server {server!r}")
             return True
         auto.SendKeys("^%{down}", waitTime=0.3)
+        pressed += 1
         _time.sleep(0.4)
+        if pressed == 1:
+            # a hotkey that does nothing (focus still elsewhere,
+            # keybind swallowed by e.g. a graphics-driver hotkey)
+            # shows up as an unchanged title
+            try:
+                log(f"title after the first hotkey: {window.Name!r}")
+            except UIAError:
+                pass
     log(f"server {target_server!r} not reached via the keyboard")
     return False

@@ -178,7 +178,10 @@ class PaperLedger:
                 opt, _ = resolver._resolve_option(ws, sec_id, alert)
                 if not opt:
                     continue
-                quote = opt.get("quote") or {}
+                # chain nodes carry the quote under quoteV2 - the
+                # same field the live position card prices from,
+                # so paper and real agree on the same contract
+                quote = opt.get("quoteV2") or opt.get("quote") or {}
                 price = (
                     quote.get("price")
                     or quote.get("last")
