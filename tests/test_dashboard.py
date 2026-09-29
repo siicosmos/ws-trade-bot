@@ -1034,24 +1034,29 @@ def test_no_eval_or_string_timers_in_shipped_pages():
         # are fine - string evaluation is not
         assert "javascript:" not in html
 
-
 def test_lighthouse_render_and_cls_findings():
     """/static/dashboard.js was render-blocking (750ms of the
     lighthouse critical path) and the empty-to-filled tables
-    shifted the page (CLS 0.394). the script is deferred, the
-    stylesheet is inlined, and the trade log is a fixed scroll
-    box at its steady-state height so data never changes its
-    footprint."""
+    shifted the page (CLS 0.536). the script is deferred, the
+    stylesheet is inlined, both logs are fixed scroll boxes at
+    steady-state height, and the page carries a main landmark."""
     assert '<script src="/static/dashboard.js" defer></script>' in DASHBOARD_HTML
-    # reserved blocks: the tables must not jump when the first
-    # payload lands - the trade log is a fixed scroll box
-    assert "#signals { min-height: 380px; }" in DASHBOARD_CSS
+    # reserved blocks: both logs are fixed scroll boxes at
+    # steady-state height - the page skeleton never moves
+    assert "#signals { height: min(760px, 92vh)" in DASHBOARD_CSS
     assert "#trades { height: min(880px, 92vh)" in DASHBOARD_CSS
     assert "overflow-y: auto" in DASHBOARD_CSS
     # the header spans reserve their width so late text does not
     # jitter the header row
     assert ".headrow #stops, .headrow #reader" in DASHBOARD_CSS
     assert "min-width: 200px" in DASHBOARD_CSS
+    # accessibility: a primary landmark for screen readers
+    assert "<main>" in DASHBOARD_HTML and "</main>" in DASHBOARD_HTML
+    # accessibility: the page carries a main landmark
+    assert DASHBOARD_HTML.count("<main>") == 1
+    assert DASHBOARD_HTML.index("<main>") < DASHBOARD_HTML.index(
+        'id="accounts"'
+    ) < DASHBOARD_HTML.index('id="levelsBackdrop"')
 
 
 def test_dashboard_inlines_the_stylesheet():

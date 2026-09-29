@@ -198,10 +198,11 @@
   #trades .tlog { min-width: 560px; }
   /* reserve the tables' block: the first /api/dashboard payload
      lands a beat after render and filled tables must not shove
-     the page down (the lighthouse CLS finding). the trade log is
-     a fixed scroll box at its steady-state height so data never
-     changes its footprint */
-  #signals { min-height: 380px; }
+     the page down (the lighthouse CLS finding). both logs are
+     fixed scroll boxes at steady-state height - the page's
+     skeleton never moves again, data scrolls inside */
+  #signals { height: min(760px, 92vh); min-height: 380px;
+    overflow-y: auto; }
   #trades { height: min(880px, 92vh); min-height: 380px;
     overflow-y: auto; }
   #stock-positions { min-height: 120px; }
