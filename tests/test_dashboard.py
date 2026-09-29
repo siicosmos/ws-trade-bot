@@ -712,6 +712,10 @@ def test_dashboard_endpoint_survives_hung_ws_api(monkeypatch):
             return {}
 
     monkeypatch.setattr(srv, "_WS_QUOTE_TIMEOUT", 0.3)
+    srv._sec_id_cache.clear()
+    srv._ws_quote_cache.clear()
+    srv._ws_quote_fail_ts.clear()
+    srv._section_cache.clear()
 
     fd, path = tempfile.mkstemp(suffix=".db")
     os.close(fd)
@@ -730,3 +734,115 @@ def test_dashboard_endpoint_survives_hung_ws_api(monkeypatch):
     # the non-ws sections still render
     assert data["me"] is not None or "me" in data
     assert "settings" in data and "signals" in data
+
+
+def test_dashboard_sections_serve_stale_cache(monkeypatch):
+    """stale-while-revalidate: once a section has a good payload,
+    a slow or stalled ws api serves the cached one instead of
+    degrading - the dashboard keeps rendering through ws outages."""
+    import tempfile
+    import time as time_mod
+
+    import trader.web.server as srv
+    from trader.config import (
+        AutoUpdateConfig, DiscordConfig, QuotesConfig, ReaderConfig,
+        TradingConfig, WealthsimpleConfig,
+    )
+    from trader.store import Store
+    from trader.web.server import create_app
+
+    class Stub:
+        def __init__(self):
+            self.trading = TradingConfig(mode="notify")
+            self.pipeline = type("P", (), {"auth_token": "t"})()
+            self.wealthsimple = WealthsimpleConfig(accounts=[])
+            self.reader = ReaderConfig()
+            self.discord = DiscordConfig()
+            self.parser = type("P2", (), {"custom_patterns": []})()
+            self.auto_update = AutoUpdateConfig()
+            self.quotes = QuotesConfig()
+            self.paper = None
+
+    class GoodAccount:
+        def values(self):
+            return {}
+
+        def open_option_positions(self):
+            return {}
+
+        def stock_holdings(self):
+            return {}
+
+    class HungAccount:
+        def values(self):
+            time_mod.sleep(30)
+            return {}
+
+        def open_option_positions(self):
+            time_mod.sleep(30)
+            return {}
+
+        def stock_holdings(self):
+            time_mod.sleep(30)
+            return {}
+
+    monkeypatch.setattr(srv, "_WS_QUOTE_TIMEOUT", 0.3)
+    srv._sec_id_cache.clear()
+    srv._ws_quote_cache.clear()
+    srv._ws_quote_fail_ts.clear()
+    srv._section_cache.clear()
+
+    fd, path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    # a working api populates the section cache
+    app = create_app(Stub(), Store(path), None, None, GoodAccount())
+    client = app.test_client()
+    data = client.get(
+        "/api/dashboard", headers={"X-Auth-Token": "t"},
+    ).get_json()
+    assert "error" not in (data["summary"] or {})
+    assert "summary" in srv._section_cache
+
+    # the api stalls: the cached summary still serves
+    app2 = create_app(
+        Stub(), Store(path), None, None, HungAccount()
+    )
+    client2 = app2.test_client()
+    t0 = time_mod.time()
+    data2 = client2.get(
+        "/api/dashboard", headers={"X-Auth-Token": "t"},
+    ).get_json()
+    assert time_mod.time() - t0 < 5
+    assert "error" not in (data2["summary"] or {})
+
+
+def test_ws_http_shim_injects_timeout(monkeypatch):
+    """every wealthsimple request must carry a hard timeout -
+    the client library sends none, and a stalled connection
+    once pinned the whole waitress pool."""
+    import trader.ws.ws_http as ws_http
+    from wealthsimple_python import client as client_mod
+
+    seen = {}
+
+    def fake_post(url, *args, **kwargs):
+        seen["timeout"] = kwargs.get("timeout")
+        return "ok"
+
+    # install() captures requests.post from this module at call
+    # time - patch it so the wrapper wraps the recorder
+    monkeypatch.setattr(ws_http._requests, "post", fake_post)
+    saved = client_mod.requests
+    try:
+        ws_http._installed = False
+        ws_http.install()
+        client_mod.requests.post("http://x")
+        assert seen["timeout"] == ws_http.WS_HTTP_TIMEOUT
+        # an explicit timeout is preserved
+        client_mod.requests.post("http://x", timeout=3)
+        assert seen["timeout"] == 3
+        # idempotent
+        ws_http.install()
+    finally:
+        client_mod.requests = saved
+        ws_http._installed = False

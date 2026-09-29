@@ -389,6 +389,9 @@ class WealthsimpleExecutor:
         if self._ws is None:
             from wealthsimple_python import WealthsimpleV2
 
+            from ..ws.ws_http import install
+
+            install()
             self._ws = WealthsimpleV2()
         from ..ws.ws_tokens import persist_env_tokens
 

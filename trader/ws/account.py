@@ -50,6 +50,9 @@ class WealthsimpleAccount:
         if self._ws is None:
             from wealthsimple_python import WealthsimpleV2
 
+            from .ws_http import install
+
+            install()
             self._ws = WealthsimpleV2()
         return self._ws
 

@@ -362,9 +362,15 @@ def _real_stocks(ctx):
 # waitress worker until the pool drains and even /health stops
 # answering. every ws quote is therefore bounded by a worker
 # thread and cached so the polling endpoints stay cheap
-_WS_QUOTE_TIMEOUT = 5.0
+_WS_QUOTE_TIMEOUT = 15.0
 _WS_QUOTE_TTL = 10.0
 _WS_QUOTE_RETRY = 30.0
+# the dashboard's ws-touching sections cache briefly and serve
+# stale when a refresh does not finish in time - the ws api can
+# run several seconds per round trip on a bad network, and the
+# page must not stall on it
+_SECTION_TTL = 15.0
+_section_cache = {}
 _sec_id_cache = {}
 _ws_quote_cache = {}
 _ws_quote_fail_ts = {}
@@ -902,6 +908,64 @@ def _account_summaries(ctx):
     return out, None
 
 
+def _dashboard_sections(ctx):
+    """summary / paper / positions in one shot.
+
+    The dashboard polls every few seconds while each section's
+    ws fetches can take tens of seconds on a bad network - so
+    the refreshes run concurrently, bounded, and anything not
+    finished in time serves the last good payload (stale-while-
+    revalidate) or its error/empty shape on a cold start."""
+    sections = (
+        ("summary", _summary_payload, ctx,
+         {"error": "summary refresh timed out - "
+          "the ws api is not answering"}),
+        ("paper", _paper_positions_payload, ctx,
+         {"error": "paper pricing timed out - "
+          "the ws api is not answering"}),
+        ("positions", _positions_payload, ctx, []),
+    )
+    now = time.time()
+    results = {}
+    pending = []
+    for key, fn, arg, fallback in sections:
+        hit = _section_cache.get(key)
+        if hit and now - hit[0] < _SECTION_TTL:
+            results[key] = hit[1]
+        else:
+            pending.append((key, fn, arg, fallback))
+    boxes = {}
+    workers = []
+    for key, fn, arg, fallback in pending:
+        box = {}
+        boxes[key] = box
+
+        def _work(fn=fn, arg=arg, box=box):
+            try:
+                box["r"] = fn(arg)
+            except Exception:
+                pass
+
+        worker = threading.Thread(target=_work, daemon=True)
+        worker.start()
+        workers.append(worker)
+    # the sections run concurrently: the whole batch is capped at
+    # one bound, not the sum of them
+    deadline = time.time() + _WS_QUOTE_TIMEOUT
+    for worker in workers:
+        worker.join(max(0.0, deadline - time.time()))
+    for key, fn, arg, fallback in pending:
+        box = boxes[key]
+        payload = box.get("r")
+        if payload is not None:
+            _section_cache[key] = (time.time(), payload)
+            results[key] = payload
+        else:
+            hit = _section_cache.get(key)
+            results[key] = hit[1] if hit else fallback
+    return results["summary"], results["paper"], results["positions"]
+
+
 def _summary_payload(ctx):
     accounts, err = _account_summaries(ctx)
     if err:
@@ -1383,26 +1447,12 @@ def create_app(cfg, store: Store, risk, executor, account=None,
     @app.get("/api/dashboard")
     def api_dashboard():
         """Everything the dashboard polls, in one round trip.
-        Each ws-touching section runs bounded: a stalled ws api
-        degrades that section to its error/empty shape instead
-        of pinning the request thread."""
+        Each ws-touching section refreshes concurrently, bounded
+        and cached - a slow or stalled ws api serves the last
+        good payload instead of pinning the request thread."""
         from ..settings import get_settings
 
-        summary = _bounded(_summary_payload, ctx)
-        if summary is None:
-            summary = {
-                "error": "summary refresh timed out - "
-                "the ws api is not answering",
-            }
-        paper = _bounded(_paper_positions_payload, ctx)
-        if paper is None:
-            paper = {
-                "error": "paper pricing timed out - "
-                "the ws api is not answering",
-            }
-        positions = _bounded(_positions_payload, ctx)
-        if positions is None:
-            positions = []
+        summary, paper, positions = _dashboard_sections(ctx)
         return jsonify(
             {
                 "summary": summary,
