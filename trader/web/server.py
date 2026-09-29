@@ -768,6 +768,19 @@ def _account_summary(ctx, snap, label, value):
         "paper_realized_today": round(
             store.realized_today("paper", label), 2
         ),
+        # the real card's today line reads the ledger the bot
+        # actually trades against: the live ledger in live mode
+        # (executor bookings), the paper ledger otherwise (the
+        # simulation plus mirrored real fills). the lotto budget
+        # gates on this same number, so the card and the budget
+        # always agree.
+        "realized_today": round(
+            store.realized_today(
+                "live" if cfg.trading.mode == "live" else "paper",
+                label,
+            ),
+            2,
+        ),
         "paper_value": paper_values.get(label),
         "paper_initial": paper_initials.get(label),
         # prefer wealthsimple's own conversion for

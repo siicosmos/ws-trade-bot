@@ -333,6 +333,11 @@ function renderSummary(data) {
     const risk = showUsd ? a.open_risk * fx : a.open_risk;
     const card = document.createElement("div");
     card.className = "card";
+    // the real card's today line reads the ledger the bot trades
+    // against (live ledger in live mode, paper ledger otherwise)
+    // - the lotto budget gates on this same number
+    const todayGain = a.realized_today != null
+      ? a.realized_today : a.paper_realized_today;
     card.innerHTML =
       '<div class="label" style="display:flex;justify-content:space-between;align-items:center;gap:6px;min-width:0">' +
       '<span class="cardtitle" title="' + esc(a.label) + '">' + esc(a.label) + '</span>' +
@@ -348,12 +353,12 @@ function renderSummary(data) {
           : (a.usd_value
             ? ' <span style="font-size:13px;color:var(--muted)">$' + a.usd_value.toLocaleString("en-CA", {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' USD</span>'
             : (cur === "usd" ? ' <span style="font-size:12px;color:var(--yellow)">fx unavailable</span>' : '')))) + '</div>' +
+      (todayGain != null
+        ? '<div class="sub" style="margin-bottom:4px"><span style="color:' + (todayGain >= 0 ? "var(--green)" : "var(--red)") + '">today ' + (hidden ? "\u2022\u2022\u2022\u2022\u2022\u2022" : (todayGain >= 0 ? "+" : "\u2212") + fmtMoney(Math.abs(todayGain))) + '</span><span>realized</span></div>'
+        : '') +
       '<div class="riskbar"><div style="width:' + pct + '%;background:' + color + '"></div></div>' +
       '<div class="sub"><span style="color:' + color + (pct >= (a.max_open_risk_pct || 30) ? ';font-weight:700' : '') + '">open risk ' + (hidden ? "••••••" : fmtMoney(risk) + " " + (showUsd ? "usd" : "cad")) + ' (' + (a.open_risk_pct ?? 0) + '%)</span>' +
       '<span>cap ' + (a.max_open_risk_pct) + '%</span></div>' +
-      (a.paper_realized_today != null
-        ? '<div class="sub"><span style="color:' + (a.paper_realized_today >= 0 ? "var(--green)" : "var(--red)") + '">today ' + (hidden ? "\u2022\u2022\u2022\u2022\u2022\u2022" : (a.paper_realized_today >= 0 ? "+" : "\u2212") + fmtMoney(Math.abs(a.paper_realized_today))) + '</span><span>realized</span></div>'
-        : '') +
       ((a.margin_requirement != null && !isNaN(a.margin_requirement))
         ? '<div class="sub mrow"><span class="cell"><span class="lab">total margin used</span><span class="val">' + (hidden ? "••••••" :
             fmtMoney(a.margin_used_usd || 0) + ' usd' +
@@ -1030,6 +1035,12 @@ function _section(title, body, tip) {
     body + '</div>';
 }
 
+function _subsection(title, body, tip) {
+  return '<div class="set-sub"><div class="set-sub-title"' +
+    (tip ? ' title="' + esc(tip) + '"' : "") + '>' + esc(title) + '</div>' +
+    body + '</div>';
+}
+
 function renderSettings(s) {
   lastSettings = s;
   // leave the form alone while the user has unsaved edits - the
@@ -1043,63 +1054,86 @@ function renderSettings(s) {
   const au = s.auto_update || {};
   const q = s.quotes || {};
 
-  // 1. automation: one section for everything the bot runs on -
-  // the toggles and numbers touched most (notify, paper mode,
-  // the quick risk knobs), the 0dte day-of-expiry behaviour
-  // (back-to-entry exit, lotto budget) and the sync knobs
-  // (update pulls, quote feeds, ws refreshes, real-fill mirror)
-  let html = _section("automation",
-    '<div class="set-checks">' +
+  // 1. automation: one section for everything the bot runs on.
+  // top row: the global behaviour toggles. below: grouped
+  // sub-sections - mirror fills, 0dte, global risk cap, quotes
+  // provider, github code update and account value monitoring
+  html += _section("automation",
+    '<div class="set-checks" style="margin-bottom:0">' +
       _check("set-notify", "notify", dc.notify !== false,
         "send parsed trade alerts to the discord webhook") +
       _check("set-paper-enabled", "paper trading", s.paper && s.paper.enabled,
         "simulate executions against the paper ledger alongside notify mode") +
-      _check("set-back_to_entry_enabled", "auto b2e sell on 0dte",
-        t.back_to_entry_enabled !== false,
-        "sell a 0dte option back to its entry when the day's gain evaporates (per-tier override in the size tiers below)") +
-      _check("set-au-enabled", "auto-update", au.enabled,
-        "pull and apply code updates from github automatically") +
-      _check("set-quotes-enabled", "live option quotes (stop monitor)", q.enabled,
-        "fetch live option quotes for the stop monitor") +
-      _check("set-paper-mirror", "mirror real fills", s.paper && s.paper.mirror,
-        "copy real wealthsimple fills into the paper ledger") +
     '</div>' +
-    '<div class="set-grid">' +
-      _numField("set-risk_per_trade_pct", "default risk %", t.risk_per_trade_pct,
-        "% of account value risked per trade when no size keyword is given", "big") +
-      _numField("set-max_contracts_per_trade", "max contracts", t.max_contracts_per_trade,
-        "hard cap on contracts per trade across all accounts", "big") +
-      _numField("set-max_open_risk_pct", "open risk cap %", t.max_open_risk_pct,
-        "stop opening new risk once deployed capital exceeds this % of account value", "big") +
-      _numField("set-stop_loss_pct", "stop loss %", t.stop_loss_pct,
-        "global stop loss % below entry (per-size overrides live in the size tiers below)", "big") +
-      _numField("set-trailing_stop_pct", "trailing stop %", t.trailing_stop_pct,
-        "trailing stop distance once in profit; 0 disables", "big") +
-      _numField("set-lotto_gain_budget_pct", "lotto budget %",
-        t.lotto_gain_budget_pct,
-        "hero-or-zero / profits-only buys may spend at most this % of today's realized sell gains", "big") +
-      _numField("set-au-interval", "update check (s)", au.interval_seconds,
-        "seconds between github update checks") +
-      _numField("set-mirror-interval", "mirror every (s)",
-        s.paper && s.paper.mirror_interval_seconds,
-        "seconds between real-fill mirror scans") +
-      _numField("set-ws-positions", "positions refresh (s)", ws.positions_refresh_seconds,
-        "seconds between wealthsimple position refreshes") +
-      _numField("set-ws-values", "values refresh (s)", ws.values_refresh_seconds,
-        "seconds between wealthsimple account value refreshes") +
-      _numField("set-ws-margin-rate", "stock margin rate", ws.stock_margin_rate,
-        "maintenance margin rate applied to stock holdings (0.30 = 30%)") +
-      '<div class="set-field"><label title="quote source for the stop monitor (takes effect after restart)">' +
-      'quotes provider</label>' +
-      '<select id="set-quotes-provider" title="quote source for the stop monitor - takes effect after restart: ws = wealthsimple, moomoo = OpenD feed">' +
-        '<option value="ws"' + (q.provider === "ws" ? " selected" : "") + '>ws</option>' +
-        '<option value="moomoo"' + (q.provider === "moomoo" ? " selected" : "") + '>moomoo</option>' +
-      '</select></div>' +
-      _txtField("set-quotes-moomoo_host", "moomoo host", q.moomoo_host, "127.0.0.1",
-        "OpenD gateway address for moomoo quotes") +
-      _numField("set-quotes-moomoo_port", "moomoo port", q.moomoo_port,
-        "OpenD gateway port for moomoo quotes") +
-    '</div>');
+    _subsection("mirror fills",
+      '<div class="set-checks" style="margin-bottom:10px">' +
+        _check("set-paper-mirror", "mirror real fills", s.paper && s.paper.mirror,
+          "copy real wealthsimple fills into the paper ledger") +
+      '</div>' +
+      '<div class="set-grid">' +
+        _numField("set-mirror-interval", "mirror every (s)",
+          s.paper && s.paper.mirror_interval_seconds,
+          "seconds between real-fill mirror scans") +
+      '</div>') +
+    _subsection("0dte",
+      '<div class="set-checks" style="margin-bottom:10px">' +
+        _check("set-back_to_entry_enabled", "auto b2e sell on 0dte",
+          t.back_to_entry_enabled !== false,
+          "sell a 0dte option back to its entry when the day's gain evaporates (per-tier override in the size tiers below)") +
+      '</div>' +
+      '<div class="set-grid">' +
+        _numField("set-lotto_gain_budget_pct", "lotto budget %",
+          t.lotto_gain_budget_pct,
+          "hero-or-zero / profits-only buys may spend at most this % of today's realized sell gains", "big") +
+      '</div>') +
+    _subsection("global risk cap",
+      '<div class="set-grid">' +
+        _numField("set-risk_per_trade_pct", "default risk %", t.risk_per_trade_pct,
+          "% of account value risked per trade when no size keyword is given", "big") +
+        _numField("set-max_contracts_per_trade", "max contracts", t.max_contracts_per_trade,
+          "hard cap on contracts per trade across all accounts", "big") +
+        _numField("set-max_open_risk_pct", "open risk cap %", t.max_open_risk_pct,
+          "stop opening new risk once deployed capital exceeds this % of account value", "big") +
+        _numField("set-stop_loss_pct", "stop loss %", t.stop_loss_pct,
+          "global stop loss % below entry (per-size overrides live in the size tiers below)", "big") +
+        _numField("set-trailing_stop_pct", "trailing stop %", t.trailing_stop_pct,
+          "trailing stop distance once in profit; 0 disables", "big") +
+      '</div>') +
+    _subsection("quotes provider",
+      '<div class="set-checks" style="margin-bottom:10px">' +
+        _check("set-quotes-enabled", "live option quotes (stop monitor)", q.enabled,
+          "fetch live option quotes for the stop monitor") +
+      '</div>' +
+      '<div class="set-grid">' +
+        '<div class="set-field"><label title="quote source for the stop monitor (takes effect after restart)">' +
+        'quotes provider</label>' +
+        '<select id="set-quotes-provider" title="quote source for the stop monitor - takes effect after restart: ws = wealthsimple, moomoo = OpenD feed">' +
+          '<option value="ws"' + (q.provider === "ws" ? " selected" : "") + '>ws</option>' +
+          '<option value="moomoo"' + (q.provider === "moomoo" ? " selected" : "") + '>moomoo</option>' +
+        '</select></div>' +
+        _txtField("set-quotes-moomoo_host", "moomoo host", q.moomoo_host, "127.0.0.1",
+          "OpenD gateway address for moomoo quotes") +
+        _numField("set-quotes-moomoo_port", "moomoo port", q.moomoo_port,
+          "OpenD gateway port for moomoo quotes") +
+      '</div>') +
+    _subsection("github code update",
+      '<div class="set-checks" style="margin-bottom:10px">' +
+        _check("set-au-enabled", "auto-update", au.enabled,
+          "pull and apply code updates from github automatically") +
+      '</div>' +
+      '<div class="set-grid">' +
+        _numField("set-au-interval", "update check (s)", au.interval_seconds,
+          "seconds between github update checks") +
+      '</div>') +
+    _subsection("account value monitoring",
+      '<div class="set-grid">' +
+        _numField("set-ws-positions", "positions refresh (s)", ws.positions_refresh_seconds,
+          "seconds between wealthsimple position refreshes") +
+        _numField("set-ws-values", "values refresh (s)", ws.values_refresh_seconds,
+          "seconds between wealthsimple account value refreshes") +
+        _numField("set-ws-margin-rate", "stock margin rate", ws.stock_margin_rate,
+          "maintenance margin rate applied to stock holdings (0.30 = 30%)") +
+      '</div>'));
 
   // 2. size tiers: the option tiers feed the 0dte controls above
   // (per-tier b2e override) so they live directly under them

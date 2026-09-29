@@ -1515,3 +1515,70 @@ def test_settings_layout_0dte_control_section():
     # size tiers directly under automation, option tiers labelled
     assert a_end < js.index('_section("trading limits"')
     assert "option tiers - risk % cap / min / max contracts" in js
+
+
+def test_settings_automation_subsections():
+    """the automation section groups its fields into titled
+    sub-sections: mirror fills, 0dte, global risk cap, quotes
+    provider, github code update and account value monitoring."""
+    import trader.web.dashboard as dash
+
+    js = DASHBOARD_JS
+    a_start = js.index('_section("automation"')
+    a_end = js.index('_section("size tiers"')
+    auto = js[a_start:a_end]
+    subs = [
+        "_subsection(\"mirror fills\"",
+        "_subsection(\"0dte\"",
+        "_subsection(\"global risk cap\"",
+        "_subsection(\"quotes provider\"",
+        "_subsection(\"github code update\"",
+        "_subsection(\"account value monitoring\"",
+    ]
+    assert [auto.index(s) for s in subs] == sorted(
+        auto.index(s) for s in subs
+    )
+    # the fields ride their own sub-section: each field id appears
+    # between its sub's title and the next sub's title
+    spans = []
+    for i, s in enumerate(subs):
+        start = auto.index(s)
+        end = auto.index(subs[i + 1]) if i + 1 < len(subs) else len(auto)
+        spans.append(auto[start:end])
+    assert "set-paper-mirror" in spans[0]
+    assert "set-mirror-interval" in spans[0]
+    assert "set-back_to_entry_enabled" in spans[1]
+    assert "set-lotto_gain_budget_pct" in spans[1]
+    for fid in ("set-risk_per_trade_pct", "set-max_contracts_per_trade",
+                "set-max_open_risk_pct", "set-stop_loss_pct",
+                "set-trailing_stop_pct"):
+        assert fid in spans[2]
+    for fid in ("set-quotes-provider", "set-quotes-moomoo_host",
+                "set-quotes-moomoo_port", "set-quotes-enabled"):
+        assert fid in spans[3]
+    for fid in ("set-au-enabled", "set-au-interval"):
+        assert fid in spans[4]
+    for fid in ("set-ws-positions", "set-ws-values",
+                "set-ws-margin-rate"):
+        assert fid in spans[5]
+
+
+def test_real_card_today_gain_above_risk_bar():
+    """the real account card shows today's realized gain above
+    the open risk bar, read from the mode-aware ledger number
+    (live ledger in live mode, paper ledger otherwise) so the
+    card and the lotto budget always agree."""
+    import trader.web.dashboard as dash
+
+    js = DASHBOARD_JS
+    # the real card reads the mode-aware realized_today, falling
+    # back to the paper number for cached payloads
+    assert "const todayGain = a.realized_today != null" in js
+    assert "a.paper_realized_today" in js
+    # the today row sits before the riskbar in the real card
+    card = js[js.index("card.innerHTML ="):js.index(
+        "function paperAllocBar"
+    )]
+    today_at = card.index('">today ')
+    assert today_at < card.index('<div class="riskbar"')
+    assert today_at < card.index("open risk")

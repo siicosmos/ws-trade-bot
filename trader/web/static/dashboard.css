@@ -281,6 +281,16 @@
     color: var(--muted); font-size: 11px; text-transform: uppercase;
     letter-spacing: .8px; margin-bottom: 10px; font-weight: 600;
   }
+  /* sub-sections inside a settings section: a hairline divider
+     and a small caps title group related fields visually */
+  .set-sub { margin-top: 14px; }
+  .set-sub:first-child { margin-top: 0; }
+  .set-sub-title {
+    color: var(--muted); font-size: 10px; text-transform: uppercase;
+    letter-spacing: .8px; font-weight: 600; margin-bottom: 10px;
+    padding-top: 12px; border-top: 1px solid var(--border);
+  }
+  .set-sub:first-child .set-sub-title { padding-top: 0; }
   .set-grid {
     display: grid; gap: 10px;
     grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));

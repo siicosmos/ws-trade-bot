@@ -997,7 +997,8 @@ def test_size_tier_stop_loss_roundtrip():
 
 def test_account_summary_carries_realized_today():
     """each account card payload carries the account's realized
-    gain of the day (sell gains minus sell losses)."""
+    gain of the day (sell gains minus sell losses), both the
+    paper ledger's number and the mode-aware one."""
     import tempfile
     import types as _types
 
@@ -1021,19 +1022,6 @@ def test_account_summary_carries_realized_today():
             self.quotes = QuotesConfig()
             self.paper = types.SimpleNamespace(enabled=True)
 
-    fd, path = tempfile.mkstemp(suffix=".db")
-    os.close(fd)
-    store = Store(path)
-    from trader.trading.parser import parse_alert
-
-    store.apply_position(
-        "paper", parse_alert("BOUGHT 10/02 AAOI 105c @ 2.0"), 4,
-        premium=2.0, account="RRSP",
-    )
-    store.apply_position(
-        "paper", parse_alert("SOLD 10/02 AAOI 105c @ 2.5"), -2,
-        premium=2.5, account="RRSP",
-    )
     class StubAccount:
         def values(self):
             return {"RRSP": 5000.0}
@@ -1044,6 +1032,17 @@ def test_account_summary_carries_realized_today():
         def stock_holdings(self):
             return {}
 
+    fd, path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    store = Store(path)
+    store.apply_position(
+        "paper", parse_alert("BOUGHT 10/02 AAOI 105c @ 2.0"), 4,
+        premium=2.0, account="RRSP",
+    )
+    store.apply_position(
+        "paper", parse_alert("SOLD 10/02 AAOI 105c @ 2.5"), -2,
+        premium=2.5, account="RRSP",
+    )
     app = create_app(Stub(), store, None, None, StubAccount())
     client = app.test_client()
     data = client.get(
@@ -1055,4 +1054,100 @@ def test_account_summary_carries_realized_today():
     )
     assert "paper_realized_today" in acct
     # 2x(2.5-2.0)x100 = +100 booked for RRSP today
+    assert abs((acct["paper_realized_today"] or 0.0) - 100.0) < 0.01
+    # the real card's today line rides the same ledger the bot
+    # trades against: notify mode tracks through the paper
+    # ledger, so the mode-aware number matches here
+    assert "realized_today" in acct
+    assert abs((acct["realized_today"] or 0.0) - 100.0) < 0.01
+
+
+def test_realized_today_is_mode_aware():
+    """the card's today gain reads the ledger the bot trades
+    against: the live ledger's bookings in live mode (what the
+    lotto budget gates on), the paper ledger's otherwise."""
+    import tempfile
+    import types as _types
+
+    from trader.config import (
+        AutoUpdateConfig, DiscordConfig, QuotesConfig, ReaderConfig,
+        TradingConfig, WealthsimpleConfig,
+    )
+    from trader.store import Store
+    from trader.trading.parser import parse_alert
+    from trader.web.server import create_app
+
+    class StubAccount:
+        def values(self):
+            return {"RRSP": 5000.0}
+
+        def open_option_positions(self):
+            return {}
+
+        def stock_holdings(self):
+            return {}
+
+    def make_app(mode, store):
+        import trader.web.server as srv
+
+        class Stub:
+            def __init__(self):
+                self.trading = TradingConfig(mode=mode)
+                self.pipeline = type("P", (), {"auth_token": "t"})()
+                self.wealthsimple = WealthsimpleConfig(accounts=[])
+                self.reader = ReaderConfig()
+                self.discord = DiscordConfig()
+                self.parser = type("P2", (), {"custom_patterns": []})()
+                self.auto_update = AutoUpdateConfig()
+                self.quotes = QuotesConfig()
+                self.paper = types.SimpleNamespace(enabled=True)
+
+        # the summary sections cache module-wide: the second app
+        # must not serve the first mode's cached payload
+        srv._section_cache.clear()
+        return create_app(Stub(), store, None, None, StubAccount())
+
+    def card_for(app):
+        return next(
+            a for a in app.test_client().get(
+                "/api/dashboard", headers={"X-Auth-Token": "t"},
+            ).get_json()["summary"]["accounts"]
+            if a["label"] == "RRSP"
+        )
+
+    fd, path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    store = Store(path)
+
+    # the live ledger books the bot's own executions; the paper
+    # ledger books the simulation (and mirrored real fills) -
+    # different premiums so the two ledgers diverge on purpose
+    store.apply_position(
+        "live", parse_alert("BOUGHT 10/02 AAOI 105c @ 2.0"), 2,
+        premium=2.0, account="RRSP",
+    )
+    store.apply_position(
+        "live", parse_alert("SOLD 10/02 AAOI 105c @ 4.0"), -1,
+        premium=4.0, account="RRSP",
+    )
+    store.apply_position(
+        "paper", parse_alert("BOUGHT 10/02 AAOI 105c @ 2.0"), 2,
+        premium=2.0, account="RRSP",
+    )
+    store.apply_position(
+        "paper", parse_alert("SOLD 10/02 AAOI 105c @ 3.0"), -1,
+        premium=3.0, account="RRSP",
+    )
+
+    # notify mode: the paper ledger's number (mirrored real fills
+    # included) is what the card and the lotto budget see -
+    # 1x(3.0-2.0)x100 = +100
+    acct = card_for(make_app("notify", store))
+    assert abs((acct["realized_today"] or 0.0) - 100.0) < 0.01
+
+    # live mode: the live ledger's bookings - 1x(3.0-2.0)x100 =
+    # +200, NOT the paper ledger's +100
+    acct = card_for(make_app("live", store))
+    assert abs((acct["realized_today"] or 0.0) - 200.0) < 0.01
+    # the paper ledger's own number stays on the paper card
     assert abs((acct["paper_realized_today"] or 0.0) - 100.0) < 0.01
