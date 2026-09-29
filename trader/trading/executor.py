@@ -191,6 +191,27 @@ def _at_open_risk_cap(store, mode, label, value, cfg) -> bool:
     return open_risk >= limit
 
 
+def is_lotto_alert(alert) -> bool:
+    """Lotto rules: an explicit lotto size, the "hero or zero"
+    phrasing (parsed as lotto) or a profits-only qualifier."""
+    return (
+        bool(getattr(alert, "size", None) == "lotto")
+        or bool(getattr(alert, "profits_only", False))
+    )
+
+
+def lotto_gain_cap(store, mode, cfg, alert) -> Optional[float]:
+    """The max $ a lotto / profits-only buy may spend today: a
+    fraction (default 75%) of what was realized selling today.
+    Zero gains means zero lotto budget."""
+    if alert.size != "lotto" and not getattr(
+        alert, "profits_only", False
+    ):
+        return None
+    frac = float(getattr(cfg.trading, "lotto_gain_budget_pct", 75.0))
+    return max(0.0, store.realized_today(mode)) * frac / 100.0
+
+
 class PaperExecutor:
     mode = "paper"
 
@@ -223,7 +244,24 @@ class PaperExecutor:
                 label = account_label(acct)
                 value = self.account.value(label)
                 plan = tier_plan(alert, cfg, value, price, acct)
-                qty = plan["qty"]
+                # lotto / profits-only: the buy may spend at most a
+                # fraction of today's realized sell gains
+                gain_cap = lotto_gain_cap(store, self.mode, cfg, alert)
+                if gain_cap is not None:
+                    lotto_affordable = int(
+                        gain_cap // (price * 100)
+                    ) if price and price > 0 else 0
+                    if lotto_affordable < max(1, plan["qty"]):
+                        breakdown[label] = (
+                            f"skipped (lotto budget ${gain_cap:,.2f} = "
+                            f"{getattr(cfg.trading, 'lotto_gain_budget_pct', 75)}% "
+                            f"of today's realized gain "
+                            f"${store.realized_today(self.mode):,.2f})"
+                        )
+                        continue
+                    qty = min(plan["qty"], lotto_affordable)
+                else:
+                    qty = plan["qty"]
                 if qty < 1:
                     if plan["affordable"] >= 1:
                         breakdown[label] = (
@@ -507,7 +545,24 @@ class WealthsimpleExecutor:
                 except Exception:
                     value = None
                 plan = tier_plan(alert, cfg, value, limit, acct)
-                qty = plan["qty"]
+                # lotto / profits-only: the buy may spend at most a
+                # fraction of today's realized sell gains
+                gain_cap = lotto_gain_cap(store, self.mode, cfg, alert)
+                if gain_cap is not None:
+                    lotto_affordable = int(
+                        gain_cap // (limit * 100)
+                    ) if limit and limit > 0 else 0
+                    if lotto_affordable < max(1, plan["qty"]):
+                        breakdown[label] = (
+                            f"skipped (lotto budget ${gain_cap:,.2f} = "
+                            f"{getattr(cfg.trading, 'lotto_gain_budget_pct', 75)}% "
+                            f"of today's realized gain "
+                            f"${store.realized_today(self.mode):,.2f})"
+                        )
+                        continue
+                    qty = min(plan["qty"], lotto_affordable)
+                else:
+                    qty = plan["qty"]
                 if qty < 1:
                     if plan["affordable"] >= 1:
                         breakdown[label] = (

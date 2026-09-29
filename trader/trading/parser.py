@@ -17,6 +17,9 @@ class Alert:
     scale: Optional[float] = None
     gain_pct: Optional[float] = None
     size: Optional[str] = None
+    # "profits only": the alert may only spend what was realized
+    # selling today (lotto rules apply to the budget either way)
+    profits_only: bool = False
     entry: Optional[float] = None
     stop_loss: Optional[float] = None
     take_profit: Optional[float] = None
@@ -233,6 +236,9 @@ def _option_alert(match, action: str, raw: str, size: Optional[str]) -> Optional
         scale=scale,
         gain_pct=_gain(raw),
         size=size,
+        profits_only=bool(
+            re.search(r"\bprofits?\s+only\b", raw or "", re.I)
+        ),
         raw=raw,
     )
 
@@ -265,6 +271,13 @@ def parse_alert(text: str, custom_patterns: Optional[List[str]] = None) -> Optio
     size = size_m.group("size").lower() if size_m else None
     if re.search(r"\blotto\b", text, re.I):
         size = "lotto"
+    # "hero or zero" is the author's phrasing for a lotto trade:
+    # a full loss or a moonshot, always 1 contract
+    if re.search(r"\bhero\s+or\s+zero\b", text, re.I):
+        size = "lotto"
+    # "profits only": the buy is only allowed against what was
+    # realized selling today
+    profits_only = bool(re.search(r"\bprofits?\s+only\b", text, re.I))
 
     m = OPT_BUY_RE.search(text)
     if m:
@@ -294,6 +307,7 @@ def parse_alert(text: str, custom_patterns: Optional[List[str]] = None) -> Optio
             premium=price,
             gain_pct=_gain(text),
             size=size,
+            profits_only=profits_only,
             raw=text,
         )
 
@@ -318,6 +332,7 @@ def parse_alert(text: str, custom_patterns: Optional[List[str]] = None) -> Optio
         action=action,
         ticker=ticker,
         size=size,
+        profits_only=profits_only,
         entry=_num(ENTRY_RE.search(text).group(1)) if ENTRY_RE.search(text) else None,
         stop_loss=_num(STOP_RE.search(text).group(1)) if STOP_RE.search(text) else None,
         take_profit=_num(TP_RE.search(text).group(1)) if TP_RE.search(text) else None,

@@ -1325,3 +1325,85 @@ def test_paper_manual_sell_ui():
     # the sell price lookup is bounded so the post answers fast
     import trader.web.server as srv
     assert "_bounded(_paper_positions_payload, ctx)" in open(srv.__file__).read()
+
+
+def test_manual_paper_sell_live_price_and_fx():
+    """with a ledger present the sell books at the live quote and
+    converts the proceeds at the ledger fx; selling again after a
+    full close reports the position as gone."""
+    import tempfile
+
+    from trader.config import (
+        AutoUpdateConfig, DiscordConfig, QuotesConfig, ReaderConfig,
+        TradingConfig, WealthsimpleConfig,
+    )
+    from trader.store import Store
+    from trader.trading.parser import parse_alert
+    from trader.web.server import create_app
+
+    class Stub:
+        def __init__(self):
+            self.trading = TradingConfig(mode="notify")
+            self.pipeline = type("P", (), {"auth_token": "t"})()
+            self.wealthsimple = WealthsimpleConfig(accounts=[])
+            self.reader = ReaderConfig()
+            self.discord = DiscordConfig()
+            self.parser = type("P2", (), {"custom_patterns": []})()
+            self.auto_update = AutoUpdateConfig()
+            self.quotes = QuotesConfig()
+            self.paper = types.SimpleNamespace(enabled=True)
+
+    class FakeLedger:
+        """stands in for the PaperLedger: the holdings quote and
+        the fx rate the sell books against"""
+
+        def values(self):
+            return {"RRSP": 1000.0}
+
+        def positions(self, label):
+            return [{
+                "contract_key": "AAOI-2026-10-02-105-C",
+                "price": 3.0, "usd": True,
+            }]
+
+        def fx(self):
+            return 1.35
+
+    fd, path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    store = Store(path)
+    from trader.trading.parser import parse_alert
+
+    alert = parse_alert("BOUGHT 10/02 AAOI 105c @ 2.0")
+    store.apply_position(
+        "paper", alert, 4, premium=2.0, account="RRSP"
+    )
+    store.set_paper_equity(1000.0, "RRSP")
+
+    executor_stub = types.SimpleNamespace(account=FakeLedger())
+    app = create_app(Stub(), store, None, executor=types.SimpleNamespace(
+        account=FakeLedger()
+    ), account=None)
+    client = app.test_client()
+    hdr = {"X-Auth-Token": "t"}
+    r = client.post(
+        "/api/paper-sell", headers=hdr,
+        json={"label": "RRSP",
+              "contract_key": "AAOI-2026-10-02-105-C"},
+    )
+    assert r.status_code == 200, r.get_data(as_text=True)
+    data = r.get_json()
+    assert data["price"] == 3.0                      # the live quote
+    assert data["realized"] == 400.0                 # 4x(2.5-2.0)x100
+    # proceeds 4x$3.00x100 = $1000 usd -> cad at the ledger fx
+    assert abs(store.paper_equity("RRSP") - (1000 + 1620)) < 0.01
+    assert data["remaining"] == 0
+
+    # selling the same contract again: it is already gone
+    r2 = client.post(
+        "/api/paper-sell", headers=hdr,
+        json={"label": "RRSP",
+              "contract_key": "AAOI-2026-10-02-105-C"},
+    )
+    assert r2.status_code == 404
+    assert "no paper position" in r2.get_json()["error"]

@@ -151,6 +151,14 @@ class Store:
                     )
                 except sqlite3.OperationalError:
                     pass
+            # the alert's size keyword rides the position row: the
+            # stop monitor prices per-size stop losses off it
+            try:
+                self._conn.execute(
+                    "ALTER TABLE positions ADD COLUMN size TEXT"
+                )
+            except sqlite3.OperationalError:
+                pass
 
             cols = [
                 r[1] for r in self._conn.execute("PRAGMA table_info(positions)")
@@ -416,7 +424,7 @@ class Store:
     def list_positions(self, mode: str, account=None):
         keys = ["account", "contract_key", "underlying", "expiry",
                 "strike", "right", "qty", "avg_premium", "realized",
-                "peak_bid"]
+                "peak_bid", "size"]
         cache_key = (mode, account)
         with self._cache_lock:
             cached = self._positions_cache.get(cache_key)
@@ -424,8 +432,8 @@ class Store:
                 return [dict(r) for r in cached[1]]
             query = (
                 "SELECT account, contract_key, underlying, expiry, "
-                "strike, right, qty, avg_premium, realized, peak_bid "
-                "FROM positions WHERE mode = ? AND qty > 0"
+                "strike, right, qty, avg_premium, realized, peak_bid, "
+                "size FROM positions WHERE mode = ? AND qty > 0"
             )
             params = [mode]
             if account is not None:
@@ -476,17 +484,44 @@ class Store:
 
             self._conn.execute(
                 "INSERT INTO positions (mode, account, contract_key, underlying, "
-                "expiry, strike, right, qty, updated_ts, avg_premium, realized) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "expiry, strike, right, qty, updated_ts, avg_premium, realized, size) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT(mode, account, contract_key) DO UPDATE SET "
                 "qty = excluded.qty, updated_ts = excluded.updated_ts, "
-                "avg_premium = excluded.avg_premium, realized = excluded.realized",
+                "avg_premium = excluded.avg_premium, realized = excluded.realized, "
+                "size = COALESCE(excluded.size, positions.size)",
                 (
                     mode, account, key, alert.underlying, alert.expiry,
                     alert.strike, alert.right, new_qty, self._now(), new_avg,
                     realized,
+                    getattr(alert, "size", None),
                 ),
             )
+
+            # accumulate the realized pnl per day (sells only) -
+            # lotto / profits-only sizing is capped by today's
+            # realized gain
+            if delta < 0 and realized != old_realized:
+                today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+                meta_key = f"realized_today:{mode}:{today}"
+                prev = self._conn.execute(
+                    "SELECT value FROM meta WHERE key = ?", (meta_key,)
+                ).fetchone()
+                prev_val = 0.0
+                try:
+                    prev_val = float(json.loads(prev[0])) if prev else 0.0
+                except (TypeError, ValueError):
+                    pass
+                self._conn.execute(
+                    "INSERT INTO meta (key, value) VALUES (?, ?) "
+                    "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                    (
+                        meta_key,
+                        json.dumps(
+                            round(prev_val + (realized - old_realized), 2)
+                        ),
+                    ),
+                )
 
             if old_qty > 0 and new_qty == 0:
                 self._record_close(mode, realized)
@@ -873,6 +908,18 @@ class Store:
             return
         self.set_paper_equity(current + delta, label)
 
+    def realized_today(self, mode: str) -> float:
+        """Realized pnl booked today (sells minus losses) - the
+        budget lotto / profits-only alerts spend against."""
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        row = self._conn.execute(
+            "SELECT value FROM meta WHERE key = ?",
+            (f"realized_today:{mode}:{today}",),
+        ).fetchone()
+        try:
+            return float(json.loads(row[0])) if row else 0.0
+        except (TypeError, ValueError):
+            return 0.0
 
     # ---- users ----
 

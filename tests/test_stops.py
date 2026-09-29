@@ -248,3 +248,153 @@ def test_moomoo_provider_reconnects_after_opend_drop():
             sys.modules["moomoo"] = real
         else:
             sys.modules.pop("moomoo", None)
+
+
+
+
+def test_realized_today_accumulates_on_sells():
+    """sells book their realized pnl into a per-day counter -
+    lotto / profits-only alerts spend against it."""
+    store = _fresh_store()
+    assert store.realized_today("paper") == 0.0
+    buy = parse_alert("BOUGHT 0DTE SPY 759c @ 1.5")
+    store.apply_position("paper", buy, 5, premium=1.5, account="default")
+    # sell 2 at 2.5: +2x(2.5-1.5)x100 = +200
+    store.apply_position(
+        "paper", parse_alert("SOLD 0DTE SPY 759c @ 2.5"), -2,
+        premium=2.5, account="default",
+    )
+    assert abs(store.realized_today("paper") - 200.0) < 0.01
+    # a losing sell subtracts: -1x(1.0-1.5)x100 = -50
+    store.apply_position(
+        "paper", parse_alert("SOLD 0DTE SPY 759c @ 1.0"), -1,
+        premium=1.0, account="default",
+    )
+    assert abs(store.realized_today("paper") - 150.0) < 0.01
+
+
+
+
+def test_lotto_gain_cap_and_parser_qualifiers():
+    """hero-or-zero parses as lotto, profits-only parses as a
+    profits_only alert, and both spend at most the configured
+    fraction of today's realized gains (zero gains -> zero
+    budget)."""
+    from trader.trading.executor import lotto_gain_cap
+
+    cfg = ConfigStub(TradingConfig(mode="paper"))
+    store = _fresh_store()
+    store = _fresh_store()
+    lotto = parse_alert("BOUGHT 0DTE SPY 759c @ 1.0 hero or zero")
+    assert lotto.size == "lotto"
+    po = parse_alert("BOUGHT 0DTE SPY 759c @ 1.0 PROFITS ONLY")
+    assert po.size != "lotto"
+    assert getattr(po, "profits_only") is True
+
+    # no realized gain -> zero lotto budget
+    assert lotto_gain_cap(store, "paper", cfg, lotto) == 0.0
+    # a realized gain lands: cap = gain x 75%
+    buy = parse_alert("BOUGHT 0DTE SPY 759c @ 1.5")
+    store.apply_position("paper", buy, 5, premium=1.5, account="default")
+    store.apply_position("paper", parse_alert("SOLD 0DTE SPY 759c @ 2.5"),
+                         -2, premium=2.5, account="default")
+    assert abs(store.realized_today("paper") - 200.0) < 0.01
+    assert abs(lotto_gain_cap(store, "paper", cfg, lotto) - 150.0) < 0.01
+    # non-lotto alerts are not capped at all
+    assert lotto_gain_cap(store, "paper", cfg, buy) is None
+
+
+def test_lotto_paper_buy_needs_realized_gain():
+    """the paper executor skips lotto alerts with no realized
+    gain today and buys against the gain when there is one."""
+    cfg = ConfigStub(TradingConfig(mode="paper"))
+    t = cfg.trading
+    store = _fresh_store()
+    account = PaperAccount(t, store)
+    store.set_paper_equity(100000.0, "default")
+    executor = PaperExecutor(t, store, account)
+    lotto = parse_alert("BOUGHT 0DTE SPY 759c @ 1.0 hero or zero")
+
+    r = executor.execute(lotto, cfg, store)
+    assert not r.ok
+    assert "lotto budget" in r.detail
+
+    # book a realized gain by selling into strength
+    store.apply_position("paper", parse_alert("BOUGHT 0DTE SPY 759c @ 1.0"),
+                         5, premium=1.5, account="default")
+    store.apply_position("paper", parse_alert("SOLD 0DTE SPY 759c @ 2.5"),
+                         -2, premium=2.5, account="default")
+    assert abs(store.realized_today("paper") - 200.0) < 0.01
+    r2 = executor.execute(lotto, cfg, store)
+    assert r2.ok, r2.detail
+
+
+def test_per_size_stop_loss():
+    """the stop comes from the position's size tier when it has
+    its own stop_loss_pct - a lotto tolerates -50%, medium -25%."""
+    monitor = StopMonitor(
+        ConfigStub(TradingConfig(mode="paper")), _fresh_store(), None,
+        lambda pos: None,
+    )
+    lotto_pos = {"avg_premium": 2.0, "size": "lotto", "right": "C"}
+    # lotto: 2.0 x (1 - 50%)
+    assert abs(monitor.stop_price(2.0, 2.0, lotto_pos) - 1.0) < 1e-9
+    # medium rides the 25% tier stop
+    assert abs(monitor.stop_price(2.0, 2.0, {"size": "medium"}) - 1.5) < 1e-9
+    # unsized positions fall back to the global stop
+    assert abs(monitor.stop_price(2.0, 2.0, None) - 1.5) < 1e-9
+
+
+def test_back_to_entry_sells_0dte_gain_gone():
+    """a 0dte option that had a gain and gave it back to its
+    entry is sold before it expires worthless - other days and
+    positions without a prior gain are left alone."""
+    cfg = ConfigStub(TradingConfig(mode="paper"))
+    monitor = StopMonitor(cfg, _fresh_store(), None, lambda pos: None)
+    today = date.today().isoformat()
+    pos = {
+        "contract_key": "SPY-2026-10-02-759-C", "right": "C",
+        "avg_premium": 1.5, "expiry": today, "size": "lotto",
+    }
+    # had a gain (peak 3.0), price back at entry -> hit
+    assert monitor._back_to_entry_hit(pos, 1.0, 3.0, 1.0) is True
+    # still above entry -> hold
+    assert monitor._back_to_entry_hit(pos, 1.0, 3.0, 1.2) is False
+    # never had a gain -> nothing to protect
+    assert monitor._back_to_entry_hit(pos, 1.0, 1.0, 0.9) is False
+    # not expiring today -> leave it
+    old = dict(pos, expiry=(date.today() + timedelta(days=7)).isoformat())
+    assert monitor._back_to_entry_hit(old, 1.0, 3.0, 1.0) is False
+    # the global kill switch
+    cfg.trading.back_to_entry_enabled = False
+    assert monitor._back_to_entry_hit(pos, 1.0, 3.0, 1.0) is False
+
+
+def test_per_size_stop_fires_for_lotto_width():
+    """a lotto position stops at -50% while the global 25% would
+    have fired earlier - check_once uses the position's tier."""
+    cfg = ConfigStub(TradingConfig(mode="paper"))
+    store = _fresh_store()
+    alert = parse_alert("BOUGHT 0DTE SPY 759c @ 2.0 hero or zero")
+    store.apply_position("paper", alert, 1, premium=2.0,
+                         account="default")
+    class _FakeTrader:
+        mode = "paper"
+
+        def execute(self, alert, cfg, store):
+            from trader.trading.executor import ExecutionResult
+
+            return ExecutionResult(
+                True, f"SELL 1x @ {alert.premium}", qty=1
+            )
+
+    monitor = StopMonitor(cfg, store, _FakeTrader(), lambda pos: 1.1)
+    monitor.check_once()
+    assert not [t for t in store.recent_trades(10)
+                if "[STOP]" in (t["detail"] or "")]
+    monitor = StopMonitor(cfg, store, _FakeTrader(), lambda pos: 1.0)
+    monitor.check_once()
+    # bid 1.0 = -50% of entry: the lotto stop fires here
+    trades = [t for t in store.recent_trades(20)
+              if "[STOP]" in (t["detail"] or "")]
+    assert trades, "lotto stop should have fired"

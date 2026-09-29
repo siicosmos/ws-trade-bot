@@ -29,15 +29,25 @@ class DiscordConfig:
 
 
 def _default_size_tiers() -> dict:
+    # stop_loss_pct: per-size stop loss - wider for lotto plays
+    # (they are meant to go to zero) and tighter for big sizes
     return {
-        "lotto": {"risk_pct_max": 0.5, "contracts_min": 1, "contracts_max": 1},
-        "micro": {"risk_pct_max": 0.5, "contracts_min": 1, "contracts_max": 1},
-        "tiny": {"risk_pct_max": 1.0, "contracts_min": 1, "contracts_max": 1},
-        "small": {"risk_pct_max": 2.0, "contracts_min": 1, "contracts_max": 2},
-        "medium": {"risk_pct_max": 5.0, "contracts_min": 1, "contracts_max": 5},
-        "large": {"risk_pct_max": 10.0, "contracts_min": 1, "contracts_max": 10},
-        "big": {"risk_pct_max": 10.0, "contracts_min": 1, "contracts_max": 10},
-        "full": {"risk_pct_max": 10.0, "contracts_min": 1, "contracts_max": 10},
+        "lotto": {"risk_pct_max": 0.5, "contracts_min": 1, "contracts_max": 1,
+                  "stop_loss_pct": 50.0, "back_to_entry": True},
+        "micro": {"risk_pct_max": 0.5, "contracts_min": 1, "contracts_max": 1,
+                  "stop_loss_pct": 50.0},
+        "tiny": {"risk_pct_max": 1.0, "contracts_min": 1, "contracts_max": 1,
+                 "stop_loss_pct": 40.0},
+        "small": {"risk_pct_max": 2.0, "contracts_min": 1, "contracts_max": 2,
+                  "stop_loss_pct": 30.0},
+        "medium": {"risk_pct_max": 5.0, "contracts_min": 1, "contracts_max": 5,
+                   "stop_loss_pct": 25.0},
+        "large": {"risk_pct_max": 10.0, "contracts_min": 1, "contracts_max": 10,
+                  "stop_loss_pct": 20.0},
+        "big": {"risk_pct_max": 10.0, "contracts_min": 1, "contracts_max": 10,
+                "stop_loss_pct": 20.0},
+        "full": {"risk_pct_max": 10.0, "contracts_min": 1, "contracts_max": 10,
+                 "stop_loss_pct": 20.0},
     }
 
 
@@ -54,11 +64,17 @@ def _default_stock_size_tiers() -> dict:
 
 
 def _norm_tier(d: dict) -> dict:
-    return {
+    out = {
         "risk_pct_max": float(d.get("risk_pct_max", 5.0)),
         "contracts_min": int(d.get("contracts_min", 1)),
         "contracts_max": int(d.get("contracts_max", 10)),
     }
+    # optional per-size overrides - kept only when configured
+    if d.get("stop_loss_pct") is not None:
+        out["stop_loss_pct"] = float(d["stop_loss_pct"])
+    if "back_to_entry" in d:
+        out["back_to_entry"] = bool(d.get("back_to_entry"))
+    return out
 
 
 @dataclass
@@ -84,11 +100,22 @@ class TradingConfig:
     stock_size_tiers: dict = field(default_factory=_default_stock_size_tiers)
     risk_per_trade_pct: float = 5.0
     size_tiers: dict = field(default_factory=_default_size_tiers)
+    stop_loss_pct: float = 25.0
+    trailing_stop_pct: float = 0.0
+    stop_check_seconds: int = 30
+    # "hero or zero" / "profits only" alerts spend at most this
+    # fraction of today's realized sell gains
     max_contracts_per_trade: int = 10
     max_open_risk_pct: float = 30.0
     stop_loss_pct: float = 25.0
     trailing_stop_pct: float = 0.0
     stop_check_seconds: int = 30
+    # "hero or zero" / "profits only" alerts spend at most this
+    # fraction of today's realized sell gains
+    lotto_gain_budget_pct: float = 75.0
+    # sell a 0dte option back to its entry when the day's gain
+    # evaporates (per-tier override via size_tiers)
+    back_to_entry_enabled: bool = True
     max_consecutive_losses: int = 2
     min_dte_days: int = 0
     paper_account_value: float = 10000.0
@@ -270,6 +297,12 @@ def load_config(path: str) -> Config:
         stop_loss_pct=float(_get(trading_raw, "stop_loss_pct", 25.0)),
         trailing_stop_pct=float(_get(trading_raw, "trailing_stop_pct", 0.0)),
         stop_check_seconds=int(_get(trading_raw, "stop_check_seconds", 30)),
+        lotto_gain_budget_pct=float(
+            _get(trading_raw, "lotto_gain_budget_pct", 75.0)
+        ),
+        back_to_entry_enabled=bool(
+            _get(trading_raw, "back_to_entry_enabled", True)
+        ),
         max_consecutive_losses=int(
             _get(trading_raw, "max_consecutive_losses", 2)
         ),
