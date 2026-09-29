@@ -228,7 +228,17 @@ async function doPaperSell(label, key) {
     });
     if (res.status === 401) { location.href = "/login"; return; }
     const data = await res.json().catch(() => ({}));
-    if (res.status !== 200) {
+    if (res.status === 200) {
+      openModal(
+        "Sold",
+        "Sold " + data.sold + "x " + key + " @ $" + data.price +
+          " · realized " + (data.realized >= 0 ? "+$" : "-$") +
+          Math.abs(data.realized).toLocaleString("en-CA",
+            { maximumFractionDigits: 2 }),
+        "ok",
+        async function() { closeModal(); }
+      );
+    } else {
       openModal(
         "Sell failed",
         data.error || "the sell did not go through",

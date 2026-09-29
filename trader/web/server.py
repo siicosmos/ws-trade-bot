@@ -1377,7 +1377,10 @@ def create_app(cfg, store: Store, risk, executor, account=None,
         # is the fallback when no quote is available
         price = None
         try:
-            live = _paper_positions_payload(ctx) or {}
+            # bounded: the paper pricing can reach the slow ws
+            # api - the sell must answer fast (the avg premium
+            # is the fallback when the bound misses)
+            live = _bounded(_paper_positions_payload, ctx) or {}
             for r in live.get(label) or []:
                 if r.get("contract_key") == contract_key:
                     if r.get("price"):
@@ -1442,6 +1445,11 @@ def create_app(cfg, store: Store, risk, executor, account=None,
             message_key=f"manual-{int(time.time() * 1000)}",
         )
         ctx.summary_cache["ts"] = 0.0
+        # drop the cached sections - the next dashboard poll must
+        # show the position gone, not a 15s-stale pre-sell copy
+        # (that lag once made the sell look like it did nothing)
+        _section_cache.pop("paper", None)
+        _section_cache.pop("positions", None)
         return jsonify({
             "status": "ok", "label": label,
             "contract_key": contract_key,

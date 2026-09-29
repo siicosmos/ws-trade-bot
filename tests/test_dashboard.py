@@ -1228,6 +1228,11 @@ def test_manual_paper_sell_endpoint():
     assert data["price"] == 2.0     # avg fallback (no live quote)
     assert data["realized"] == 0.0
     assert data["remaining"] == 0
+    # the cached dashboard sections were dropped: the next poll
+    # shows the position gone instead of a stale pre-sell copy
+    import trader.web.server as srv
+    assert "paper" not in srv._section_cache
+    assert "positions" not in srv._section_cache
     assert store.get_position(
         "paper", "AAOI-2026-10-02-105-C", "RRSP"
     ) == 0
@@ -1313,5 +1318,10 @@ def test_paper_manual_sell_ui():
     assert '"/api/paper-sell"' in js
     assert "contract_key: key" in js
     # the sell button rides the holdings table (admin only)
-    assert "sellPaper(" in js and "doPaperSell" in js
     assert "Manual paper sell" in js
+    # the success modal confirms the fill immediately (the row
+    # lingers on the next poll otherwise and looks unfilled)
+    assert '"Sold"' in js and "data.realized" in js
+    # the sell price lookup is bounded so the post answers fast
+    import trader.web.server as srv
+    assert "_bounded(_paper_positions_payload, ctx)" in open(srv.__file__).read()
