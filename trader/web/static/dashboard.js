@@ -1062,107 +1062,27 @@ function renderSettings(s) {
         "global stop loss % below entry (per-size overrides live in the size tiers below)", "big") +
       _numField("set-trailing_stop_pct", "trailing stop %", t.trailing_stop_pct,
         "trailing stop distance once in profit; 0 disables", "big") +
+    '</div>');
+
+  // 2. 0dte control: day-of-expiry behaviour - the back-to-entry
+  // exit and the lotto budget that gates hero-or-zero buys
+  html += _section("0dte control",
+    '<div class="set-checks">' +
       _check("set-back_to_entry_enabled", "auto b2e sell on 0dte",
         t.back_to_entry_enabled !== false,
-        "sell a 0dte option back to its entry when the day's gain evaporates (per-tier override in the size tiers)") +
+        "sell a 0dte option back to its entry when the day's gain evaporates (per-tier override in the option tiers below)") +
+    '</div>' +
+    '<div class="set-grid">' +
       _numField("set-lotto_gain_budget_pct", "lotto budget %",
         t.lotto_gain_budget_pct,
         "hero-or-zero / profits-only buys may spend at most this % of today's realized sell gains", "big") +
     '</div>');
 
-  // mirror real fills: the copy of real wealthsimple fills into
-  // the paper ledger gets its own section
-  html += _section("mirror real fills",
-    '<div class="set-checks" style="margin-bottom:10px">' +
-      _check("set-paper-mirror", "mirror real fills", s.paper && s.paper.mirror,
-        "copy real wealthsimple fills into the paper ledger") +
-    '</div>' +
-    '<div class="set-grid">' +
-      _numField("set-mirror-interval", "mirror every (s)",
-        s.paper && s.paper.mirror_interval_seconds,
-        "seconds between real-fill mirror scans") +
-    '</div>');
-
-  // automation: sits under the mirror section - both are
-  // "how the bot keeps itself in sync with the world" knobs
-  html += _section("automation",
-    '<div class="set-checks" style="margin-bottom:10px">' +
-      _check("set-au-enabled", "auto-update", au.enabled,
-        "pull and apply code updates from github automatically") +
-      _check("set-quotes-enabled", "live option quotes (stop monitor)", q.enabled,
-        "fetch live option quotes for the stop monitor") +
-    '</div>' +
-    '<div class="set-grid">' +
-      _numField("set-au-interval", "update check (s)", au.interval_seconds,
-        "seconds between github update checks") +
-      _numField("set-ws-positions", "positions refresh (s)", ws.positions_refresh_seconds,
-        "seconds between wealthsimple position refreshes") +
-      _numField("set-ws-values", "values refresh (s)", ws.values_refresh_seconds,
-        "seconds between wealthsimple account value refreshes") +
-      _numField("set-ws-margin-rate", "stock margin rate", ws.stock_margin_rate,
-        "maintenance margin rate applied to stock holdings (0.30 = 30%)") +
-      '<div class="set-field"><label title="quote source for the stop monitor (takes effect after restart)">' +
-      'quotes provider</label>' +
-      '<select id="set-quotes-provider" title="quote source for the stop monitor - takes effect after restart: ws = wealthsimple, moomoo = OpenD feed">' +
-        '<option value="ws"' + (q.provider === "ws" ? " selected" : "") + '>ws</option>' +
-        '<option value="moomoo"' + (q.provider === "moomoo" ? " selected" : "") + '>moomoo</option>' +
-      '</select></div>' +
-      _txtField("set-quotes-moomoo_host", "moomoo host", q.moomoo_host, "127.0.0.1",
-        "OpenD gateway address for moomoo quotes") +
-      _numField("set-quotes-moomoo_port", "moomoo port", q.moomoo_port,
-        "OpenD gateway port for moomoo quotes") +
-    '</div>');
-
-  // 2. trading limits
-  html += _section("trading limits", '<div class="set-grid">' +
-    _numField("set-stop_check_seconds", "stop check (s)", t.stop_check_seconds,
-      "how often the stop monitor polls quotes") +
-    _numField("set-max_consecutive_losses", "max losses in row", t.max_consecutive_losses,
-      "pause trading after this many consecutive losses; 0 = off") +
-    _numField("set-min_dte_days", "min DTE", t.min_dte_days,
-      "skip options expiring sooner than this many days") +
-    _numField("set-max_trades_per_day", "max trades/day", t.max_trades_per_day,
-      "hard cap on executed trades per calendar day") +
-    _numField("set-cooldown_seconds", "cooldown (s)", t.cooldown_seconds,
-      "minimum wait between consecutive trades") +
-    _numField("set-dedupe_window_minutes", "dedupe (min)", t.dedupe_window_minutes,
-      "window for recognizing duplicate alerts") +
-    _numField("set-limit_offset_pct", "limit offset %", t.limit_offset_pct,
-      "how far past the market price a limit order chases (limit order type only)") +
-    _numField("set-history_retention_days", "history retention (d)", t.history_retention_days,
-      "days to keep signals and trades; 0 = keep forever (takes effect after restart)") +
-    '<div class="set-field"><label title="order type used for live executions">' +
-    'order type</label>' +
-    '<select id="set-order_type" title="order type used for live executions">' +
-      '<option value="market"' + (t.order_type === "market" ? " selected" : "") + '>market</option>' +
-      '<option value="limit"' + (t.order_type === "limit" ? " selected" : "") + '>limit</option>' +
-    '</select></div>' +
-    '</div>' +
-    '<div class="set-checks" style="margin:10px 0 0">' +
-      _check("set-place_stop_loss", "place stop-loss orders",
-        t.place_stop_loss,
-        "submit an actual stop-loss order after entry (live mode)") +
-      _check("set-sell_only_if_held", "sell only if held",
-        t.sell_only_if_held,
-        "refuse sells when the ledger shows no open position") +
-    '</div>');
-
-  // 3. filters
-  html += _section("filters", '<div class="set-grid">' +
-    _txtField("set-ticker_whitelist", "ticker whitelist",
-      (t.ticker_whitelist || []).join(", "),
-      "e.g. SPY, SPX - empty = allow all",
-      "only trade these underlyings; empty = allow all", true) +
-    _txtField("set-skip_underlyings", "skip underlyings",
-      (t.skip_underlyings || []).join(", "),
-      "e.g. SPX - empty = none",
-      "never trade these underlyings", true) +
-    '</div>');
-
-  // 4. size tiers
+  // 3. size tiers: the option tiers feed the 0dte controls above
+  // (per-tier b2e override) so they live directly under them
   let tiers = '<div class="set-grid">' +
     '<div class="set-field full" style="color:var(--muted);font-size:11px">' +
-    'risk % cap / min / max contracts / stop loss % (empty = global)</div>';
+    'option tiers - risk % cap / min / max contracts / stop loss % (empty = global)</div>';
   // canonical tier order: lotto, micro, tiny, small, medium,
   // large, big, full - then any custom tiers
   const tierOrder = [
@@ -1214,7 +1134,96 @@ function renderSettings(s) {
   tiers += '</div>';
   html += _section("size tiers", tiers);
 
-  // 5. accounts: per-account overrides (empty = inherit global)
+  // mirror real fills: the copy of real wealthsimple fills into
+  // the paper ledger gets its own section
+  html += _section("mirror real fills",
+    '<div class="set-checks" style="margin-bottom:10px">' +
+      _check("set-paper-mirror", "mirror real fills", s.paper && s.paper.mirror,
+        "copy real wealthsimple fills into the paper ledger") +
+    '</div>' +
+    '<div class="set-grid">' +
+      _numField("set-mirror-interval", "mirror every (s)",
+        s.paper && s.paper.mirror_interval_seconds,
+        "seconds between real-fill mirror scans") +
+    '</div>');
+
+  // automation: sits under the mirror section - both are
+  // "how the bot keeps itself in sync with the world" knobs
+  html += _section("automation",
+    '<div class="set-checks" style="margin-bottom:10px">' +
+      _check("set-au-enabled", "auto-update", au.enabled,
+        "pull and apply code updates from github automatically") +
+      _check("set-quotes-enabled", "live option quotes (stop monitor)", q.enabled,
+        "fetch live option quotes for the stop monitor") +
+    '</div>' +
+    '<div class="set-grid">' +
+      _numField("set-au-interval", "update check (s)", au.interval_seconds,
+        "seconds between github update checks") +
+      _numField("set-ws-positions", "positions refresh (s)", ws.positions_refresh_seconds,
+        "seconds between wealthsimple position refreshes") +
+      _numField("set-ws-values", "values refresh (s)", ws.values_refresh_seconds,
+        "seconds between wealthsimple account value refreshes") +
+      _numField("set-ws-margin-rate", "stock margin rate", ws.stock_margin_rate,
+        "maintenance margin rate applied to stock holdings (0.30 = 30%)") +
+      '<div class="set-field"><label title="quote source for the stop monitor (takes effect after restart)">' +
+      'quotes provider</label>' +
+      '<select id="set-quotes-provider" title="quote source for the stop monitor - takes effect after restart: ws = wealthsimple, moomoo = OpenD feed">' +
+        '<option value="ws"' + (q.provider === "ws" ? " selected" : "") + '>ws</option>' +
+        '<option value="moomoo"' + (q.provider === "moomoo" ? " selected" : "") + '>moomoo</option>' +
+      '</select></div>' +
+      _txtField("set-quotes-moomoo_host", "moomoo host", q.moomoo_host, "127.0.0.1",
+        "OpenD gateway address for moomoo quotes") +
+      _numField("set-quotes-moomoo_port", "moomoo port", q.moomoo_port,
+        "OpenD gateway port for moomoo quotes") +
+    '</div>');
+
+  // 4. trading limits
+  html += _section("trading limits", '<div class="set-grid">' +
+    _numField("set-stop_check_seconds", "stop check (s)", t.stop_check_seconds,
+      "how often the stop monitor polls quotes") +
+    _numField("set-max_consecutive_losses", "max losses in row", t.max_consecutive_losses,
+      "pause trading after this many consecutive losses; 0 = off") +
+    _numField("set-min_dte_days", "min DTE", t.min_dte_days,
+      "skip options expiring sooner than this many days") +
+    _numField("set-max_trades_per_day", "max trades/day", t.max_trades_per_day,
+      "hard cap on executed trades per calendar day") +
+    _numField("set-cooldown_seconds", "cooldown (s)", t.cooldown_seconds,
+      "minimum wait between consecutive trades") +
+    _numField("set-dedupe_window_minutes", "dedupe (min)", t.dedupe_window_minutes,
+      "window for recognizing duplicate alerts") +
+    _numField("set-limit_offset_pct", "limit offset %", t.limit_offset_pct,
+      "how far past the market price a limit order chases (limit order type only)") +
+    _numField("set-history_retention_days", "history retention (d)", t.history_retention_days,
+      "days to keep signals and trades; 0 = keep forever (takes effect after restart)") +
+    '<div class="set-field"><label title="order type used for live executions">' +
+    'order type</label>' +
+    '<select id="set-order_type" title="order type used for live executions">' +
+      '<option value="market"' + (t.order_type === "market" ? " selected" : "") + '>market</option>' +
+      '<option value="limit"' + (t.order_type === "limit" ? " selected" : "") + '>limit</option>' +
+    '</select></div>' +
+    '</div>' +
+    '<div class="set-checks" style="margin:10px 0 0">' +
+      _check("set-place_stop_loss", "place stop-loss orders",
+        t.place_stop_loss,
+        "submit an actual stop-loss order after entry (live mode)") +
+      _check("set-sell_only_if_held", "sell only if held",
+        t.sell_only_if_held,
+        "refuse sells when the ledger shows no open position") +
+    '</div>');
+
+  // 5. filters
+  html += _section("filters", '<div class="set-grid">' +
+    _txtField("set-ticker_whitelist", "ticker whitelist",
+      (t.ticker_whitelist || []).join(", "),
+      "e.g. SPY, SPX - empty = allow all",
+      "only trade these underlyings; empty = allow all", true) +
+    _txtField("set-skip_underlyings", "skip underlyings",
+      (t.skip_underlyings || []).join(", "),
+      "e.g. SPX - empty = none",
+      "never trade these underlyings", true) +
+    '</div>');
+
+  // 6. accounts: per-account overrides (empty = inherit global)
   if (s.accounts && s.accounts.length) {
     let accts = "";
     s.accounts.forEach((a, i) => {
@@ -1238,7 +1247,7 @@ function renderSettings(s) {
     html += _section("accounts", accts);
   }
 
-  // 6. reader
+  // 7. reader
   html += _section("reader", '<div class="set-grid">' +
     _txtField("set-reader-channel_marker", "channel marker",
       rd.channel_marker, "e.g. player-alerts",

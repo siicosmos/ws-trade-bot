@@ -1039,15 +1039,14 @@ def test_lighthouse_render_and_cls_findings():
     """/static/dashboard.js was render-blocking (750ms of the
     lighthouse critical path) and the empty-to-filled tables
     shifted the page (CLS 0.536). the script is deferred, the
-    stylesheet is inlined, both logs are fixed scroll boxes at
-    steady-state height, and the page carries a main landmark."""
+    stylesheet is inlined, both logs are capped scroll boxes, and
+    the page carries a main landmark."""
     assert '<script src="/static/dashboard.js" defer></script>' in DASHBOARD_HTML
-    # reserved blocks: both logs are fixed scroll boxes at
-    # steady-state height - the page skeleton never moves, and
-    # no min-height below the height survives (the reserved
-    # space must equal the rendered space)
-    assert "#signals { height: min(760px, 92vh)" in DASHBOARD_CSS
-    assert "#trades { height: min(880px, 92vh)" in DASHBOARD_CSS
+    # capped blocks: both logs scroll inside a max-height box -
+    # short days render compact (no blank space under the last
+    # row) and tall days cap out and scroll
+    assert "#signals { max-height: min(760px, 92vh)" in DASHBOARD_CSS
+    assert "#trades { max-height: min(880px, 92vh)" in DASHBOARD_CSS
     assert "min-height: 380px" not in DASHBOARD_CSS
     assert "overflow-y: auto" in DASHBOARD_CSS
     # the previous session's payload paints on first load: the
@@ -1489,3 +1488,30 @@ def test_settings_layout_mirror_and_automation():
     q_end = js.index('_section("mirror real fills"')
     assert "set-paper-mirror" not in js[q_start:q_end]
     assert "set-mirror-interval" not in js[q_start:q_end]
+
+
+def test_settings_layout_0dte_control_section():
+    """the 0dte controls (auto b2e sell + lotto budget) live in
+    their own section directly under quick controls, and the
+    size tiers (whose per-tier b2e override feeds the 0dte
+    controls) sit under the 0dte section."""
+    import trader.web.dashboard as dash
+
+    js = DASHBOARD_JS
+    # order: quick controls -> 0dte control -> size tiers
+    assert js.index('_section("quick controls"') < js.index(
+        '_section("0dte control"'
+    ) < js.index('_section("size tiers"')
+    # the b2e toggle and lotto budget moved out of quick controls
+    # into the 0dte section
+    q_start = js.index('_section("quick controls"')
+    q_end = js.index('_section("0dte control"')
+    assert "set-back_to_entry_enabled" not in js[q_start:q_end]
+    assert "set-lotto_gain_budget_pct" not in js[q_start:q_end]
+    z_start = js.index('_section("0dte control"')
+    z_end = js.index('_section("size tiers"')
+    assert "set-back_to_entry_enabled" in js[z_start:z_end]
+    assert "set-lotto_gain_budget_pct" in js[z_start:z_end]
+    # the option tiers grid carries its own label, like the
+    # stock tiers grid does
+    assert "option tiers - risk % cap / min / max contracts" in js

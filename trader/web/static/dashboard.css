@@ -196,15 +196,11 @@
   .tlog th:not(:last-child), .tlog td:not(:last-child) { white-space: nowrap; }
   #trades { overflow-x: auto; -webkit-overflow-scrolling: touch; }
   #trades .tlog { min-width: 560px; }
-  /* reserve the tables' block: the first /api/dashboard payload
-     lands a beat after render and filled tables must not shove
-     the page down (the lighthouse CLS finding). both logs are
-     fixed scroll boxes at steady-state height - the page's
-     skeleton never moves again, data scrolls inside. no
-     min-height below the height: the reserved space must equal
-     the rendered space or the first paint jumps */
-  #signals { height: min(760px, 92vh); overflow-y: auto; }
-  #trades { height: min(880px, 92vh); overflow-y: auto; }
+  /* both logs scroll inside a capped box: short days render
+     compact (no blank space under the last row) and tall days
+     cap out and scroll */
+  #signals { max-height: min(760px, 92vh); overflow-y: auto; }
+  #trades { max-height: min(880px, 92vh); overflow-y: auto; }
   #stock-positions { min-height: 120px; }
   .sub .cell { display: inline-flex; align-items: baseline;
     gap: 6px; min-width: 0; }
