@@ -1524,6 +1524,15 @@ def test_settings_automation_subsections():
     import trader.web.dashboard as dash
 
     js = DASHBOARD_JS
+    # renderSettings declares its accumulator before the first
+    # append: a bare `html +=` throws (undeclared variable) and
+    # leaves the settings popup blank
+    assert 'let html = _section("automation"' in js
+    fn = js[js.index("function renderSettings("):js.index(
+        "async function saveSettings"
+    )]
+    assert fn.index("let html =") < fn.index("html +=")
+    # the six titled sub-sections, in order
     a_start = js.index('_section("automation"')
     a_end = js.index('_section("size tiers"')
     auto = js[a_start:a_end]

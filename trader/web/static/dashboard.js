@@ -1058,7 +1058,7 @@ function renderSettings(s) {
   // top row: the global behaviour toggles. below: grouped
   // sub-sections - mirror fills, 0dte, global risk cap, quotes
   // provider, github code update and account value monitoring
-  html += _section("automation",
+  let html = _section("automation",
     '<div class="set-checks" style="margin-bottom:0">' +
       _check("set-notify", "notify", dc.notify !== false,
         "send parsed trade alerts to the discord webhook") +
