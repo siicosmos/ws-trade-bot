@@ -37,8 +37,11 @@
     display: flex; align-items: center; flex-basis: 100%;
     gap: 10px; white-space: nowrap; overflow: hidden;
   }
+  /* the header spans fill in a beat after render - a reserved
+     width keeps them from jittering as the text arrives */
   .headrow #stops, .headrow #reader { overflow: hidden;
-    text-overflow: ellipsis; }
+    text-overflow: ellipsis; display: inline-block;
+    min-width: 200px; white-space: nowrap; }
   #git { flex: 1 1 auto; min-width: 0; overflow: hidden;
     white-space: nowrap; }
   #logout {
@@ -195,8 +198,12 @@
   #trades .tlog { min-width: 560px; }
   /* reserve the tables' block: the first /api/dashboard payload
      lands a beat after render and filled tables must not shove
-     the page down (the lighthouse CLS finding) */
-  #signals, #trades { min-height: 380px; }
+     the page down (the lighthouse CLS finding). the trade log is
+     a fixed scroll box at its steady-state height so data never
+     changes its footprint */
+  #signals { min-height: 380px; }
+  #trades { height: min(880px, 92vh); min-height: 380px;
+    overflow-y: auto; }
   #stock-positions { min-height: 120px; }
   .sub .cell { display: inline-flex; align-items: baseline;
     gap: 6px; min-width: 0; }

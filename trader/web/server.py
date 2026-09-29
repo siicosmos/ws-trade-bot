@@ -12,7 +12,7 @@ from datetime import timedelta
 from flask import Flask, Response, g, jsonify, redirect, request, session
 
 from ..ws.account_types import REGISTERED_ACCOUNT_TYPES
-from .dashboard import LOGIN_HTML
+from .dashboard import LOGIN_HTML, DASHBOARD_CSS, DASHBOARD_HTML
 from ..pipeline import process_alert
 from ..store import Store
 from ..trading.margin import Holding, compute_requirement, resolve_rate
@@ -1233,9 +1233,25 @@ def create_app(cfg, store: Store, risk, executor, account=None,
             pass
         return resp
 
+    _dashboard_cache = {"html": ""}
+
     @app.get("/")
     def dashboard_page():
-        return app.send_static_file("dashboard.html")
+        # the stylesheet is inlined into the head: one request
+        # fewer on the critical path and the layout (the reserved
+        # trade-log block especially) is painted before the js
+        # pulls data - the load-time layout shift shrinks to the
+        # first-paint frame. composed once per process; an update
+        # restarts the pipeline, which recomposes it
+        html = _dashboard_cache["html"]
+        if not html:
+            html = DASHBOARD_HTML.replace(
+                '<link rel="stylesheet" href="/static/dashboard.css">',
+                "<style>\n" + DASHBOARD_CSS + "\n</style>",
+                1,
+            )
+            _dashboard_cache["html"] = html
+        return app.response_class(html, mimetype="text/html")
 
     @app.get("/health")
     def health():

@@ -1038,12 +1038,61 @@ def test_no_eval_or_string_timers_in_shipped_pages():
 def test_lighthouse_render_and_cls_findings():
     """/static/dashboard.js was render-blocking (750ms of the
     lighthouse critical path) and the empty-to-filled tables
-    shifted the page (CLS 0.394). the script is deferred now and
-    the tables reserve their block; the payload ships gzipped."""
+    shifted the page (CLS 0.394). the script is deferred, the
+    stylesheet is inlined, and the trade log is a fixed scroll
+    box at its steady-state height so data never changes its
+    footprint."""
     assert '<script src="/static/dashboard.js" defer></script>' in DASHBOARD_HTML
     # reserved blocks: the tables must not jump when the first
-    # payload lands
-    assert "#signals, #trades { min-height:" in DASHBOARD_CSS
+    # payload lands - the trade log is a fixed scroll box
+    assert "#signals { min-height: 380px; }" in DASHBOARD_CSS
+    assert "#trades { height: min(880px, 92vh)" in DASHBOARD_CSS
+    assert "overflow-y: auto" in DASHBOARD_CSS
+    # the header spans reserve their width so late text does not
+    # jitter the header row
+    assert ".headrow #stops, .headrow #reader" in DASHBOARD_CSS
+    assert "min-width: 200px" in DASHBOARD_CSS
+
+
+def test_dashboard_inlines_the_stylesheet():
+    """the render-blocking css request is gone: the dashboard
+    page ships the stylesheet inline in the head, so the
+    reserved layout paints before the data arrives."""
+    import tempfile
+
+    from trader.config import (
+        AutoUpdateConfig, DiscordConfig, QuotesConfig, ReaderConfig,
+        TradingConfig, WealthsimpleConfig,
+    )
+    from trader.store import Store
+    from trader.web.server import create_app
+
+    class Stub:
+        def __init__(self):
+            self.trading = TradingConfig(mode="notify")
+            self.pipeline = type("P", (), {"auth_token": "t"})()
+            self.wealthsimple = WealthsimpleConfig(accounts=[])
+            self.reader = ReaderConfig()
+            self.discord = DiscordConfig()
+            self.parser = type("P2", (), {"custom_patterns": []})()
+            self.auto_update = AutoUpdateConfig()
+            self.quotes = QuotesConfig()
+            self.paper = None
+
+    fd, path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    app = create_app(Stub(), Store(path), None, None, None)
+    client = app.test_client()
+    r = client.get("/", headers={"X-Auth-Token": "t"})
+    assert r.status_code == 200
+    html = r.get_data(as_text=True)
+    assert "<style>" in html
+    assert "min-height: 380px" in html
+    assert '<link rel="stylesheet"' not in html
+    # the composition is cached per process - second load equals
+    assert app.test_client().get(
+        "/", headers={"X-Auth-Token": "t"}
+    ).data == r.data
 
 
 def test_text_responses_ship_gzipped():
