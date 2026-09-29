@@ -4396,7 +4396,7 @@ def test_index_quote_reads_us_spx():
             pass
 
         def get_market_snapshot(self, codes):
-            assert codes[0] == ".SPX"
+            assert codes[0] == "US.SPX"
             return 0, _Data()
 
         def close(self):
@@ -4583,7 +4583,7 @@ def test_stock_quote_reads_etf_snapshot():
             pass
 
         def get_market_snapshot(self, codes):
-            assert codes[0] == "SPY"
+            assert codes == ["US.SPY"]
             return 0, _Data()
 
         def close(self):

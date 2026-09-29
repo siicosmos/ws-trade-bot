@@ -1321,11 +1321,23 @@ def create_app(cfg, store: Store, risk, executor, account=None,
         age = None
         error = None
         status = None
+        proxy_spx = None
         if provider is not None and hasattr(provider, "index_quote"):
             try:
-                price = provider.index_quote("SPX")
-                age = max(0, int(time.time() - provider._index_ts))
-                error = getattr(provider, "_index_error", None)
+                q = provider.index_quote("SPX")
+                if q and getattr(provider, "_index_proxy", False):
+                    # the moomoo value is the spy etf x the
+                    # converter ratio, not the index itself -
+                    # overnight the close is wanted, so keep the
+                    # proxy only as a last resort behind the ws
+                    # quote (which also carries the market status)
+                    proxy_spx = q
+                elif q:
+                    price = q
+                    age = max(0, int(time.time() - provider._index_ts))
+                    error = getattr(provider, "_index_error", None)
+                else:
+                    error = getattr(provider, "_index_error", None)
             except Exception as e:
                 price = None
                 error = str(e)
@@ -1377,6 +1389,11 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                 pass
         if not price:
             error = error or "no spx spot from moomoo or ws"
+        if not price and proxy_spx:
+            # ws could not answer at all - the spy-derived proxy
+            # still points at the right level
+            price = proxy_spx
+            error = None
         # spy's own realtime quote: moomoo first (local opend,
         # live through the overnight session, no ws round trips),
         # the bounded ws quote as fallback. the moomoo quote

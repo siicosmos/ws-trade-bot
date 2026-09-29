@@ -924,3 +924,80 @@ def test_spx_endpoint_prefers_moomoo_spy(monkeypatch):
     assert data["spy"] == 764.85        # moomoo stock quote
     assert data["spy_status"] is None   # no status -> live tag
     assert data["error"] is None
+
+
+def test_spx_proxy_only_as_last_resort(monkeypatch):
+    """the moomoo spx value on this build is the spy etf x the
+    converter ratio - not the index itself. overnight the close
+    is wanted, so the ws quote (which also carries the market
+    status) wins and the proxy only answers when ws cannot."""
+    import tempfile
+
+    from trader.config import (
+        AutoUpdateConfig, DiscordConfig, QuotesConfig, ReaderConfig,
+        TradingConfig, WealthsimpleConfig,
+    )
+    from trader.store import Store
+    from trader.web.server import create_app
+
+    class Stub:
+        def __init__(self):
+            self.trading = TradingConfig(mode="notify")
+            self.pipeline = type("P", (), {"auth_token": "t"})()
+            self.wealthsimple = WealthsimpleConfig(accounts=[])
+            self.reader = ReaderConfig()
+            self.discord = DiscordConfig()
+            self.parser = type("P2", (), {"custom_patterns": []})()
+            self.auto_update = AutoUpdateConfig()
+            self.quotes = QuotesConfig()
+            self.paper = None
+
+    class ProxyProvider:
+        _index_ts = 0.0
+        _index_error = None
+        _index_proxy = True
+
+        def index_quote(self, symbol="SPX"):
+            return 7686.4          # spy x 10.0391
+
+        def stock_quote(self, symbol):
+            return 764.85
+
+    class WSAccount:
+        def _client(self):
+            class FakeWS:
+                def get_ticker_id(self, ticker, hint=None):
+                    return "sec-" + ticker
+
+                def get_security_quote(self, sec_id):
+                    if sec_id.endswith("SPX"):
+                        return {"price": "7683.69",
+                                "marketStatus": "CLOSED"}
+                    return {"price": "1.00",
+                            "marketStatus": "CLOSED"}
+
+            return FakeWS()
+
+    import trader.trading.quotes as quotes_mod
+    import trader.web.server as srv
+    saved = quotes_mod.ACTIVE_QUOTE_PROVIDER
+    quotes_mod.ACTIVE_QUOTE_PROVIDER = ProxyProvider()
+    srv._sec_id_cache.clear()
+    srv._ws_quote_cache.clear()
+    srv._ws_quote_fail_ts.clear()
+    try:
+        fd, path = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        app = create_app(Stub(), Store(path), None, None, WSAccount())
+        client = app.test_client()
+        data = client.get(
+            "/api/spx", headers={"X-Auth-Token": "t"},
+        ).get_json()
+    finally:
+        quotes_mod.ACTIVE_QUOTE_PROVIDER = saved
+
+    # the accurate ws index quote wins over the spy-derived proxy
+    assert data["price"] == 7683.69
+    assert data["status"] == "CLOSED"
+    assert data["stale"] is True
+    assert data["spy"] == 764.85

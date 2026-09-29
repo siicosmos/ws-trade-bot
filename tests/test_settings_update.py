@@ -196,7 +196,9 @@ def test_moomoo_option_codes():
         "right": "C",
     }
     codes = MoomooQuoteProvider.candidate_codes(pos)
-    assert codes == ["US.SPY260918C00759000", "SPY260918C00759000.US"]
+    # this opend build only accepts the US.-prefixed form - the
+    # .US suffix is rejected and would fail the whole snapshot
+    assert codes == ["US.SPY260918C00759000"]
 
     pos["strike"] = 347.5
     codes = MoomooQuoteProvider.candidate_codes(pos)

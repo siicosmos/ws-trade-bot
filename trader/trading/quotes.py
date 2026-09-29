@@ -98,7 +98,7 @@ class MoomooQuoteProvider:
             return hit[1]
         try:
             ret, data = self._context().get_market_snapshot(
-                [sym, f"US.{sym}", f"{sym}.US"]
+                [f"US.{sym}"]
             )
         except Exception:
             # OpenD can drop the connection (restart, machine
@@ -143,13 +143,12 @@ class MoomooQuoteProvider:
         proxy = {"SPX": "SPY"}.get(sym)
         price = None
         proxy_price = None
-        # the index itself: moomoo lists the spx index as ".SPX"
-        # (the US.-prefixed and .US-suffixed forms kept for other
-        # opend builds). requests are grouped per code family: an
-        # invalid index code fails the WHOLE snapshot request
-        groups = [[f".{sym}", f"US.{sym}", f"{sym}.US"]]
+        # this opend build only accepts the US.-prefixed code
+        # form - .SPX / SPY.US style forms are rejected and one
+        # invalid code fails the WHOLE snapshot request
+        groups = [[f"US.{sym}"]]
         if proxy:
-            groups.append([proxy, f"US.{proxy}", f"{proxy}.US"])
+            groups.append([f"US.{proxy}"])
         for gi, codes in enumerate(groups):
             try:
                 ret, data = self._context().get_market_snapshot(codes)
@@ -184,10 +183,11 @@ class MoomooQuoteProvider:
             if price:
                 self._index_error = None
                 break
-            if gi == 0 and proxy_price:
-                # the index snapshot failed but the proxy quoted:
-                # spx ~ spy x 10
-                price = round(proxy_price * 10, 2)
+            if proxy and proxy_price and gi == len(groups) - 1:
+                # the index snapshot carries no usable price on
+                # this build (no index quote rights) - the etf
+                # proxy tracks it: spy x the converter ratio
+                price = round(proxy_price * 10.0391, 2)
                 self._index_error = None
                 self._index_proxy = True
             if gi == 0 and price is None:
@@ -243,7 +243,10 @@ class MoomooQuoteProvider:
         right = str(pos.get("right") or "C").upper()
         symbol = str(pos.get("underlying") or "").upper()
         core = f"{symbol}{yymmdd}{right}{strike:08d}"
-        return [f"US.{core}", f"{core}.US"]
+        # this opend build only accepts the US.-prefixed form -
+        # the .US suffix is rejected and one invalid code fails
+        # the whole snapshot request
+        return [f"US.{core}"]
 
     @staticmethod
     def extract_price(row):
