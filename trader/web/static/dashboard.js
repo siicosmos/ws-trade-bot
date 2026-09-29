@@ -1652,9 +1652,9 @@ function renderLevelsChart() {
     } else if (t === "SPY") {
       if (levelsSpy != null) {
         // spy trades overnight - its own quote is the live
-        // marker even when the index is closed
-        tag = (levelsSpyStatus && levelsSpyStatus !== "CLOSED")
-          ? "now" : "close";
+        // marker even when the index is closed. no status
+        // (moomoo) means a realtime feed: not a close
+        tag = levelsSpyStatus === "CLOSED" ? "close" : "now";
         headerParts.push("SPY " + tag + ": <b>" +
           levelsSpy.toLocaleString("en-CA", { minimumFractionDigits: 2 }) + "</b>" +
           (tag === "close" ? " (market closed)" : ""));

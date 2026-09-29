@@ -1,3 +1,4 @@
+import threading
 import time
 
 from .parser import Alert
@@ -74,6 +75,10 @@ class MoomooQuoteProvider:
     def __init__(self, cfg):
         self.cfg = cfg
         self._ctx = None
+        self._connector = None
+        self._conn_slot = {}
+        self._conn_lock = threading.Lock()
+        self._ctx_backoff_until = 0.0
         self._index_cache = None
         self._index_ts = 0.0
         self._index_proxy = False
@@ -220,15 +225,57 @@ class MoomooQuoteProvider:
         except Exception:
             pass
 
-    def _context(self):
-        if self._ctx is None:
-            from moomoo import OpenQuoteContext
+    def _context(self, wait=8.0):
+        """The connected OpenQuoteContext, or TimeoutError.
 
-            self._ctx = OpenQuoteContext(
-                host=self.cfg.quotes.moomoo_host,
-                port=self.cfg.quotes.moomoo_port,
-            )
-        return self._ctx
+        OpenQuoteContext's constructor retries forever when opend
+        is not running - it never returns, so it would pin
+        whatever thread calls this (the pipeline startup once
+        never reached the web server that way). The connect runs
+        on a dedicated retry thread instead and this call waits
+        at most `wait` seconds; callers treat the timeout like
+        any other quote failure."""
+        ctx = self._ctx
+        if ctx is not None:
+            return ctx
+        now = time.time()
+        if now < self._ctx_backoff_until:
+            # opend just failed to answer - fail fast instead of
+            # stacking waiters (the connector thread keeps
+            # trying and lifts the backoff by setting _ctx)
+            raise TimeoutError("opend is down - retrying shortly")
+        with self._conn_lock:
+            if (
+                self._connector is None
+                or not self._connector.is_alive()
+            ):
+                self._conn_slot = {}
+                self._connector = threading.Thread(
+                    target=self._connect_loop, daemon=True,
+                )
+                self._connector.start()
+        deadline = now + wait
+        while time.time() < deadline:
+            ctx = self._ctx
+            if ctx is not None:
+                return ctx
+            if self._conn_slot.get("err"):
+                raise TimeoutError(
+                    f"opend connect failed: {self._conn_slot['err']}"
+                )
+            time.sleep(0.2)
+        self._ctx_backoff_until = time.time() + 30.0
+        raise TimeoutError("opend is not answering (connect timed out)")
+
+    def _connect_loop(self):
+        # blocks inside the constructor until opend accepts - the
+        # moment it comes up, _ctx is set and every caller sees it
+        from moomoo import OpenQuoteContext
+
+        self._ctx = OpenQuoteContext(
+            host=self.cfg.quotes.moomoo_host,
+            port=self.cfg.quotes.moomoo_port,
+        )
 
     @staticmethod
     def candidate_codes(pos):

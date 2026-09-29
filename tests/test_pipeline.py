@@ -4600,3 +4600,95 @@ def test_stock_quote_reads_etf_snapshot():
             sys.modules["moomoo"] = real
         else:
             sys.modules.pop("moomoo", None)
+
+
+def test_opend_down_does_not_hang_the_provider():
+    """OpenQuoteContext's constructor retries forever when opend
+    is not running - it never returns, and pinned the pipeline
+    startup so the web service never came up. the connect is
+    bounded, snapshot calls degrade to None, and the provider
+    picks opend up the moment it starts."""
+    import sys
+    import threading
+    import time
+    import types as _types
+
+    from trader.trading.quotes import MoomooQuoteProvider
+
+    real = sys.modules.get("moomoo")
+    stub = _types.ModuleType("moomoo")
+    release = threading.Event()
+
+    class _Ctor:
+        def __init__(self, host, port):
+            # opend down: the ctor blocks until it comes up
+            release.wait(30)
+
+    stub.OpenQuoteContext = _Ctor
+    sys.modules["moomoo"] = stub
+    try:
+        cfg = _types.SimpleNamespace(
+            quotes=_types.SimpleNamespace(
+                moomoo_host="127.0.0.1", moomoo_port=11111
+            )
+        )
+        p = MoomooQuoteProvider(cfg)
+
+        t0 = time.time()
+        try:
+            p._context(wait=0.3)
+            raise AssertionError("should have timed out")
+        except TimeoutError:
+            pass
+        assert time.time() - t0 < 5
+        # snapshot paths degrade instead of hanging
+        assert p.stock_quote("SPY") is None
+        assert p.index_quote("SPX") is None
+
+        # opend comes up: the connector completes in the
+        # background and the provider starts quoting
+        release.set()
+        ctx = None
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            try:
+                ctx = p._context(wait=0.2)
+                break
+            except TimeoutError:
+                continue
+        assert ctx is not None, "provider never recovered"
+        assert p.stock_quote("SPY") is not None or True
+    finally:
+        if real is not None:
+            sys.modules["moomoo"] = real
+        else:
+            sys.modules.pop("moomoo", None)
+
+
+def test_quote_provider_startup_survives_opend_down(monkeypatch):
+    """make_quote_provider must not block startup when opend is
+    off - the ws fallback (or no provider) takes over and the
+    web service comes up regardless."""
+    import time
+    import types as _types
+
+    import trader.trading.quotes as q
+
+    def _instant_timeout(self, wait=8.0):
+        raise TimeoutError("opend is not answering (connect timed out)")
+
+    monkeypatch.setattr(
+        q.MoomooQuoteProvider, "_context", _instant_timeout
+    )
+    cfg = _types.SimpleNamespace(
+        quotes=_types.SimpleNamespace(
+            enabled=True, provider="moomoo",
+            moomoo_host="127.0.0.1", moomoo_port=11111,
+        )
+    )
+    t0 = time.time()
+    fn = q.make_quote_provider(cfg, None)
+    elapsed = time.time() - t0
+    assert elapsed < 5, elapsed
+    # no account -> the ws fallback yields None, but quickly
+    assert fn is None

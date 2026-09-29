@@ -467,9 +467,10 @@ def test_levels_spy_spot_and_refresh_cadence():
     assert "levelsSpy = data.spy" in js
     assert 'levelsSpyStatus = data.spy_status' in js
     # the spy pane labels its quote now (live, incl. the
-    # overnight session) or close (market closed)
+    # overnight session) or close (market closed) - a missing
+    # status (moomoo feed) means live, not closed
     assert '"SPY " + tag + ": <b>"' in js
-    assert 'levelsSpyStatus !== "CLOSED"' in js
+    assert 'levelsSpyStatus === "CLOSED" ? "close" : "now"' in js
     # the closed index shows its market close, not a live spot
     assert 'tag = levelsStale ? "close" : "now";' in js
     assert "derived): <b>" in js
