@@ -1405,6 +1405,8 @@ function renderMe() {
 
 let levelsNow = null;
 let levelsStale = false;
+let levelsSpy = null;
+let levelsSpyStatus = null;
 let levelsError = null;
 let levelsPoll = null;
 
@@ -1433,8 +1435,15 @@ async function openLevels() {
     try {
       const data = await api("/api/spx");
       const changed = data.price !== levelsNow
-        || data.stale !== levelsStale;
+        || data.spy !== levelsSpy
+        || data.stale !== levelsStale
+        || (data.spy_status || "") !== (levelsSpyStatus || "");
       levelsNow = data.price;
+      // spy's own realtime quote - it trades overnight and
+      // post-market, so the spy ladder stays live when the
+      // index is closed
+      levelsSpy = data.spy;
+      levelsSpyStatus = data.spy_status || null;
       levelsStale = !!data.stale;
       levelsError = data.error || null;
       if (changed) renderLevelsChart();
@@ -1560,7 +1569,8 @@ function setLevelsView(ticker) {
   renderLevelsChart();
 }
 
-function buildLevelsLadder(host, ticker, rows, pivot, headerHtml) {
+function buildLevelsLadder(host, ticker, rows, pivot, headerHtml,
+                           spot, tag) {
   rows = rows.slice();
   if (pivot != null) {
     // the pivot is an spx level: convert it for the spy ladder
@@ -1580,16 +1590,11 @@ function buildLevelsLadder(host, ticker, rows, pivot, headerHtml) {
   if (headerHtml) {
     html += '<div class="levels-nowline">' + headerHtml + "</div>";
   }
-  // the realtime spot: spx quotes directly, spy derives from it
-  const ratio = ticker === "SPY" ? 10.0391 : 1.0;
-  const nowPrice = levelsNow == null ? null : levelsNow / ratio;
+  const nowPrice = spot;
   html += '<div class="levels-ladder">';
   // the spot marker, inside the level range
   if (nowPrice != null && nowPrice >= min && nowPrice <= max) {
     const nowPct = ((max - nowPrice) / span * 100).toFixed(1);
-    const tag = levelsStale ? "last" : "now";
-    // the price rides mid-line so it never overlaps the level
-    // labels on the left edge
     html += '<div class="levels-row now" style="top:' + nowPct + '%">' +
       '<span class="levels-chip now">' + tag + '</span>' +
       '<div class="levels-line now"><span class="levels-nowprice">' +
@@ -1618,20 +1623,48 @@ function renderLevelsChart() {
     return;
   }
   const tickers = Object.keys(data.tickers || {});
-  // both ladders side by side: spx left, spy right
+  // both ladders side by side: spx left, spy right (spy drops
+  // under spx on narrow screens via css)
   el.innerHTML = '<div class="levels-duo" id="levels-duo"></div>';
   const duo = document.getElementById("levels-duo");
   const views = tickers.length ? tickers : ["SPX"];
+  // spx always first (left column, top when stacked)
+  views.sort(function(a, b) {
+    return (a === "SPX" ? -1 : b === "SPX" ? 1 : 0);
+  });
   for (const t of views) {
     const rows = (data.tickers && data.tickers[t] ? data.tickers[t] : data.levels).slice();
     const headerParts = [];
+    let spot = null;
+    let tag = "now";
     if (t === "SPX") {
       if (levelsError) {
         headerParts.push('<span style="color:#f85149">spx spot unavailable: ' + esc(levelsError) + "</span>");
       } else if (levelsNow != null) {
-        headerParts.push("SPX " + (levelsStale ? "last" : "now") + ": <b>" +
+        // no trading on the index after-mkt or overnight: the
+        // close shows marked as close, not a live spot
+        tag = levelsStale ? "close" : "now";
+        headerParts.push("SPX " + tag + ": <b>" +
           levelsNow.toLocaleString("en-CA", { minimumFractionDigits: 2 }) + "</b>" +
           (levelsStale ? " (market closed)" : ""));
+      }
+      spot = levelsNow;
+    } else if (t === "SPY") {
+      if (levelsSpy != null) {
+        // spy trades overnight - its own quote is the live
+        // marker even when the index is closed
+        tag = (levelsSpyStatus && levelsSpyStatus !== "CLOSED")
+          ? "now" : "close";
+        headerParts.push("SPY " + tag + ": <b>" +
+          levelsSpy.toLocaleString("en-CA", { minimumFractionDigits: 2 }) + "</b>" +
+          (tag === "close" ? " (market closed)" : ""));
+        spot = levelsSpy;
+      } else if (levelsNow != null) {
+        // no spy quote: fall back to the spx-derived value
+        tag = levelsStale ? "close" : "now";
+        spot = levelsNow / 10.0391;
+        headerParts.push("SPY " + tag + " (derived): <b>" +
+          spot.toLocaleString("en-CA", { minimumFractionDigits: 2 }) + "</b>");
       }
     }
     const pane = document.createElement("div");
@@ -1645,7 +1678,7 @@ function renderLevelsChart() {
     // generated html (ticker + spot number); error strings are
     // escaped where they are appended
     buildLevelsLadder(host, t, rows, data.pivot,
-      headerParts.join(" · ") || null);
+      headerParts.join(" · ") || null, spot, tag);
   }
 }
 

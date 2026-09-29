@@ -3,6 +3,7 @@ import logging
 import os
 import re
 import secrets
+import threading
 import time
 from dataclasses import dataclass, field
 from datetime import timedelta
@@ -356,36 +357,88 @@ def _real_stocks(ctx):
         return None
 
 
-def _ws_index_quote(account, symbol="SPX"):
-    """Index spot from the ws quote api when the moomoo feed is
-    unavailable: the index itself when listed, else the spy etf
-    quote x the ladder's converter ratio (spy = spx / 10.0391)."""
-    if account is None or not hasattr(account, "_client"):
-        return None
-    for ticker, mult in ((symbol, 1.0), ("SPY", 10.0391)):
+# the ws quote api never times out (the library's requests
+# calls carry no timeout) - a stalled connection would pin a
+# waitress worker until the pool drains and even /health stops
+# answering. every ws quote is therefore bounded by a worker
+# thread and cached so the polling endpoints stay cheap
+_WS_QUOTE_TIMEOUT = 5.0
+_WS_QUOTE_TTL = 10.0
+_WS_QUOTE_RETRY = 30.0
+_sec_id_cache = {}
+_ws_quote_cache = {}
+_ws_quote_fail_ts = {}
+
+
+def _ws_quote_fetch(account, ticker):
+    """The unbounded network part: resolve the security id (a
+    search call, cached per ticker) and fetch its quote."""
+    sec_id = _sec_id_cache.get(ticker)
+    if not sec_id:
         try:
             ws = account._client()
             sec_id = ws.get_ticker_id(ticker, None)
         except Exception:
-            sec_id = None
+            return None
         if not sec_id:
-            continue
-        try:
-            quote = ws.get_security_quote(sec_id) or {}
-        except Exception:
-            continue
-        price = (
-            quote.get("price")
-            or quote.get("lastPrice")
-            or quote.get("ask")
-            or quote.get("bid")
+            return None
+        _sec_id_cache[ticker] = sec_id
+    try:
+        quote = account._client().get_security_quote(sec_id) or {}
+    except Exception:
+        return None
+    price = (
+        quote.get("price")
+        or quote.get("lastPrice")
+        or quote.get("ask")
+        or quote.get("bid")
+    )
+    if not price:
+        return None
+    try:
+        return (
+            float(price),
+            str(quote.get("marketStatus") or "").upper(),
         )
-        if price:
-            try:
-                return round(float(price) * mult, 2)
-            except (TypeError, ValueError):
-                continue
-    return None
+    except (TypeError, ValueError):
+        return None
+
+
+def _ws_stock_quote(account, ticker):
+    """(price, marketStatus) for a ticker from the ws quote api,
+    bounded and cached.
+
+    spy trades overnight and post-market, so its quote stays
+    live when the index snapshot goes stale; the status lets the
+    ui tell a live spot from the market close. Returns None on
+    timeout or failure - the ladder falls back to the derived
+    value instead of stalling the request thread."""
+    now = time.time()
+    hit = _ws_quote_cache.get(ticker)
+    if hit and now - hit[0] < _WS_QUOTE_TTL:
+        return hit[1]
+    failed = _ws_quote_fail_ts.get(ticker)
+    if failed and now - failed < _WS_QUOTE_RETRY:
+        return None
+    box = {}
+
+    def _work():
+        try:
+            box["q"] = _ws_quote_fetch(account, ticker)
+        except Exception:
+            pass
+
+    worker = threading.Thread(target=_work, daemon=True)
+    worker.start()
+    worker.join(_WS_QUOTE_TIMEOUT)
+    q = box.get("q")
+    if q:
+        _ws_quote_cache[ticker] = (now, q)
+    else:
+        # the call may still be running in the background -
+        # back off so the next poll does not stack another one
+        _ws_quote_fail_ts[ticker] = now
+    return q
 
 
 def _registered_plan(account, label):
@@ -1159,15 +1212,18 @@ def create_app(cfg, store: Store, risk, executor, account=None,
 
     @app.get("/api/spx")
     def api_spx():
-        """Realtime SPX index spot for the levels ladder (from
-        the moomoo feed when configured, the ws quote api
-        otherwise)."""
+        """Realtime SPX/SPY spot for the levels ladder (from the
+        moomoo feed when configured, the ws quote api otherwise).
+        SPY trades overnight and post-market, so its own quote
+        keeps the spy ladder live when the index is closed; the
+        closed index shows its market close instead of a spot."""
         from ..trading.quotes import ACTIVE_QUOTE_PROVIDER
 
         provider = ACTIVE_QUOTE_PROVIDER
         price = None
         age = None
         error = None
+        status = None
         if provider is not None and hasattr(provider, "index_quote"):
             try:
                 price = provider.index_quote("SPX")
@@ -1180,17 +1236,34 @@ def create_app(cfg, store: Store, risk, executor, account=None,
             # ws fallback: a live quote straight from the ws api
             # (the index when listed, else the spy etf x ratio)
             try:
-                price = _ws_index_quote(account)
-                if price:
+                spx_q = _ws_stock_quote(account, "SPX")
+                if spx_q and spx_q[0]:
+                    price = round(spx_q[0], 2)
+                    status = spx_q[1]
                     error = None
                     age = None
+                else:
+                    spy_q = _ws_stock_quote(account, "SPY")
+                    if spy_q and spy_q[0]:
+                        # the index is only reachable through the
+                        # etf here - it is closed whenever that
+                        # path is in use
+                        price = round(spy_q[0] * 10.0391, 2)
+                        status = "CLOSED"
+                        error = None
+                        age = None
             except Exception:
                 pass
         if not price:
             # last resort: option positions carry the underlying's
             # own quote (the spx index spot)
             try:
-                for row in (_real_positions() or {}).values():
+                live = {}
+                if account is not None and hasattr(
+                    account, "open_option_positions"
+                ):
+                    live = account.open_option_positions() or {}
+                for row in live.values():
                     if not row:
                         continue
                     for r in row["positions"]:
@@ -1207,13 +1280,29 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                 pass
         if not price:
             error = error or "no spx spot from moomoo or ws"
-        # stale = outside trading hours: the last close shows
-        # marked as 'last' instead of 'now'. the saved levels
-        # text rides along: it is the cross-device source of
-        # truth for the ladder
+        # spy's own realtime quote: it trades overnight and
+        # post-market, so the spy ladder keeps a live marker
+        # when the index itself is closed
+        try:
+            spy_q = _ws_stock_quote(account, "SPY")
+        except Exception:
+            spy_q = None
+        spy = spy_q[0] if spy_q else None
+        spy_status = spy_q[1] if spy_q else None
+        # stale = the market is not trading: the close shows
+        # marked as 'close' instead of 'now' (the moomoo feed
+        # reports an age, ws reports the market status)
+        stale = bool(age and age > 120) or status == "CLOSED"
+        # the saved levels text rides along: it is the
+        # cross-device source of truth for the ladder
         return jsonify({
             "price": price, "age": age, "error": error,
-            "stale": bool(age and age > 120),
+            "stale": stale, "status": status,
+            "spy": spy, "spy_status": spy_status,
+            "refresh_seconds": getattr(
+                getattr(cfg, "wealthsimple", None),
+                "positions_refresh_seconds", 30,
+            ),
             "text": store.meta_get("spx_levels_text"),
             "ts": time.time(),
         })

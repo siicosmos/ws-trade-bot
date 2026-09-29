@@ -1,3 +1,4 @@
+import os
 import re
 
 from trader.web.dashboard import DASHBOARD_HTML, DASHBOARD_CSS, DASHBOARD_JS
@@ -451,3 +452,218 @@ def test_history_search_bar_is_single_and_last():
     assert html.index('id="signals"') < html.index('id="trades"')
     between = html[html.index('id="signals"'):html.index('id="trades"')]
     assert "hs-q" not in between
+
+
+def test_levels_spy_spot_and_refresh_cadence():
+    """/api/spx carries spy's own realtime quote (it trades
+    overnight) and the poll rides the positions refresh setting;
+    the spy pane shows 'SPY now: x' under its title."""
+    import trader.web.server as srv
+
+    src = open(srv.__file__).read()
+    assert '"spy": spy' in src
+    assert "refresh_seconds" in src
+    js = DASHBOARD_JS
+    assert "levelsSpy = data.spy" in js
+    assert 'levelsSpyStatus = data.spy_status' in js
+    # the spy pane labels its quote now (live, incl. the
+    # overnight session) or close (market closed)
+    assert '"SPY " + tag + ": <b>"' in js
+    assert 'levelsSpyStatus !== "CLOSED"' in js
+    # the closed index shows its market close, not a live spot
+    assert 'tag = levelsStale ? "close" : "now";' in js
+    assert "derived): <b>" in js
+    assert "data.refresh_seconds" in js
+
+
+def test_levels_ladder_wide_screen_and_stack():
+    """spx stays the left column; wide screens widen the panel,
+    narrow screens stack spy under spx."""
+    import trader.web.dashboard as dash
+
+    css = dash.DASHBOARD_CSS
+    assert "@media (min-width: 1100px)" in css
+    assert "min(960px, 94vw)" in css
+    assert "@media (max-width: 700px)" in css
+    assert "grid-template-columns: 1fr" in css
+    js = DASHBOARD_JS
+    # spx is sorted into the left/top column regardless of
+    # parse order
+    assert 'views.sort(function(a, b) {' in js
+    assert 'a === "SPX" ? -1' in js
+
+
+def test_levels_ladder_spot_is_per_ticker():
+    """the ladder marker takes an explicit spot - the spy pane
+    uses spy's realtime quote, not a conversion of the spx
+    global (which goes stale overnight)."""
+    js = DASHBOARD_JS
+    assert "function buildLevelsLadder(host, ticker, rows, pivot, headerHtml,\n                           spot, tag)" in js
+    assert "const nowPrice = spot;" in js
+    assert "spot = levelsSpy;" in js
+
+
+def test_spx_endpoint_reports_market_status():
+    """SPX closed shows the market close (stale), spy's
+    overnight quote stays live; the poll cadence rides the
+    positions refresh setting."""
+    import types
+
+    from trader.config import (
+        AutoUpdateConfig, DiscordConfig, QuotesConfig, ReaderConfig,
+        TradingConfig, WealthsimpleConfig,
+    )
+    from trader.web.server import create_app
+
+    class Stub:
+        def __init__(self):
+            self.trading = TradingConfig(mode="notify")
+            self.pipeline = type("P", (), {"auth_token": "t"})()
+            self.wealthsimple = WealthsimpleConfig(accounts=[])
+            self.wealthsimple.positions_refresh_seconds = 45
+            self.reader = ReaderConfig()
+            self.discord = DiscordConfig()
+            self.parser = type("P2", (), {"custom_patterns": []})()
+            self.auto_update = AutoUpdateConfig()
+            self.quotes = QuotesConfig()
+            self.paper = None
+
+    class StubAccount:
+        def _client(self):
+            stub = self
+
+            class FakeWS:
+                def get_ticker_id(self, ticker, hint=None):
+                    return "sec-" + ticker
+
+                def get_security_quote(self, sec_id):
+                    if sec_id.endswith("SPX"):
+                        # overnight: the index itself is closed
+                        return {
+                            "price": "7683.69",
+                            "close": "7683.69",
+                            "marketStatus": "CLOSED",
+                        }
+                    # spy keeps trading overnight
+                    return {
+                        "price": "763.98",
+                        "close": "765.61",
+                        "marketStatus": "OVERNIGHT",
+                    }
+
+            return FakeWS()
+
+    import tempfile
+    import time as time_mod
+
+    import trader.web.server as srv
+    from trader.store import Store
+
+    class _FreshStore:
+        def __enter__(self):
+            fd, path = tempfile.mkstemp(suffix=".db")
+            os.close(fd)
+            self._store = Store(path)
+            return self._store
+
+        def __exit__(self, *a):
+            return False
+
+    import trader.trading.quotes as quotes_mod
+    saved = quotes_mod.ACTIVE_QUOTE_PROVIDER
+    quotes_mod.ACTIVE_QUOTE_PROVIDER = None
+    srv._sec_id_cache.clear()
+    srv._ws_quote_cache.clear()
+    srv._ws_quote_fail_ts.clear()
+    try:
+        with _FreshStore() as store:
+            app = create_app(Stub(), store, None, None,
+                             StubAccount())
+            client = app.test_client()
+            data = client.get(
+                "/api/spx", headers={"X-Auth-Token": "t"},
+            ).get_json()
+    finally:
+        quotes_mod.ACTIVE_QUOTE_PROVIDER = saved
+
+    assert data["price"] == 7683.69
+    assert data["stale"] is True      # closed index -> close tag
+    assert data["status"] == "CLOSED"
+    assert data["spy"] == 763.98      # spy's own overnight quote
+    assert data["spy_status"] == "OVERNIGHT"
+    assert data["refresh_seconds"] == 45
+
+
+def test_spx_endpoint_survives_hung_ws_api(monkeypatch):
+    """the ws library sends its requests without a timeout - a
+    stalled connection must not pin the request thread until
+    waitress runs out of workers (that once wedged the whole
+    dashboard). the quote fetch is bounded and the endpoint
+    answers with a fallback instead."""
+    import tempfile
+    import time as time_mod
+
+    import trader.web.server as srv
+    from trader.config import (
+        AutoUpdateConfig, DiscordConfig, QuotesConfig, ReaderConfig,
+        TradingConfig, WealthsimpleConfig,
+    )
+    from trader.store import Store
+    from trader.web.server import create_app
+
+    class Stub:
+        def __init__(self):
+            self.trading = TradingConfig(mode="notify")
+            self.pipeline = type("P", (), {"auth_token": "t"})()
+            self.wealthsimple = WealthsimpleConfig(accounts=[])
+            self.reader = ReaderConfig()
+            self.discord = DiscordConfig()
+            self.parser = type("P2", (), {"custom_patterns": []})()
+            self.auto_update = AutoUpdateConfig()
+            self.quotes = QuotesConfig()
+            self.paper = None
+
+    class HungAccount:
+        def _client(self):
+            class FakeWS:
+                def get_ticker_id(self, ticker, hint=None):
+                    return "sec-" + ticker
+
+                def get_security_quote(self, sec_id):
+                    time_mod.sleep(30)   # stalled connection
+                    return {}
+
+            return FakeWS()
+
+    monkeypatch.setattr(srv, "_WS_QUOTE_TIMEOUT", 0.3)
+    monkeypatch.setattr(srv, "_WS_QUOTE_RETRY", 5.0)
+    srv._sec_id_cache.clear()
+    srv._ws_quote_cache.clear()
+    srv._ws_quote_fail_ts.clear()
+
+    fd, path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    import trader.trading.quotes as quotes_mod
+    saved = quotes_mod.ACTIVE_QUOTE_PROVIDER
+    quotes_mod.ACTIVE_QUOTE_PROVIDER = None
+    try:
+        app = create_app(Stub(), Store(path), None, None,
+                         HungAccount())
+        client = app.test_client()
+        t0 = time_mod.time()
+        data = client.get(
+            "/api/spx", headers={"X-Auth-Token": "t"},
+        ).get_json()
+        elapsed = time_mod.time() - t0
+    finally:
+        quotes_mod.ACTIVE_QUOTE_PROVIDER = saved
+
+    # the bounded fetch gave up well before the 30s stall
+    assert elapsed < 5, elapsed
+    assert data["spy"] is None
+    assert "no spx spot" in (data["error"] or "")
+    # the negative cache keeps the next poll fast instead of
+    # stacking another hung worker
+    t0 = time_mod.time()
+    client.get("/api/spx", headers={"X-Auth-Token": "t"})
+    assert time_mod.time() - t0 < 1
