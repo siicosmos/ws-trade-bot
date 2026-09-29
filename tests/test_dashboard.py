@@ -1002,3 +1002,34 @@ def test_spx_proxy_only_as_last_resort(monkeypatch):
     assert data["status"] == "CLOSED"
     assert data["stale"] is True
     assert data["spy"] == 764.85
+
+
+def test_no_eval_or_string_timers_in_shipped_pages():
+    """the csp 'eval' devtools warning must never come from our
+    page: no eval, no new Function, no string-form setTimeout /
+    setInterval anywhere in the shipped html or js (the ones the
+    browser reports come from browser extensions, which inject
+    their own scripts and run under their own csp)."""
+    import re
+
+    import trader.web.dashboard as dash
+
+    js = DASHBOARD_JS
+    assert "eval(" not in js
+    assert "new Function" not in js
+    assert "Function(" not in js
+    # string-form timers: setTimeout('...'/'...') / setInterval
+    for m in re.finditer(
+        r"(setTimeout|setInterval)\s*\(\s*['\"`]", js
+    ):
+        raise AssertionError(f"string timer in dashboard.js: {m.group(0)}")
+    for html in (
+        dash.DASHBOARD_HTML,
+        dash.LOGIN_HTML() if callable(getattr(dash, "LOGIN_HTML", None))
+        else str(getattr(dash, "LOGIN_HTML", "")),
+    ):
+        assert "eval(" not in html
+        assert "new Function" not in html
+        # inline event handlers and the single external script
+        # are fine - string evaluation is not
+        assert "javascript:" not in html
