@@ -203,6 +203,9 @@ async function doPaperReset(label) {
     });
     if (res.status === 401) { location.href = "/login"; return; }
   } catch (e) { /* surfaced by the next refresh */ }
+  // the replay snapshot would re-paint the pre-reset ledger on
+  // the next page open - drop it
+  try { localStorage.removeItem("dash_last_payload"); } catch (e) {}
   paperPositions = null;
   load();
 }
@@ -247,6 +250,7 @@ async function doPaperSell(label, key) {
       );
     }
   } catch (e) { /* surfaced by the next refresh */ }
+  try { localStorage.removeItem("dash_last_payload"); } catch (e) {}
   paperPositions = null;
   load();
 }
@@ -1046,13 +1050,8 @@ function renderSettings(s) {
         "send parsed trade alerts to the discord webhook") +
       _check("set-paper-enabled", "paper trading", s.paper && s.paper.enabled,
         "simulate executions against the paper ledger alongside notify mode") +
-      _check("set-paper-mirror", "mirror real fills", s.paper && s.paper.mirror,
-        "copy real wealthsimple fills into the paper ledger") +
     '</div>' +
     '<div class="set-grid">' +
-      _numField("set-mirror-interval", "mirror every (s)",
-        s.paper && s.paper.mirror_interval_seconds,
-        "seconds between real-fill mirror scans") +
       _numField("set-risk_per_trade_pct", "default risk %", t.risk_per_trade_pct,
         "% of account value risked per trade when no size keyword is given", "big") +
       _numField("set-max_contracts_per_trade", "max contracts", t.max_contracts_per_trade,
@@ -1069,6 +1068,49 @@ function renderSettings(s) {
       _numField("set-lotto_gain_budget_pct", "lotto budget %",
         t.lotto_gain_budget_pct,
         "hero-or-zero / profits-only buys may spend at most this % of today's realized sell gains", "big") +
+    '</div>');
+
+  // mirror real fills: the copy of real wealthsimple fills into
+  // the paper ledger gets its own section
+  html += _section("mirror real fills",
+    '<div class="set-checks" style="margin-bottom:10px">' +
+      _check("set-paper-mirror", "mirror real fills", s.paper && s.paper.mirror,
+        "copy real wealthsimple fills into the paper ledger") +
+    '</div>' +
+    '<div class="set-grid">' +
+      _numField("set-mirror-interval", "mirror every (s)",
+        s.paper && s.paper.mirror_interval_seconds,
+        "seconds between real-fill mirror scans") +
+    '</div>');
+
+  // automation: sits under the mirror section - both are
+  // "how the bot keeps itself in sync with the world" knobs
+  html += _section("automation",
+    '<div class="set-checks" style="margin-bottom:10px">' +
+      _check("set-au-enabled", "auto-update", au.enabled,
+        "pull and apply code updates from github automatically") +
+      _check("set-quotes-enabled", "live option quotes (stop monitor)", q.enabled,
+        "fetch live option quotes for the stop monitor") +
+    '</div>' +
+    '<div class="set-grid">' +
+      _numField("set-au-interval", "update check (s)", au.interval_seconds,
+        "seconds between github update checks") +
+      _numField("set-ws-positions", "positions refresh (s)", ws.positions_refresh_seconds,
+        "seconds between wealthsimple position refreshes") +
+      _numField("set-ws-values", "values refresh (s)", ws.values_refresh_seconds,
+        "seconds between wealthsimple account value refreshes") +
+      _numField("set-ws-margin-rate", "stock margin rate", ws.stock_margin_rate,
+        "maintenance margin rate applied to stock holdings (0.30 = 30%)") +
+      '<div class="set-field"><label title="quote source for the stop monitor (takes effect after restart)">' +
+      'quotes provider</label>' +
+      '<select id="set-quotes-provider" title="quote source for the stop monitor - takes effect after restart: ws = wealthsimple, moomoo = OpenD feed">' +
+        '<option value="ws"' + (q.provider === "ws" ? " selected" : "") + '>ws</option>' +
+        '<option value="moomoo"' + (q.provider === "moomoo" ? " selected" : "") + '>moomoo</option>' +
+      '</select></div>' +
+      _txtField("set-quotes-moomoo_host", "moomoo host", q.moomoo_host, "127.0.0.1",
+        "OpenD gateway address for moomoo quotes") +
+      _numField("set-quotes-moomoo_port", "moomoo port", q.moomoo_port,
+        "OpenD gateway port for moomoo quotes") +
     '</div>');
 
   // 2. trading limits
@@ -1227,35 +1269,6 @@ function renderSettings(s) {
       _check("set-reader-auto_switch", "auto-switch to the first allowed channel",
         rd.auto_switch !== false,
         "click into the wanted channel when discord opens elsewhere") +
-    '</div>');
-
-  // 7. automation: aligned grid like the other sections
-  html += _section("automation",
-    '<div class="set-checks" style="margin-bottom:10px">' +
-      _check("set-au-enabled", "auto-update", au.enabled,
-        "pull and apply code updates from github automatically") +
-      _check("set-quotes-enabled", "live option quotes (stop monitor)", q.enabled,
-        "fetch live option quotes for the stop monitor") +
-    '</div>' +
-    '<div class="set-grid">' +
-      _numField("set-au-interval", "update check (s)", au.interval_seconds,
-        "seconds between github update checks") +
-      _numField("set-ws-positions", "positions refresh (s)", ws.positions_refresh_seconds,
-        "seconds between wealthsimple position refreshes") +
-      _numField("set-ws-values", "values refresh (s)", ws.values_refresh_seconds,
-        "seconds between wealthsimple account value refreshes") +
-      _numField("set-ws-margin-rate", "stock margin rate", ws.stock_margin_rate,
-        "maintenance margin rate applied to stock holdings (0.30 = 30%)") +
-      '<div class="set-field"><label title="quote source for the stop monitor (takes effect after restart)">' +
-      'quotes provider</label>' +
-      '<select id="set-quotes-provider" title="quote source for the stop monitor - takes effect after restart: ws = wealthsimple, moomoo = OpenD feed">' +
-        '<option value="ws"' + (q.provider === "ws" ? " selected" : "") + '>ws</option>' +
-        '<option value="moomoo"' + (q.provider === "moomoo" ? " selected" : "") + '>moomoo</option>' +
-      '</select></div>' +
-      _txtField("set-quotes-moomoo_host", "moomoo host", q.moomoo_host, "127.0.0.1",
-        "OpenD gateway address for moomoo quotes") +
-      _numField("set-quotes-moomoo_port", "moomoo port", q.moomoo_port,
-        "OpenD gateway port for moomoo quotes") +
     '</div>');
 
   // 8. discord webhooks

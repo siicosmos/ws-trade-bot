@@ -1407,3 +1407,85 @@ def test_manual_paper_sell_live_price_and_fx():
     )
     assert r2.status_code == 404
     assert "no paper position" in r2.get_json()["error"]
+
+
+def test_paper_reset_invalidates_sections():
+    """after a paper reset the dashboard's cached sections are
+    dropped - the next poll shows the reset ledger instead of a
+    stale pre-reset copy (that lag made the reset button look
+    like it did nothing)."""
+    import tempfile
+
+    from trader.config import (
+        AutoUpdateConfig, DiscordConfig, QuotesConfig, ReaderConfig,
+        TradingConfig, WealthsimpleConfig,
+    )
+    from trader.store import Store
+    from trader.web.server import create_app
+
+    class Stub:
+        def __init__(self):
+            self.trading = TradingConfig(mode="notify")
+            self.pipeline = type("P", (), {"auth_token": "t"})()
+            self.wealthsimple = WealthsimpleConfig(accounts=[])
+            self.reader = ReaderConfig()
+            self.discord = DiscordConfig()
+            self.parser = type("P2", (), {"custom_patterns": []})()
+            self.auto_update = AutoUpdateConfig()
+            self.quotes = QuotesConfig()
+            self.paper = types.SimpleNamespace(enabled=True)
+
+    class StubAccount:
+        def values(self):
+            return {"RRSP": 5000.0}
+
+        def _positions_raw(self):
+            return {}
+
+        def _resolve(self):
+            return ()
+
+    fd, path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    app = create_app(Stub(), Store(path), None, None, StubAccount())
+    client = app.test_client()
+    hdr = {"X-Auth-Token": "t"}
+    # prime the section cache with a dashboard poll
+    client.get("/api/dashboard", headers=hdr)
+    assert "paper" in srv_section_cache()
+    r = client.post(
+        "/api/paper-reset", json={"label": "RRSP"}, headers=hdr,
+    )
+    assert r.status_code == 200, r.get_data(as_text=True)
+    assert "paper" not in srv_section_cache()
+    assert "summary" not in srv_section_cache()
+
+
+def srv_section_cache():
+    import trader.web.server as srv
+
+    return srv._section_cache
+
+
+def test_settings_layout_mirror_and_automation():
+    """the mirror real fills fields live in their own section
+    right after quick controls and the automation section sits
+    under it (quick controls stays lean)."""
+    import re
+
+    import trader.web.dashboard as dash
+
+    js = DASHBOARD_JS
+    # the mirror section is declared after quick controls and
+    # before the automation section
+    assert js.index('_section("quick controls"') < js.index(
+        '_section("mirror real fills"'
+    ) < js.index('_section("automation"')
+    # automation appears exactly once
+    assert js.count('_section("automation"') == 1
+    # the mirror checkbox/interval ride the mirror section: the
+    # mirror check is inside it, not in quick controls
+    q_start = js.index('_section("quick controls"')
+    q_end = js.index('_section("mirror real fills"')
+    assert "set-paper-mirror" not in js[q_start:q_end]
+    assert "set-mirror-interval" not in js[q_start:q_end]

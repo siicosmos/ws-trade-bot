@@ -1323,6 +1323,12 @@ def create_app(cfg, store: Store, risk, executor, account=None,
 
             seeded = seed_paper_accounts(cfg, store, account) or []
         ctx.summary_cache["ts"] = 0.0
+        # the dashboard's stale-while-revalidate cache would
+        # otherwise keep serving the pre-reset positions for up
+        # to 15s - drop them so the next poll shows the reset
+        _section_cache.pop("paper", None)
+        _section_cache.pop("positions", None)
+        _section_cache.pop("summary", None)
         return jsonify({
             "status": "ok", "label": label,
             "reseeded": label in seeded,
