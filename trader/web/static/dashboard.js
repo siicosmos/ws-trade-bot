@@ -1043,13 +1043,26 @@ function renderSettings(s) {
   const au = s.auto_update || {};
   const q = s.quotes || {};
 
-  // 1. quick controls: the toggles and numbers touched most
-  let html = _section("quick controls",
+  // 1. automation: one section for everything the bot runs on -
+  // the toggles and numbers touched most (notify, paper mode,
+  // the quick risk knobs), the 0dte day-of-expiry behaviour
+  // (back-to-entry exit, lotto budget) and the sync knobs
+  // (update pulls, quote feeds, ws refreshes, real-fill mirror)
+  let html = _section("automation",
     '<div class="set-checks">' +
       _check("set-notify", "notify", dc.notify !== false,
         "send parsed trade alerts to the discord webhook") +
       _check("set-paper-enabled", "paper trading", s.paper && s.paper.enabled,
         "simulate executions against the paper ledger alongside notify mode") +
+      _check("set-back_to_entry_enabled", "auto b2e sell on 0dte",
+        t.back_to_entry_enabled !== false,
+        "sell a 0dte option back to its entry when the day's gain evaporates (per-tier override in the size tiers below)") +
+      _check("set-au-enabled", "auto-update", au.enabled,
+        "pull and apply code updates from github automatically") +
+      _check("set-quotes-enabled", "live option quotes (stop monitor)", q.enabled,
+        "fetch live option quotes for the stop monitor") +
+      _check("set-paper-mirror", "mirror real fills", s.paper && s.paper.mirror,
+        "copy real wealthsimple fills into the paper ledger") +
     '</div>' +
     '<div class="set-grid">' +
       _numField("set-risk_per_trade_pct", "default risk %", t.risk_per_trade_pct,
@@ -1062,23 +1075,33 @@ function renderSettings(s) {
         "global stop loss % below entry (per-size overrides live in the size tiers below)", "big") +
       _numField("set-trailing_stop_pct", "trailing stop %", t.trailing_stop_pct,
         "trailing stop distance once in profit; 0 disables", "big") +
-    '</div>');
-
-  // 2. 0dte control: day-of-expiry behaviour - the back-to-entry
-  // exit and the lotto budget that gates hero-or-zero buys
-  html += _section("0dte control",
-    '<div class="set-checks">' +
-      _check("set-back_to_entry_enabled", "auto b2e sell on 0dte",
-        t.back_to_entry_enabled !== false,
-        "sell a 0dte option back to its entry when the day's gain evaporates (per-tier override in the option tiers below)") +
-    '</div>' +
-    '<div class="set-grid">' +
       _numField("set-lotto_gain_budget_pct", "lotto budget %",
         t.lotto_gain_budget_pct,
         "hero-or-zero / profits-only buys may spend at most this % of today's realized sell gains", "big") +
+      _numField("set-au-interval", "update check (s)", au.interval_seconds,
+        "seconds between github update checks") +
+      _numField("set-mirror-interval", "mirror every (s)",
+        s.paper && s.paper.mirror_interval_seconds,
+        "seconds between real-fill mirror scans") +
+      _numField("set-ws-positions", "positions refresh (s)", ws.positions_refresh_seconds,
+        "seconds between wealthsimple position refreshes") +
+      _numField("set-ws-values", "values refresh (s)", ws.values_refresh_seconds,
+        "seconds between wealthsimple account value refreshes") +
+      _numField("set-ws-margin-rate", "stock margin rate", ws.stock_margin_rate,
+        "maintenance margin rate applied to stock holdings (0.30 = 30%)") +
+      '<div class="set-field"><label title="quote source for the stop monitor (takes effect after restart)">' +
+      'quotes provider</label>' +
+      '<select id="set-quotes-provider" title="quote source for the stop monitor - takes effect after restart: ws = wealthsimple, moomoo = OpenD feed">' +
+        '<option value="ws"' + (q.provider === "ws" ? " selected" : "") + '>ws</option>' +
+        '<option value="moomoo"' + (q.provider === "moomoo" ? " selected" : "") + '>moomoo</option>' +
+      '</select></div>' +
+      _txtField("set-quotes-moomoo_host", "moomoo host", q.moomoo_host, "127.0.0.1",
+        "OpenD gateway address for moomoo quotes") +
+      _numField("set-quotes-moomoo_port", "moomoo port", q.moomoo_port,
+        "OpenD gateway port for moomoo quotes") +
     '</div>');
 
-  // 3. size tiers: the option tiers feed the 0dte controls above
+  // 2. size tiers: the option tiers feed the 0dte controls above
   // (per-tier b2e override) so they live directly under them
   let tiers = '<div class="set-grid">' +
     '<div class="set-field full" style="color:var(--muted);font-size:11px">' +
@@ -1134,50 +1157,7 @@ function renderSettings(s) {
   tiers += '</div>';
   html += _section("size tiers", tiers);
 
-  // mirror real fills: the copy of real wealthsimple fills into
-  // the paper ledger gets its own section
-  html += _section("mirror real fills",
-    '<div class="set-checks" style="margin-bottom:10px">' +
-      _check("set-paper-mirror", "mirror real fills", s.paper && s.paper.mirror,
-        "copy real wealthsimple fills into the paper ledger") +
-    '</div>' +
-    '<div class="set-grid">' +
-      _numField("set-mirror-interval", "mirror every (s)",
-        s.paper && s.paper.mirror_interval_seconds,
-        "seconds between real-fill mirror scans") +
-    '</div>');
-
-  // automation: sits under the mirror section - both are
-  // "how the bot keeps itself in sync with the world" knobs
-  html += _section("automation",
-    '<div class="set-checks" style="margin-bottom:10px">' +
-      _check("set-au-enabled", "auto-update", au.enabled,
-        "pull and apply code updates from github automatically") +
-      _check("set-quotes-enabled", "live option quotes (stop monitor)", q.enabled,
-        "fetch live option quotes for the stop monitor") +
-    '</div>' +
-    '<div class="set-grid">' +
-      _numField("set-au-interval", "update check (s)", au.interval_seconds,
-        "seconds between github update checks") +
-      _numField("set-ws-positions", "positions refresh (s)", ws.positions_refresh_seconds,
-        "seconds between wealthsimple position refreshes") +
-      _numField("set-ws-values", "values refresh (s)", ws.values_refresh_seconds,
-        "seconds between wealthsimple account value refreshes") +
-      _numField("set-ws-margin-rate", "stock margin rate", ws.stock_margin_rate,
-        "maintenance margin rate applied to stock holdings (0.30 = 30%)") +
-      '<div class="set-field"><label title="quote source for the stop monitor (takes effect after restart)">' +
-      'quotes provider</label>' +
-      '<select id="set-quotes-provider" title="quote source for the stop monitor - takes effect after restart: ws = wealthsimple, moomoo = OpenD feed">' +
-        '<option value="ws"' + (q.provider === "ws" ? " selected" : "") + '>ws</option>' +
-        '<option value="moomoo"' + (q.provider === "moomoo" ? " selected" : "") + '>moomoo</option>' +
-      '</select></div>' +
-      _txtField("set-quotes-moomoo_host", "moomoo host", q.moomoo_host, "127.0.0.1",
-        "OpenD gateway address for moomoo quotes") +
-      _numField("set-quotes-moomoo_port", "moomoo port", q.moomoo_port,
-        "OpenD gateway port for moomoo quotes") +
-    '</div>');
-
-  // 4. trading limits
+  // 3. trading limits
   html += _section("trading limits", '<div class="set-grid">' +
     _numField("set-stop_check_seconds", "stop check (s)", t.stop_check_seconds,
       "how often the stop monitor polls quotes") +
@@ -1211,7 +1191,7 @@ function renderSettings(s) {
         "refuse sells when the ledger shows no open position") +
     '</div>');
 
-  // 5. filters
+  // 4. filters
   html += _section("filters", '<div class="set-grid">' +
     _txtField("set-ticker_whitelist", "ticker whitelist",
       (t.ticker_whitelist || []).join(", "),
@@ -1223,31 +1203,7 @@ function renderSettings(s) {
       "never trade these underlyings", true) +
     '</div>');
 
-  // 6. accounts: per-account overrides (empty = inherit global)
-  if (s.accounts && s.accounts.length) {
-    let accts = "";
-    s.accounts.forEach((a, i) => {
-      accts += '<div class="acct-card">' +
-        '<div class="acct-head"><span' +
-        ' title="per-account overrides; empty fields inherit the global settings"' +
-        '>' + esc(a.label) + '</span>' +
-        '<span>' + _check("set-acct-" + i + "-enabled", "on", a.enabled,
-          "include this account in sizing and paper trading") + '</span></div>' +
-        '<div class="acct-grid">' +
-        _txtField("set-acct-" + i + "-id", "account id", a.account_id, "",
-          "wealthsimple account id") +
-        _numField("set-acct-" + i + "-max", "max contracts", a.max_contracts_per_trade,
-          "per-account contract cap; empty = inherit global") +
-        _numField("set-acct-" + i + "-risk", "risk %", a.risk_per_trade_pct,
-          "per-account risk override; empty = inherit global") +
-        _numField("set-acct-" + i + "-paper", "paper value $", a.paper_value,
-          "fallback paper equity when live values are unavailable") +
-        '</div></div>';
-    });
-    html += _section("accounts", accts);
-  }
-
-  // 7. reader
+  // 5. reader
   html += _section("reader", '<div class="set-grid">' +
     _txtField("set-reader-channel_marker", "channel marker",
       rd.channel_marker, "e.g. player-alerts",
@@ -1280,7 +1236,7 @@ function renderSettings(s) {
         "click into the wanted channel when discord opens elsewhere") +
     '</div>');
 
-  // 8. discord webhooks
+  // 6. discord webhooks
   const hooks = [
     ["set-discord-webhook_url", "trade alerts",
       "webhook for parsed alerts and execution results",
@@ -1304,6 +1260,31 @@ function renderSettings(s) {
       '<div class="set-field full"><label title="' + esc(h[2]) + '">' + esc(h[1]) + '</label>' +
       '<textarea id="' + h[0] + '" rows="2" title="' + esc(h[2]) + '" placeholder="' + esc(h[3]) + '">' + esc(h[4]) + '</textarea></div>'
     ).join("") + '</div>');
+
+  // 7. accounts: per-account overrides (empty = inherit global) -
+  // last: the longest section, rarely touched
+  if (s.accounts && s.accounts.length) {
+    let accts = "";
+    s.accounts.forEach((a, i) => {
+      accts += '<div class="acct-card">' +
+        '<div class="acct-head"><span' +
+        ' title="per-account overrides; empty fields inherit the global settings"' +
+        '>' + esc(a.label) + '</span>' +
+        '<span>' + _check("set-acct-" + i + "-enabled", "on", a.enabled,
+          "include this account in sizing and paper trading") + '</span></div>' +
+        '<div class="acct-grid">' +
+        _txtField("set-acct-" + i + "-id", "account id", a.account_id, "",
+          "wealthsimple account id") +
+        _numField("set-acct-" + i + "-max", "max contracts", a.max_contracts_per_trade,
+          "per-account contract cap; empty = inherit global") +
+        _numField("set-acct-" + i + "-risk", "risk %", a.risk_per_trade_pct,
+          "per-account risk override; empty = inherit global") +
+        _numField("set-acct-" + i + "-paper", "paper value $", a.paper_value,
+          "fallback paper equity when live values are unavailable") +
+        '</div></div>';
+    });
+    html += _section("accounts", accts);
+  }
 
   el.innerHTML = html;
   el.querySelectorAll("textarea").forEach(function(t) {

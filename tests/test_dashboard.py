@@ -1467,51 +1467,51 @@ def srv_section_cache():
 
 
 def test_settings_layout_mirror_and_automation():
-    """the mirror real fills fields live in their own section
-    right after quick controls and the automation section sits
-    under it (quick controls stays lean)."""
-    import re
-
+    """the mirror real fills fields live inside the automation
+    section (one "keeps itself in sync" section) and the
+    automation section sits right above the reader."""
     import trader.web.dashboard as dash
 
     js = DASHBOARD_JS
-    # the mirror section is declared after quick controls and
-    # before the automation section
-    assert js.index('_section("quick controls"') < js.index(
-        '_section("mirror real fills"'
-    ) < js.index('_section("automation"')
-    # automation appears exactly once
+    # automation appears exactly once and the mirror fields are
+    # folded into it - there is no standalone mirror section
     assert js.count('_section("automation"') == 1
-    # the mirror checkbox/interval ride the mirror section: the
-    # mirror check is inside it, not in quick controls
-    q_start = js.index('_section("quick controls"')
-    q_end = js.index('_section("mirror real fills"')
-    assert "set-paper-mirror" not in js[q_start:q_end]
-    assert "set-mirror-interval" not in js[q_start:q_end]
+    assert '_section("mirror real fills"' not in js
+    # automation sits directly above reader
+    assert js.index('_section("automation"') < js.index(
+        '_section("reader"'
+    )
+    a_start = js.index('_section("automation"')
+    a_end = js.index('_section("reader"')
+    # the mirror checkbox/interval ride the automation section
+    assert "set-paper-mirror" in js[a_start:a_end]
+    assert "set-mirror-interval" in js[a_start:a_end]
+    # accounts: the last section in the form
+    assert js.index('_section("accounts"') > js.index(
+        '_section("discord webhooks'
+    )
 
 
 def test_settings_layout_0dte_control_section():
-    """the 0dte controls (auto b2e sell + lotto budget) live in
-    their own section directly under quick controls, and the
-    size tiers (whose per-tier b2e override feeds the 0dte
-    controls) sit under the 0dte section."""
+    """the quick controls and the 0dte day-of-expiry controls
+    (auto b2e sell + lotto budget) are folded into the automation
+    section; the size tiers (whose per-tier b2e override feeds
+    the 0dte controls) sit directly under it."""
     import trader.web.dashboard as dash
 
     js = DASHBOARD_JS
-    # order: quick controls -> 0dte control -> size tiers
-    assert js.index('_section("quick controls"') < js.index(
-        '_section("0dte control"'
-    ) < js.index('_section("size tiers"')
-    # the b2e toggle and lotto budget moved out of quick controls
-    # into the 0dte section
-    q_start = js.index('_section("quick controls"')
-    q_end = js.index('_section("0dte control"')
-    assert "set-back_to_entry_enabled" not in js[q_start:q_end]
-    assert "set-lotto_gain_budget_pct" not in js[q_start:q_end]
-    z_start = js.index('_section("0dte control"')
-    z_end = js.index('_section("size tiers"')
-    assert "set-back_to_entry_enabled" in js[z_start:z_end]
-    assert "set-lotto_gain_budget_pct" in js[z_start:z_end]
-    # the option tiers grid carries its own label, like the
-    # stock tiers grid does
+    # no standalone quick controls / 0dte sections
+    assert '_section("quick controls"' not in js
+    assert '_section("0dte control"' not in js
+    assert js.count('_section("automation"') == 1
+    # the quick + 0dte fields live inside the automation section
+    a_start = js.index('_section("automation"')
+    a_end = js.index('_section("size tiers"')
+    for fid in ("set-notify", "set-paper-enabled",
+                "set-back_to_entry_enabled", "set-lotto_gain_budget_pct",
+                "set-risk_per_trade_pct", "set-paper-mirror",
+                "set-au-enabled"):
+        assert fid in js[a_start:a_end]
+    # size tiers directly under automation, option tiers labelled
+    assert a_end < js.index('_section("trading limits"')
     assert "option tiers - risk % cap / min / max contracts" in js
