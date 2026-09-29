@@ -1331,23 +1331,47 @@ async function saveSettings() {
   }
 }
 
+function applyDashboard(data) {
+  me = data.me || null;
+  renderMe();
+  paperPositions = data.paper_positions || {};
+  renderSummary(data.summary);
+  renderPositions(data.positions || []);
+  renderSignals(data.signals || []);
+  renderTrades(data.trades || []);
+  renderSettings(data.settings || {});
+  gitStatus = data.update_status || null;
+  renderGitStatus(gitStatus);
+  lastRefresh = Date.now();
+}
+
+let lastPayload = null;
+
 async function load() {
   try {
     const data = await api("/api/dashboard");
-    me = data.me || null;
-    renderMe();
-    paperPositions = data.paper_positions || {};
-    renderSummary(data.summary);
-    renderPositions(data.positions || []);
-    renderSignals(data.signals || []);
-    renderTrades(data.trades || []);
-    renderSettings(data.settings || {});
-    gitStatus = data.update_status || null;
-    renderGitStatus(gitStatus);
-    lastRefresh = Date.now();
+    lastPayload = data;
+    try {
+      localStorage.setItem("dash_last_payload", JSON.stringify(data));
+    } catch (e) { /* storage full - the fresh fetch still renders */ }
+    applyDashboard(data);
   } catch (e) { /* handled in api() */ }
 }
 
+function replayLastPayload() {
+  // paint the previous session's payload before the first fetch
+  // lands - the page renders at full height immediately and the
+  // first data arrival cannot shift anything (the layout-shift
+  // traces kept flagging the load-time expansion)
+  try {
+    const saved = JSON.parse(
+      localStorage.getItem("dash_last_payload") || "null"
+    );
+    if (saved && saved.summary) applyDashboard(saved);
+  } catch (e) { /* stale or absent - the fresh fetch renders */ }
+}
+
+replayLastPayload();
 load();
 setInterval(load, 5000);
 function tickClock() {

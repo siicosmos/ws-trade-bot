@@ -1042,10 +1042,17 @@ def test_lighthouse_render_and_cls_findings():
     steady-state height, and the page carries a main landmark."""
     assert '<script src="/static/dashboard.js" defer></script>' in DASHBOARD_HTML
     # reserved blocks: both logs are fixed scroll boxes at
-    # steady-state height - the page skeleton never moves
+    # steady-state height - the page skeleton never moves, and
+    # no min-height below the height survives (the reserved
+    # space must equal the rendered space)
     assert "#signals { height: min(760px, 92vh)" in DASHBOARD_CSS
     assert "#trades { height: min(880px, 92vh)" in DASHBOARD_CSS
+    assert "min-height: 380px" not in DASHBOARD_CSS
     assert "overflow-y: auto" in DASHBOARD_CSS
+    # the previous session's payload paints on first load: the
+    # first data arrival cannot shift anything
+    assert "dash_last_payload" in DASHBOARD_JS
+    assert "applyDashboard(saved)" in DASHBOARD_JS
     # the header spans reserve their width so late text does not
     # jitter the header row
     assert ".headrow #stops, .headrow #reader" in DASHBOARD_CSS
@@ -1092,7 +1099,7 @@ def test_dashboard_inlines_the_stylesheet():
     assert r.status_code == 200
     html = r.get_data(as_text=True)
     assert "<style>" in html
-    assert "min-height: 380px" in html
+    assert "height: min(880px, 92vh)" in html
     assert '<link rel="stylesheet"' not in html
     # the composition is cached per process - second load equals
     assert app.test_client().get(

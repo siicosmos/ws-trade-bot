@@ -200,11 +200,11 @@
      lands a beat after render and filled tables must not shove
      the page down (the lighthouse CLS finding). both logs are
      fixed scroll boxes at steady-state height - the page's
-     skeleton never moves again, data scrolls inside */
-  #signals { height: min(760px, 92vh); min-height: 380px;
-    overflow-y: auto; }
-  #trades { height: min(880px, 92vh); min-height: 380px;
-    overflow-y: auto; }
+     skeleton never moves again, data scrolls inside. no
+     min-height below the height: the reserved space must equal
+     the rendered space or the first paint jumps */
+  #signals { height: min(760px, 92vh); overflow-y: auto; }
+  #trades { height: min(880px, 92vh); overflow-y: auto; }
   #stock-positions { min-height: 120px; }
   .sub .cell { display: inline-flex; align-items: baseline;
     gap: 6px; min-width: 0; }
