@@ -441,6 +441,29 @@ def _ws_stock_quote(account, ticker):
     return q
 
 
+def _bounded(fn, *args, **kwargs):
+    """Run fn in a worker thread bounded by _WS_QUOTE_TIMEOUT.
+
+    The ws client's requests carry no timeout, so a stalled
+    connection would otherwise pin a waitress worker until the
+    pool drains - the dashboard once wedged exactly like that
+    (every fetch pending, /health unreachable). Returns None
+    when the call does not finish in time; callers degrade to
+    their cached/error shapes instead."""
+    box = {}
+
+    def _work():
+        try:
+            box["r"] = fn(*args, **kwargs)
+        except Exception:
+            pass
+
+    worker = threading.Thread(target=_work, daemon=True)
+    worker.start()
+    worker.join(_WS_QUOTE_TIMEOUT)
+    return box.get("r")
+
+
 def _registered_plan(account, label):
     type_map_fn = getattr(account, "account_type_map", None)
     resolve_fn = getattr(account, "_resolve", None)
@@ -1157,7 +1180,12 @@ def create_app(cfg, store: Store, risk, executor, account=None,
 
     @app.get("/api/summary")
     def api_summary():
-        payload = _summary_payload(ctx)
+        payload = _bounded(_summary_payload, ctx)
+        if payload is None:
+            payload = {
+                "error": "summary refresh timed out - "
+                "the ws api is not answering",
+            }
         if "error" in payload:
             return jsonify(payload), 502
         return jsonify(payload)
@@ -1191,7 +1219,12 @@ def create_app(cfg, store: Store, risk, executor, account=None,
 
     @app.get("/api/paper-positions")
     def api_paper_positions():
-        payload = _paper_positions_payload(ctx)
+        payload = _bounded(_paper_positions_payload, ctx)
+        if payload is None:
+            payload = {
+                "error": "paper pricing timed out - "
+                "the ws api is not answering",
+            }
         if isinstance(payload, dict) and "error" in payload:
             return jsonify(payload), 500
         return jsonify(payload)
@@ -1350,15 +1383,31 @@ def create_app(cfg, store: Store, risk, executor, account=None,
     @app.get("/api/dashboard")
     def api_dashboard():
         """Everything the dashboard polls, in one round trip.
-        A summary failure degrades to its error marker - the
-        rest of the payload still renders."""
+        Each ws-touching section runs bounded: a stalled ws api
+        degrades that section to its error/empty shape instead
+        of pinning the request thread."""
         from ..settings import get_settings
 
+        summary = _bounded(_summary_payload, ctx)
+        if summary is None:
+            summary = {
+                "error": "summary refresh timed out - "
+                "the ws api is not answering",
+            }
+        paper = _bounded(_paper_positions_payload, ctx)
+        if paper is None:
+            paper = {
+                "error": "paper pricing timed out - "
+                "the ws api is not answering",
+            }
+        positions = _bounded(_positions_payload, ctx)
+        if positions is None:
+            positions = []
         return jsonify(
             {
-                "summary": _summary_payload(ctx),
-                "paper_positions": _paper_positions_payload(ctx),
-                "positions": _positions_payload(ctx),
+                "summary": summary,
+                "paper_positions": paper,
+                "positions": positions,
                 "signals": store.recent_signals(50),
                 "trades": store.recent_trades(50),
                 "settings": get_settings(cfg),

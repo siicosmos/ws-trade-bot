@@ -667,3 +667,66 @@ def test_spx_endpoint_survives_hung_ws_api(monkeypatch):
     t0 = time_mod.time()
     client.get("/api/spx", headers={"X-Auth-Token": "t"})
     assert time_mod.time() - t0 < 1
+
+
+def test_dashboard_endpoint_survives_hung_ws_api(monkeypatch):
+    """/api/dashboard aggregates several ws-touching sections -
+    a stalled ws api (the library has no request timeout) must
+    degrade each section to its error/empty shape within the
+    bound instead of pinning the waitress worker forever (that
+    wedge left every dashboard fetch pending)."""
+    import tempfile
+    import time as time_mod
+
+    import trader.web.server as srv
+    from trader.config import (
+        AutoUpdateConfig, DiscordConfig, QuotesConfig, ReaderConfig,
+        TradingConfig, WealthsimpleConfig,
+    )
+    from trader.store import Store
+    from trader.web.server import create_app
+
+    class Stub:
+        def __init__(self):
+            self.trading = TradingConfig(mode="notify")
+            self.pipeline = type("P", (), {"auth_token": "t"})()
+            self.wealthsimple = WealthsimpleConfig(accounts=[])
+            self.reader = ReaderConfig()
+            self.discord = DiscordConfig()
+            self.parser = type("P2", (), {"custom_patterns": []})()
+            self.auto_update = AutoUpdateConfig()
+            self.quotes = QuotesConfig()
+            self.paper = None
+
+    class HungAccount:
+        def values(self):
+            time_mod.sleep(30)
+            return {}
+
+        def open_option_positions(self):
+            time_mod.sleep(30)
+            return {}
+
+        def stock_holdings(self):
+            time_mod.sleep(30)
+            return {}
+
+    monkeypatch.setattr(srv, "_WS_QUOTE_TIMEOUT", 0.3)
+
+    fd, path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    app = create_app(Stub(), Store(path), None, None, HungAccount())
+    client = app.test_client()
+
+    t0 = time_mod.time()
+    data = client.get(
+        "/api/dashboard", headers={"X-Auth-Token": "t"},
+    ).get_json()
+    elapsed = time_mod.time() - t0
+
+    assert elapsed < 5, elapsed
+    assert "timed out" in (data["summary"].get("error") or "")
+    assert data["positions"] == []
+    # the non-ws sections still render
+    assert data["me"] is not None or "me" in data
+    assert "settings" in data and "signals" in data
