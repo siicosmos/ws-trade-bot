@@ -1334,6 +1334,122 @@ def create_app(cfg, store: Store, risk, executor, account=None,
             return jsonify(payload), 500
         return jsonify(payload)
 
+    @app.post("/api/paper-sell")
+    def api_paper_sell():
+        """Manual close of a paper position at its live price.
+
+        The proceeds return to the paper cash (options x100 at
+        the fx rate, stocks x1) exactly like an executed paper
+        sell; the position row realizes its pnl and the loss
+        streak updates through the same path an alert sell takes.
+        Sells the whole position unless a qty is given."""
+        denied = _require_admin()
+        if denied:
+            return denied
+        if not getattr(
+            getattr(cfg, "paper", None), "enabled", False
+        ) and ctx.mode != "paper":
+            return jsonify(
+                {"error": "paper trading is not active"}
+            ), 400
+        payload = request.get_json(silent=True) or {}
+        label = str(payload.get("label") or "").strip()
+        contract_key = str(payload.get("contract_key") or "").strip()
+        if not label or not contract_key:
+            return jsonify(
+                {"error": "label and contract_key required"}
+            ), 400
+        rows = store.list_positions("paper", label)
+        row = next(
+            (r for r in rows if r["contract_key"] == contract_key),
+            None,
+        )
+        if row is None:
+            return jsonify(
+                {"error": f"no paper position {contract_key!r} "
+                 f"on {label!r}"}
+            ), 404
+        held = int(row["qty"])
+        if held < 1:
+            return jsonify({"error": "position is empty"}), 400
+        qty = max(1, min(int(payload.get("qty") or 0) or held, held))
+        # the live price the holdings table shows; the avg premium
+        # is the fallback when no quote is available
+        price = None
+        try:
+            live = _paper_positions_payload(ctx) or {}
+            for r in live.get(label) or []:
+                if r.get("contract_key") == contract_key:
+                    if r.get("price"):
+                        price = float(r["price"])
+                    break
+        except Exception:
+            price = None
+        if not price:
+            price = float(row["avg_premium"] or 0.0)
+        if not price:
+            return jsonify(
+                {"error": "no price for this contract - "
+                 "cannot sell without a quote"}
+            ), 409
+        from ..trading.parser import Alert
+
+        is_option = bool(row["right"])
+        alert = Alert(
+            action="SELL",
+            ticker=row["underlying"],
+            kind="option" if is_option else "stock",
+            underlying=row["underlying"] or "",
+            expiry=row["expiry"],
+            strike=row["strike"],
+            right=row["right"],
+            premium=price,
+        )
+        if alert.contract_key() != contract_key:
+            return jsonify(
+                {"error": f"contract fields do not match "
+                 f"{contract_key!r}"}
+            ), 400
+        mult = 100 if is_option else 1
+        avg = float(row["avg_premium"] or 0.0)
+        realized = round(qty * (price - avg) * mult, 2) if avg else 0.0
+        store.apply_position(
+            "paper", alert, -qty, premium=price, account=label
+        )
+        # the proceeds return to the paper cash the same way an
+        # executed sell books them: options x100 in usd->cad, at
+        # the ledger's fx; stocks per share in cad
+        fx = 1.0
+        ledger = getattr(ctx.executor, "account", None)
+        if ledger is not None:
+            try:
+                fx = ledger.fx() or 1.0
+            except Exception:
+                fx = 1.0
+        credit = qty * price * (100 if is_option else 1)
+        store.adjust_paper_equity(
+            credit * (fx if is_option else 1.0), label
+        )
+        remaining = store.get_position("paper", contract_key, label)
+        detail = (
+            f"[PAPER] manual SELL {qty}/{held}x "
+            f"{contract_key} @ {price} · realized "
+            f"{realized:+.2f} · {remaining}x left"
+        )
+        store.record_trade(
+            "paper", "SELL", row["underlying"], qty, price, alert,
+            "executed", detail,
+            message_key=f"manual-{int(time.time() * 1000)}",
+        )
+        ctx.summary_cache["ts"] = 0.0
+        return jsonify({
+            "status": "ok", "label": label,
+            "contract_key": contract_key,
+            "sold": qty, "price": price,
+            "realized": round(realized, 2),
+            "remaining": remaining,
+        })
+
     @app.get("/api/positions")
     def api_positions():
         return jsonify(_positions_payload(ctx))

@@ -207,6 +207,40 @@ async function doPaperReset(label) {
   load();
 }
 
+function sellPaper(label, key, qty, price) {
+  openModal(
+    "Manual paper sell",
+    "Sell " + qty + "x " + key + " on paper " + label +
+      (price != null ? " at the live price (~$" + price + ")" : "") +
+      "? The proceeds return to the paper cash and the position " +
+      "realizes its pnl.",
+    "sell",
+    async function() { await doPaperSell(label, key); }
+  );
+}
+
+async function doPaperSell(label, key) {
+  try {
+    const res = await fetch("/api/paper-sell", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ label: label, contract_key: key }),
+    });
+    if (res.status === 401) { location.href = "/login"; return; }
+    const data = await res.json().catch(() => ({}));
+    if (res.status !== 200) {
+      openModal(
+        "Sell failed",
+        data.error || "the sell did not go through",
+        "ok",
+        async function() { closeModal(); }
+      );
+    }
+  } catch (e) { /* surfaced by the next refresh */ }
+  paperPositions = null;
+  load();
+}
+
 function togglePaper(label) {
   paperOpen = paperOpen.indexOf(label) >= 0
     ? paperOpen.filter(function(l) { return l !== label; })
@@ -391,7 +425,7 @@ function renderSummary(data) {
           ? '<div class="sub"><span>margin available ' + (phidden? "••••••" : fmtMoney(a.paper_margin_available) + " cad") + '</span></div>'
           : '') + paperMarginUsageBar(a) +
         (open ? (rows.length ?
-          '<div class="pos-scroll" data-scrollkey="paper:' + esc(a.label) + '" style="overflow-x:auto;-webkit-overflow-scrolling:touch"><table class="pos" style="margin-top:10px;font-size:12px"><tr><th>Positions &amp; Holdings</th><th class=num>Qty</th><th class=num>Avg $</th><th class=num>Price $</th><th class=num>Value $</th><th class=num>Total Cost $</th><th class=num>Return</th></tr>' +
+          '<div class="pos-scroll" data-scrollkey="paper:' + esc(a.label) + '" style="overflow-x:auto;-webkit-overflow-scrolling:touch"><table class="pos" style="margin-top:10px;font-size:12px"><tr><th>Positions &amp; Holdings</th><th class=num>Qty</th><th class=num>Avg $</th><th class=num>Price $</th><th class=num>Value $</th><th class=num>Total Cost $</th><th class=num>Return</th>' + (isAdmin() ? '<th></th>' : '') + '</tr>' +
           rows.map(function(r) {
             const rc = r.pnl == null ? "var(--muted)" : r.pnl >= 0 ? "var(--green)" : "var(--red)";
             const cur = r.usd ? " usd" : "";
@@ -403,6 +437,9 @@ function renderSummary(data) {
             const priceCell = r.price == null ? "—" :
               "$" + r.price.toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) +
               (isOpt && !phidden ? ' <span class="subv">($' + (r.price * 100).toLocaleString("en-CA", { maximumFractionDigits: 0 }) + ")</span>" : "");
+            const sellCell = isAdmin() && r.qty > 0
+              ? '<td class=num><button class="mini-toggle" style="color:#f85149" title="sell at the live price" onclick="sellPaper(\'' + esc(a.label) + '\', \'' + esc(r.contract_key) + '\', ' + r.qty + ', ' + (r.price == null ? "null" : r.price) + ')">sell</button></td>'
+              : '<td></td>';
             return '<tr><td>' + esc(r.contract_key) + '</td>' +
               '<td class=num>' + r.qty + '</td>' +
               '<td class=num>' + (r.avg != null ? "$" + r.avg : "—") + '</td>' +
@@ -412,7 +449,8 @@ function renderSummary(data) {
               '<td class=num style="color:' + rc + '">' + (r.pnl == null ? "—" :
                 (r.pnl >= 0 ? "+" : "") + r.pnl.toFixed(1) + "%" +
                 (phidden ? "" : ' <span class="subv">(' + (r.pnl_dollars >= 0 ? "+" : "-$") +
-                  Math.abs(r.pnl_dollars).toLocaleString("en-CA", { maximumFractionDigits: 2 }) + ")</span>")) + '</td></tr>';
+                  Math.abs(r.pnl_dollars).toLocaleString("en-CA", { maximumFractionDigits: 2 }) + ")</span>")) + '</td>' +
+              (isAdmin() ? sellCell : '') + '</tr>';
           }).join("") + '</table></div>' : '<div class="empty" style="font-size:12px;padding:8px">no positions</div>') : '');
       wrap.appendChild(pc);
     }

@@ -1,5 +1,6 @@
 import os
 import re
+import types
 
 from trader.web.dashboard import DASHBOARD_HTML, DASHBOARD_CSS, DASHBOARD_JS
 
@@ -1151,3 +1152,166 @@ def test_text_responses_ship_gzipped():
     )
     assert r2.headers.get("Content-Encoding") is None
     assert r2.data == body
+
+
+
+
+def _paper_app(store):
+    from trader.config import (
+        AutoUpdateConfig, DiscordConfig, QuotesConfig, ReaderConfig,
+        TradingConfig, WealthsimpleConfig,
+    )
+    from trader.web.server import create_app
+
+    class Stub:
+        def __init__(self):
+            self.trading = TradingConfig(mode="notify")
+            self.pipeline = type("P", (), {"auth_token": "t"})()
+            self.wealthsimple = WealthsimpleConfig(accounts=[])
+            self.reader = ReaderConfig()
+            self.discord = DiscordConfig()
+            self.parser = type("P2", (), {"custom_patterns": []})()
+            self.auto_update = AutoUpdateConfig()
+            self.quotes = QuotesConfig()
+            self.paper = types.SimpleNamespace(enabled=True)
+
+    return create_app(Stub(), store, None, None, None)
+
+
+def test_manual_paper_sell_endpoint():
+    """the sell closes the position at the live price (the avg
+    premium when no quote is up), returns the proceeds to the
+    paper cash, realizes the row's pnl and logs the trade - the
+    same path an alert sell takes."""
+    import tempfile
+
+    from trader.config import (
+        AutoUpdateConfig, DiscordConfig, QuotesConfig, ReaderConfig,
+        TradingConfig, WealthsimpleConfig,
+    )
+    from trader.store import Store
+    from trader.trading.parser import parse_alert
+    from trader.web.server import create_app
+
+    class Stub:
+        def __init__(self):
+            self.trading = TradingConfig(mode="notify")
+            self.pipeline = type("P", (), {"auth_token": "t"})()
+            self.wealthsimple = WealthsimpleConfig(accounts=[])
+            self.reader = ReaderConfig()
+            self.discord = DiscordConfig()
+            self.parser = type("P2", (), {"custom_patterns": []})()
+            self.auto_update = AutoUpdateConfig()
+            self.quotes = QuotesConfig()
+            self.paper = types.SimpleNamespace(enabled=True)
+
+    fd, path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    store = Store(path)
+    alert = parse_alert("BOUGHT 10/02 AAOI 105c @ 2.0")
+    store.apply_position(
+        "paper", alert, 4, premium=2.0, account="RRSP"
+    )
+    store.set_paper_equity(1000.0, "RRSP")
+
+    app = create_app(Stub(), store, None, None, None)
+    client = app.test_client()
+    hdr = {"X-Auth-Token": "t"}
+    r = client.post(
+        "/api/paper-sell", headers=hdr,
+        json={"label": "RRSP",
+              "contract_key": "AAOI-2026-10-02-105-C"},
+    )
+    assert r.status_code == 200, r.get_data(as_text=True)
+    data = r.get_json()
+    assert data["sold"] == 4
+    assert data["price"] == 2.0     # avg fallback (no live quote)
+    assert data["realized"] == 0.0
+    assert data["remaining"] == 0
+    assert store.get_position(
+        "paper", "AAOI-2026-10-02-105-C", "RRSP"
+    ) == 0
+    # proceeds: 4x $2.00 x100 = $800 cad back to the cash
+    assert abs(store.paper_equity("RRSP") - 1800.0) < 0.01
+    sells = [t for t in store.recent_trades(10)
+             if t["mode"] == "paper" and t["action"] == "SELL"
+             and "manual SELL" in (t["detail"] or "")]
+    assert len(sells_of(store)) == 1
+    row = [p for p in store.list_positions("paper", "RRSP")
+           if p["contract_key"] == "AAOI-2026-10-02-105-C"]
+    assert not row or int(row[0]["qty"]) == 0
+
+
+def sells_of(store):
+    return [t for t in store.recent_trades(20)
+            if t.get("action") == "SELL"
+            and "manual SELL" in (t.get("detail") or "")]
+
+
+def test_manual_paper_sell_partial_and_missing():
+    import tempfile
+
+    from trader.config import (
+        AutoUpdateConfig, DiscordConfig, QuotesConfig, ReaderConfig,
+        TradingConfig, WealthsimpleConfig,
+    )
+    from trader.store import Store
+    from trader.trading.parser import parse_alert
+    from trader.web.server import create_app
+
+    class Stub:
+        def __init__(self):
+            self.trading = TradingConfig(mode="notify")
+            self.pipeline = type("P", (), {"auth_token": "t"})()
+            self.wealthsimple = WealthsimpleConfig(accounts=[])
+            self.reader = ReaderConfig()
+            self.discord = DiscordConfig()
+            self.parser = type("P2", (), {"custom_patterns": []})()
+            self.auto_update = AutoUpdateConfig()
+            self.quotes = QuotesConfig()
+            self.paper = types.SimpleNamespace(enabled=True)
+
+    fd, path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    store = Store(path)
+    app = create_app(Stub(), store, None, None, None)
+    client = app.test_client()
+    hdr = {"X-Auth-Token": "t", "Content-Type": "application/json"}
+    alert = parse_alert("BOUGHT 10/02 DRAM 60c @ 1.6")
+    store.apply_position(
+        "paper", alert, 2, premium=1.6, account="default"
+    )
+
+    # partial sell on the right account
+    r = client.post(
+        "/api/paper-sell", headers=hdr,
+        json={"label": "default",
+              "contract_key": "DRAM-2026-10-02-60-C", "qty": 1},
+    )
+    assert r.status_code == 200, r.get_data(as_text=True)
+    data = r.get_json()
+    assert data["sold"] == 1
+    assert data["remaining"] == 1
+    assert store.get_position(
+        "paper", "DRAM-2026-10-02-60-C", "default"
+    ) == 1
+
+    # unknown contract -> 404
+    r2 = client.post(
+        "/api/paper-sell", headers=hdr,
+        json={"label": "default",
+              "contract_key": "NOPE-2026-01-01-1-C"},
+    )
+    assert r2.status_code == 404
+
+
+def test_paper_manual_sell_ui():
+    """paper positions carry a per-row sell button (admin only)
+    with the confirm-modal pattern the other paper actions use."""
+    js = DASHBOARD_JS
+    assert "function sellPaper(label, key, qty, price)" in js
+    assert '"/api/paper-sell"' in js
+    assert "contract_key: key" in js
+    # the sell button rides the holdings table (admin only)
+    assert "sellPaper(" in js and "doPaperSell" in js
+    assert "Manual paper sell" in js
