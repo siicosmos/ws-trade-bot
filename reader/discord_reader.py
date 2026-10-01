@@ -25,6 +25,7 @@ from inspect_discord import (
     find_channel_control,
     click_channel_control,
     find_discord_window,
+    updater_window_visible,
     kill_discord,
     start_discord,
     switch_server_keyboard,
@@ -1368,6 +1369,18 @@ def main():
             except UIAError:
                 window = None
             if window is None:
+                # the update stub showing means discord is still
+                # starting - say so instead of the generic lost
+                # line (rate limited, it can sit here for a while)
+                if updater_window_visible():
+                    now = time.time()
+                    if now - _stayup_log_ts > 30:
+                        _stayup_log_ts = now
+                        log(
+                            "discord is still starting (only the "
+                            "updater window shows) - waiting for the "
+                            "main window"
+                        )
                 if auto_start_discord:
                     start_discord(
                         discord_start_command, log=log,

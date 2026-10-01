@@ -142,11 +142,23 @@ def find_discord_window():
         windows = root.GetChildren()
     except UIAError:
         return None
+
+    def _is_main_window(win):
+        # the update stub ("Discord Updater") shares the discord
+        # process prefix but has no message pane - attaching to
+        # it only produces focus-failure noise while the app is
+        # still starting
+        try:
+            name = (win.Name or "").lower()
+        except UIAError:
+            return False
+        return "updater" not in name
+
     for win in windows:
         try:
             if win.ControlType != auto.ControlType.WindowControl:
                 continue
-            if win.ProcessId in pids:
+            if win.ProcessId in pids and _is_main_window(win):
                 return win
         except UIAError:
             continue
@@ -154,11 +166,34 @@ def find_discord_window():
         try:
             if win.ControlType != auto.ControlType.WindowControl:
                 continue
-            if (win.Name or "").lower().endswith(" - discord"):
+            name = (win.Name or "").lower()
+            if name.endswith(" - discord") and _is_main_window(win):
                 return win
         except UIAError:
             continue
     return None
+
+
+def updater_window_visible():
+    """True when only discord's update stub is showing - the
+    reader reports 'still starting' instead of failing focus on
+    a window that can never host messages."""
+    pids = discord_pids()
+    try:
+        windows = auto.GetRootControl().GetChildren()
+    except UIAError:
+        return False
+    for win in windows:
+        try:
+            if win.ControlType != auto.ControlType.WindowControl:
+                continue
+            if win.ProcessId in pids and "updater" in (
+                win.Name or ""
+            ).lower():
+                return True
+        except UIAError:
+            continue
+    return False
 
 
 def find_channel_control(window, channel_names):
