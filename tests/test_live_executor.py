@@ -1,0 +1,389 @@
+"""Live-executor safety tests: every WealthsimpleExecutor path
+driven against a fake ws client, so the code that touches real
+money is exercised exactly like the paper paths have been.
+
+The fake client mimics the surface the executor touches
+(security/option-chain resolution, quotes, order placement,
+position queries) and records every order for assertions.
+"""
+import os
+import tempfile
+import types
+from datetime import date
+
+from trader.config import TradingConfig, WealthsimpleConfig
+from trader.store import Store
+from trader.trading.executor import WealthsimpleExecutor
+from trader.trading.parser import parse_alert
+from trader.ws.account import WSAccountConfig
+
+# 0DTE alerts parse to today's date - the fake chain serves it
+TODAY = date.today().isoformat()
+
+
+def _chain_entry(opt_id, strike, ask, bid):
+    return {
+        "id": opt_id,
+        "optionDetails": {
+            "strikePrice": strike,
+            "optionType": "CALL",
+        },
+        "quote": {"ask": ask, "bid": bid},
+    }
+
+
+class FakeWS:
+    """The executor's client surface, recording every order."""
+
+    def __init__(self, ask=1.5, bid=1.2, fail_orders=False):
+        self.ask = ask
+        self.bid = bid
+        self.fail_orders = fail_orders
+        self.orders = []
+
+    def get_ticker_id(self, ticker, hint=None):
+        return f"sec-{ticker.lower()}"
+
+    def search_securities(self, ticker, security_group_ids=None):
+        return [{"stock": {"symbol": ticker}, "id": f"sec-{ticker.lower()}"}]
+
+    def get_option_expiry_dates(self, sec_id):
+        return [TODAY]
+
+    def get_option_chain(self, sec_id, expiry, opt_type):
+        return [_chain_entry("opt-1", 759, self.ask, self.bid)]
+
+    def _order(self, name, qty, price):
+        if self.fail_orders:
+            raise RuntimeError("ws order rejected")
+        self.orders.append((name, qty, price))
+        return {"orderId": f"order-{len(self.orders)}"}
+
+    def buy_option(self, account_id, opt_id, qty, limit):
+        return self._order("buy_option", qty, limit)
+
+    def sell_option(self, account_id, opt_id, qty, limit):
+        return self._order("sell_option", qty, limit)
+
+    def get_security_quote(self, sec_id):
+        return {"ask": self.ask, "bid": self.bid, "price": self.ask}
+
+    def market_buy(self, account_id, sec_id, qty):
+        return self._order("market_buy", qty, self.ask)
+
+    def limit_buy(self, account_id, sec_id, qty, price):
+        return self._order("limit_buy", qty, price)
+
+    def market_sell(self, account_id, sec_id, qty):
+        return self._order("market_sell", qty, self.bid)
+
+    def limit_sell(self, account_id, sec_id, qty, price):
+        return self._order("limit_sell", qty, price)
+
+    def get_positions(self, account_ids=None):
+        return list(self._holdings)
+
+    _holdings: list = []
+
+
+class StubAccount:
+    """Just .value/.values - what the executor and risk read."""
+
+    def __init__(self, values):
+        self._values = values
+
+    def value(self, label="default"):
+        return self._values.get(label)
+
+    def values(self):
+        return dict(self._values)
+
+
+def _live_cfg(**over):
+    trading = TradingConfig(mode="live", **over)
+    trading.size_tiers["medium"] = {
+        "risk_pct_max": 5.0, "contracts_min": 1,
+        "contracts_max": 4, "stop_loss_pct": 25.0,
+    }
+    cfg = types.SimpleNamespace(
+        trading=trading,
+        wealthsimple=WealthsimpleConfig(accounts=[
+            WSAccountConfig(account_id="acc-1", label="RRSP",
+                            enabled=True),
+        ]),
+        paper=None,
+    )
+    return cfg
+
+
+def _executor(cfg, store, account):
+    ex = WealthsimpleExecutor(cfg, account)
+    ex._ws = None   # never let it build the real client
+    return ex
+
+
+def _patch_client(monkeypatch, ws):
+    # _client() builds the real WealthsimpleV2 client - pin the
+    # fake in its place
+    def fake_client(self):
+        return ws
+
+    monkeypatch.setattr(
+        WealthsimpleExecutor, "_client", fake_client, raising=False,
+    )
+
+
+def _store():
+    fd, path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    return Store(path)
+
+
+def _account_values():
+    return {"RRSP": 10000.0}
+
+
+def test_live_option_buy_sizes_books_and_pends(monkeypatch):
+    """a live option buy sizes off the tier, places the order at
+    the quote ask, books the position and records a pending order
+    with the pre-order snapshot."""
+    ws = FakeWS(ask=1.5, bid=1.2)
+    _patch_client(monkeypatch, ws)
+    cfg = _live_cfg()
+    store = _store()
+    account = StubAccount(_account_values())
+    ex = _executor(cfg, store, account)
+
+    res = ex.execute(
+        parse_alert("BOUGHT 0DTE SPY 759c @ 1.2 medium size"),
+        cfg, store,
+    )
+    assert res.ok
+    # budget 5% x 10000 = 500 -> 3 contracts @ 1.5 (ask)
+    assert ws.orders == [("buy_option", 3, 1.5)]
+    assert store.get_position(
+        "live", f"SPY-{TODAY}-759-C", "RRSP"
+    ) == 3
+    pending = store.open_pending_orders("live", "RRSP")
+    assert len(pending) == 1
+    assert pending[0]["qty"] == 3
+    assert pending[0]["est_price"] == 1.5
+    assert pending[0]["pre_qty"] == 0
+    assert pending[0]["status"] == "open"
+
+
+def test_live_option_sell_flattens_and_realizes(monkeypatch):
+    """a live sell sells the held quantity at the bid, books the
+    realized pnl and records the pending order."""
+    ws = FakeWS(ask=1.5, bid=2.0)
+    _patch_client(monkeypatch, ws)
+    cfg = _live_cfg()
+    store = _store()
+    account = StubAccount(_account_values())
+    ex = _executor(cfg, store, account)
+
+    store.apply_position(
+        "live", parse_alert("BOUGHT 0DTE SPY 759c @ 1.0"), 4,
+        premium=1.0, account="RRSP",
+    )
+    res = ex.execute(
+        parse_alert("SOLD 0DTE SPY 759c @ 2.0"), cfg, store,
+    )
+    assert res.ok
+    assert ws.orders == [("sell_option", 4, 2.0)]
+    assert store.get_position(
+        "live", f"SPY-{TODAY}-759-C", "RRSP"
+    ) == 0
+    # 4x(2.0-1.0)x100 = +400 realized
+    assert abs(store.realized_today("live", "RRSP") - 400.0) < 0.01
+    pending = store.open_pending_orders("live", "RRSP")
+    assert pending[0]["action"] == "SELL"
+    assert pending[0]["pre_qty"] == 4
+
+
+def test_live_buy_skips_at_open_risk_cap(monkeypatch):
+    """a live buy is skipped - no order placed, nothing booked -
+    once the open-risk cap is reached."""
+    ws = FakeWS(ask=1.5, bid=1.2)
+    _patch_client(monkeypatch, ws)
+    cfg = _live_cfg(max_open_risk_pct=10.0)
+    store = _store()
+    account = StubAccount(_account_values())
+    ex = _executor(cfg, store, account)
+
+    # deploy 1500 of risk (10% cap of 10000): 15 contracts @ 1.0
+    store.apply_position(
+        "live", parse_alert("BOUGHT 0DTE SPX 7650c @ 1.0"), 15,
+        premium=1.0, account="RRSP",
+    )
+    res = ex.execute(
+        parse_alert("BOUGHT 0DTE SPY 759c @ 1.2 medium size"),
+        cfg, store,
+    )
+    assert res.ok is False or res.qty == 0
+    assert ws.orders == []
+    assert store.get_position(
+        "live", f"SPY-{TODAY}-759-C", "RRSP"
+    ) == 0
+
+
+def test_live_lotto_buy_needs_realized_gains(monkeypatch):
+    """a live lotto buy with zero realized gains today is
+    skipped - the lotto budget gate holds in live mode."""
+    ws = FakeWS(ask=1.5, bid=1.2)
+    _patch_client(monkeypatch, ws)
+    cfg = _live_cfg()
+    store = _store()
+    account = StubAccount(_account_values())
+    ex = _executor(cfg, store, account)
+
+    res = ex.execute(
+        parse_alert("BOUGHT 0DTE SPY 759c @ 1.2 lotto size"),
+        cfg, store,
+    )
+    assert ws.orders == []
+    assert store.get_position(
+        "live", f"SPY-{TODAY}-759-C", "RRSP"
+    ) == 0
+
+
+def test_live_stock_buy_respects_tier_and_open_risk(monkeypatch):
+    """a live stock buy sizes from the stock tier percent and is
+    skipped at the open-risk cap (the guard the live path was
+    missing)."""
+    ws = FakeWS(ask=100.0, bid=99.0)
+    _patch_client(monkeypatch, ws)
+    cfg = _live_cfg()
+    cfg.trading.stock_size_tiers = {"medium": 5.0}
+    store = _store()
+    account = StubAccount(_account_values())
+    ex = _executor(cfg, store, account)
+
+    res = ex.execute(
+        parse_alert("BOUGHT LLYX shares @ 100.0 medium size"),
+        cfg, store,
+    )
+    assert res.ok
+    # 5% x 10000 = 500 -> 5 shares @ 100
+    assert ws.orders == [("limit_buy", 5, 100.5)] or ws.orders == [
+        ("market_buy", 5, 100.0)
+    ]
+
+    # now trip the cap: the ledger's open risk (what
+    # _at_open_risk_cap reads) is filled with option positions -
+    # 10 contracts @ 1.0 = 1000 of risk vs the 500 (5%) cap
+    store.apply_position(
+        "live", parse_alert("BOUGHT 0DTE SPX 7650c @ 1.0"), 10,
+        premium=1.0, account="RRSP",
+    )
+    cfg2 = _live_cfg(max_open_risk_pct=5.0)
+    cfg2.trading.stock_size_tiers = {"medium": 5.0}
+    ex2 = _executor(cfg2, store, account)
+    res2 = ex2.execute(
+        parse_alert("BOUGHT LLYX shares @ 100.0 medium size"),
+        cfg2, store,
+    )
+    assert res2.qty == 0
+    assert "open risk cap" in res2.detail
+    # and no second order was placed
+    assert len(ws.orders) == 1
+
+
+def test_live_stock_sell_only_if_held(monkeypatch):
+    """a live stock sell refuses when ws shows no holdings and
+    sell_only_if_held is on."""
+    ws = FakeWS(ask=100.0, bid=99.0)
+    _patch_client(monkeypatch, ws)
+    cfg = _live_cfg(sell_only_if_held=True)
+    store = _store()
+    account = StubAccount(_account_values())
+    ex = _executor(cfg, store, account)
+
+    res = ex.execute(
+        parse_alert("SOLD LLYX shares @ 99.0"), cfg, store,
+    )
+    assert res.qty == 0
+    assert ws.orders == []
+    assert "no position to sell" in res.detail
+
+
+def test_live_order_failure_leaves_ledger_clean(monkeypatch):
+    """a rejected ws order records the error, places nothing and
+    books nothing - the ledger never carries a phantom fill."""
+    ws = FakeWS(ask=1.5, bid=1.2, fail_orders=True)
+    _patch_client(monkeypatch, ws)
+    cfg = _live_cfg()
+    store = _store()
+    account = StubAccount(_account_values())
+    ex = _executor(cfg, store, account)
+
+    try:
+        ex.execute(
+            parse_alert("BOUGHT 0DTE SPY 759c @ 1.2 medium size"),
+            cfg, store,
+        )
+        raised = False
+    except RuntimeError:
+        raised = True
+    assert raised
+    assert store.get_position(
+        "live", f"SPY-{TODAY}-759-C", "RRSP"
+    ) == 0
+    assert store.open_pending_orders("live", "RRSP") == []
+
+
+def test_live_b2e_and_stop_sells_execute_live(monkeypatch):
+    """the stop monitor's exits ride the same live executor: a
+    stop-fire sells the held contracts at the bid and books the
+    realized loss."""
+    ws = FakeWS(ask=0.6, bid=0.5)
+    _patch_client(monkeypatch, ws)
+    cfg = _live_cfg()
+    store = _store()
+    account = StubAccount(_account_values())
+    ex = _executor(cfg, store, account)
+
+    store.apply_position(
+        "live", parse_alert("BOUGHT 0DTE SPY 759c @ 1.0 lotto size"),
+        2, premium=1.0, account="RRSP",
+    )
+    from trader.trading.stops import StopMonitor
+
+    monitor = StopMonitor(cfg, store, ex, lambda pos: 0.5, "")
+    pos = store.list_positions("live", "RRSP")[0]
+    monitor.check_once()
+    # stop: 1.0 x (1 - 50% lotto) = 0.5 -> bid 0.5 hits it
+    assert ws.orders and ws.orders[0][0] == "sell_option"
+    assert store.get_position(
+        "live", f"SPY-{TODAY}-759-C", "RRSP"
+    ) == 0
+    trades = [t for t in _trade_rows(store) if t[0] == "live"]
+    assert any("STOP" in (t[2] or "") for t in trades)
+
+
+def _trade_rows(store):
+    rows = []
+    conn = store._conn
+    for r in conn.execute(
+        "SELECT mode, action, detail FROM trades ORDER BY id"
+    ):
+        rows.append((r[0], r[1], r[2]))
+    return rows
+
+
+def test_kill_switch_blocks_buys_allows_sells():
+    """the runtime kill switch: paused blocks every new BUY,
+    exits stay takeable."""
+    from trader.trading.risk import RiskEngine
+
+    cfg = _live_cfg(trading_paused=True)
+    store = _store()
+    account = StubAccount(_account_values())
+    risk = RiskEngine(cfg, store, account)
+    ok, reason = risk.evaluate(
+        parse_alert("BOUGHT 0DTE SPY 759c @ 1.2")
+    )
+    assert not ok
+    assert "kill switch" in reason
+    ok, _ = risk.evaluate(parse_alert("SOLD 0DTE SPY 759c @ 2.0"))
+    assert ok

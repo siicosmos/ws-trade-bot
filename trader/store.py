@@ -999,7 +999,7 @@ class Store:
                 "SELECT id, mode, account, order_id, kind, "
                 "contract_key, underlying, expiry, strike, "
                 "opt_right, action, qty, est_price, pre_qty, "
-                "pre_avg, placed_ts "
+                "pre_avg, placed_ts, status "
                 "FROM pending_orders WHERE mode = ? "
                 "AND status = 'open'"
             )
@@ -1013,7 +1013,7 @@ class Store:
                     ("id", "mode", "account", "order_id", "kind",
                      "contract_key", "underlying", "expiry", "strike",
                      "opt_right", "action", "qty", "est_price",
-                     "pre_qty", "pre_avg", "placed_ts"),
+                     "pre_qty", "pre_avg", "placed_ts", "status"),
                     r,
                 ))
                 for r in self._conn.execute(query, params).fetchall()

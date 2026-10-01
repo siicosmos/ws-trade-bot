@@ -50,6 +50,29 @@ missed windows.
 
 ## Landed
 
+### Live-executor test suite + kill switch (safety pass)
+
+Before any live order, the code that touches real money is now
+exercised as thoroughly as the paper paths:
+
+- `tests/test_live_executor.py` drives every WealthsimpleExecutor
+  path against a fake ws client (chain resolution, quotes, order
+  placement, position queries): option buy sizing + booking +
+  pending-order snapshot, sell flattening + realized pnl,
+  open-risk-cap skip, lotto-budget gate, stock tier sizing +
+  open-risk cap, sell-only-if-held, rejected-order cleanup
+  (nothing booked, nothing pending), stop-monitor exits riding
+  the live executor, and the kill switch.
+- `trading_paused` (settings "trading paused (kill switch)"):
+  a runtime toggle in the automation section - flipping it
+  blocks every new BUY immediately, no restart needed. Exits
+  (alert sells, stops, b2e) stay allowed so open positions keep
+  their protection while entries are halted.
+- This pass also fixed an argument-order bug the new tests
+  caught: the four `position_state(mode, account, contract_key)`
+  call sites in the live executor passed contract/account
+  swapped, so pre-order snapshots always read empty.
+
 ### Pending-order fill reconciliation (was P0 #2)
 
 The live executor no longer trusts its own estimates:
@@ -122,5 +145,8 @@ paper simulation's number.
 3. First week: notify-style observation with live-sized paper -
    compare the real card's fills vs the paper card (slippage
    check) before any real order.
-4. Margin account stays manual until the RRSP results prove the
+4. Know the brake: the settings kill switch ("trading paused")
+   halts all new buys in one click; the daily-loss breaker caps
+   the day automatically.
+5. Margin account stays manual until the RRSP results prove the
    source out.

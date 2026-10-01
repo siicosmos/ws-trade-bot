@@ -597,7 +597,7 @@ class WealthsimpleExecutor:
                     account_id, opt["id"], qty, float(limit)
                 )
                 pre_qty, pre_avg = store.position_state(
-                    self.mode, key, label
+                    self.mode, label, key
                 )
                 store.apply_position(
                     self.mode, alert, qty, premium=float(limit), account=label
@@ -628,7 +628,7 @@ class WealthsimpleExecutor:
                     account_id, opt["id"], qty, float(limit)
                 )
                 pre_qty, pre_avg = store.position_state(
-                    self.mode, key, label
+                    self.mode, label, key
                 )
                 store.apply_position(
                     self.mode, alert, -qty,
@@ -718,7 +718,7 @@ class WealthsimpleExecutor:
                 else:
                     order = ws.market_buy(account_id, sec_id, qty)
                 pre_qty, pre_avg = store.position_state(
-                    self.mode, alert.ticker, label
+                    self.mode, label, alert.ticker
                 )
                 store.record_pending_order(
                     self.mode, label, str(order.get("orderId") or ""),
@@ -749,7 +749,7 @@ class WealthsimpleExecutor:
                 else:
                     order = ws.market_sell(account_id, sec_id, held)
                 pre_qty, pre_avg = store.position_state(
-                    self.mode, alert.ticker, label
+                    self.mode, label, alert.ticker
                 )
                 store.record_pending_order(
                     self.mode, label, str(order.get("orderId") or ""),

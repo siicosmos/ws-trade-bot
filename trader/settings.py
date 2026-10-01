@@ -22,7 +22,7 @@ EDITABLE_SCALARS = {
 }
 EDITABLE_ENUMS = {"order_type": ("market", "limit")}
 EDITABLE_BOOLS = (
-    "sell_only_if_held", "back_to_entry_enabled",
+    "sell_only_if_held", "back_to_entry_enabled", "trading_paused",
 )
 EDITABLE_LISTS = ("ticker_whitelist", "skip_underlyings")
 EDITABLE_READER = {

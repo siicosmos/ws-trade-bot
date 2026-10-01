@@ -1064,6 +1064,9 @@ function renderSettings(s) {
         "send parsed trade alerts to the discord webhook") +
       _check("set-paper-enabled", "paper trading", s.paper && s.paper.enabled,
         "simulate executions against the paper ledger alongside notify mode") +
+      _check("set-trading_paused", "trading paused (kill switch)",
+        t.trading_paused,
+        "emergency stop: blocks every new BUY immediately, no restart needed - exits (alert sells, stops) stay allowed") +
     '</div>' +
     _subsection("mirror fills",
       '<div class="set-checks" style="margin-bottom:10px">' +
@@ -1339,6 +1342,7 @@ async function saveSettings() {
   }
   trading.order_type = val("set-order_type");
   trading.sell_only_if_held = document.getElementById("set-sell_only_if_held").checked;
+  trading.trading_paused = document.getElementById("set-trading_paused").checked;
   trading.back_to_entry_enabled = document.getElementById("set-back_to_entry_enabled").checked;
   const toList = (id) => val(id).split(",").map(function(s) { return s.trim(); }).filter(Boolean);
   trading.ticker_whitelist = toList("set-ticker_whitelist");

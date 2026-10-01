@@ -13,6 +13,12 @@ class RiskEngine:
         t = self.cfg.trading
         mode = "paper" if t.mode != "live" else "live"
 
+        # the kill switch: a runtime toggle (no restart needed)
+        # that blocks every new BUY - entries only, exits stay
+        # allowed so stops and alert sells keep protecting
+        if getattr(t, "trading_paused", False) and alert.action == "BUY":
+            return False, "trading paused (kill switch) - buys blocked"
+
         if t.ticker_whitelist and alert.ticker not in t.ticker_whitelist:
             return False, f"{alert.ticker} not in whitelist"
 

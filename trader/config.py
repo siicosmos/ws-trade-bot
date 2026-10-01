@@ -131,6 +131,10 @@ class TradingConfig:
     # value (0 = off). exits (alert sells, stops, b2e) stay
     # allowed - only entries are gated
     max_daily_loss_pct: float = 0.0
+    # runtime kill switch: flips from the dashboard without a
+    # restart - blocks every new BUY (options and stocks) while
+    # set; exits (alert sells, stop monitor) stay allowed
+    trading_paused: bool = False
 
 
 @dataclass
@@ -332,6 +336,9 @@ def load_config(path: str) -> Config:
         sell_only_if_held=bool(_get(trading_raw, "sell_only_if_held", True)),
         max_daily_loss_pct=float(
             _get(trading_raw, "max_daily_loss_pct", 0.0)
+        ),
+        trading_paused=bool(
+            _get(trading_raw, "trading_paused", False)
         ),
     )
 

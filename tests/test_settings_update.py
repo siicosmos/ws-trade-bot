@@ -1152,3 +1152,37 @@ def test_real_card_today_gain_reads_real_ledger():
         (by_label["RRSP"]["paper_realized_today"] or 0.0) - 100.0
     ) < 0.01
 
+
+
+def test_trading_paused_kill_switch_roundtrip():
+    """the runtime kill switch survives the settings round trip:
+    applied into cfg (no restart needed) and served back."""
+    from trader.config import (
+        AutoUpdateConfig, DiscordConfig, QuotesConfig, ReaderConfig,
+        TradingConfig, WealthsimpleConfig,
+    )
+    from trader.settings import apply_settings, get_settings
+
+    class Stub:
+        def __init__(self):
+            self.trading = TradingConfig(mode="notify")
+            self.pipeline = type("P", (), {"auth_token": "t"})()
+            self.wealthsimple = WealthsimpleConfig(accounts=[])
+            self.reader = ReaderConfig()
+            self.discord = DiscordConfig()
+            self.parser = type("P2", (), {"custom_patterns": []})()
+            self.auto_update = AutoUpdateConfig()
+            self.quotes = QuotesConfig()
+
+    cfg = Stub()
+    ok, errors = apply_settings(cfg, {
+        "trading": {"trading_paused": True},
+    })
+    assert ok and not errors, errors
+    assert cfg.trading.trading_paused is True
+    assert get_settings(cfg)["trading"]["trading_paused"] is True
+    ok, errors = apply_settings(cfg, {
+        "trading": {"trading_paused": False},
+    })
+    assert ok and not errors
+    assert cfg.trading.trading_paused is False
