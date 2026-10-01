@@ -77,6 +77,22 @@ def main():
     if mode == "live":
         account = WealthsimpleAccount(cfg, store)
         executor = WealthsimpleExecutor(cfg, account)
+        # the mirror thread always runs in live mode: it books
+        # every actual fill into the real account's ledger (the
+        # dashboard's today gain reads it) and reconciles the
+        # live ledger's estimated bookings against the fills
+        from trader.trading.mirror import start_mirror_thread
+
+        start_mirror_thread(
+            cfg, store, account, None,
+            cfg.paper.mirror_interval_seconds,
+            cfg.discord.update_webhook_url
+            or cfg.discord.webhook_url,
+        )
+        print(
+            "mirroring real fills into the ledgers "
+            f"every {cfg.paper.mirror_interval_seconds}s"
+        )
     else:
         # notify and paper share one pipeline: parse, record and
         # (notify only) push alerts to the phone. paper mode is

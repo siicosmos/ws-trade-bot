@@ -42,6 +42,14 @@ def test_looks_like_message_rejects_observed_chrome():
         "SPX Plays 社区服务器 任何人都可以加入该服务器。 等级 1 3 个助力 Cheddar Flow",
         "创建频道",
         "Community Server. Anyone can join this server.",
+        # the simplified-locale server sidebar leaks: channel,
+        # pinned channels, text channels (+ restricted), invites,
+        # the unread divider
+        "频道",
+        "频道 频道 已置顶频道 已置顶频道",
+        "文字信息（受限）",
+        "文字信息 邀请到频道 文字信息 邀请到频道",
+        "未读信息",
     ]
     for text in junk:
         assert not dr.looks_like_message(text), text

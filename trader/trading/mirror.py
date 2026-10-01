@@ -9,7 +9,14 @@ alert's indicative premium.
 import json
 import threading
 import time
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
+
+from .paper import seed_real_accounts
+
+# an estimated live booking older than this is reversed: the
+# order never filled, so the ledger must not carry it
+PENDING_TTL_SECONDS = 300
 
 
 class MirrorShim(SimpleNamespace):
@@ -66,6 +73,54 @@ def _status_ok(status):
     )
 
 
+def sweep_pending_orders(store, label):
+    """Expire estimated live bookings that never filled: restore
+    the pre-order position exactly (qty and basis) so the live
+    ledger only carries real fills."""
+    cutoff = (
+        datetime.now(timezone.utc) - timedelta(seconds=PENDING_TTL_SECONDS)
+    ).isoformat(timespec="seconds")
+    for row in store.open_pending_orders("live", label):
+        if (row["placed_ts"] or "") > cutoff:
+            continue
+        mult = 100 if (row["kind"] or "option") == "option" else 1
+        store.correct_fill(
+            "live", row["account"], row["contract_key"], row["action"],
+            filled_qty=0, actual_price=None,
+            pre_qty=row["pre_qty"], pre_avg=row["pre_avg"],
+            booked_qty=row["qty"], booked_price=row["est_price"],
+            mult=mult,
+            underlying=row["underlying"], expiry=row["expiry"],
+            strike=row["strike"], opt_right=row["opt_right"],
+        )
+        store.settle_pending_order(row["id"], "expired")
+
+
+def reconcile_pending_fill(store, label, contract_key, action, qty, price):
+    """Match an actual fill to the oldest open pending live order
+    for the same contract and action, then correct the estimated
+    booking toward the fill (qty + price), exactly."""
+    for row in store.open_pending_orders("live", label):
+        if (
+            row["contract_key"] != contract_key
+            or row["action"] != action
+        ):
+            continue
+        mult = 100 if (row["kind"] or "option") == "option" else 1
+        store.correct_fill(
+            "live", row["account"], contract_key, action,
+            filled_qty=qty, actual_price=price,
+            pre_qty=row["pre_qty"], pre_avg=row["pre_avg"],
+            booked_qty=row["qty"], booked_price=row["est_price"],
+            mult=mult,
+            underlying=row["underlying"], expiry=row["expiry"],
+            strike=row["strike"], opt_right=row["opt_right"],
+        )
+        store.settle_pending_order(row["id"], "filled")
+        return True
+    return False
+
+
 def mirror_real_trades(cfg, store, ws_account, ledger=None):
     """Apply new real fills to the paper ledger. Returns a list of
     human-readable descriptions for logging."""
@@ -78,6 +133,13 @@ def mirror_real_trades(cfg, store, ws_account, ledger=None):
     for label, account_id in ws_account._resolve():
         if not account_id:
             continue
+        # the real account's own fills ledger: seeded once from
+        # the live holdings (their real average prices) so
+        # mirrored sells carry an honest cost basis - the
+        # dashboard's real-account today gain reads this ledger
+        seed_real_accounts(store, ws_account)
+        # expire estimated live bookings that never filled
+        sweep_pending_orders(store, label)
         seed = store.meta_get(f"paper_seed:{label}")
         since = store.meta_get(f"mirror:{label}:since")
         if since is None:
@@ -150,6 +212,25 @@ def mirror_real_trades(cfg, store, ws_account, ledger=None):
             )
             fx = float(fx_fn()) if callable(fx_fn) else 1.0
             mult = 100 if info["kind"] == "option" else 1
+            delta = int(qty) if action == "BUY" else -int(qty)
+            # the real account's own ledger books every fill at
+            # its actual price - the real account card's today
+            # gain reads this, so a real loss shows negative even
+            # when the paper simulation gained
+            real_held = store.get_position(
+                "real", shim.contract_key(), label
+            )
+            if action == "BUY" or real_held >= 1:
+                store.apply_position(
+                    "real", shim, delta, premium=premium, account=label
+                )
+            # reconcile the live ledger's estimated booking
+            # against this actual fill (no-op when no pending
+            # live order matches)
+            reconcile_pending_fill(
+                store, label, shim.contract_key(), action, int(qty),
+                premium,
+            )
             if action == "SELL":
                 held = store.get_position(
                     "paper", shim.contract_key(), label
@@ -157,7 +238,8 @@ def mirror_real_trades(cfg, store, ws_account, ledger=None):
                 if held < 1:
                     # the paper ledger does not hold this fill - the
                     # real account traded something the simulation
-                    # missed or already closed
+                    # missed or already closed (the real ledger
+                    # booked it above)
                     continue
                 # sell only what the ledger actually holds: a partial
                 # holding must not credit the full real fill's

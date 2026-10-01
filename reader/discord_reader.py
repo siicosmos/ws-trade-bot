@@ -44,6 +44,13 @@ CHROME_RE = re.compile(
             r"boost this server",
             r"create channel",
             r"频道的起点",
+            # the server sidebar leaks into the message walk:
+            # channel / pinned / text-channel / invite labels
+            # (simplified + traditional locales)
+            r"频道",
+            r"文字信息",
+            r"邀请到频道",
+            r"未读信息",
         ]
     ),
     re.I,
@@ -260,8 +267,12 @@ def is_recent_message(text, max_age_minutes=10, floor=None):
 # message item's text walk - two adjacent messages then arrive as
 # one delivered text. Split on it and treat each side as its own
 # message.
+# Discord's unread divider ("New" / localized) can sit inside a
+# message item's text walk - two adjacent messages then arrive as
+# one delivered text. Split on it and treat each side as its own
+# message.
 DIVIDER_RE = re.compile(
-    r"\s*(?:新的|新訊息|NEW|New messages? below|新着)\s*"
+    r"\s*(?:新的|新訊息|NEW|New messages? below|新着|未读信息|未讀訊息)\s*"
 )
 
 

@@ -768,18 +768,12 @@ def _account_summary(ctx, snap, label, value):
         "paper_realized_today": round(
             store.realized_today("paper", label), 2
         ),
-        # the real card's today line reads the ledger the bot
-        # actually trades against: the live ledger in live mode
-        # (executor bookings), the paper ledger otherwise (the
-        # simulation plus mirrored real fills). the lotto budget
-        # gates on this same number, so the card and the budget
-        # always agree.
+        # the real card's today line reads the real account's own
+        # ledger: actual fills (bot + manual) at actual prices,
+        # booked by the mirror thread per real account - it must
+        # never repeat the paper simulation's number
         "realized_today": round(
-            store.realized_today(
-                "live" if cfg.trading.mode == "live" else "paper",
-                label,
-            ),
-            2,
+            store.realized_today("real", label), 2
         ),
         "paper_value": paper_values.get(label),
         "paper_initial": paper_initials.get(label),

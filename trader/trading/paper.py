@@ -399,6 +399,89 @@ class PaperLedger:
         }
 
 
+def _seed_longs(nodes):
+    """Long option + stock rows (key, underlying, expiry, strike,
+    right, qty, avg) and their combined cad value, extracted from
+    the raw ws position nodes. Shared by the paper seed and the
+    real-fills ledger seed."""
+    longs = []
+    positions_value = 0.0
+    for p in nodes:
+        sec = p.get("security") or {}
+        od = sec.get("optionDetails")
+        try:
+            qty = float(p.get("quantity") or 0)
+        except (TypeError, ValueError):
+            continue
+        direction = str(
+            p.get("positionDirection") or ""
+        ).upper()
+        short = direction == "SHORT" or qty < 0
+        qty = abs(qty)
+        mv = _amount_opt(p.get("totalValue")) or 0.0
+        book = _amount_opt(p.get("bookValue"))
+        market_book = _amount_opt(p.get("marketBookValue"))
+        leg_fx = (
+            abs(book) / abs(market_book)
+            if book and market_book else None
+        )
+        if od:
+            underlying = (
+                ((od.get("underlyingSecurity") or {})
+                 .get("stock") or {}).get("symbol")
+                or (sec.get("stock") or {}).get("symbol")
+                or ""
+            )
+            right = (
+                "C" if str(od.get("optionType") or "")
+                .upper().startswith("CALL") else "P"
+            )
+            try:
+                strike = float(od.get("strikePrice"))
+            except (TypeError, ValueError):
+                continue
+            avg = _amount_opt(p.get("averagePrice"))
+            if avg is None and market_book:
+                avg = abs(market_book) / (qty * 100) if qty else None
+            # value in CAD for the seed cash
+            conv = leg_fx or 1.0
+            # keys and stored expiries use the plain date -
+            # the raw graphql value is a full timestamp,
+            # which never matched the quote map and froze
+            # the paper price at cost basis
+            expiry_date = str(od.get("expiryDate") or "")[:10]
+            if not short and qty > 0:
+                positions_value += abs(mv) * conv
+                longs.append(
+                    (
+                        f"{underlying}-{expiry_date}"
+                        f"-{strike:g}-{right}",
+                        underlying, expiry_date,
+                        strike, right, int(qty), avg,
+                    )
+                )
+        else:
+            symbol = (
+                (sec.get("stock") or {}).get("symbol") or ""
+            ).strip()
+            if not symbol or qty <= 0:
+                continue
+            currency = str(
+                (sec.get("quoteV2") or {}).get("currency")
+                or sec.get("currency") or ""
+            ).upper()
+            conv = leg_fx or 1.0
+            positions_value += abs(mv) * (
+                conv if currency == "USD" else 1.0
+            )
+            avg = _amount_opt(p.get("averagePrice"))
+            longs.append(
+                (symbol, symbol, None, None, None,
+                 int(qty), avg)
+            )
+    return longs, positions_value
+
+
 def seed_paper_accounts(cfg, store, ws_account):
     """Seed each paper account from its live counterpart, once.
 
@@ -430,82 +513,7 @@ def seed_paper_accounts(cfg, store, ws_account):
         value = values.get(label)
         if value is None:
             continue
-        nodes = raw.get(label) or []
-        positions_value = 0.0
-        longs = []
-        for p in nodes:
-            sec = p.get("security") or {}
-            od = sec.get("optionDetails")
-            try:
-                qty = float(p.get("quantity") or 0)
-            except (TypeError, ValueError):
-                continue
-            direction = str(
-                p.get("positionDirection") or ""
-            ).upper()
-            short = direction == "SHORT" or qty < 0
-            qty = abs(qty)
-            mv = _amount_opt(p.get("totalValue")) or 0.0
-            book = _amount_opt(p.get("bookValue"))
-            market_book = _amount_opt(p.get("marketBookValue"))
-            leg_fx = (
-                abs(book) / abs(market_book)
-                if book and market_book else None
-            )
-            if od:
-                underlying = (
-                    ((od.get("underlyingSecurity") or {})
-                     .get("stock") or {}).get("symbol")
-                    or (sec.get("stock") or {}).get("symbol")
-                    or ""
-                )
-                right = (
-                    "C" if str(od.get("optionType") or "")
-                    .upper().startswith("CALL") else "P"
-                )
-                try:
-                    strike = float(od.get("strikePrice"))
-                except (TypeError, ValueError):
-                    continue
-                avg = _amount_opt(p.get("averagePrice"))
-                if avg is None and market_book:
-                    avg = abs(market_book) / (qty * 100) if qty else None
-                # value in CAD for the seed cash
-                conv = leg_fx or 1.0
-                # keys and stored expiries use the plain date -
-                # the raw graphql value is a full timestamp,
-                # which never matched the quote map and froze
-                # the paper price at cost basis
-                expiry_date = str(od.get("expiryDate") or "")[:10]
-                if not short and qty > 0:
-                    positions_value += abs(mv) * conv
-                    longs.append(
-                        (
-                            f"{underlying}-{expiry_date}"
-                            f"-{strike:g}-{right}",
-                            underlying, expiry_date,
-                            strike, right, int(qty), avg,
-                        )
-                    )
-            else:
-                symbol = (
-                    (sec.get("stock") or {}).get("symbol") or ""
-                ).strip()
-                if not symbol or qty <= 0:
-                    continue
-                currency = str(
-                    (sec.get("quoteV2") or {}).get("currency")
-                    or sec.get("currency") or ""
-                ).upper()
-                conv = leg_fx or 1.0
-                positions_value += abs(mv) * (
-                    conv if currency == "USD" else 1.0
-                )
-                avg = _amount_opt(p.get("averagePrice"))
-                longs.append(
-                    (symbol, symbol, None, None, None,
-                     int(qty), avg)
-                )
+        longs, positions_value = _seed_longs(raw.get(label) or [])
         cash = round(value - positions_value, 2)
         store.set_paper_equity(cash, label)
         for row in longs:
@@ -514,3 +522,26 @@ def seed_paper_accounts(cfg, store, ws_account):
         store.meta_set(f"paper_initial:{label}", value)
         seeded.append(label)
     return seeded
+
+
+def seed_real_accounts(store, ws_account):
+    """Seed each real account's fills ledger (mode="real") from
+    its live holdings, once.
+
+    The mirror books every real fill into this ledger at its
+    actual price - the real account card's today gain reads it.
+    Seeding the live long positions first gives sells of
+    pre-mirroring positions an honest cost basis."""
+    try:
+        raw = ws_account._positions_raw() or {}
+    except Exception:
+        return
+    for label, account_id in ws_account._resolve():
+        if not account_id:
+            continue
+        if store.meta_get(f"real_seed:{label}"):
+            continue
+        longs, _value = _seed_longs(raw.get(label) or [])
+        for row in longs:
+            store.seed_position("real", label, *row)
+        store.meta_set(f"real_seed:{label}", time.time())
