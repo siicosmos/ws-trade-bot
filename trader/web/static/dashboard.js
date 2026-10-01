@@ -1096,6 +1096,8 @@ function renderSettings(s) {
           "stop opening new risk once deployed capital exceeds this % of account value", "big") +
         _numField("set-stop_loss_pct", "stop loss %", t.stop_loss_pct,
           "global stop loss % below entry (per-size overrides live in the size tiers below)", "big") +
+        _numField("set-max_daily_loss_pct", "daily loss cap %", t.max_daily_loss_pct,
+          "hard daily-loss circuit breaker: once today's realized pnl sinks below this % of account value, new buys pause until tomorrow (0 = off)", "big") +
         _numField("set-trailing_stop_pct", "trailing stop %", t.trailing_stop_pct,
           "trailing stop distance once in profit; 0 disables", "big") +
       '</div>') +
@@ -1217,9 +1219,6 @@ function renderSettings(s) {
     '</select></div>' +
     '</div>' +
     '<div class="set-checks" style="margin:10px 0 0">' +
-      _check("set-place_stop_loss", "place stop-loss orders",
-        t.place_stop_loss,
-        "submit an actual stop-loss order after entry (live mode)") +
       _check("set-sell_only_if_held", "sell only if held",
         t.sell_only_if_held,
         "refuse sells when the ledger shows no open position") +
@@ -1335,11 +1334,10 @@ async function saveSettings() {
   const val = (id) => document.getElementById(id).value;
   const num = (id) => parseFloat(val(id));
   const trading = {};
-  for (const k of ["risk_per_trade_pct","max_contracts_per_trade","max_open_risk_pct","stop_loss_pct","trailing_stop_pct","stop_check_seconds","max_consecutive_losses","min_dte_days","max_trades_per_day","cooldown_seconds","dedupe_window_minutes","limit_offset_pct","history_retention_days","lotto_gain_budget_pct"]) {
+  for (const k of ["risk_per_trade_pct","max_contracts_per_trade","max_open_risk_pct","stop_loss_pct","max_daily_loss_pct","trailing_stop_pct","stop_check_seconds","max_consecutive_losses","min_dte_days","max_trades_per_day","cooldown_seconds","dedupe_window_minutes","limit_offset_pct","history_retention_days","lotto_gain_budget_pct"]) {
     trading[k] = num("set-" + k);
   }
   trading.order_type = val("set-order_type");
-  trading.place_stop_loss = document.getElementById("set-place_stop_loss").checked;
   trading.sell_only_if_held = document.getElementById("set-sell_only_if_held").checked;
   trading.back_to_entry_enabled = document.getElementById("set-back_to_entry_enabled").checked;
   const toList = (id) => val(id).split(",").map(function(s) { return s.trim(); }).filter(Boolean);

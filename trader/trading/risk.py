@@ -44,6 +44,28 @@ class RiskEngine:
                         f"trades - option buys resume tomorrow"
                     )
 
+            # the hard daily-loss breaker gates every BUY (options
+            # and stocks): once today's realized pnl sinks below
+            # the cap the day is done for entries - exits (alert
+            # sells, stops, back-to-entry) stay allowed
+            if t.max_daily_loss_pct > 0 and self.account is not None:
+                try:
+                    total = sum(
+                        v for v in (self.account.values() or {}).values()
+                        if v
+                    )
+                except Exception:
+                    total = None
+                if total and total > 0:
+                    floor = -total * t.max_daily_loss_pct / 100.0
+                    realized = self.store.realized_today(mode)
+                    if realized <= floor:
+                        return False, (
+                            f"daily loss limit reached ({realized:,.2f} "
+                            f"realized today, cap {floor:,.2f}) - "
+                            f"new buys resume tomorrow"
+                        )
+
             if (
                 t.min_dte_days > 0
                 and alert.kind == "option"

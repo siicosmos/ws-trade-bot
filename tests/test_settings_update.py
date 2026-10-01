@@ -838,9 +838,9 @@ def test_discord_notify_toggle(tmp_path):
 
 def test_new_settings_fields_roundtrip():
     """The settings UI exposes the full config surface: order
-    type, limit offset, stop-order/sell-held toggles, history
-    retention, the margin rate, the mirror interval and the
-    moomoo connection."""
+    type, limit offset, the daily-loss breaker, sell-held toggle,
+    history retention, the margin rate, the mirror interval and
+    the moomoo connection."""
     cfg = ConfigStub(
         TradingConfig(mode="notify"), accounts=[]
     )
@@ -849,7 +849,7 @@ def test_new_settings_fields_roundtrip():
         "trading": {
             "order_type": "limit",
             "limit_offset_pct": 0.75,
-            "place_stop_loss": True,
+            "max_daily_loss_pct": 3.0,
             "sell_only_if_held": False,
             "history_retention_days": 365,
         },
@@ -863,7 +863,7 @@ def test_new_settings_fields_roundtrip():
     assert not errors, errors
     assert cfg.trading.order_type == "limit"
     assert cfg.trading.limit_offset_pct == 0.75
-    assert cfg.trading.place_stop_loss is True
+    assert cfg.trading.max_daily_loss_pct == 3.0
     assert cfg.trading.sell_only_if_held is False
     assert cfg.trading.history_retention_days == 365
     assert cfg.wealthsimple.stock_margin_rate == 0.35
@@ -875,7 +875,7 @@ def test_new_settings_fields_roundtrip():
     s = get_settings(cfg)
     assert s["trading"]["order_type"] == "limit"
     assert s["trading"]["limit_offset_pct"] == 0.75
-    assert s["trading"]["place_stop_loss"] is True
+    assert s["trading"]["max_daily_loss_pct"] == 3.0
     assert s["trading"]["sell_only_if_held"] is False
     assert s["trading"]["history_retention_days"] == 365
     assert s["wealthsimple"]["stock_margin_rate"] == 0.35
@@ -906,8 +906,8 @@ def test_new_settings_fields_roundtrip():
 
 
 def test_new_fields_persist_to_config_file():
-    """order_type / place_stop_loss / sell_only_if_held applied
-    at runtime must also land in config.yaml - they once
+    """order_type / max_daily_loss_pct / sell_only_if_held
+    applied at runtime must also land in config.yaml - they once
     silently reverted on restart."""
     import yaml
 
@@ -922,7 +922,7 @@ def test_new_fields_persist_to_config_file():
     ok, errors = apply_settings(cfg, {
         "trading": {
             "order_type": "limit",
-            "place_stop_loss": True,
+            "max_daily_loss_pct": 2.5,
             "sell_only_if_held": False,
         }
     }, config_path=cfg_path)
@@ -931,7 +931,7 @@ def test_new_fields_persist_to_config_file():
     with open(cfg_path) as f:
         raw = yaml.safe_load(f)
     assert raw["trading"]["order_type"] == "limit"
-    assert raw["trading"]["place_stop_loss"] is True
+    assert raw["trading"]["max_daily_loss_pct"] == 2.5
     assert raw["trading"]["sell_only_if_held"] is False
     os.unlink(cfg_path)
 
@@ -1053,19 +1053,21 @@ def test_account_summary_carries_realized_today():
         if a["label"] == "RRSP"
     )
     assert "paper_realized_today" in acct
-    # 2x(2.5-2.0)x100 = +100 booked for RRSP today
+    # 2x(2.5-2.0)x100 = +100 booked for RRSP today (paper ledger)
     assert abs((acct["paper_realized_today"] or 0.0) - 100.0) < 0.01
-    # the real card's today line rides the same ledger the bot
-    # trades against: notify mode tracks through the paper
-    # ledger, so the mode-aware number matches here
+    # the real card's today line reads the REAL account's fills
+    # ledger - without real fills it reads zero even though the
+    # paper simulation gained (the two cards must not repeat
+    # each other's number)
     assert "realized_today" in acct
-    assert abs((acct["realized_today"] or 0.0) - 100.0) < 0.01
+    assert abs(acct["realized_today"]) < 0.01
 
 
-def test_realized_today_is_mode_aware():
-    """the card's today gain reads the ledger the bot trades
-    against: the live ledger's bookings in live mode (what the
-    lotto budget gates on), the paper ledger's otherwise."""
+def test_real_card_today_gain_reads_real_ledger():
+    """the real account card's today gain comes from the real
+    account's own fills ledger (actual fills at actual prices,
+    booked by the mirror thread) - a real loss shows negative
+    and never repeats the paper simulation's number."""
     import tempfile
     import types as _types
 
@@ -1077,9 +1079,21 @@ def test_realized_today_is_mode_aware():
     from trader.trading.parser import parse_alert
     from trader.web.server import create_app
 
+    class Stub:
+        def __init__(self):
+            self.trading = TradingConfig(mode="notify")
+            self.pipeline = type("P", (), {"auth_token": "t"})()
+            self.wealthsimple = WealthsimpleConfig(accounts=[])
+            self.reader = ReaderConfig()
+            self.discord = DiscordConfig()
+            self.parser = type("P2", (), {"custom_patterns": []})()
+            self.auto_update = AutoUpdateConfig()
+            self.quotes = QuotesConfig()
+            self.paper = types.SimpleNamespace(enabled=True)
+
     class StubAccount:
         def values(self):
-            return {"RRSP": 5000.0}
+            return {"RRSP": 5000.0, "MARGIN": 5000.0}
 
         def open_option_positions(self):
             return {}
@@ -1087,67 +1101,54 @@ def test_realized_today_is_mode_aware():
         def stock_holdings(self):
             return {}
 
-    def make_app(mode, store):
-        import trader.web.server as srv
-
-        class Stub:
-            def __init__(self):
-                self.trading = TradingConfig(mode=mode)
-                self.pipeline = type("P", (), {"auth_token": "t"})()
-                self.wealthsimple = WealthsimpleConfig(accounts=[])
-                self.reader = ReaderConfig()
-                self.discord = DiscordConfig()
-                self.parser = type("P2", (), {"custom_patterns": []})()
-                self.auto_update = AutoUpdateConfig()
-                self.quotes = QuotesConfig()
-                self.paper = types.SimpleNamespace(enabled=True)
-
-        # the summary sections cache module-wide: the second app
-        # must not serve the first mode's cached payload
-        srv._section_cache.clear()
-        return create_app(Stub(), store, None, None, StubAccount())
-
-    def card_for(app):
-        return next(
-            a for a in app.test_client().get(
-                "/api/dashboard", headers={"X-Auth-Token": "t"},
-            ).get_json()["summary"]["accounts"]
-            if a["label"] == "RRSP"
-        )
-
     fd, path = tempfile.mkstemp(suffix=".db")
     os.close(fd)
     store = Store(path)
-
-    # the live ledger books the bot's own executions; the paper
-    # ledger books the simulation (and mirrored real fills) -
-    # different premiums so the two ledgers diverge on purpose
+    # the paper simulation books a +100 gain on RRSP
     store.apply_position(
-        "live", parse_alert("BOUGHT 10/02 AAOI 105c @ 2.0"), 2,
+        "paper", parse_alert("BOUGHT 10/02 AAOI 105c @ 2.0"), 4,
         premium=2.0, account="RRSP",
     )
     store.apply_position(
-        "live", parse_alert("SOLD 10/02 AAOI 105c @ 4.0"), -1,
-        premium=4.0, account="RRSP",
+        "paper", parse_alert("SOLD 10/02 AAOI 105c @ 2.5"), -2,
+        premium=2.5, account="RRSP",
     )
-    store.apply_position(
-        "paper", parse_alert("BOUGHT 10/02 AAOI 105c @ 2.0"), 2,
-        premium=2.0, account="RRSP",
-    )
-    store.apply_position(
-        "paper", parse_alert("SOLD 10/02 AAOI 105c @ 3.0"), -1,
-        premium=3.0, account="RRSP",
-    )
+    # the real account's actual fills (mirror-booked): RRSP also
+    # gained +50, but the MARGIN account realized a -50 loss
+    for label, sell_price, expected in (
+        ("RRSP", 2.5, 50.0),
+        ("MARGIN", 1.5, -50.0),
+    ):
+        store.apply_position(
+            "real", parse_alert("BOUGHT 10/02 AAOI 105c @ 2.0"), 2,
+            premium=2.0, account=label,
+        )
+        store.apply_position(
+            "real", parse_alert(f"SOLD 10/02 AAOI 105c @ {sell_price}"),
+            -1, premium=sell_price, account=label,
+        )
+        assert abs(store.realized_today("real", label) - expected) < 0.01
 
-    # notify mode: the paper ledger's number (mirrored real fills
-    # included) is what the card and the lotto budget see -
-    # 1x(3.0-2.0)x100 = +100
-    acct = card_for(make_app("notify", store))
-    assert abs((acct["realized_today"] or 0.0) - 100.0) < 0.01
+    app = create_app(Stub(), store, None, None, StubAccount())
+    client = app.test_client()
+    # the module-level section cache may hold an earlier test's
+    # summary within its ttl - drop it for this store's payload
+    import trader.web.server as srv
 
-    # live mode: the live ledger's bookings - 1x(3.0-2.0)x100 =
-    # +200, NOT the paper ledger's +100
-    acct = card_for(make_app("live", store))
-    assert abs((acct["realized_today"] or 0.0) - 200.0) < 0.01
+    srv._section_cache.clear()
+    accounts = client.get(
+        "/api/dashboard", headers={"X-Auth-Token": "t"},
+    ).get_json()["summary"]["accounts"]
+    by_label = {a["label"]: a for a in accounts}
+    # each real card carries its own real-fills number: RRSP's
+    # mirrors the gain, the margin account's is negative - and
+    # neither repeats the paper card's value blindly
+    assert abs((by_label["RRSP"]["realized_today"] or 0.0) - 50.0) < 0.01
+    assert (
+        by_label["MARGIN"]["realized_today"] or 0.0
+    ) <= -50.0 + 0.01
     # the paper ledger's own number stays on the paper card
-    assert abs((acct["paper_realized_today"] or 0.0) - 100.0) < 0.01
+    assert abs(
+        (by_label["RRSP"]["paper_realized_today"] or 0.0) - 100.0
+    ) < 0.01
+

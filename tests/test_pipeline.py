@@ -70,6 +70,51 @@ def test_risk_daily_limit_buys_only():
     assert ok
 
 
+def test_risk_daily_loss_breaker_blocks_buys_only():
+    """the hard daily-loss breaker: once today's realized pnl
+    sinks below max_daily_loss_pct of the account value, new
+    buys block - sells (exits) stay takeable."""
+    cfg, store, account, risk = _setup(
+        max_daily_loss_pct=5.0, cooldown_seconds=0,
+        dedupe_window_minutes=0, max_consecutive_losses=0,
+    )
+    # 5% of the 10000 paper seed = a -500 floor
+    loss = parse_alert("SOLD 0DTE SPY 759c @ 0.5")
+    store.apply_position(
+        "paper", parse_alert("BOUGHT 0DTE SPY 759c @ 1.5"), 2,
+        premium=1.5,
+    )
+    store.apply_position("paper", loss, -2, premium=0.5)
+    # 2x(0.5-1.5)x100 = -200 realized... not enough; push further
+    store.apply_position(
+        "paper", parse_alert("BOUGHT 0DTE SPX 7650c @ 2.0"), 2,
+        premium=2.0,
+    )
+    store.apply_position(
+        "paper", parse_alert("SOLD 0DTE SPX 7650c @ 0.0"), -2,
+        premium=0.01,
+    )
+    realized = store.realized_today("paper")
+    assert realized <= -500.0, realized
+    buy = parse_alert("BOUGHT 0DTE SPX 7650c @ 1.0")
+    ok, reason = risk.evaluate(buy)
+    assert not ok
+    assert "daily loss limit" in reason
+    # exits stay takeable
+    sell = parse_alert("SOLD 0DTE SPY 759c @ 1.0")
+    ok, _ = risk.evaluate(sell)
+    assert ok
+
+
+def test_risk_daily_loss_breaker_off_by_default():
+    cfg, store, account, risk = _setup(
+        cooldown_seconds=0, dedupe_window_minutes=0
+    )
+    assert cfg.trading.max_daily_loss_pct == 0.0
+    ok, _ = risk.evaluate(parse_alert("BOUGHT 0DTE SPX 7650c @ 1.0"))
+    assert ok
+
+
 def test_risk_dedupe_same_premium():
     cfg, store, account, risk = _setup(dedupe_window_minutes=10, cooldown_seconds=0)
     alert = parse_alert("SOLD 1/4 0DTE SPX 7650c @ 2.0")

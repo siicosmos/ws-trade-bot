@@ -12,6 +12,7 @@ EDITABLE_SCALARS = {
     "stop_check_seconds": ("int", 5, 3600),
     "lotto_gain_budget_pct": ("float", 0, 100),
     "max_consecutive_losses": ("int", 0, 100),
+    "max_daily_loss_pct": ("float", 0, 100),
     "min_dte_days": ("int", 0, 365),
     "max_trades_per_day": ("int", 0, 1000),
     "cooldown_seconds": ("int", 0, 86400),
@@ -21,7 +22,7 @@ EDITABLE_SCALARS = {
 }
 EDITABLE_ENUMS = {"order_type": ("market", "limit")}
 EDITABLE_BOOLS = (
-    "place_stop_loss", "sell_only_if_held", "back_to_entry_enabled",
+    "sell_only_if_held", "back_to_entry_enabled",
 )
 EDITABLE_LISTS = ("ticker_whitelist", "skip_underlyings")
 EDITABLE_READER = {

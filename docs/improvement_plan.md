@@ -4,6 +4,10 @@ Architecture, database and access-model plan for the bot.
 Unfinished work first; everything landed is compacted at the
 end - details live in git history.
 
+Live-trading hardening (fill reconciliation, circuit breakers,
+expectancy report) has its own plan: see
+`docs/live_readiness_plan.md`.
+
 ## Planned items
 
 ### 1. Enforce username+password login

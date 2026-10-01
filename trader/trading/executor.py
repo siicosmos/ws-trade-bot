@@ -596,8 +596,20 @@ class WealthsimpleExecutor:
                 order = ws.buy_option(
                     account_id, opt["id"], qty, float(limit)
                 )
+                pre_qty, pre_avg = store.position_state(
+                    self.mode, key, label
+                )
                 store.apply_position(
                     self.mode, alert, qty, premium=float(limit), account=label
+                )
+                # the estimated booking rides the ledger now (the
+                # gates depend on it); the mirror reconciles the
+                # actual fill or reverses the estimate
+                store.record_pending_order(
+                    self.mode, label, str(order.get("orderId") or ""),
+                    "option", key, alert.underlying, alert.expiry,
+                    alert.strike, alert.right, alert.action, qty,
+                    float(limit), pre_qty=pre_qty, pre_avg=pre_avg,
                 )
                 breakdown[label] = f"{qty}x @ {limit}{note}"
                 total += qty
@@ -615,9 +627,18 @@ class WealthsimpleExecutor:
                 order = ws.sell_option(
                     account_id, opt["id"], qty, float(limit)
                 )
+                pre_qty, pre_avg = store.position_state(
+                    self.mode, key, label
+                )
                 store.apply_position(
                     self.mode, alert, -qty,
                     premium=float(limit), account=label
+                )
+                store.record_pending_order(
+                    self.mode, label, str(order.get("orderId") or ""),
+                    "option", key, alert.underlying, alert.expiry,
+                    alert.strike, alert.right, alert.action, qty,
+                    float(limit), pre_qty=pre_qty, pre_avg=pre_avg,
                 )
                 breakdown[label] = f"{qty}/{held}x @ {limit}"
                 total += qty
@@ -669,8 +690,9 @@ class WealthsimpleExecutor:
                 pct = stock_tiers.get(
                     tier_name, stock_tiers.get("medium")
                 )
+                value = None
                 if pct is not None:
-                    value = account.value(label)
+                    value = self.account.value(label)
                     budget = max(
                         0.0, float(value or 0) * pct / 100.0
                     )
@@ -680,12 +702,30 @@ class WealthsimpleExecutor:
                 if qty < 1:
                     breakdown[label] = "0 (position size too small)"
                     continue
+                # the paper path checks this guard too: a live
+                # stock buy must respect the open-risk cap
+                if _at_open_risk_cap(
+                    store, self.mode, label, value, cfg
+                ):
+                    breakdown[label] = (
+                        f"skipped (open risk cap reached, wanted {qty})"
+                    )
+                    continue
                 if cfg.trading.order_type == "limit":
                     order = ws.limit_buy(
                         account_id, sec_id, qty, self._limit_price(price, "BUY")
                     )
                 else:
                     order = ws.market_buy(account_id, sec_id, qty)
+                pre_qty, pre_avg = store.position_state(
+                    self.mode, alert.ticker, label
+                )
+                store.record_pending_order(
+                    self.mode, label, str(order.get("orderId") or ""),
+                    "stock", alert.ticker, alert.ticker, None, None,
+                    None, alert.action, qty, price,
+                    pre_qty=pre_qty, pre_avg=pre_avg,
+                )
                 breakdown[label] = f"{qty} @ ~{price}"
                 total += qty
                 order_ids.append(str(order.get("orderId") or ""))
@@ -708,6 +748,15 @@ class WealthsimpleExecutor:
                     )
                 else:
                     order = ws.market_sell(account_id, sec_id, held)
+                pre_qty, pre_avg = store.position_state(
+                    self.mode, alert.ticker, label
+                )
+                store.record_pending_order(
+                    self.mode, label, str(order.get("orderId") or ""),
+                    "stock", alert.ticker, alert.ticker, None, None,
+                    None, alert.action, held, price,
+                    pre_qty=pre_qty, pre_avg=pre_avg,
+                )
                 breakdown[label] = f"{held} @ ~{price}" if price else f"{held}"
                 total += held
                 order_ids.append(str(order.get("orderId") or ""))

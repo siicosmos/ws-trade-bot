@@ -159,6 +159,36 @@ class Store:
                 )
             except sqlite3.OperationalError:
                 pass
+            # live orders wait here until the mirror thread
+            # reconciles them against the actual ws fill - an
+            # estimated booking that never fills gets reversed.
+            # pre_qty/pre_avg snapshot the position before the
+            # estimate so corrections restore the exact basis
+            self._conn.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS pending_orders (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    mode TEXT NOT NULL,
+                    account TEXT NOT NULL,
+                    order_id TEXT,
+                    kind TEXT NOT NULL DEFAULT 'option',
+                    contract_key TEXT NOT NULL,
+                    underlying TEXT NOT NULL,
+                    expiry TEXT,
+                    strike REAL,
+                    opt_right TEXT,
+                    action TEXT NOT NULL,
+                    qty INTEGER NOT NULL,
+                    est_price REAL,
+                    pre_qty INTEGER NOT NULL DEFAULT 0,
+                    pre_avg REAL,
+                    placed_ts TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'open'
+                );
+                CREATE INDEX IF NOT EXISTS idx_pending_orders_open
+                    ON pending_orders (mode, account, status, placed_ts);
+                """
+            )
 
             cols = [
                 r[1] for r in self._conn.execute("PRAGMA table_info(positions)")
@@ -917,6 +947,174 @@ class Store:
         if current is None:
             return
         self.set_paper_equity(current + delta, label)
+
+    # ---- pending live orders (fill reconciliation) ----
+
+    def position_state(self, mode, account, contract_key):
+        """(qty, avg_premium) snapshot of a ledger position -
+        the pre-order state a pending-order correction restores
+        against."""
+        with self._conn:
+            row = self._conn.execute(
+                "SELECT qty, avg_premium FROM positions "
+                "WHERE mode = ? AND account = ? AND contract_key = ?",
+                (mode, account, contract_key),
+            ).fetchone()
+        return (
+            (int(row[0]), row[1]) if row else (0, None)
+        )
+
+    def record_pending_order(
+        self, mode, account, order_id, kind, contract_key,
+        underlying, expiry, strike, opt_right, action, qty,
+        est_price, pre_qty=0, pre_avg=None,
+    ):
+        """A live order just placed: the estimated booking rides
+        the positions ledger immediately (gates depend on it);
+        this row waits for the mirror to reconcile the actual
+        fill or expire the estimate. pre_qty/pre_avg snapshot
+        the position before the estimate so the correction can
+        restore the exact basis."""
+        self._touch()
+        with self._write_lock, self._conn:
+            self._conn.execute(
+                "INSERT INTO pending_orders (mode, account, order_id, "
+                "kind, contract_key, underlying, expiry, strike, "
+                "opt_right, action, qty, est_price, pre_qty, pre_avg, "
+                "placed_ts, status) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
+                "'open')",
+                (
+                    mode, account, order_id, kind, contract_key,
+                    underlying, expiry, strike, opt_right, action,
+                    int(qty), est_price, int(pre_qty), pre_avg,
+                    self._now(),
+                ),
+            )
+
+    def open_pending_orders(self, mode, account=None):
+        """Open (unreconciled) live orders, oldest first."""
+        with self._conn:
+            query = (
+                "SELECT id, mode, account, order_id, kind, "
+                "contract_key, underlying, expiry, strike, "
+                "opt_right, action, qty, est_price, pre_qty, "
+                "pre_avg, placed_ts "
+                "FROM pending_orders WHERE mode = ? "
+                "AND status = 'open'"
+            )
+            params = [mode]
+            if account is not None:
+                query += " AND account = ?"
+                params.append(account)
+            query += " ORDER BY id"
+            return [
+                dict(zip(
+                    ("id", "mode", "account", "order_id", "kind",
+                     "contract_key", "underlying", "expiry", "strike",
+                     "opt_right", "action", "qty", "est_price",
+                     "pre_qty", "pre_avg", "placed_ts"),
+                    r,
+                ))
+                for r in self._conn.execute(query, params).fetchall()
+            ]
+
+    def settle_pending_order(self, row_id, status):
+        self._touch()
+        with self._write_lock, self._conn:
+            self._conn.execute(
+                "UPDATE pending_orders SET status = ? WHERE id = ?",
+                (status, row_id),
+            )
+
+    def _bump_realized_today(self, mode, account, delta):
+        """Move the realized-today accumulators by a correction
+        delta - the same keys apply_position maintains."""
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        for meta_key in (
+            f"realized_today:{mode}:{today}",
+            f"realized_today:{mode}:{account}:{today}",
+        ):
+            row = self._conn.execute(
+                "SELECT value FROM meta WHERE key = ?", (meta_key,),
+            ).fetchone()
+            prev_val = 0.0
+            try:
+                prev_val = float(json.loads(row[0])) if row else 0.0
+            except (TypeError, ValueError):
+                pass
+            self._conn.execute(
+                "INSERT INTO meta (key, value) VALUES (?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (
+                    meta_key,
+                    json.dumps(round(prev_val + delta, 2)),
+                ),
+            )
+
+    def correct_fill(
+        self, mode, account, contract_key, action, filled_qty,
+        actual_price, pre_qty, pre_avg, booked_qty, booked_price,
+        mult=100, underlying="", expiry=None, strike=None,
+        opt_right=None,
+    ):
+        """Reconcile an estimated live booking against the actual
+        ws fill, exactly: the pre-order snapshot (pre_qty,
+        pre_avg) defines the truth - qty becomes
+        pre +/- filled, sells re-price realized against the fill
+        (truth minus what the estimate booked), buys re-blend the
+        average premium with the actual price."""
+        signed_fill = (
+            int(filled_qty) if action == "BUY" else -int(filled_qty)
+        )
+        new_qty = max(0, int(pre_qty) + signed_fill)
+        self._touch()
+        self._positions_version += 1
+        self._positions_cache.clear()
+        with self._write_lock, self._conn:
+            row = self._conn.execute(
+                "SELECT qty, avg_premium, realized FROM positions "
+                "WHERE mode = ? AND account = ? AND contract_key = ?",
+                (mode, account, contract_key),
+            ).fetchone()
+            if row is None:
+                return
+            _qty, _avg, realized = (row[0], row[1], row[2] or 0.0)
+            sets = ["qty = ?", "updated_ts = ?"]
+            params = [new_qty, self._now()]
+            if action == "SELL":
+                basis = pre_avg or 0.0
+                truth = (
+                    int(filled_qty) * (actual_price - basis) * mult
+                    if actual_price is not None and basis else 0.0
+                )
+                est = (
+                    int(booked_qty) * ((booked_price or 0) - basis)
+                    * mult if basis else 0.0
+                )
+                corr = round(truth - est, 2)
+                if corr:
+                    sets.append("realized = ?")
+                    params.append(round(realized + corr, 2))
+                    self._bump_realized_today(mode, account, corr)
+            else:   # BUY: re-blend the basis with the actual price
+                if filled_qty and actual_price is not None:
+                    new_avg = (
+                        (int(pre_qty) * (pre_avg or 0.0)
+                         + int(filled_qty) * actual_price)
+                        / new_qty
+                    )
+                    sets.append("avg_premium = ?")
+                    params.append(round(new_avg, 4))
+                else:
+                    sets.append("avg_premium = ?")
+                    params.append(pre_avg)
+            params.extend([mode, account, contract_key])
+            self._conn.execute(
+                f"UPDATE positions SET {', '.join(sets)} "
+                "WHERE mode = ? AND account = ? AND contract_key = ?",
+                params,
+            )
 
     def realized_today(self, mode: str, account=None) -> float:
         """Realized pnl booked today (sell gains minus sell

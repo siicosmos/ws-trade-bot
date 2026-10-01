@@ -126,7 +126,11 @@ class TradingConfig:
     history_retention_days: int = 365
     ticker_whitelist: List[str] = field(default_factory=list)
     sell_only_if_held: bool = True
-    place_stop_loss: bool = False
+    # hard daily-loss circuit breaker: stop taking new BUY alerts
+    # once today's realized pnl sinks below this % of account
+    # value (0 = off). exits (alert sells, stops, b2e) stay
+    # allowed - only entries are gated
+    max_daily_loss_pct: float = 0.0
 
 
 @dataclass
@@ -326,7 +330,9 @@ def load_config(path: str) -> Config:
             t.upper() for t in _get(trading_raw, "ticker_whitelist", [])
         ],
         sell_only_if_held=bool(_get(trading_raw, "sell_only_if_held", True)),
-        place_stop_loss=bool(_get(trading_raw, "place_stop_loss", False)),
+        max_daily_loss_pct=float(
+            _get(trading_raw, "max_daily_loss_pct", 0.0)
+        ),
     )
 
     return Config(
