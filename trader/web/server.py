@@ -673,6 +673,25 @@ def _margin_metrics(ctx, label, value, live, sk, conv_fx,
     }
 
 
+def _acct_by_label(cfg, label):
+    from ..ws.ws_common import effective_accounts as _ea
+    from ..ws.ws_common import account_label as _al
+
+    for acct in _ea(cfg):
+        if _al(acct) == label:
+            return acct
+    return None
+
+
+def _effective_open_risk_cap(cfg, label):
+    """The account's own open-risk cap override when set (a
+    small account may deploy a high share of its own value),
+    the global cap otherwise."""
+    from ..trading.executor import effective_open_risk_cap
+
+    return effective_open_risk_cap(_acct_by_label(cfg, label), cfg)
+
+
 def _account_summary(ctx, snap, label, value):
     """One account's dashboard row (second-review depth fix):
     registered-plan detection, funding parsing, margin
@@ -860,7 +879,7 @@ def _account_summary(ctx, snap, label, value):
             if value and value > 0
             else None
         ),
-        "max_open_risk_pct": t.max_open_risk_pct,
+        "max_open_risk_pct": _effective_open_risk_cap(cfg, label),
         "risk_per_trade_pct": t.risk_per_trade_pct,
         "per_trade_budget": (
             value * (t.risk_per_trade_pct / 100.0)

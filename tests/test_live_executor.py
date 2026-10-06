@@ -436,3 +436,78 @@ def test_live_option_buy_cluster_cap(monkeypatch):
     )
     assert res4.ok and res4.qty == 4
     assert len(ws.orders) == 3
+
+
+
+def test_open_risk_cap_per_account(monkeypatch):
+    """a small account can carry its own higher open-risk cap
+    while the other accounts keep the global one - the $ risk
+    stays small either way."""
+    ws = FakeWS(ask=1.0, bid=0.9)
+    _patch_client(monkeypatch, ws)
+
+    def _cfg():
+        return types.SimpleNamespace(
+            trading=TradingConfig(
+                mode="live", max_open_risk_pct=30.0,
+                cooldown_seconds=0, dedupe_window_minutes=0,
+            ),
+            wealthsimple=WealthsimpleConfig(accounts=[
+                WSAccountConfig(account_id="acc-1", label="Margin",
+                                max_open_risk_pct=80.0, enabled=True),
+                WSAccountConfig(account_id="acc-2", label="RRSP",
+                                enabled=True),
+            ]),
+            paper=None,
+        )
+
+    cfg = _cfg()
+    cfg.trading.size_tiers["medium"] = {
+        "risk_pct_max": 5.0, "contracts_min": 1,
+        "contracts_max": 10, "stop_loss_pct": 25.0,
+    }
+    store = _store()
+    account = StubAccount({"Margin": 2000.0, "RRSP": 20000.0})
+    ex = _executor(cfg, store, account)
+
+    # ledger state: margin carries 700 risk (cap 1600), rrsp sits
+    # exactly at its global 30% cap (6000 of 20000)
+    store.apply_position(
+        "live", parse_alert("BOUGHT 0DTE SPY 759c @ 1.0"), 7,
+        premium=1.0, account="Margin",
+    )
+    store.apply_position(
+        "live", parse_alert("BOUGHT 0DTE SPY 759c @ 1.0"), 60,
+        premium=1.0, account="RRSP",
+    )
+
+    res = ex.execute(
+        parse_alert("BOUGHT 0DTE SPY 759c @ 1.0 medium size"),
+        cfg, store,
+    )
+    # margin: its own 80% cap (1600 of 2000) still has room for
+    # the 5% budget's 1 contract; rrsp is at its global cap
+    assert res.ok
+    assert res.breakdown["Margin"].startswith("1x @ 1.0")
+    assert "open risk cap reached" in res.breakdown["RRSP"]
+    assert len(ws.orders) == 1
+    assert ws.orders[0][0] == "buy_option"
+
+    # without the override the margin account would be capped by
+    # the global 30% too (700 >= 600): nothing trades
+    cfg2 = _cfg()
+    cfg2.trading.size_tiers["medium"] = {
+        "risk_pct_max": 5.0, "contracts_min": 1,
+        "contracts_max": 10, "stop_loss_pct": 25.0,
+    }
+    for acct in cfg2.wealthsimple.accounts:
+        acct.max_open_risk_pct = None
+    ex2 = _executor(cfg2, store, account)
+    res2 = ex2.execute(
+        parse_alert("BOUGHT 0DTE SPY 759c @ 1.0 medium size"),
+        cfg2, store,
+    )
+    assert res2.qty == 0
+    assert "open risk cap reached" in res2.breakdown["Margin"]
+    assert "open risk cap reached" in res2.breakdown["RRSP"]
+    assert len(ws.orders) == 1

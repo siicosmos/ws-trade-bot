@@ -37,6 +37,16 @@ def effective_contract_cap(acct, cfg) -> int:
     return cfg.trading.max_contracts_per_trade
 
 
+def effective_open_risk_cap(acct, cfg) -> float:
+    """The account's open-risk cap: its own override when set
+    (a small account may need a much higher share of its own
+    value deployed - the $ exposure stays small), the global
+    cap otherwise."""
+    if acct is not None and getattr(acct, "max_open_risk_pct", None) is not None:
+        return float(acct.max_open_risk_pct)
+    return float(cfg.trading.max_open_risk_pct)
+
+
 def tier_plan(alert, cfg, account_value, price, acct=None) -> dict:
     cost = float(price) * 100 if price else 0.0
     tier = tier_for(alert, cfg)
@@ -139,15 +149,16 @@ def account_sizing(alert, cfg, account, store=None) -> list:
                         f"(budget could afford {plan['affordable']})"
                     )
 
+        acct_cap = effective_open_risk_cap(acct, cfg)
         if (
             alert.action == "BUY"
             and store is not None
             and value
             and plan["qty"]
-            and cfg.trading.max_open_risk_pct > 0
+            and acct_cap > 0
         ):
             open_risk = store.open_risk(mode, label)
-            limit = value * (cfg.trading.max_open_risk_pct / 100.0)
+            limit = value * (acct_cap / 100.0)
             if open_risk >= limit:
                 warnings.append(
                     f"open risk cap reached "
@@ -206,11 +217,12 @@ def sell_quantity(held: int, scale: Optional[float]) -> int:
     return min(held, max(1, qty))
 
 
-def _at_open_risk_cap(store, mode, label, value, cfg) -> bool:
-    if cfg.trading.max_open_risk_pct <= 0 or value is None or value <= 0:
+def _at_open_risk_cap(store, mode, label, value, cfg, acct=None) -> bool:
+    cap_pct = effective_open_risk_cap(acct, cfg)
+    if cap_pct <= 0 or value is None or value <= 0:
         return False
     open_risk = store.open_risk(mode, label)
-    limit = value * (cfg.trading.max_open_risk_pct / 100.0)
+    limit = value * (cap_pct / 100.0)
     return open_risk >= limit
 
 
@@ -333,7 +345,7 @@ class PaperExecutor:
                         )
                     else:
                         note = f" (capped from {plan['affordable']})"
-                if _at_open_risk_cap(store, self.mode, label, value, cfg):
+                if _at_open_risk_cap(store, self.mode, label, value, cfg, acct):
                     breakdown[label] = (
                         f"skipped (open risk cap reached, wanted {qty}x)"
                     )
@@ -425,7 +437,8 @@ class PaperExecutor:
                     breakdown[label] = "0 (position size too small)"
                     continue
                 if _at_open_risk_cap(
-                    store, self.mode, label, self.account.value(label), cfg
+                    store, self.mode, label, self.account.value(label),
+                    cfg, acct,
                 ):
                     breakdown[label] = "skipped (open risk cap reached)"
                     continue
@@ -644,7 +657,7 @@ class WealthsimpleExecutor:
                         )
                     else:
                         note = f" (capped from {plan['affordable']})"
-                if _at_open_risk_cap(store, self.mode, label, value, cfg):
+                if _at_open_risk_cap(store, self.mode, label, value, cfg, acct):
                     breakdown[label] = (
                         f"skipped (open risk cap reached, wanted {qty}x)"
                     )
@@ -771,7 +784,7 @@ class WealthsimpleExecutor:
                 # the paper path checks this guard too: a live
                 # stock buy must respect the open-risk cap
                 if _at_open_risk_cap(
-                    store, self.mode, label, value, cfg
+                    store, self.mode, label, value, cfg, acct
                 ):
                     breakdown[label] = (
                         f"skipped (open risk cap reached, wanted {qty})"

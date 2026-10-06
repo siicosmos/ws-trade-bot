@@ -83,6 +83,10 @@ class WSAccountConfig:
     label: str = ""
     risk_per_trade_pct: Optional[float] = None
     max_contracts_per_trade: Optional[int] = None
+    # per-account open-risk cap: a small account may need a much
+    # higher share of its own value deployed (the $ exposure
+    # stays small) without raising the cap for the other accounts
+    max_open_risk_pct: Optional[float] = None
     paper_value: Optional[float] = None
     enabled: bool = True
 
@@ -252,6 +256,7 @@ def _load_accounts(ws_raw: dict) -> List[WSAccountConfig]:
                 max_contracts_per_trade=_opt_int(
                     entry, "max_contracts_per_trade"
                 ),
+                max_open_risk_pct=_opt_float(entry, "max_open_risk_pct"),
                 paper_value=_opt_float(entry, "paper_value"),
                 enabled=bool(entry.get("enabled", True)),
             )

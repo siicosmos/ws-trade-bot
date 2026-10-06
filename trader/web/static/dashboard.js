@@ -1438,6 +1438,8 @@ function renderSettings(s) {
           "per-account contract cap; empty = inherit global") +
         _numField("set-acct-" + i + "-risk", "risk %", a.risk_per_trade_pct,
           "per-account risk override; empty = inherit global") +
+        _numField("set-acct-" + i + "-orisk", "open risk cap %", a.max_open_risk_pct,
+          "per-account open-risk cap - a small account may deploy a high share of its own value without raising the cap for the others; empty = inherit global") +
         _numField("set-acct-" + i + "-paper", "paper value $", a.paper_value,
           "fallback paper equity when live values are unavailable") +
         '</div></div>';
@@ -1503,6 +1505,7 @@ async function saveSettings() {
       account_id: val("set-acct-" + i + "-id"),
       max_contracts_per_trade: val("set-acct-" + i + "-max") === "" ? null : parseInt(val("set-acct-" + i + "-max")),
       risk_per_trade_pct: numOrNull("set-acct-" + i + "-risk"),
+      max_open_risk_pct: numOrNull("set-acct-" + i + "-orisk"),
       paper_value: numOrNull("set-acct-" + i + "-paper"),
       enabled: document.getElementById("set-acct-" + i + "-enabled").checked,
     };

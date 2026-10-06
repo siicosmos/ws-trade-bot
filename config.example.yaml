@@ -180,12 +180,18 @@ wealthsimple:
       enabled: true                    # include this account in trading
       risk_per_trade_pct: null         # null = use the global 5
       max_contracts_per_trade: 20      # override for this account
+      max_open_risk_pct: null          # per-account open-risk cap; null = use
+                                       # the global 30. a small account may need
+                                       # a high share of its own value (e.g. 60)
+                                       # without raising the cap elsewhere
       paper_value: 50000.0             # sizing value in paper mode
     - account_id: "YOUR_PERSONAL_ACCOUNT_ID"
       label: "Personal"
       enabled: true
       risk_per_trade_pct: null
       max_contracts_per_trade: 5
+      max_open_risk_pct: 60            # small margin account: a high share of a
+                                       # small value is still a small $ exposure
       paper_value: 2000.0
   exchange_hint: ""           # e.g. "SPX" to force an exchange on order placement
   stock_margin_rate: 0.30     # maintenance margin rate for stock holdings

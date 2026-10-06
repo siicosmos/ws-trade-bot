@@ -40,6 +40,7 @@ EDITABLE_READER_MAP = ("channel_servers",)
 EDITABLE_ACCOUNT_NUMERIC = {
     "risk_per_trade_pct": (0.0, 100.0),
     "max_contracts_per_trade": (0, 1000),
+    "max_open_risk_pct": (0.0, 100.0),
     "paper_value": (0.0, 100000000.0),
 }
 
@@ -78,6 +79,7 @@ def get_settings(cfg) -> dict:
             "label": a.label,
             "risk_per_trade_pct": a.risk_per_trade_pct,
             "max_contracts_per_trade": a.max_contracts_per_trade,
+            "max_open_risk_pct": a.max_open_risk_pct,
             "paper_value": a.paper_value,
             "enabled": a.enabled,
         }
@@ -649,6 +651,7 @@ def _persist(cfg, config_path):
             "label": a.label,
             "risk_per_trade_pct": a.risk_per_trade_pct,
             "max_contracts_per_trade": a.max_contracts_per_trade,
+            "max_open_risk_pct": a.max_open_risk_pct,
             "paper_value": a.paper_value,
             "enabled": a.enabled,
         }
