@@ -308,6 +308,20 @@
     display: block; color: var(--muted); font-size: 11px;
     text-transform: uppercase; margin-bottom: 4px;
   }
+  /* visible field explanations: title tooltips do not work on
+     touch screens, so the help text renders under the field on
+     small screens / coarse pointers (desktop keeps the tooltip) */
+  .field-help {
+    display: none; font-size: 11px; color: var(--muted);
+    margin: 3px 0 0; line-height: 1.35;
+  }
+  .set-checks .field-help { margin: 2px 0 6px; }
+  .set-title + .field-help, .set-sub-title + .field-help {
+    margin: 2px 0 8px;
+  }
+  @media (max-width: 900px), (pointer: coarse) {
+    .field-help { display: block; }
+  }
   .set-field.full { grid-column: 1 / -1; }
   .set-field input, .set-field select, .set-field textarea {
     width: 100%; box-sizing: border-box; background: #0d1117;
@@ -331,9 +345,10 @@
   .set-field textarea { resize: none; overflow: hidden; }
   .set-field input.big { padding: 8px; font-size: 15px; font-weight: 600; }
   .set-checks {
-    display: flex; gap: 16px; flex-wrap: wrap; align-items: center;
+    display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start;
     margin-bottom: 12px;
   }
+  .set-checks .set-check { min-width: 200px; }
   .set-checks label {
     color: var(--text); font-size: 13px; font-weight: 600;
     display: inline-flex; align-items: center; gap: 7px;

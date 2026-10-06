@@ -1195,37 +1195,45 @@ function revertSettings() {
 document.getElementById("settings-save").onclick = saveSettings;
 document.getElementById("settings-revert").onclick = revertSettings;
 
+function _fieldHelp(tip) {
+  // hover tooltips are useless on a phone - the help text is
+  // rendered under the field and shown on touch/small screens
+  // (hidden on desktop, where the tooltip works)
+  return tip
+    ? '<div class="field-help">' + esc(tip) + "</div>" : "";
+}
+
 function _numField(id, label, value, tip, cls) {
   return '<div class="set-field"><label>' + esc(label) + '</label>' +
     '<input id="' + id + '" type="number" step="any" value="' + esc(value ?? "") + '"' +
-    (tip ? ' title="' + esc(tip) + '"' : "") +
-    (cls ? ' class="' + cls + '"' : "") + '></div>';
+    (cls ? ' class="' + cls + '"' : "") + '>' +
+    _fieldHelp(tip) + '</div>';
 }
 
 function _txtField(id, label, value, placeholder, tip, full) {
   return '<div class="set-field' + (full ? " full" : "") + '"><label' +
-    (tip ? ' title="' + esc(tip) + '"' : "") + '>' + esc(label) + '</label>' +
+    '>' + esc(label) + '</label>' +
     '<input id="' + id + '" type="text" value="' + esc(value ?? "") + '"' +
-    (placeholder ? ' placeholder="' + esc(placeholder) + '"' : "") +
-    (tip ? ' title="' + esc(tip) + '"' : "") + '></div>';
+    (placeholder ? ' placeholder="' + esc(placeholder) + '"' : "") + '>' +
+    _fieldHelp(tip) + '</div>';
 }
 
 function _check(id, label, checked, tip) {
-  return '<label' + (tip ? ' title="' + esc(tip) + '"' : "") +
+  return '<div class="set-check"><label' +
+    (tip ? ' title="' + esc(tip) + '"' : "") +
     '><input id="' + id + '" type="checkbox"' + (checked ? " checked" : "") +
-    '> ' + esc(label) + '</label>';
+    '> ' + esc(label) + '</label>' +
+    _fieldHelp(tip) + '</div>';
 }
 
 function _section(title, body, tip) {
-  return '<div class="set-section"><div class="set-title"' +
-    (tip ? ' title="' + esc(tip) + '"' : "") + '>' + esc(title) + '</div>' +
-    body + '</div>';
+  return '<div class="set-section"><div class="set-title">' + esc(title) + '</div>' +
+    _fieldHelp(tip) + body + '</div>';
 }
 
 function _subsection(title, body, tip) {
-  return '<div class="set-sub"><div class="set-sub-title"' +
-    (tip ? ' title="' + esc(tip) + '"' : "") + '>' + esc(title) + '</div>' +
-    body + '</div>';
+  return '<div class="set-sub"><div class="set-sub-title">' + esc(title) + '</div>' +
+    _fieldHelp(tip) + body + '</div>';
 }
 
 function renderSettings(s) {
@@ -1300,11 +1308,12 @@ function renderSettings(s) {
     _subsection("quotes provider",
       '<div class="set-checks" style="margin-bottom:10px">' +
         _check("set-quotes-enabled", "live option quotes (stop monitor)", q.enabled,
-          "fetch live option quotes for the stop monitor") +
+          "fetch live option quotes for the stop monitor. off does not leave positions unguarded: paper mode prices stops from the paper ledger's own quote map, and live mode falls back to the ws option chains"),
       '</div>' +
       '<div class="set-grid">' +
-        '<div class="set-field"><label title="quote source for the stop monitor (takes effect after restart)">' +
+        '<div class="set-field"><label>' +
         'quotes provider</label>' +
+        '<div class="field-help">quote source for the stop monitor - takes effect after restart: ws = wealthsimple, moomoo = local OpenD feed</div>' +
         '<select id="set-quotes-provider" title="quote source for the stop monitor - takes effect after restart: ws = wealthsimple, moomoo = OpenD feed">' +
           '<option value="ws"' + (q.provider === "ws" ? " selected" : "") + '>ws</option>' +
           '<option value="moomoo"' + (q.provider === "moomoo" ? " selected" : "") + '>moomoo</option>' +
