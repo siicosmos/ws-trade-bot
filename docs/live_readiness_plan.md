@@ -6,6 +6,9 @@ technical detail. See also `docs/improvement_plan.md`.
 
 ## Planned items
 
+None - the original P0/P1/P2 list is fully landed below. The
+one review item without code:
+
 ### 3. Reader resilience review (P2) - reviewed, no code
 
 The pipeline's single point of failure is the Windows UIA
@@ -120,7 +123,9 @@ The live executor no longer trusts its own estimates:
   pre-order position snapshot (pre_qty, pre_avg) at placement.
 - The mirror pass sweeps orders older than
   `PENDING_TTL_SECONDS` (300s) with no fill and restores the
-  pre-order position exactly - qty and average premium.
+  pre-order position exactly - qty and average premium
+  (partially-filled orders are kept for their filled part -
+  see the partial-fill section above).
 - Actual fills (from the ws activity feed, deduped by
   canonicalId) reconcile against the oldest matching open
   order: qty becomes pre +/- filled, sell realized is the truth
@@ -130,7 +135,8 @@ The live executor no longer trusts its own estimates:
 - The mirror thread runs unconditionally in live mode
   (run.py) - reconciliation cannot depend on the paper-mirror
   toggle.
-- Tests: tests/test_mirror.py (full fill, partial fill, sweep).
+- Tests: tests/test_mirror.py (full fill, partial fill,
+  accumulation, sweep, price-shock cancel).
 
 ### Hard daily-loss circuit breaker (was P1 #4)
 
@@ -179,12 +185,19 @@ paper simulation's number.
    (`scripts/expectancy.py`).
 2. Live config: smallest tier only (`contracts_max` clamped),
    lowest risk %, one account enabled, `max_open_risk_pct`
-   tightened, `max_daily_loss_pct` set.
+   tightened plus `cluster_cap_pct` for same-bet clusters,
+   `max_daily_loss_pct` set. Fill handling: `partial_fill_cancel_pct`
+   and `max_slippage_pct` at their defaults (10% / 2%) until
+   the first weeks of fills say otherwise.
 3. First week: notify-style observation with live-sized paper -
    compare the real card's fills vs the paper card (slippage
    check) before any real order.
 4. Know the brake: the settings kill switch ("trading paused")
    halts all new buys in one click; the daily-loss breaker caps
    the day automatically.
-5. Margin account stays manual until the RRSP results prove the
+5. Open positions keep their protection without alerts: the
+   stop monitor's global stop/trailing plus the per-position
+   tp/trailing guards (set beside each position) and b2e cover
+   an ALL OUT that never arrives.
+6. Margin account stays manual until the RRSP results prove the
    source out.
