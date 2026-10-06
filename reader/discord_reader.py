@@ -849,7 +849,10 @@ def snap_to_bottom(container, log_fn=None):
             if visible is not None and visible >= 100:
                 return
             pct = _uia_prop(pattern, "VerticalScrollPercent")
-            if pct is None or pct >= 98:
+            # 97+: close enough to the bottom that the newest
+            # messages are in the tree (some builds never report
+            # a full 100)
+            if pct is None or pct >= 97:
                 return
             if log_fn:
                 log_fn(
@@ -862,7 +865,9 @@ def snap_to_bottom(container, log_fn=None):
                 pass
             time.sleep(0.3)
             now_pct = _uia_prop(pattern, "VerticalScrollPercent")
-            if now_pct is not None and now_pct >= 98:
+            if now_pct is not None and (
+                now_pct >= 97 or now_pct > pct + 1
+            ):
                 return
             # some discord builds accept SetScrollPercent but
             # ignore it (chromium) - wheel the pane down before
@@ -874,9 +879,8 @@ def snap_to_bottom(container, log_fn=None):
             except Exception:
                 pass
             time.sleep(0.3)
-            time.sleep(0.3)
             now_pct = _uia_prop(pattern, "VerticalScrollPercent")
-            if now_pct is None or now_pct >= 98:
+            if now_pct is None or now_pct >= 97 or now_pct > pct:
                 return
             _warn("pane still not at the bottom after scrolling")
         except Exception:
@@ -900,21 +904,27 @@ def snap_to_bottom(container, log_fn=None):
     try:
         container.SetFocus()
         auto.SendKeys("{End}", waitTime=0.05)
-        _warn(
-            "scroll failed - using End key to jump to latest messages"
-        )
         if pattern is not None:
             time.sleep(0.5)
             try:
                 now_pct = _uia_prop(pattern, "VerticalScrollPercent")
-                if now_pct is not None and now_pct < 98:
-                    _warn(
-                        f"End key did not reach the bottom "
-                        f"(pane at {now_pct}%)",
-                        period=600,
-                    )
+                # the End key worked - the newest messages are in
+                # the tree; stay quiet (this is the working path
+                # on chromium builds that ignore SetScrollPercent)
+                if now_pct is None or now_pct >= 97:
+                    return
+                _warn(
+                    f"End key did not reach the bottom "
+                    f"(pane at {now_pct}%)",
+                    period=21600,
+                )
             except Exception:
                 pass
+        else:
+            _warn(
+                "no scroll pattern - using End key to jump to "
+                "latest messages", period=21600,
+            )
     except Exception as e:
         _warn(f"auto-scroll fallback failed: {e}", period=600)
 

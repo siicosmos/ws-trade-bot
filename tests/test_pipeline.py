@@ -4742,3 +4742,100 @@ def test_quote_provider_startup_survives_opend_down(monkeypatch):
     assert elapsed < 5, elapsed
     # no account -> the ws fallback yields None, but quickly
     assert fn is None
+
+
+def test_position_tp_resolves_ws_key_by_parts():
+    """a ws-sourced row carries its own display key - the guards
+    endpoint resolves it to the ledger row (and books the ws
+    holding into the ledger when the bot never traded it)."""
+    app, store, account = _make_app()
+    client = app.test_client()
+    hdr = {"X-Auth-Token": ""}
+
+    # the ws feed reports the holding under its display key with
+    # a full graphql expiry timestamp
+    account.open_option_positions = lambda: {
+        "Personal": {"positions": [{
+            "contract_key": "SPY 2026-10-02 759C",
+            "underlying": "SPY",
+            "expiry": "2026-10-02",
+            "strike": 759,
+            "right": "C",
+            "qty": 3,
+            "avg_premium": 1.2,
+            "source": "ws",
+        }], "fx": 1.25, "usd_cash": None},
+    }
+
+    r = client.post(
+        "/api/position-tp", headers=hdr,
+        json={"mode": "paper", "label": "Personal",
+              "contract_key": "SPY 2026-10-02 759C",
+              "tp_gain_pct": 30},
+    )
+    assert r.status_code == 200, r.get_data(as_text=True)
+    # the ledger row (alert-format key) carries the guard
+    rows = store.list_positions("paper", "Personal")
+    assert rows, "the ws holding was booked into the ledger"
+    assert rows[0]["contract_key"] == "SPY-2026-10-02-759-C"
+    assert rows[0]["tp_gain_pct"] == 30
+
+
+
+
+def test_position_sell_live_guards_and_places_order():
+    """the open-positions sell: refuses in non-live mode, and in
+    live mode places a REAL sell order through the executor (the
+    same path a stop-monitor exit takes)."""
+    from types import SimpleNamespace
+
+    from trader.trading.executor import ExecutionResult
+
+    app, store, account = _make_app(auth_token="t")
+    client = app.test_client()
+
+    # paper mode: the endpoint refuses (paper sells use
+    # /api/paper-sell)
+    r = client.post(
+        "/api/position-sell", headers={"X-Auth-Token": "t"},
+        json={"label": "Personal",
+              "contract_key": "SPY-2026-10-02-759-C"},
+    )
+    assert r.status_code == 400
+
+    # live mode with a stub executor: the sell goes out and the
+    # trade is recorded
+    cfg = ConfigStub(TradingConfig(mode="live"), auth_token="t")
+    account2 = PaperAccount(cfg, _fresh_store())
+    placed = []
+    ex = SimpleNamespace(
+        mode="live",
+        execute=lambda alert, c, s: (
+            placed.append(alert.contract_key()) or
+            ExecutionResult(True, "sold", qty=2, price=2.0)
+        ),
+    )
+    store2 = _fresh_store()
+    from trader.web.server import create_app
+
+    app2 = create_app(cfg, store2, None, ex, account2)
+    alert = parse_alert("BOUGHT 0DTE SPY 759c @ 1.2")
+    key = alert.contract_key()
+    store2.apply_position(
+        "live", alert, 2, premium=1.2, account="Personal"
+    )
+    client2 = app2.test_client()
+    r2 = client2.post(
+        "/api/position-sell", headers={"X-Auth-Token": "t"},
+        json={"label": "Personal", "contract_key": key},
+    )
+    assert r2.status_code == 200, r2.get_data(as_text=True)
+    assert r2.get_json()["sold"] == 2
+    assert placed == [key]
+
+    # an unknown contract 404s
+    r3 = client2.post(
+        "/api/position-sell", headers={"X-Auth-Token": "t"},
+        json={"label": "Personal", "contract_key": "NOPE"},
+    )
+    assert r3.status_code == 404

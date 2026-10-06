@@ -306,6 +306,68 @@ async function doSetTp(mode, label, key, tpRaw, trailRaw) {
   load();
 }
 
+function monModeLive() {
+  return lastPayload && lastPayload.summary
+    && lastPayload.summary.mode === "live";
+}
+
+function monModeLabel() {
+  return monModeLive() ? "live" : "paper";
+}
+
+function sellPosition(mode, label, key, qty, price, avg) {
+  openModal(
+    "Manual position sell" + (mode === "live" ? " (LIVE ORDER)" : ""),
+    "Sell the whole " + key + " position (" + label + ")" +
+      (mode === "live"
+        ? " - this places a REAL sell order at the current bid"
+        : " - books against the paper ledger at the live price") +
+      "?",
+    "sell",
+    async function() { await doPositionSell(mode, label, key); }
+  );
+}
+
+async function doPositionSell(mode, label, key) {
+  const paper = mode !== "live";
+  try {
+    const res = await fetch(paper ? "/api/paper-sell" : "/api/position-sell", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        label: label, contract_key: key, mode: mode,
+      }),
+    });
+    if (res.status === 401) { location.href = "/login"; return; }
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 200) {
+      openModal(
+        paper ? "Sold" : "Sell order placed",
+        "Sold " + data.sold + "x " + key +
+          (data.price != null ? " @ ~$" + data.price : "") +
+          (data.realized != null
+            ? " · realized " + (data.realized >= 0 ? "+$" : "-$") +
+              Math.abs(data.realized).toLocaleString("en-CA",
+                { maximumFractionDigits: 2 })
+            : "") +
+          (data.detail ? "\n" + data.detail : ""),
+        "ok",
+        async function() { closeModal(); }
+      );
+    } else {
+      openModal(
+        "Sell failed",
+        data.error || "the sell did not go through",
+        "ok",
+        async function() { closeModal(); }
+      );
+    }
+  } catch (e) { /* surfaced by the next refresh */ }
+  try { localStorage.removeItem("dash_last_payload"); } catch (e) {}
+  paperPositions = null;
+  load();
+}
+
 async function doPaperSell(label, key) {
   try {
     const res = await fetch("/api/paper-sell", {
@@ -745,10 +807,12 @@ function renderPositionsInto(elId, rows, emptyText, monMode) {
           : "trailing disabled for this position") + '">TS ' +
         p.trail_pct + '%</span> ' : "") +
       retMain + plSpan + "</td>" +
-      // the target rides the ledger the monitor watches - only
-      // store-tracked rows carry a matching contract key
-      (isAdmin() && !isStock && p.source !== "ws"
-        ? '<td class=num><button class="mini-toggle" title="take-profit / trailing for this position" onclick="setTp(\'' + monMode + '\', \'' + esc(p.account) + '\', \'' + esc(p.contract_key) + '\', ' + (p.tp_gain_pct == null ? "null" : p.tp_gain_pct) + ', ' + (p.trail_pct == null ? "null" : p.trail_pct) + ')">tp</button></td>'
+      // guards ride the ledger the monitor watches; ws-sourced
+      // rows resolve to their ledger row by parts when needed
+      (isAdmin() && !isStock
+        ? '<td class=num>' +
+          '<button class="mini-toggle" title="take-profit / trailing for this position" onclick="setTp(\'' + monMode + '\', \'' + esc(p.account) + '\', \'' + esc(p.contract_key) + '\', ' + (p.tp_gain_pct == null ? "null" : p.tp_gain_pct) + ', ' + (p.trail_pct == null ? "null" : p.trail_pct) + ')">tp</button> ' +
+          '<button class="mini-toggle danger" title="' + (monMode === "live" ? "place a REAL sell order at the current bid" : "sell at the live price") + '" onclick="sellPosition(\'' + monMode + '\', \'' + esc(p.account) + '\', \'' + esc(p.contract_key) + '\', ' + (p.qty || 0) + ', ' + (p.current_price == null ? "null" : p.current_price) + ', ' + (p.avg_premium == null ? "null" : p.avg_premium) + ')">sell</button></td>'
         : '<td></td>') + "</tr>";
   }
   el.innerHTML = html + "</table>";

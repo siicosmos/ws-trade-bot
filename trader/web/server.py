@@ -692,6 +692,63 @@ def _effective_open_risk_cap(cfg, label):
     return effective_open_risk_cap(_acct_by_label(cfg, label), cfg)
 
 
+def _position_parts_key(row):
+    """The alert-format contract key built from a position row's
+    parts - ws-sourced rows carry their own display key, the
+    ledger (and every alert) keys the plain date."""
+    expiry = str(row.get("expiry") or "")[:10]
+    strike = row.get("strike")
+    right = row.get("right")
+    if not expiry or strike is None or not right:
+        return None
+    try:
+        return (
+            f"{row['underlying']}-{expiry}"
+            f"-{float(strike):g}-{right}"
+        )
+    except (TypeError, ValueError):
+        return None
+
+
+def _match_store_position(store, mode, label, contract_key,
+                          payload_rows=None):
+    """A store ledger row for a position: exact contract_key
+    first, then a parts match against the payload rows (ws rows
+    use their own display key). Returns the store row or None."""
+    rows = store.list_positions(mode, label)
+    for r in rows:
+        if r["contract_key"] == contract_key:
+            return r
+    for r in (payload_rows or []):
+        if r.get("account") != label:
+            continue
+        if r.get("contract_key") != contract_key:
+            continue
+        parts_key = _position_parts_key(r)
+        if not parts_key:
+            continue
+        for r2 in rows:
+            if r2["contract_key"] == parts_key:
+                return r2
+        # no ledger row yet: book the ws holding into the ledger
+        # so the monitor can watch guards on it
+        if r.get("source") == "ws" and not r.get("spread"):
+            store.seed_position(
+                mode, label, parts_key,
+                r.get("underlying") or "",
+                str(r.get("expiry") or "")[:10],
+                float(r.get("strike") or 0), r.get("right"),
+                int(r.get("qty") or 0),
+                r.get("avg_premium"),
+            )
+            return next(
+                (x for x in store.list_positions(mode, label)
+                 if x["contract_key"] == parts_key),
+                None,
+            )
+    return None
+
+
 def _account_summary(ctx, snap, label, value):
     """One account's dashboard row (second-review depth fix):
     registered-plan detection, funding parsing, margin
@@ -1407,6 +1464,79 @@ def create_app(cfg, store: Store, risk, executor, account=None,
             return jsonify(payload), 500
         return jsonify(payload)
 
+    @app.post("/api/position-sell")
+    def api_position_sell():
+        """Manual close of a tracked LIVE position from the open
+        positions table: places a REAL sell order at the current
+        bid (the same path a stop-monitor exit takes). Sells the
+        whole position. Paper rows keep using /api/paper-sell."""
+        denied = _require_admin()
+        if denied:
+            return denied
+        if ctx.mode != "live":
+            return jsonify(
+                {"error": "live manual sell needs live mode"}
+            ), 400
+        payload = request.get_json(silent=True) or {}
+        label = str(payload.get("label") or "").strip()
+        contract_key = str(payload.get("contract_key") or "").strip()
+        if not label or not contract_key:
+            return jsonify(
+                {"error": "label and contract_key required"}
+            ), 400
+        row = _match_store_position(
+            store, "live", label, contract_key,
+            _bounded(_positions_payload, ctx),
+        )
+        if row is None:
+            return jsonify(
+                {"error": f"no live position {contract_key!r} "
+                          f"on {label!r}"}
+            ), 404
+        key = row["contract_key"]
+        if int(row.get("qty") or 0) < 1:
+            return jsonify({"error": "position is empty"}), 400
+
+        # a real sell order at the current bid
+        from ..trading.parser import Alert
+
+        alert = Alert(
+            action="SELL",
+            ticker=row["underlying"],
+            kind="option",
+            underlying=row["underlying"],
+            expiry=row["expiry"],
+            strike=row["strike"],
+            right=row["right"],
+            raw=f"[MANUAL] dashboard sell of {key}",
+        )
+        executor = ctx.executor
+        if executor is None or not hasattr(executor, "execute"):
+            return jsonify({"error": "no executor configured"}), 400
+        try:
+            result = executor.execute(alert, cfg, store)
+        except Exception as e:
+            store.record_trade(
+                "live", "SELL", row["underlying"], 0, None,
+                alert, "error", f"[MANUAL] failed: {e}",
+                message_key=key,
+            )
+            return jsonify({"error": str(e)}), 500
+        store.record_trade(
+            "live", "SELL", row["underlying"], result.qty,
+            result.price, alert,
+            "executed" if result.ok else "skipped",
+            f"[MANUAL] {result.detail}", message_key=key,
+        )
+        _section_cache.pop("positions", None)
+        _section_cache.pop("summary", None)
+        return jsonify({
+            "status": "ok" if result.ok else "skipped",
+            "sold": result.qty,
+            "price": result.price,
+            "detail": result.detail,
+        })
+
     @app.post("/api/position-tp")
     def api_position_tp():
         """Per-position sell guards: take-profit (sell the whole
@@ -1447,16 +1577,16 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                 {"error": "tp_gain_pct / trail_pct must be numbers "
                           "between 0 and 10000"}
             ), 400
-        rows = store.list_positions(mode, label)
-        row = next(
-            (r for r in rows if r["contract_key"] == contract_key),
-            None,
+        row = _match_store_position(
+            store, mode, label, contract_key,
+            _bounded(_positions_payload, ctx),
         )
         if row is None:
             return jsonify(
                 {"error": f"no {mode} position "
                           f"{contract_key!r} on {label!r}"}
             ), 404
+        contract_key = row["contract_key"]
         if "tp_gain_pct" in payload:
             store.set_position_tp(mode, label, contract_key, tp)
         if "trail_pct" in payload:

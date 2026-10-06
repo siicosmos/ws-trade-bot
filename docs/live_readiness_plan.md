@@ -90,6 +90,12 @@ carry its own guards, set beside the position in the dashboard
   (mode, account, contract_key); the tp button beside every
   paper + tracked position row opens both fields, with
   "TP x%" / "TS x%" chips on the row.
+- The open positions table carries the same buttons: guards
+  resolve ws-sourced rows to their ledger row by parts (booking
+  the ws holding into the ledger when the bot never traded it),
+  and a manual sell button places a REAL live order through the
+  executor (the same path a stop-monitor exit takes) in live
+  mode, or books through the paper ledger in paper mode.
 
 ### Live-executor test suite + kill switch (safety pass)
 
