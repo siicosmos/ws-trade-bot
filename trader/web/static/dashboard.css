@@ -227,6 +227,10 @@
     letter-spacing: .3px; white-space: nowrap;
   }
   .mini-toggle:hover { border-color: var(--muted); }
+  .mini-toggle:disabled {
+    opacity: .35; cursor: not-allowed;
+  }
+  .mini-toggle:disabled:hover { border-color: var(--border); }
   @media (max-width: 640px) {
     .tlog th:nth-child(2), .tlog td:nth-child(2) { display: none; }
     .tlog { min-width: 460px; font-size: 12px; }

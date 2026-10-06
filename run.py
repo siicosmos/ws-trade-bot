@@ -158,15 +158,15 @@ def main():
 
     # the stop monitor runs wherever positions are executed: live,
     # paper-only, or paper alongside notify (it watches the paper
-    # ledger through the PaperExecutor)
+    # ledger through the PaperExecutor). It also fires the
+    # per-position tp / trailing guards - so it starts whenever
+    # positions execute, even with the global stops at 0
     paper_alongside = (
         mode == "notify"
         and executor is not None
         and getattr(getattr(cfg, "paper", None), "enabled", False)
     )
-    if (
-        mode in ("paper", "live") or paper_alongside
-    ) and cfg.trading.stop_loss_pct > 0:
+    if mode in ("paper", "live") or paper_alongside:
         from trader.trading.stops import StopMonitor
 
         quote_fn = make_quote_provider(cfg, account)
@@ -183,6 +183,12 @@ def main():
             print(
                 f"stop monitor active: {cfg.trading.stop_loss_pct}% stop{trail}, "
                 f"checked every {cfg.trading.stop_check_seconds}s"
+            )
+        elif mode == "live":
+            print(
+                "WARNING: live mode without live quotes - the stop "
+                "monitor is OFF, open positions have no automated "
+                "protection (enable quotes in the settings)"
             )
 
     from trader.ops.updater import startup_banner

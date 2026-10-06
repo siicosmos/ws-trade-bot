@@ -195,15 +195,21 @@ paper simulation's number.
    `max_daily_loss_pct` set. Fill handling: `partial_fill_cancel_pct`
    and `max_slippage_pct` at their defaults (10% / 2%) until
    the first weeks of fills say otherwise.
-3. First week: notify-style observation with live-sized paper -
+3. **Quotes must be on before going live**: the stop monitor is
+   the open positions' automated protection (stops, trailing,
+   per-position guards, b2e) - in live mode with quotes off the
+   pipeline prints a warning and nothing guards the positions.
+4. First week: notify-style observation with live-sized paper -
    compare the real card's fills vs the paper card (slippage
-   check) before any real order.
-4. Know the brake: the settings kill switch ("trading paused")
+   check) before any real order. The manual sell / guard buttons
+   on the open positions table stay greyed out until live mode;
+   the paper card buttons keep managing the paper ledger.
+5. Know the brake: the settings kill switch ("trading paused")
    halts all new buys in one click; the daily-loss breaker caps
-   the day automatically.
-5. Open positions keep their protection without alerts: the
+   the day automatically; the mode badge pulses red while live.
+6. Open positions keep their protection without alerts: the
    stop monitor's global stop/trailing plus the per-position
    tp/trailing guards (set beside each position) and b2e cover
    an ALL OUT that never arrives.
-6. Margin account stays manual until the RRSP results prove the
+7. Margin account stays manual until the RRSP results prove the
    source out.

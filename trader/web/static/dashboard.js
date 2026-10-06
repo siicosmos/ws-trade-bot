@@ -808,11 +808,17 @@ function renderPositionsInto(elId, rows, emptyText, monMode) {
         p.trail_pct + '%</span> ' : "") +
       retMain + plSpan + "</td>" +
       // guards ride the ledger the monitor watches; ws-sourced
-      // rows resolve to their ledger row by parts when needed
+      // rows resolve to their ledger row by parts when needed.
+      // the buttons act on REAL positions - grey them out until
+      // live mode (the paper ledger's buttons live on the paper
+      // account cards)
       (isAdmin() && !isStock
         ? '<td class=num>' +
-          '<button class="mini-toggle" title="take-profit / trailing for this position" onclick="setTp(\'' + monMode + '\', \'' + esc(p.account) + '\', \'' + esc(p.contract_key) + '\', ' + (p.tp_gain_pct == null ? "null" : p.tp_gain_pct) + ', ' + (p.trail_pct == null ? "null" : p.trail_pct) + ')">tp</button> ' +
-          '<button class="mini-toggle danger" title="' + (monMode === "live" ? "place a REAL sell order at the current bid" : "sell at the live price") + '" onclick="sellPosition(\'' + monMode + '\', \'' + esc(p.account) + '\', \'' + esc(p.contract_key) + '\', ' + (p.qty || 0) + ', ' + (p.current_price == null ? "null" : p.current_price) + ', ' + (p.avg_premium == null ? "null" : p.avg_premium) + ')">sell</button></td>'
+          (monMode === "live"
+            ? '<button class="mini-toggle" title="take-profit / trailing for this position" onclick="setTp(\'' + monMode + '\', \'' + esc(p.account) + '\', \'' + esc(p.contract_key) + '\', ' + (p.tp_gain_pct == null ? "null" : p.tp_gain_pct) + ', ' + (p.trail_pct == null ? "null" : p.trail_pct) + ')">tp</button> ' +
+            '<button class="mini-toggle danger" title="place a REAL sell order at the current bid" onclick="sellPosition(\'' + monMode + '\', \'' + esc(p.account) + '\', \'' + esc(p.contract_key) + '\', ' + (p.qty || 0) + ', ' + (p.current_price == null ? "null" : p.current_price) + ', ' + (p.avg_premium == null ? "null" : p.avg_premium) + ')">sell</button></td>'
+            : '<button class="mini-toggle" disabled title="live mode only - these buttons act on real positions (the paper card buttons manage the paper ledger)">tp</button> ' +
+              '<button class="mini-toggle danger" disabled title="live mode only - these buttons act on real positions">sell</button></td>')
         : '<td></td>') + "</tr>";
   }
   el.innerHTML = html + "</table>";
