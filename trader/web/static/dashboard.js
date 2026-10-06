@@ -1308,7 +1308,7 @@ function renderSettings(s) {
     _subsection("quotes provider",
       '<div class="set-checks" style="margin-bottom:10px">' +
         _check("set-quotes-enabled", "live option quotes (stop monitor)", q.enabled,
-          "fetch live option quotes for the stop monitor. off does not leave positions unguarded: paper mode prices stops from the paper ledger's own quote map, and live mode falls back to the ws option chains"),
+          "fetch live option quotes for the stop monitor. off does not leave positions unguarded: paper mode prices stops from the paper ledger's own quote map, and live mode falls back to the ws option chains") +
       '</div>' +
       '<div class="set-grid">' +
         '<div class="set-field"><label>' +
