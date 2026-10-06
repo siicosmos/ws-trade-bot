@@ -170,6 +170,38 @@ def main():
         from trader.trading.stops import StopMonitor
 
         quote_fn = make_quote_provider(cfg, account)
+        quote_src = None
+        if quote_fn is not None:
+            quote_src = (
+                "moomoo" if cfg.quotes.provider == "moomoo" else "ws quotes"
+            )
+        if quote_fn is None:
+            # quotes disabled does not mean unguarded: the paper
+            # ledger already prices its positions (live ws nodes,
+            # ws chains, moomoo) - that map drives the monitor;
+            # live mode falls back to the ws chains directly, an
+            # executing mode must never run without protection
+            if paper_ledger is not None:
+                from trader.trading.paper import _position_key
+
+                def ledger_quote(pos):
+                    try:
+                        quotes = paper_ledger._quotes()
+                    except Exception:
+                        return None
+                    q = (
+                        quotes.get(_position_key(pos))
+                        or quotes.get(pos["contract_key"])
+                    )
+                    return (q or {}).get("price")
+
+                quote_fn = ledger_quote
+                quote_src = "ledger-priced quotes"
+            elif mode == "live":
+                from trader.trading.quotes import make_ws_quote_provider
+
+                quote_fn = make_ws_quote_provider(cfg, account)
+                quote_src = "ws option chains"
         if quote_fn is not None:
             monitor = StopMonitor(
                 cfg, store, executor, quote_fn, cfg.discord.webhook_url
@@ -181,7 +213,8 @@ def main():
                 else ""
             )
             print(
-                f"stop monitor active: {cfg.trading.stop_loss_pct}% stop{trail}, "
+                f"stop monitor active ({quote_src}): "
+                f"{cfg.trading.stop_loss_pct}% stop{trail}, "
                 f"checked every {cfg.trading.stop_check_seconds}s"
             )
         elif mode == "live":

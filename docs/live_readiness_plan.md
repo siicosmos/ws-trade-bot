@@ -177,6 +177,65 @@ quote-driven StopMonitor; real resting stops only get
 re-introduced if its `stop_check_seconds` latency ever proves
 costly.
 
+### Stop monitor runs without `quotes.enabled` (fix)
+
+The monitor used to require `quotes.enabled` - off meant NO
+automated protection anywhere (global stop, tier stops,
+tp/trailing, b2e all dead) while the dashboard still showed
+live-priced positions. Now:
+
+- paper / notify+paper: the monitor prices from the paper
+  ledger's own quote map (live ws nodes, ws chains, moomoo) -
+  the same source the dashboard prices with.
+- live: falls back to the ws option chains directly - an
+  executing mode never runs unguarded; when even that fails the
+  pipeline prints the loud "no automated protection" warning.
+
+### Suggested starting settings (17k RRSP + 1k margin)
+
+```yaml
+trading:
+  mode: notify                 # alerts-only until the checklist passes
+  stop_loss_pct: 30            # global floor; tiers override
+  trailing_stop_pct: 0         # per-position trailing via the tp button
+  stop_check_seconds: 30
+  max_daily_loss_pct: 3        # ~500 cad on the rrsp; pauses buys for the day
+  max_consecutive_losses: 2
+  max_open_risk_pct: 30        # rrsp default; the margin account overrides
+  cluster_cap_pct: 50
+  max_contracts_per_trade: 8
+  max_trades_per_day: 5
+  size_tiers:                  # wider stops for small bets, tighter for size
+    lotto:  { risk_pct_max: 0.5,  contracts_min: 1, contracts_max: 1, stop_loss_pct: 60 }
+    micro:  { risk_pct_max: 0.5,  contracts_min: 1, contracts_max: 1, stop_loss_pct: 55 }
+    tiny:   { risk_pct_max: 1.0,  contracts_min: 1, contracts_max: 1, stop_loss_pct: 50 }
+    small:  { risk_pct_max: 2.0,  contracts_min: 1, contracts_max: 2, stop_loss_pct: 40 }
+    medium: { risk_pct_max: 5.0,  contracts_min: 1, contracts_max: 5, stop_loss_pct: 35 }
+    large:  { risk_pct_max: 10.0, contracts_min: 1, contracts_max: 8, stop_loss_pct: 30 }
+    big:    { risk_pct_max: 10.0, contracts_min: 1, contracts_max: 8, stop_loss_pct: 30 }
+    full:   { risk_pct_max: 10.0, contracts_min: 1, contracts_max: 8, stop_loss_pct: 25 }
+
+wealthsimple:
+  accounts:
+    - label: RRSP
+      risk_per_trade_pct: 5        # 850 budget/trade: 1-8 contracts by premium
+      max_contracts_per_trade: 8
+      max_open_risk_pct: 30        # ~5.1k deployed max
+    - label: Margin
+      risk_per_trade_pct: 15       # 150 budget: covers 1 contract up to ~1.50
+      max_contracts_per_trade: 1
+      max_open_risk_pct: 60        # 600 deployed max on a 1k account
+```
+
+Honest notes: the 1k margin account is below the practical
+minimum for this alert service - most contracts cost 1-3
+premium (100-300 per contract), so with a 15% risk budget it
+only fits alerts priced under ~1.50 and caps out after 2-3
+positions; treat it as a lotto-only account or fund it. Verify
+with Wealthsimple that options trading is enabled on the RRSP -
+if options are personal-account-only there, keep option alerts
+on the margin account and disable the RRSP for them.
+
 ### Real-fills ledger for the real account card
 
 The mirror books every real fill (bot + manual) at its actual

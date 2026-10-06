@@ -561,3 +561,96 @@ def test_per_position_trail_0_disables_trailing():
     store.set_position_trail("paper", "default", key, 10)
     monitor.check_once()
     assert store.get_position("paper", key) == 0
+
+
+def test_paper_stops_run_without_quotes_enabled():
+    """quotes.enabled=false must not leave paper positions
+    unguarded: run.py falls back to the paper ledger's own price
+    map as the monitor's quote source - the global stop and the
+    per-size tier stop both fire through it."""
+    import types as _types
+
+    store = _fresh_store()
+    cfg = ConfigStub(TradingConfig(mode="paper", stop_loss_pct=25,
+                                   risk_per_trade_pct=5,
+                                   cooldown_seconds=0))
+    # a per-size tier stop that is WIDER than the global one -
+    # a lotto-sized position must use 70%, not the global 25%
+    cfg.trading.size_tiers["lotto"] = {
+        "risk_pct_max": 0.5, "contracts_min": 1,
+        "contracts_max": 1, "stop_loss_pct": 70.0,
+    }
+    account = PaperAccount(cfg, store)
+    executor = PaperExecutor(cfg, store, account)
+
+    # the ledger prices the contract from a live ws position node
+    class FakeWS:
+        def _positions_raw(self):
+            return {"default": [{
+                "quantity": 2,
+                "security": {
+                    "optionDetails": {
+                        "optionType": "CALL",
+                        "strikePrice": 759,
+                        "expiryDate": "2026-10-06T00:00:00.000-04:00",
+                        "underlyingSecurity": {
+                            "stock": {"symbol": "SPY"}},
+                    },
+                    "quoteV2": {"price": "2.0"},
+                },
+            }]}
+
+    from trader.ws.account import PaperLedger
+
+    ledger = PaperLedger(cfg, store, FakeWS())
+    from trader.trading.paper import _position_key
+
+    def ledger_quote(pos):
+        quotes = ledger._quotes()
+        q = (quotes.get(_position_key(pos))
+             or quotes.get(pos["contract_key"]))
+        return (q or {}).get("price")
+
+    buy = parse_alert("BOUGHT 0DTE SPY 759c @ 2.0 medium size")
+    assert executor.execute(buy, cfg, store).ok
+    key = buy.contract_key()
+
+    monitor = StopMonitor(cfg, store, executor, ledger_quote)
+    # bid 2.0: no stop
+    monitor.check_once()
+    assert store.get_position("paper", key) == 2
+
+    # the position row carries its size keyword -> the tier stop
+    # (70% -> 0.6) applies INSTEAD of the global 25% (1.5): at a
+    # bid of 1.0 only the global stop would have fired
+    rows = store.list_positions("paper")
+    assert rows[0]["size"] == "medium"
+
+    # switch the row's size to lotto (tier stop 70%)
+    store.set_position_tp("paper", "default", key, None)
+    store2_key = key
+    conn = __import__("sqlite3").connect(store.path)
+    conn.execute(
+        "UPDATE positions SET size = 'lotto' WHERE contract_key = ?",
+        (store2_key,),
+    )
+    conn.commit()
+    conn.close()
+
+    class FakeQ:
+        def __init__(self, price):
+            self._p = price
+
+        def __call__(self, pos):
+            return self._p
+
+    monitor.quote_fn = FakeQ(1.0)
+    monitor.check_once()
+    # tier stop 70% -> floor 0.6: 1.0 is above it, no fire (the
+    # global 25% stop at 1.5 WOULD have fired here)
+    assert store.get_position("paper", key) == 2
+
+    # below the tier floor: fires
+    monitor.quote_fn = FakeQ(0.5)
+    monitor.check_once()
+    assert store.get_position("paper", key) == 0
