@@ -28,7 +28,7 @@ digraph runtime {
     main [label=<
       <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" BGCOLOR="white">
         <TR><TD BGCOLOR="#1f6feb" COLSPAN="2"><FONT COLOR="white"><B>main thread</B> — Flask accept loop</FONT></TD></TR>
-        <TR><TD ALIGN="LEFT">app.run(threaded=True)</TD><TD ALIGN="LEFT">HTTPS via Tailscale</TD></TR>
+        <TR><TD ALIGN="LEFT">waitress (http) / werkzeug (tls)</TD><TD ALIGN="LEFT">HTTPS via Tailscale</TD></TR>
         <TR><TD ALIGN="LEFT" COLSPAN="2">worker threads per request (transient)</TD></TR>
       </TABLE>>];
 
@@ -46,13 +46,13 @@ digraph runtime {
     mirror [label=<
       <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" BGCOLOR="white">
         <TR><TD BGCOLOR="#238636" COLSPAN="2"><FONT COLOR="white"><B>trade mirror</B></FONT></TD></TR>
-        <TR><TD ALIGN="LEFT">WS activities → paper</TD><TD ALIGN="LEFT">only while mirroring is on</TD></TR>
+        <TR><TD ALIGN="LEFT">WS activities → ledgers</TD><TD ALIGN="LEFT">always on in live mode</TD></TR>
       </TABLE>>];
 
     stops [label=<
       <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" BGCOLOR="white">
         <TR><TD BGCOLOR="#238636" COLSPAN="2"><FONT COLOR="white"><B>stop monitor</B></FONT></TD></TR>
-        <TR><TD ALIGN="LEFT">quotes vs stop levels</TD><TD ALIGN="LEFT">only while quotes are enabled</TD></TR>
+        <TR><TD ALIGN="LEFT">quotes vs stop levels</TD><TD ALIGN="LEFT">whenever a mode executes (ledger / ws-chain fallback)</TD></TR>
       </TABLE>>];
 
     batcher [label=<

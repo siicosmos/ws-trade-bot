@@ -26,6 +26,12 @@ digraph architecture {
       <TR><TD ALIGN="LEFT">activities · quotes</TD><TD ALIGN="LEFT">orders (live mode)</TD></TR>
     </TABLE>>];
 
+  moomoo [label=<
+    <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" BGCOLOR="white">
+      <TR><TD BGCOLOR="#238636" COLSPAN="2"><FONT COLOR="white"><B>moomoo OpenD</B> (optional)</FONT></TD></TR>
+      <TR><TD ALIGN="LEFT">realtime quotes</TD><TD ALIGN="LEFT">read-only · no orders</TD></TR>
+    </TABLE>>];
+
   subgraph cluster_pc {
     label="pipeline PC (Windows) — start_pipeline.bat / start_reader.bat restart loops";
     fontsize=13;
@@ -46,7 +52,7 @@ digraph architecture {
       web [label=<
         <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" BGCOLOR="white">
           <TR><TD BGCOLOR="#1f6feb" COLSPAN="2"><FONT COLOR="white"><B>web/</B> — Flask (HTTPS · user sessions)</FONT></TD></TR>
-          <TR><TD ALIGN="LEFT">GET / + /static</TD><TD ALIGN="LEFT">dashboard page</TD></TR>
+          <TR><TD ALIGN="LEFT">GET / dashboard page</TD><TD ALIGN="LEFT">single html · css inlined</TD></TR>
           <TR><TD ALIGN="LEFT">GET /api/dashboard</TD><TD ALIGN="LEFT">one batched poll</TD></TR>
           <TR><TD ALIGN="LEFT">GET /api/history</TD><TD ALIGN="LEFT">search trades/signals</TD></TR>
           <TR><TD ALIGN="LEFT">POST /alert · /api/settings</TD><TD ALIGN="LEFT">token (machine) · login (users)</TD></TR>
@@ -63,15 +69,15 @@ digraph architecture {
         <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" BGCOLOR="white">
           <TR><TD BGCOLOR="#1f6feb" COLSPAN="2"><FONT COLOR="white"><B>store.py</B> — SQLite (WAL)</FONT></TD></TR>
           <TR><TD ALIGN="LEFT">signals · trades · positions</TD><TD ALIGN="LEFT">per-thread conns</TD></TR>
-          <TR><TD ALIGN="LEFT">meta (seeds, streaks)</TD><TD ALIGN="LEFT">daily retention prune</TD></TR>
+          <TR><TD ALIGN="LEFT">pending_orders · users · meta</TD><TD ALIGN="LEFT">daily retention prune</TD></TR>
         </TABLE>>];
 
       threads [label=<
         <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" BGCOLOR="white">
           <TR><TD BGCOLOR="#1f6feb" COLSPAN="2"><FONT COLOR="white"><B>supervised threads</B> — ops/supervise.py</FONT></TD></TR>
           <TR><TD ALIGN="LEFT">auto-updater</TD><TD ALIGN="LEFT">pull · restart gating</TD></TR>
-          <TR><TD ALIGN="LEFT">trade mirror</TD><TD ALIGN="LEFT">real fills → paper</TD></TR>
-          <TR><TD ALIGN="LEFT">stop monitor</TD><TD ALIGN="LEFT">quotes vs stops</TD></TR>
+          <TR><TD ALIGN="LEFT">trade mirror</TD><TD ALIGN="LEFT">real fills → ledgers · reconciles live estimates</TD></TR>
+          <TR><TD ALIGN="LEFT">stop monitor</TD><TD ALIGN="LEFT">quotes vs stops (runs whenever a mode executes)</TD></TR>
           <TR><TD ALIGN="LEFT">webhook batcher</TD><TD ALIGN="LEFT">log lines → Discord</TD></TR>
           <TR><TD ALIGN="LEFT">health watchdog</TD><TD ALIGN="LEFT">self-checks /health · exits on hang</TD></TR>
         </TABLE>>];
@@ -94,6 +100,7 @@ digraph architecture {
   threads -> paper [label="mirrored fills", style=dashed];
   web -> ws [label="positions · margin\nvalues (cached)", dir=forward];
   threads -> ws [label="activities (mirror)\noption chains (stops)", style=dashed];
+  threads -> moomoo [label="option/index quotes\n(stop monitor · SPX ladder)", style=dashed, color="#238636"];
   proc -> ws [label="live orders", style=dashed];
   web -> phone [label="notify · update webhooks", color="#8957e5"];
   threads -> github [label="fetch · ff-only pull", style=dashed];

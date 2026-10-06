@@ -48,7 +48,27 @@ digraph db_schema {
       <TR><TD ALIGN="LEFT">updated_ts</TD><TD ALIGN="LEFT">TEXT · UTC</TD></TR>
       <TR><TD ALIGN="LEFT">avg_premium</TD><TD ALIGN="LEFT">REAL</TD></TR>
       <TR><TD ALIGN="LEFT">realized / peak_bid</TD><TD ALIGN="LEFT">REAL</TD></TR>
+      <TR><TD ALIGN="LEFT">size</TD><TD ALIGN="LEFT">TEXT · size keyword</TD></TR>
+      <TR><TD ALIGN="LEFT">tp_gain_pct / trail_pct</TD><TD ALIGN="LEFT">REAL · per-position guards</TD></TR>
       <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="9"><I>PK covers (mode, account) lookups</I></FONT></TD><TD ALIGN="LEFT"></TD></TR>
+    </TABLE>>];
+
+  pending_orders [label=<
+    <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4" BGCOLOR="white">
+      <TR><TD BGCOLOR="#d29922" COLSPAN="2"><FONT COLOR="white"><B>pending_orders</B></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT"><B>id</B></TD><TD ALIGN="LEFT">INTEGER · PK auto</TD></TR>
+      <TR><TD ALIGN="LEFT">placed_ts</TD><TD ALIGN="LEFT">TEXT NOT NULL · UTC</TD></TR>
+      <TR><TD ALIGN="LEFT">mode / account</TD><TD ALIGN="LEFT">TEXT NOT NULL</TD></TR>
+      <TR><TD ALIGN="LEFT">order_id</TD><TD ALIGN="LEFT">TEXT · broker id</TD></TR>
+      <TR><TD ALIGN="LEFT">kind</TD><TD ALIGN="LEFT">TEXT · option (default) / stock</TD></TR>
+      <TR><TD ALIGN="LEFT">contract_key</TD><TD ALIGN="LEFT">TEXT NOT NULL</TD></TR>
+      <TR><TD ALIGN="LEFT">underlying / expiry / strike / opt_right</TD><TD ALIGN="LEFT">contract parts</TD></TR>
+      <TR><TD ALIGN="LEFT">action</TD><TD ALIGN="LEFT">TEXT NOT NULL · BUY/SELL</TD></TR>
+      <TR><TD ALIGN="LEFT">qty / est_price</TD><TD ALIGN="LEFT">INTEGER / REAL · estimate</TD></TR>
+      <TR><TD ALIGN="LEFT">pre_qty / pre_avg</TD><TD ALIGN="LEFT">INTEGER / REAL · pre-order snapshot</TD></TR>
+      <TR><TD ALIGN="LEFT">filled_qty / filled_price</TD><TD ALIGN="LEFT">INTEGER / REAL · accumulate</TD></TR>
+      <TR><TD ALIGN="LEFT">status</TD><TD ALIGN="LEFT">TEXT · open / filled / partial / expired / partial_cancelled</TD></TR>
+      <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="9"><I>idx: (mode, account, status, placed_ts)</I></FONT><BR/><FONT POINT-SIZE="9"><I>swept after 300s ttl · reconciled from the ws activity feed</I></FONT></TD><TD ALIGN="LEFT"></TD></TR>
     </TABLE>>];
 
   meta [label=<
