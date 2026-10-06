@@ -144,7 +144,8 @@ class Store:
                     ON trades (message_key);
                 """
             )
-            for col in ("realized", "peak_bid", "tp_gain_pct"):
+            for col in ("realized", "peak_bid", "tp_gain_pct",
+                        "trail_pct"):
                 try:
                     self._conn.execute(
                         f"ALTER TABLE positions ADD COLUMN {col} REAL"
@@ -467,7 +468,7 @@ class Store:
     def list_positions(self, mode: str, account=None):
         keys = ["account", "contract_key", "underlying", "expiry",
                 "strike", "right", "qty", "avg_premium", "realized",
-                "peak_bid", "size", "tp_gain_pct"]
+                "peak_bid", "size", "tp_gain_pct", "trail_pct"]
         cache_key = (mode, account)
         with self._cache_lock:
             cached = self._positions_cache.get(cache_key)
@@ -476,7 +477,7 @@ class Store:
             query = (
                 "SELECT account, contract_key, underlying, expiry, "
                 "strike, right, qty, avg_premium, realized, peak_bid, "
-                "size, tp_gain_pct FROM positions "
+                "size, tp_gain_pct, trail_pct FROM positions "
                 "WHERE mode = ? AND qty > 0"
             )
             params = [mode]
@@ -665,6 +666,25 @@ class Store:
                 "WHERE mode = ? AND account = ? AND contract_key = ?",
                 (
                     None if tp_gain_pct is None else float(tp_gain_pct),
+                    mode, account, contract_key,
+                ),
+            )
+
+    def set_position_trail(self, mode: str, account: str,
+                           contract_key: str, trail_pct):
+        """Per-position trailing stop: sell once the bid falls
+        this % off its peak (overrides the global trailing stop
+        for this position; 0 disables trailing here, None falls
+        back to the global setting)."""
+        self._touch()
+        self._positions_version += 1
+        self._positions_cache.clear()
+        with self._write_lock, self._conn:
+            self._conn.execute(
+                "UPDATE positions SET trail_pct = ? "
+                "WHERE mode = ? AND account = ? AND contract_key = ?",
+                (
+                    None if trail_pct is None else float(trail_pct),
                     mode, account, contract_key,
                 ),
             )

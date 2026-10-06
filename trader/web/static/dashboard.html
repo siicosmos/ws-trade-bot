@@ -119,11 +119,16 @@
   <div id="modalBox">
     <div class="mtitle" id="mTitle"></div>
     <div class="mtext" id="mText"></div>
-    <input id="mInput" type="text" inputmode="decimal" style="display:none;width:100%;margin:6px 0 2px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;background:#0d1117;color:var(--text);font-size:13px" />
+    <div class="mtext" id="mLabel1" style="display:none;font-size:11px;color:var(--muted);margin-bottom:2px">take-profit %</div>
+    <input id="mInput" inputmode="decimal" style="display:none;width:100%;margin:0 0 8px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;background:#0d1117;color:var(--text);font-size:13px" />
+    <div class="mtext" id="mLabel2" style="display:none;font-size:11px;color:var(--muted);margin-bottom:2px">trailing stop %</div>
+    <input id="mInput2" inputmode="decimal" style="display:none;width:100%;margin:0 0 8px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;background:#0d1117;color:var(--text);font-size:13px" />
     <div class="mrow">
       <button onclick="closeModal()" class="btn">cancel</button>
       <button id="mGo" class="btn danger" onclick="var a=modalAction; closeModal(); if(a) a();">reset</button>
     </div>
+  </div>
+</div>
   </div>
 </div>
 <div id="reconnect" style="display:none;position:fixed;top:0;left:0;right:0;z-index:200;background:#d29922;color:#111;text-align:center;font-size:12px;font-weight:700;padding:6px 8px;box-shadow:0 2px 8px rgba(0,0,0,.4)">server unreachable — reconnecting…</div>

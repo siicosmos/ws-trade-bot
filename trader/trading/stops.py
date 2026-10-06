@@ -47,7 +47,11 @@ class StopMonitor:
     def stop_price(self, entry, peak, pos=None):
         """The effective stop: the per-size stop loss from the
         position's tier when configured, the global one otherwise;
-        a trailing stop above the peak bid ratchets over it."""
+        a trailing stop above the peak bid ratchets over it. The
+        trailing distance is the position's own trail_pct when it
+        carries one (0 = off for this position), the global
+        trailing_stop_pct otherwise - so a per-position trailing
+        works even with the global stops off."""
         t = self.cfg.trading
         if not entry or entry <= 0:
             return None
@@ -55,10 +59,20 @@ class StopMonitor:
         stop_pct = float(t.stop_loss_pct)
         if tier is not None and tier.get("stop_loss_pct") is not None:
             stop_pct = float(tier["stop_loss_pct"])
-        stop = entry * (1 - stop_pct / 100.0)
-        if t.trailing_stop_pct > 0 and peak and peak > entry:
-            trail = peak * (1 - t.trailing_stop_pct / 100.0)
-            if trail > stop:
+        per_trail = (
+            pos.get("trail_pct") if pos else None
+        )
+        stop = (
+            entry * (1 - stop_pct / 100.0)
+            if stop_pct > 0 else None
+        )
+        trail_pct = (
+            float(per_trail) if per_trail is not None
+            else float(t.trailing_stop_pct)
+        )
+        if trail_pct > 0 and peak and peak > entry:
+            trail = peak * (1 - trail_pct / 100.0)
+            if stop is None or trail > stop:
                 return trail
         return stop
 
@@ -103,11 +117,11 @@ class StopMonitor:
             )
             entry = pos.get("avg_premium") or 0
             peak = max(bid, pos.get("peak_bid") or 0, entry)
-            # the stop check needs the global stop on (a 0 pct
-            # stop would fire at entry); the b2e and per-position
-            # take-profit checks run regardless
-            stop = self.stop_price(entry, peak, pos) \
-                if t.stop_loss_pct > 0 else None
+            # stop_price returns None when nothing is configured
+            # for this position (no global/tier stop and no
+            # per-position trailing) - the tp and b2e checks run
+            # regardless
+            stop = self.stop_price(entry, peak, pos)
             if stop is not None and bid <= stop:
                 self._fire(pos, bid, reason="stop")
                 continue

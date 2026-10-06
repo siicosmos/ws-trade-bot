@@ -66,20 +66,27 @@ Partially-filled live orders are handled properly now:
 - The mirror pass runs unconditionally in live mode (the
   paper-mirror toggle no longer gates reconciliation).
 
-### Per-position take-profit (extra #2)
+### Per-position sell guards: take-profit + trailing (extra #2)
 
 "ALL OUT" is not guaranteed to arrive, so each position can
-carry its own gain target, set beside the position in the
-dashboard (admin, options only):
+carry its own guards, set beside the position in the dashboard
+(admin, options only) - one modal with both fields:
 
-- `positions.tp_gain_pct` (store column) + `set_position_tp()`;
-  the target rides the position row through the dashboard.
-- The stop monitor sells the whole remaining position when the
-  bid reaches entry x (1 + tp%) - `[TP]` trades, running even
-  with the global stops off.
-- `POST /api/position-tp` (admin) sets/clears per
-  (mode, account, contract_key); a tp button sits beside every
-  paper + tracked position row, with a "TP x%" chip on the row.
+- `positions.tp_gain_pct` / `positions.trail_pct` (store
+  columns) + `set_position_tp()` / `set_position_trail()`; the
+  guards ride the position row through the dashboard.
+- Take-profit: the stop monitor sells the whole remaining
+  position when the bid reaches entry x (1 + tp%) - `[TP]`
+  trades, running even with the global stops off.
+- Trailing: the position's own `trail_pct` overrides the global
+  trailing stop - including enabling it while the global
+  trailing is off, and disabling it (0) where the global one is
+  on. Fires like a stop once the bid falls the % off the
+  position's peak bid.
+- `POST /api/position-tp` (admin) sets/clears both per
+  (mode, account, contract_key); the tp button beside every
+  paper + tracked position row opens both fields, with
+  "TP x%" / "TS x%" chips on the row.
 
 ### Live-executor test suite + kill switch (safety pass)
 

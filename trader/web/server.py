@@ -1390,10 +1390,12 @@ def create_app(cfg, store: Store, risk, executor, account=None,
 
     @app.post("/api/position-tp")
     def api_position_tp():
-        """Per-position take-profit: sell the whole remaining
-        position when its gain vs the entry premium reaches this
-        percent (the ALL OUT alert is not guaranteed to arrive).
-        Set beside each position row; tp_gain_pct null clears."""
+        """Per-position sell guards: take-profit (sell the whole
+        remaining position when its gain vs the entry premium
+        reaches this percent) and a per-position trailing stop
+        (sell once the bid falls this % off its peak). The ALL
+        OUT alert is not guaranteed to arrive. Set beside each
+        position row; a null clears that guard."""
         denied = _require_admin()
         if denied:
             return denied
@@ -1407,19 +1409,25 @@ def create_app(cfg, store: Store, risk, executor, account=None,
             return jsonify(
                 {"error": "label and contract_key required"}
             ), 400
-        raw = payload.get("tp_gain_pct", None)
-        if raw in (None, "", 0):
-            tp = None
-        else:
+
+        def _pct(value, name):
+            if value in (None, ""):
+                return None
             try:
-                tp = float(raw)
+                pct = float(value)
             except (TypeError, ValueError):
-                return jsonify({"error": "tp_gain_pct not a number"}), 400
-            if not (0 < tp <= 10000):
-                return jsonify(
-                    {"error": "tp_gain_pct must be 0-10000"}
-                ), 400
-            tp = round(tp, 2)
+                return False
+            if not (0 <= pct <= 10000):
+                return False
+            return round(pct, 2)
+
+        tp = _pct(payload.get("tp_gain_pct"), "tp_gain_pct")
+        trail = _pct(payload.get("trail_pct"), "trail_pct")
+        if tp is False or trail is False:
+            return jsonify(
+                {"error": "tp_gain_pct / trail_pct must be numbers "
+                          "between 0 and 10000"}
+            ), 400
         rows = store.list_positions(mode, label)
         row = next(
             (r for r in rows if r["contract_key"] == contract_key),
@@ -1430,15 +1438,24 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                 {"error": f"no {mode} position "
                           f"{contract_key!r} on {label!r}"}
             ), 404
-        store.set_position_tp(mode, label, contract_key, tp)
+        if "tp_gain_pct" in payload:
+            store.set_position_tp(mode, label, contract_key, tp)
+        if "trail_pct" in payload:
+            store.set_position_trail(mode, label, contract_key, trail)
         # the dashboard's stale-while-revalidate cache would
         # otherwise keep serving the pre-update rows
         _section_cache.pop("paper", None)
         _section_cache.pop("positions", None)
+        fresh = next(
+            (r for r in store.list_positions(mode, label)
+             if r["contract_key"] == contract_key),
+            {},
+        )
         return jsonify({
             "status": "ok",
             "contract_key": contract_key,
-            "tp_gain_pct": tp,
+            "tp_gain_pct": fresh.get("tp_gain_pct"),
+            "trail_pct": fresh.get("trail_pct"),
         })
 
     @app.post("/api/paper-sell")

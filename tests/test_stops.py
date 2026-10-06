@@ -489,3 +489,75 @@ def test_tp_runs_when_global_stop_off():
     monitor.quote_fn = lambda pos: 2.6   # +30% >= 25% target
     monitor.check_once()
     assert store.get_position("paper", key) == 0
+
+
+def test_per_position_trailing_stop():
+    """a per-position trailing % overrides the global trailing
+    (which may be off) and ratchets on the position's own peak."""
+    store = _fresh_store()
+    cfg = ConfigStub(TradingConfig(mode="paper", stop_loss_pct=0,
+                                   trailing_stop_pct=0,
+                                   risk_per_trade_pct=5,
+                                   cooldown_seconds=0))
+    account = PaperAccount(cfg, store)
+    executor = PaperExecutor(cfg, store, account)
+
+    buy = parse_alert("BOUGHT 0DTE SPY 759c @ 2.0")
+    executor.execute(buy, cfg, store)
+    key = buy.contract_key()
+
+    quotes = {key: 2.0}
+    monitor = StopMonitor(cfg, store, executor,
+                          lambda pos: quotes.get(pos["contract_key"]))
+    monitor.check_once()
+    assert store.get_position("paper", key) == 2
+
+    # the user sets a 20% trailing stop beside the position
+    store.set_position_trail("paper", "default", key, 20)
+    rows = store.list_positions("paper")
+    assert rows[0]["trail_pct"] == 20
+
+    # the bid rides to 3.0 (+50%) - the peak ratchets, no fire
+    quotes[key] = 3.0
+    monitor.check_once()
+    assert store.get_position("paper", key) == 2
+
+    # the bid falls 20% off the 3.0 peak -> 2.4: sold
+    quotes[key] = 2.4
+    monitor.check_once()
+    assert store.get_position("paper", key) == 0
+    sells = [t for t in store.recent_trades(5)
+             if t["action"] == "SELL" and "[STOP]" in (t["detail"] or "")]
+    assert len(sells) == 1
+
+
+def test_per_position_trail_0_disables_trailing():
+    """trail_pct 0 on the position disables trailing for it even
+    when the global trailing stop is on."""
+    store = _fresh_store()
+    cfg = ConfigStub(TradingConfig(mode="paper", stop_loss_pct=25,
+                                   trailing_stop_pct=20,
+                                   risk_per_trade_pct=5,
+                                   cooldown_seconds=0))
+    account = PaperAccount(cfg, store)
+    executor = PaperExecutor(cfg, store, account)
+    buy = parse_alert("BOUGHT 0DTE SPY 759c @ 2.0")
+    executor.execute(buy, cfg, store)
+    key = buy.contract_key()
+
+    store.set_position_trail("paper", "default", key, 0)
+    monitor = StopMonitor(cfg, store, executor,
+                          lambda pos: 3.0)
+    monitor.check_once()   # peak ratchets to 3.0
+    # 2.4 = 20% off the peak: the global trailing would fire, the
+    # position's own trail_pct = 0 disables it; the fixed -25%
+    # stop (1.5) is far below
+    monitor.quote_fn = lambda pos: 2.4
+    monitor.check_once()
+    assert store.get_position("paper", key) == 2
+
+    # a per-position trail takes over the disabled one: 10% off
+    # the 3.0 peak = 2.7, and the 2.4 bid is below it
+    store.set_position_trail("paper", "default", key, 10)
+    monitor.check_once()
+    assert store.get_position("paper", key) == 0

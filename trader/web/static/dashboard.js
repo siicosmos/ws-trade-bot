@@ -149,22 +149,42 @@ function openModal(title, text, actionLabel, action) {
   document.getElementById("modalBackdrop").style.display = "flex";
 }
 
-function openInputModal(title, text, placeholder, initial, action) {
+function openInputModal(title, text, field1, field2, action) {
+  // field1/field2: {label, placeholder, value} or null
   openModal(title, text, "save", action);
   const input = document.getElementById("mInput");
+  const label1 = document.getElementById("mLabel1");
+  const input2 = document.getElementById("mInput2");
+  const label2 = document.getElementById("mLabel2");
   input.style.display = "block";
-  input.placeholder = placeholder;
-  input.value = initial == null ? "" : String(initial);
+  label1.style.display = "block";
+  label1.textContent = field1.label || "value";
+  input.placeholder = field1.placeholder || "";
+  input.value = field1.value == null ? "" : String(field1.value);
+  if (field2) {
+    input2.style.display = "block";
+    label2.style.display = "block";
+    label2.textContent = field2.label || "value 2";
+    input2.placeholder = field2.placeholder || "";
+    input2.value = field2.value == null ? "" : String(field2.value);
+  } else {
+    input2.style.display = "none";
+    label2.style.display = "none";
+    input2.value = "";
+  }
   setTimeout(function() { input.focus(); }, 50);
 }
 
-function modalInputValue() {
-  return document.getElementById("mInput").value.trim();
+function modalInputValue(id) {
+  return document.getElementById(id || "mInput").value.trim();
 }
 
 function closeModal() {
   document.getElementById("modalBackdrop").style.display = "none";
   document.getElementById("mInput").style.display = "none";
+  document.getElementById("mInput2").style.display = "none";
+  document.getElementById("mLabel1").style.display = "none";
+  document.getElementById("mLabel2").style.display = "none";
   modalAction = null;
 }
 
@@ -239,37 +259,41 @@ function sellPaper(label, key, qty, price) {
   );
 }
 
-function setTp(mode, label, key, current) {
+function setTp(mode, label, key, tp, trail) {
   openInputModal(
-    "Position take-profit",
-    "Sell the whole remaining " + key + " on " + mode + " " +
-      label + " when its gain vs the entry reaches this percent" +
-      (current ? " (currently " + current + "%, empty = off)" :
-        " (empty = off)") + "?",
-    "gain %, e.g. 40",
-    current,
+    "Position sell guards",
+    key + " on " + mode + " " + label + " - take-profit sells " +
+      "the whole rest once the gain vs entry reaches the %; " +
+      "trailing sells once the bid falls that % off its peak " +
+      "(overrides the global trailing for this position). " +
+      "Leave both empty to remove the guards.",
+    { label: "take-profit % (gain vs entry)", placeholder: "e.g. 40",
+      value: tp },
+    { label: "trailing stop % (off this position's peak)",
+      placeholder: "e.g. 15", value: trail },
     async function() {
-      const raw = modalInputValue();
-      await doSetTp(mode, label, key, raw);
+      await doSetTp(mode, label, key,
+        modalInputValue("mInput"), modalInputValue("mInput2"));
     }
   );
 }
 
-async function doSetTp(mode, label, key, raw) {
+async function doSetTp(mode, label, key, tpRaw, trailRaw) {
   try {
     const res = await fetch("/api/position-tp", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         mode: mode, label: label, contract_key: key,
-        tp_gain_pct: raw === "" ? null : parseFloat(raw),
+        tp_gain_pct: tpRaw === "" ? null : parseFloat(tpRaw),
+        trail_pct: trailRaw === "" ? null : parseFloat(trailRaw),
       }),
     });
     if (res.status === 401) { location.href = "/login"; return; }
     const data = await res.json().catch(() => ({}));
     if (res.status !== 200) {
       openModal(
-        "Take-profit not set",
+        "Sell guards not saved",
         data.error || "the update did not go through",
         "ok",
         async function() { closeModal(); }
@@ -529,12 +553,19 @@ function renderSummary(data) {
             const priceCell = r.price == null ? "—" :
               "$" + r.price.toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) +
               (isOpt && !phidden ? ' <span class="subv">($' + (r.price * 100).toLocaleString("en-CA", { maximumFractionDigits: 0 }) + ")</span>" : "");
-            const tpChip = r.tp_gain_pct
-              ? ' <span class="tag ignored mini" title="auto-sell the rest at this gain">TP ' +
-                r.tp_gain_pct + '%</span>' : "";
+            const guardChips =
+              (r.tp_gain_pct
+                ? ' <span class="tag ignored mini" title="auto-sell the rest at this gain">TP ' +
+                  r.tp_gain_pct + '%</span>' : "") +
+              (r.trail_pct != null
+                ? ' <span class="tag ignored mini" title="' +
+                  (r.trail_pct > 0
+                    ? "auto-sell once the bid falls this % off its peak"
+                    : "trailing disabled for this position") + '">TS ' +
+                  r.trail_pct + '%</span>' : "");
             const actionCell = isAdmin() && r.qty > 0
               ? '<td class=num>' +
-                (isOpt ? '<button class="mini-toggle" title="auto-sell the rest at a gain percent" onclick="setTp(\'paper\', \'' + esc(a.label) + '\', \'' + esc(r.contract_key) + '\', ' + (r.tp_gain_pct == null ? "null" : r.tp_gain_pct) + ')">tp</button> ' : '') +
+                (isOpt ? '<button class="mini-toggle" title="take-profit / trailing for this position" onclick="setTp(\'paper\', \'' + esc(a.label) + '\', \'' + esc(r.contract_key) + '\', ' + (r.tp_gain_pct == null ? "null" : r.tp_gain_pct) + ', ' + (r.trail_pct == null ? "null" : r.trail_pct) + ')">tp</button> ' : '') +
                 '<button class="mini-toggle danger" title="sell at the live price" onclick="sellPaper(\'' + esc(a.label) + '\', \'' + esc(r.contract_key) + '\', ' + r.qty + ', ' + (r.price == null ? "null" : r.price) + ')">sell</button></td>'
               : '<td></td>';
             return '<tr><td>' + esc(r.contract_key) + '</td>' +
@@ -544,7 +575,7 @@ function renderSummary(data) {
               '<td class=num>' + (phidden ? "••••••" : fmtMoney(r.value) + cadB(r.value_cad)) + '</td>' +
               '<td class=num>' + (phidden ? "••••••" : (r.cost != null ? fmtMoney(r.cost) + cadB(r.cost_cad) : "—")) + '</td>' +
               '<td class=num style="color:' + rc + '">' + (r.pnl == null ? "—" :
-                (r.pnl >= 0 ? "+" : "") + r.pnl.toFixed(1) + "%" + tpChip +
+                (r.pnl >= 0 ? "+" : "") + r.pnl.toFixed(1) + "%" + guardChips +
                 (phidden ? "" : ' <span class="subv">(' + (r.pnl_dollars >= 0 ? "+" : "-$") +
                   Math.abs(r.pnl_dollars).toLocaleString("en-CA", { maximumFractionDigits: 2 }) + ")</span>")) + '</td>' +
               (isAdmin() ? actionCell : '') + '</tr>';
@@ -708,11 +739,16 @@ function renderPositionsInto(elId, rows, emptyText, monMode) {
         : (p.cost_usd != null ? (p.spread ? fmtSigned(p.cost_usd) : (p.short ? "-" : "") + fmtMoney(p.cost_usd)) + (p.cost_cad != null ? '<span class="subv">(' + (p.spread ? fmtSigned(p.cost_cad) : fmtMoney(p.cost_cad)) + ')</span>' : "") : '<span class="subv">(' + fmtMoney(avgTotal) + ")</span>")) + "</td>" +
       '<td class=num style="color:' + retColor + '">' +
       (p.tp_gain_pct ? '<span class="tag ignored mini" title="auto-sell the rest at this gain">TP ' + p.tp_gain_pct + '%</span> ' : "") +
+      (p.trail_pct != null ? '<span class="tag ignored mini" title="' +
+        (p.trail_pct > 0
+          ? "auto-sell once the bid falls this % off its peak"
+          : "trailing disabled for this position") + '">TS ' +
+        p.trail_pct + '%</span> ' : "") +
       retMain + plSpan + "</td>" +
       // the target rides the ledger the monitor watches - only
       // store-tracked rows carry a matching contract key
       (isAdmin() && !isStock && p.source !== "ws"
-        ? '<td class=num><button class="mini-toggle" title="auto-sell the rest at a gain percent" onclick="setTp(\'' + monMode + '\', \'' + esc(p.account) + '\', \'' + esc(p.contract_key) + '\', ' + (p.tp_gain_pct == null ? "null" : p.tp_gain_pct) + ')">tp</button></td>'
+        ? '<td class=num><button class="mini-toggle" title="take-profit / trailing for this position" onclick="setTp(\'' + monMode + '\', \'' + esc(p.account) + '\', \'' + esc(p.contract_key) + '\', ' + (p.tp_gain_pct == null ? "null" : p.tp_gain_pct) + ', ' + (p.trail_pct == null ? "null" : p.trail_pct) + ')">tp</button></td>'
         : '<td></td>') + "</tr>";
   }
   el.innerHTML = html + "</table>";
@@ -1182,6 +1218,8 @@ function renderSettings(s) {
           "one underlying+expiry+direction cluster (e.g. several SPX 0dte calls) may never exceed this % of account value - a buy into a capped cluster is skipped even when the global cap has room (0 = off)", "big") +
         _numField("set-partial_fill_cancel_pct", "partial-fill cancel %", t.partial_fill_cancel_pct,
           "a partially-filled order whose price runs this % away from the estimate gets its remainder cancelled - the filled part stays as the position (0 = off)", "big") +
+        _numField("set-max_slippage_pct", "slippage notice %", t.max_slippage_pct,
+          "a live fill landing this % away from the order's estimated price posts a discord notice with both prices (data only, 0 = off)", "big") +
         _numField("set-stop_loss_pct", "stop loss %", t.stop_loss_pct,
           "global stop loss % below entry (per-size overrides live in the size tiers below)", "big") +
         _numField("set-max_daily_loss_pct", "daily loss cap %", t.max_daily_loss_pct,
