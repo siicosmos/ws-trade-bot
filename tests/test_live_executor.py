@@ -387,3 +387,52 @@ def test_kill_switch_blocks_buys_allows_sells():
     assert "kill switch" in reason
     ok, _ = risk.evaluate(parse_alert("SOLD 0DTE SPY 759c @ 2.0"))
     assert ok
+
+def test_live_option_buy_cluster_cap(monkeypatch):
+    """correlation-aware risk: same-direction SPX calls are one
+    bet - a buy into the capped cluster is skipped while the
+    global cap still has room, and a different cluster trades."""
+    ws = FakeWS(ask=1.0, bid=0.9)
+    _patch_client(monkeypatch, ws)
+    # cluster cap 5% of 10000 = 500; the global cap stays wide
+    # (30% = 3000) so only the cluster check can block
+    cfg = _live_cfg(
+        max_open_risk_pct=30.0, cluster_cap_pct=5.0,
+        cooldown_seconds=0, dedupe_window_minutes=0,
+    )
+    store = _store()
+    account = StubAccount(_account_values())
+    ex = _executor(cfg, store, account)
+
+    # first SPX call: 4 contracts @ 1.0 ask = 400 cluster risk
+    res1 = ex.execute(
+        parse_alert("BOUGHT 0DTE SPX 759c @ 1.0 medium size"),
+        cfg, store,
+    )
+    assert res1.ok and res1.qty == 4
+
+    # a second SPX buy fills the cluster to 800 (>= the 500 cap)
+    res2 = ex.execute(
+        parse_alert("BOUGHT 0DTE SPX 759c @ 1.0 medium size"),
+        cfg, store,
+    )
+    assert res2.ok and res2.qty == 4
+    assert len(ws.orders) == 2
+
+    # a third SPX buy lands in an already-capped cluster even
+    # though the global cap (3000) has plenty of room
+    res3 = ex.execute(
+        parse_alert("BOUGHT 0DTE SPX 759c @ 1.0 medium size"),
+        cfg, store,
+    )
+    assert res3.qty == 0
+    assert "cluster cap" in res3.detail
+    assert len(ws.orders) == 2
+
+    # a SPY call is a different cluster - it trades
+    res4 = ex.execute(
+        parse_alert("BOUGHT 0DTE SPY 759c @ 1.0 medium size"),
+        cfg, store,
+    )
+    assert res4.ok and res4.qty == 4
+    assert len(ws.orders) == 3

@@ -388,6 +388,10 @@ class PaperLedger:
                     ),
                     "pnl": pnl,
                     "pnl_dollars": round(value - cost, 2),
+                    # per-position take-profit target (gain % vs
+                    # the entry premium) - set in the ui, fired
+                    # by the stop monitor
+                    "tp_gain_pct": pos.get("tp_gain_pct"),
                 }
             )
         return rows

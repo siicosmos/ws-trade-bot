@@ -89,8 +89,6 @@ class StopMonitor:
     def check_once(self):
         self.last_run = time.time()
         t = self.cfg.trading
-        if t.stop_loss_pct <= 0:
-            return
         for pos in self.store.list_positions(self.trader.mode):
             if not pos.get("right"):
                 continue   # the stop monitor watches options only
@@ -105,7 +103,11 @@ class StopMonitor:
             )
             entry = pos.get("avg_premium") or 0
             peak = max(bid, pos.get("peak_bid") or 0, entry)
-            stop = self.stop_price(entry, peak, pos)
+            # the stop check needs the global stop on (a 0 pct
+            # stop would fire at entry); the b2e and per-position
+            # take-profit checks run regardless
+            stop = self.stop_price(entry, peak, pos) \
+                if t.stop_loss_pct > 0 else None
             if stop is not None and bid <= stop:
                 self._fire(pos, bid, reason="stop")
                 continue
@@ -113,9 +115,18 @@ class StopMonitor:
             # gave it all back is sold before it expires worthless
             if self._back_to_entry_hit(pos, entry, peak, bid):
                 self._fire(pos, bid, reason="back_to_entry")
+                continue
+            # per-position take-profit: sell the rest when the
+            # gain vs the entry premium reaches the position's
+            # own target (set beside the position in the ui -
+            # the ALL OUT alert is not guaranteed to arrive)
+            tp = pos.get("tp_gain_pct")
+            if tp and entry > 0 and bid >= entry * (1 + float(tp) / 100.0):
+                self._fire(pos, bid, reason="tp")
 
     def _fire(self, pos, bid, reason="stop"):
-        tag = "[STOP]" if reason == "stop" else "[B2E]"
+        tag = {"stop": "[STOP]", "back_to_entry": "[B2E]",
+               "tp": "[TP]"}.get(reason, "[STOP]")
         title = (
             "BACK TO ENTRY FAILED" if reason == "back_to_entry"
             and False else ""

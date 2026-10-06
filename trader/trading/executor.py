@@ -154,6 +154,29 @@ def account_sizing(alert, cfg, account, store=None) -> list:
                     f"(${open_risk:,.0f} of ${limit:,.0f} deployed)"
                 )
 
+        if (
+            alert.action == "BUY"
+            and store is not None
+            and value
+            and plan["qty"]
+            and _at_cluster_cap(
+                store, mode, label, value, cfg, alert, price
+            )
+        ):
+            clusters = store.open_risk_clusters(mode, label)
+            key = (alert.underlying, alert.expiry, alert.right)
+            cluster_risk = sum(
+                c["risk"] for c in clusters
+                if (c["underlying"], c["expiry"], c["right"]) == key
+            )
+            warnings.append(
+                f"cluster cap reached: {alert.underlying} "
+                f"{alert.expiry} {alert.right} already at "
+                f"${cluster_risk:,.0f} "
+                f"({getattr(cfg.trading, 'cluster_cap_pct', 0):g}% "
+                f"of account)"
+            )
+
         rows.append(
             {
                 "label": label,
@@ -189,6 +212,29 @@ def _at_open_risk_cap(store, mode, label, value, cfg) -> bool:
     open_risk = store.open_risk(mode, label)
     limit = value * (cfg.trading.max_open_risk_pct / 100.0)
     return open_risk >= limit
+
+
+def _at_cluster_cap(store, mode, label, value, cfg, alert=None,
+                    price=None) -> bool:
+    """Correlation-aware risk: one (underlying, expiry, right)
+    cluster is one bet - three same-direction SPX 0dte calls
+    count as three positions against the global cap but are a
+    single x3 cluster. A buy into an already-capped cluster is
+    skipped even when the global cap has room."""
+    cap_pct = float(
+        getattr(cfg.trading, "cluster_cap_pct", 0) or 0
+    )
+    if cap_pct <= 0 or value is None or value <= 0:
+        return False
+    if alert is None or alert.kind != "option":
+        return False
+    key = (alert.underlying, alert.expiry, alert.right)
+    cluster_risk = sum(
+        c["risk"] for c in store.open_risk_clusters(mode, label)
+        if (c["underlying"], c["expiry"], c["right"]) == key
+    )
+    limit = value * (cap_pct / 100.0)
+    return cluster_risk >= limit
 
 
 def is_lotto_alert(alert) -> bool:
@@ -290,6 +336,16 @@ class PaperExecutor:
                 if _at_open_risk_cap(store, self.mode, label, value, cfg):
                     breakdown[label] = (
                         f"skipped (open risk cap reached, wanted {qty}x)"
+                    )
+                    continue
+                if _at_cluster_cap(
+                    store, self.mode, label, value, cfg, alert, price
+                ):
+                    breakdown[label] = (
+                        f"skipped (cluster cap reached: {alert.underlying} "
+                        f"{alert.expiry} {alert.right} already "
+                        f"{getattr(cfg.trading, 'cluster_cap_pct', 0):g}% "
+                        f"of the account at risk)"
                     )
                     continue
                 store.apply_position(
@@ -591,6 +647,16 @@ class WealthsimpleExecutor:
                 if _at_open_risk_cap(store, self.mode, label, value, cfg):
                     breakdown[label] = (
                         f"skipped (open risk cap reached, wanted {qty}x)"
+                    )
+                    continue
+                if _at_cluster_cap(
+                    store, self.mode, label, value, cfg, alert, limit
+                ):
+                    breakdown[label] = (
+                        f"skipped (cluster cap reached: {alert.underlying} "
+                        f"{alert.expiry} {alert.right} already "
+                        f"{getattr(cfg.trading, 'cluster_cap_pct', 0):g}% "
+                        f"of the account at risk)"
                     )
                     continue
                 order = ws.buy_option(

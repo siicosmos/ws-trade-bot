@@ -143,11 +143,28 @@ function openModal(title, text, actionLabel, action) {
   document.getElementById("mTitle").textContent = title;
   document.getElementById("mText").textContent = text;
   document.getElementById("mGo").textContent = actionLabel;
+  const input = document.getElementById("mInput");
+  input.style.display = "none";
+  input.value = "";
   document.getElementById("modalBackdrop").style.display = "flex";
+}
+
+function openInputModal(title, text, placeholder, initial, action) {
+  openModal(title, text, "save", action);
+  const input = document.getElementById("mInput");
+  input.style.display = "block";
+  input.placeholder = placeholder;
+  input.value = initial == null ? "" : String(initial);
+  setTimeout(function() { input.focus(); }, 50);
+}
+
+function modalInputValue() {
+  return document.getElementById("mInput").value.trim();
 }
 
 function closeModal() {
   document.getElementById("modalBackdrop").style.display = "none";
+  document.getElementById("mInput").style.display = "none";
   modalAction = null;
 }
 
@@ -220,6 +237,49 @@ function sellPaper(label, key, qty, price) {
     "sell",
     async function() { await doPaperSell(label, key); }
   );
+}
+
+function setTp(mode, label, key, current) {
+  openInputModal(
+    "Position take-profit",
+    "Sell the whole remaining " + key + " on " + mode + " " +
+      label + " when its gain vs the entry reaches this percent" +
+      (current ? " (currently " + current + "%, empty = off)" :
+        " (empty = off)") + "?",
+    "gain %, e.g. 40",
+    current,
+    async function() {
+      const raw = modalInputValue();
+      await doSetTp(mode, label, key, raw);
+    }
+  );
+}
+
+async function doSetTp(mode, label, key, raw) {
+  try {
+    const res = await fetch("/api/position-tp", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        mode: mode, label: label, contract_key: key,
+        tp_gain_pct: raw === "" ? null : parseFloat(raw),
+      }),
+    });
+    if (res.status === 401) { location.href = "/login"; return; }
+    const data = await res.json().catch(() => ({}));
+    if (res.status !== 200) {
+      openModal(
+        "Take-profit not set",
+        data.error || "the update did not go through",
+        "ok",
+        async function() { closeModal(); }
+      );
+      return;
+    }
+  } catch (e) { /* surfaced by the next refresh */ }
+  try { localStorage.removeItem("dash_last_payload"); } catch (e) {}
+  paperPositions = null;
+  load();
 }
 
 async function doPaperSell(label, key) {
@@ -359,6 +419,13 @@ function renderSummary(data) {
       '<div class="riskbar"><div style="width:' + pct + '%;background:' + color + '"></div></div>' +
       '<div class="sub"><span style="color:' + color + (pct >= (a.max_open_risk_pct || 30) ? ';font-weight:700' : '') + '">open risk ' + (hidden ? "••••••" : fmtMoney(risk) + " " + (showUsd ? "usd" : "cad")) + ' (' + (a.open_risk_pct ?? 0) + '%)</span>' +
       '<span>cap ' + (a.max_open_risk_pct) + '%</span></div>' +
+      ((a.cluster_cap_pct > 0 && a.open_risk_cluster > 0 && a.value &&
+        a.open_risk_cluster >= a.value * a.cluster_cap_pct / 100 * 0.8)
+        ? '<div class="sub"><span style="color:#d29922">largest cluster ' +
+          (a.open_risk_cluster / a.value * 100).toFixed(1) + '% of account' +
+          (a.open_risk_cluster >= a.value * a.cluster_cap_pct / 100 ? ' - capped' : '') + '</span>' +
+          '<span>cluster cap ' + a.cluster_cap_pct + '%</span></div>'
+        : '') +
       ((a.margin_requirement != null && !isNaN(a.margin_requirement))
         ? '<div class="sub mrow"><span class="cell"><span class="lab">total margin used</span><span class="val">' + (hidden ? "••••••" :
             fmtMoney(a.margin_used_usd || 0) + ' usd' +
@@ -462,8 +529,13 @@ function renderSummary(data) {
             const priceCell = r.price == null ? "—" :
               "$" + r.price.toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) +
               (isOpt && !phidden ? ' <span class="subv">($' + (r.price * 100).toLocaleString("en-CA", { maximumFractionDigits: 0 }) + ")</span>" : "");
-            const sellCell = isAdmin() && r.qty > 0
-              ? '<td class=num><button class="mini-toggle danger" title="sell at the live price" onclick="sellPaper(\'' + esc(a.label) + '\', \'' + esc(r.contract_key) + '\', ' + r.qty + ', ' + (r.price == null ? "null" : r.price) + ')">sell</button></td>'
+            const tpChip = r.tp_gain_pct
+              ? ' <span class="tag ignored mini" title="auto-sell the rest at this gain">TP ' +
+                r.tp_gain_pct + '%</span>' : "";
+            const actionCell = isAdmin() && r.qty > 0
+              ? '<td class=num>' +
+                (isOpt ? '<button class="mini-toggle" title="auto-sell the rest at a gain percent" onclick="setTp(\'paper\', \'' + esc(a.label) + '\', \'' + esc(r.contract_key) + '\', ' + (r.tp_gain_pct == null ? "null" : r.tp_gain_pct) + ')">tp</button> ' : '') +
+                '<button class="mini-toggle danger" title="sell at the live price" onclick="sellPaper(\'' + esc(a.label) + '\', \'' + esc(r.contract_key) + '\', ' + r.qty + ', ' + (r.price == null ? "null" : r.price) + ')">sell</button></td>'
               : '<td></td>';
             return '<tr><td>' + esc(r.contract_key) + '</td>' +
               '<td class=num>' + r.qty + '</td>' +
@@ -472,10 +544,10 @@ function renderSummary(data) {
               '<td class=num>' + (phidden ? "••••••" : fmtMoney(r.value) + cadB(r.value_cad)) + '</td>' +
               '<td class=num>' + (phidden ? "••••••" : (r.cost != null ? fmtMoney(r.cost) + cadB(r.cost_cad) : "—")) + '</td>' +
               '<td class=num style="color:' + rc + '">' + (r.pnl == null ? "—" :
-                (r.pnl >= 0 ? "+" : "") + r.pnl.toFixed(1) + "%" +
+                (r.pnl >= 0 ? "+" : "") + r.pnl.toFixed(1) + "%" + tpChip +
                 (phidden ? "" : ' <span class="subv">(' + (r.pnl_dollars >= 0 ? "+" : "-$") +
                   Math.abs(r.pnl_dollars).toLocaleString("en-CA", { maximumFractionDigits: 2 }) + ")</span>")) + '</td>' +
-              (isAdmin() ? sellCell : '') + '</tr>';
+              (isAdmin() ? actionCell : '') + '</tr>';
           }).join("") + '</table></div>' : '<div class="empty" style="font-size:12px;padding:8px">no positions</div>') : '');
       wrap.appendChild(pc);
     }
@@ -547,9 +619,11 @@ function renderPositions(rows) {
   const stocksEl = document.getElementById("stock-positions");
   stocksEl.style.display = showStocks ? "" : "none";
   document.getElementById("toggle-stocks").textContent = showStocks ? "Hide holdings" : "Show holdings";
-  renderPositionsInto("positions", rows.filter(r => r.kind !== "stock"), "no open positions");
+  const monMode = lastPayload && lastPayload.summary
+    && lastPayload.summary.mode === "live" ? "live" : "paper";
+  renderPositionsInto("positions", rows.filter(r => r.kind !== "stock"), "no open positions", monMode);
   if (showStocks) {
-    renderPositionsInto("stock-positions", rows.filter(r => r.kind === "stock"), "no stock holdings");
+    renderPositionsInto("stock-positions", rows.filter(r => r.kind === "stock"), "no stock holdings", monMode);
   }
 }
 
@@ -561,11 +635,11 @@ function keepScroll(el, fn) {
   el.scrollLeft = sl;
 }
 
-function renderPositionsInto(elId, rows, emptyText) {
+function renderPositionsInto(elId, rows, emptyText, monMode) {
   const el = document.getElementById(elId);
   if (!rows.length) { el.innerHTML = '<div class="empty">' + emptyText + '</div>'; return; }
   keepScroll(el, function() {
-  let html = '<table class="pos"><tr><th>Account</th><th>Contract</th><th class=num>Qty</th><th class=num>Avg $</th><th class=num>Price $</th><th class=num>Value $</th><th class=num>Total Cost $</th><th class=num>Return</th></tr>';
+  let html = '<table class="pos"><tr><th>Account</th><th>Contract</th><th class=num>Qty</th><th class=num>Avg $</th><th class=num>Price $</th><th class=num>Value $</th><th class=num>Total Cost $</th><th class=num>Return</th>' + (isAdmin() ? '<th></th>' : '') + '</tr>';
   for (const p of rows) {
     const ret = p.pct_return ?? null;
     const retColor = ret === null ? "var(--muted)" : ret >= 0 ? "var(--green)" : "var(--red)";
@@ -632,7 +706,14 @@ function renderPositionsInto(elId, rows, emptyText) {
             ? ""
             : '<span class="subv">(' + fmtMoney(p.cost_cad) + ')</span>')
         : (p.cost_usd != null ? (p.spread ? fmtSigned(p.cost_usd) : (p.short ? "-" : "") + fmtMoney(p.cost_usd)) + (p.cost_cad != null ? '<span class="subv">(' + (p.spread ? fmtSigned(p.cost_cad) : fmtMoney(p.cost_cad)) + ')</span>' : "") : '<span class="subv">(' + fmtMoney(avgTotal) + ")</span>")) + "</td>" +
-      '<td class=num style="color:' + retColor + '">' + retMain + plSpan + "</td></tr>";
+      '<td class=num style="color:' + retColor + '">' +
+      (p.tp_gain_pct ? '<span class="tag ignored mini" title="auto-sell the rest at this gain">TP ' + p.tp_gain_pct + '%</span> ' : "") +
+      retMain + plSpan + "</td>" +
+      // the target rides the ledger the monitor watches - only
+      // store-tracked rows carry a matching contract key
+      (isAdmin() && !isStock && p.source !== "ws"
+        ? '<td class=num><button class="mini-toggle" title="auto-sell the rest at a gain percent" onclick="setTp(\'' + monMode + '\', \'' + esc(p.account) + '\', \'' + esc(p.contract_key) + '\', ' + (p.tp_gain_pct == null ? "null" : p.tp_gain_pct) + ')">tp</button></td>'
+        : '<td></td>') + "</tr>";
   }
   el.innerHTML = html + "</table>";
   });
@@ -1097,6 +1178,10 @@ function renderSettings(s) {
           "hard cap on contracts per trade across all accounts", "big") +
         _numField("set-max_open_risk_pct", "open risk cap %", t.max_open_risk_pct,
           "stop opening new risk once deployed capital exceeds this % of account value", "big") +
+        _numField("set-cluster_cap_pct", "cluster cap %", t.cluster_cap_pct,
+          "one underlying+expiry+direction cluster (e.g. several SPX 0dte calls) may never exceed this % of account value - a buy into a capped cluster is skipped even when the global cap has room (0 = off)", "big") +
+        _numField("set-partial_fill_cancel_pct", "partial-fill cancel %", t.partial_fill_cancel_pct,
+          "a partially-filled order whose price runs this % away from the estimate gets its remainder cancelled - the filled part stays as the position (0 = off)", "big") +
         _numField("set-stop_loss_pct", "stop loss %", t.stop_loss_pct,
           "global stop loss % below entry (per-size overrides live in the size tiers below)", "big") +
         _numField("set-max_daily_loss_pct", "daily loss cap %", t.max_daily_loss_pct,
@@ -1337,7 +1422,7 @@ async function saveSettings() {
   const val = (id) => document.getElementById(id).value;
   const num = (id) => parseFloat(val(id));
   const trading = {};
-  for (const k of ["risk_per_trade_pct","max_contracts_per_trade","max_open_risk_pct","stop_loss_pct","max_daily_loss_pct","trailing_stop_pct","stop_check_seconds","max_consecutive_losses","min_dte_days","max_trades_per_day","cooldown_seconds","dedupe_window_minutes","limit_offset_pct","history_retention_days","lotto_gain_budget_pct"]) {
+  for (const k of ["risk_per_trade_pct","max_contracts_per_trade","max_open_risk_pct","cluster_cap_pct","max_slippage_pct","partial_fill_cancel_pct","stop_loss_pct","max_daily_loss_pct","trailing_stop_pct","stop_check_seconds","max_consecutive_losses","min_dte_days","max_trades_per_day","cooldown_seconds","dedupe_window_minutes","limit_offset_pct","history_retention_days","lotto_gain_budget_pct"]) {
     trading[k] = num("set-" + k);
   }
   trading.order_type = val("set-order_type");

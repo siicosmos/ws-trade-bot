@@ -1622,3 +1622,62 @@ def test_real_card_today_gain_above_risk_bar():
     today_at = card.index('">today ')
     assert today_at < card.index('<div class="riskbar"')
     assert today_at < card.index("open risk")
+
+
+def test_position_tp_endpoint():
+    """the per-position take-profit: set, cleared with null, and
+    admin-gated like the other writes."""
+    import os
+    import tempfile
+
+    from trader.store import Store
+
+    fd, path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    store = Store(path)
+    app = _paper_app(store)
+    client = app.test_client()
+    hdr = {"X-Auth-Token": "t"}
+
+    from trader.trading.parser import parse_alert
+
+    alert = parse_alert("BOUGHT 0DTE SPY 759c @ 2.0")
+    store.apply_position("paper", alert, 2, premium=2.0)
+
+    r = client.post(
+        "/api/position-tp", headers=hdr,
+        json={"mode": "paper", "label": "default",
+              "contract_key": alert.contract_key(),
+              "tp_gain_pct": 25},
+    )
+    assert r.status_code == 200, r.get_data(as_text=True)
+    assert r.get_json()["tp_gain_pct"] == 25
+    rows = store.list_positions("paper")
+    assert rows[0]["tp_gain_pct"] == 25
+
+    # out of range values are rejected
+    r_bad = client.post(
+        "/api/position-tp", headers=hdr,
+        json={"mode": "paper", "label": "default",
+              "contract_key": alert.contract_key(),
+              "tp_gain_pct": -5},
+    )
+    assert r_bad.status_code == 400
+
+    # an unknown position 404s
+    r_missing = client.post(
+        "/api/position-tp", headers=hdr,
+        json={"mode": "paper", "label": "default",
+              "contract_key": "NOPE", "tp_gain_pct": 10},
+    )
+    assert r_missing.status_code == 404
+
+    # null clears the target
+    r_clear = client.post(
+        "/api/position-tp", headers=hdr,
+        json={"mode": "paper", "label": "default",
+              "contract_key": alert.contract_key(),
+              "tp_gain_pct": None},
+    )
+    assert r_clear.status_code == 200
+    assert store.list_positions("paper")[0]["tp_gain_pct"] is None

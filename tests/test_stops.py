@@ -417,3 +417,75 @@ def test_realized_today_per_account():
     assert abs(store.realized_today("paper", "RRSP") - 200.0) < 0.01
     # the mode aggregate covers every account (lotto budget)
     assert abs(store.realized_today("paper") - 200.0) < 0.01
+
+
+def test_per_position_tp_fires_at_gain_target():
+    """a position with its own tp target sells the whole rest of
+    the position when the bid reaches entry x (1 + tp%) - even
+    with the global stops off (the ALL OUT alert is optional)."""
+    store = _fresh_store()
+    cfg = ConfigStub(TradingConfig(mode="paper", stop_loss_pct=0,
+                                   risk_per_trade_pct=5,
+                                   cooldown_seconds=0))
+    account = PaperAccount(cfg, store)
+    executor = PaperExecutor(cfg, store, account)
+
+    buy = parse_alert("BOUGHT 0DTE SPY 759c @ 2.0")
+    executor.execute(buy, cfg, store)
+    key = buy.contract_key()
+
+    quotes = {key: 2.0}
+    monitor = StopMonitor(cfg, store, executor,
+                          lambda pos: quotes.get(pos["contract_key"]))
+    monitor.check_once()
+    assert store.get_position("paper", key) == 2
+
+    # the user sets a 25% take-profit beside the position
+    store.set_position_tp("paper", "default", key, 25)
+    rows = store.list_positions("paper")
+    assert rows[0]["tp_gain_pct"] == 25
+
+    # 2.0 bid is below the target - nothing fires
+    monitor.check_once()
+    assert store.get_position("paper", key) == 2
+
+    # 2.6 = +30% >= 25% - the rest is sold
+    quotes[key] = 2.6
+    monitor.check_once()
+    assert store.get_position("paper", key) == 0
+    sells = [t for t in store.recent_trades(5)
+             if t["action"] == "SELL" and "[TP]" in (t["detail"] or "")]
+    assert len(sells) == 1
+
+    # clearing the target works
+    store.set_position_tp("paper", "default", key, None)
+    assert store.list_positions("paper") == []
+
+
+def test_tp_runs_when_global_stop_off():
+    """with stop_loss_pct = 0 the stop check is inert (a 0% stop
+    would fire at entry) but the per-position tp still fires."""
+    store = _fresh_store()
+    cfg = ConfigStub(TradingConfig(mode="paper", stop_loss_pct=0,
+                                   risk_per_trade_pct=5,
+                                   cooldown_seconds=0))
+    account = PaperAccount(cfg, store)
+    executor = PaperExecutor(cfg, store, account)
+    buy = parse_alert("BOUGHT 0DTE SPY 759c @ 2.0")
+    executor.execute(buy, cfg, store)
+    key = buy.contract_key()
+
+    monitor = StopMonitor(cfg, store, executor,
+                          lambda pos: 1.0)
+    # -50%: no stop fired (stops off), no tp (gain negative)
+    monitor.check_once()
+    assert store.get_position("paper", key) == 2
+
+    store.set_position_tp("paper", "default", key, 20)
+    monitor.check_once()
+    # 1.0 is a loss, not a tp hit - the position stays
+    assert store.get_position("paper", key) == 2
+
+    monitor.quote_fn = lambda pos: 2.6   # +30% >= 25% target
+    monitor.check_once()
+    assert store.get_position("paper", key) == 0

@@ -119,6 +119,7 @@
   <div id="modalBox">
     <div class="mtitle" id="mTitle"></div>
     <div class="mtext" id="mText"></div>
+    <input id="mInput" type="text" inputmode="decimal" style="display:none;width:100%;margin:6px 0 2px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;background:#0d1117;color:var(--text);font-size:13px" />
     <div class="mrow">
       <button onclick="closeModal()" class="btn">cancel</button>
       <button id="mGo" class="btn danger" onclick="var a=modalAction; closeModal(); if(a) a();">reset</button>

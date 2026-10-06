@@ -107,6 +107,17 @@ class TradingConfig:
     # fraction of today's realized sell gains
     max_contracts_per_trade: int = 10
     max_open_risk_pct: float = 30.0
+    # correlation-aware risk: a single (underlying, expiry, right)
+    # cluster may never exceed this % of the account value (the
+    # global open-risk cap still applies on top). 0 = off
+    cluster_cap_pct: float = 50.0
+    # notice when an actual fill lands this % away from the
+    # order's estimated price (data only, no auto-pause)
+    max_slippage_pct: float = 2.0
+    # a partially-filled order whose market price ran this % away
+    # from the estimate gets its remainder cancelled - the filled
+    # part stays as the position for future alerts. 0 = off
+    partial_fill_cancel_pct: float = 10.0
     stop_loss_pct: float = 25.0
     trailing_stop_pct: float = 0.0
     stop_check_seconds: int = 30
@@ -302,6 +313,11 @@ def load_config(path: str) -> Config:
             _get(trading_raw, "max_contracts_per_trade", 10)
         ),
         max_open_risk_pct=float(_get(trading_raw, "max_open_risk_pct", 30.0)),
+        cluster_cap_pct=float(_get(trading_raw, "cluster_cap_pct", 50.0)),
+        max_slippage_pct=float(_get(trading_raw, "max_slippage_pct", 2.0)),
+        partial_fill_cancel_pct=float(
+            _get(trading_raw, "partial_fill_cancel_pct", 10.0)
+        ),
         stop_loss_pct=float(_get(trading_raw, "stop_loss_pct", 25.0)),
         trailing_stop_pct=float(_get(trading_raw, "trailing_stop_pct", 0.0)),
         stop_check_seconds=int(_get(trading_raw, "stop_check_seconds", 30)),

@@ -144,7 +144,7 @@ class Store:
                     ON trades (message_key);
                 """
             )
-            for col in ("realized", "peak_bid"):
+            for col in ("realized", "peak_bid", "tp_gain_pct"):
                 try:
                     self._conn.execute(
                         f"ALTER TABLE positions ADD COLUMN {col} REAL"
@@ -189,6 +189,19 @@ class Store:
                     ON pending_orders (mode, account, status, placed_ts);
                 """
             )
+            # partial-fill tracking on open orders: the fills
+            # accumulate (qty + blended price) until the order
+            # completes or the sweep settles the remainder
+            for col, decl in (
+                ("filled_qty", "INTEGER DEFAULT 0"),
+                ("filled_price", "REAL"),
+            ):
+                try:
+                    self._conn.execute(
+                        f"ALTER TABLE pending_orders ADD COLUMN {col} {decl}"
+                    )
+                except sqlite3.OperationalError:
+                    pass
 
             cols = [
                 r[1] for r in self._conn.execute("PRAGMA table_info(positions)")
@@ -454,7 +467,7 @@ class Store:
     def list_positions(self, mode: str, account=None):
         keys = ["account", "contract_key", "underlying", "expiry",
                 "strike", "right", "qty", "avg_premium", "realized",
-                "peak_bid", "size"]
+                "peak_bid", "size", "tp_gain_pct"]
         cache_key = (mode, account)
         with self._cache_lock:
             cached = self._positions_cache.get(cache_key)
@@ -463,7 +476,8 @@ class Store:
             query = (
                 "SELECT account, contract_key, underlying, expiry, "
                 "strike, right, qty, avg_premium, realized, peak_bid, "
-                "size FROM positions WHERE mode = ? AND qty > 0"
+                "size, tp_gain_pct FROM positions "
+                "WHERE mode = ? AND qty > 0"
             )
             params = [mode]
             if account is not None:
@@ -636,6 +650,50 @@ class Store:
         with self._conn:
             row = self._conn.execute(query, params).fetchone()
         return float(row[0]) if row and row[0] is not None else 0.0
+
+    def set_position_tp(self, mode: str, account: str,
+                        contract_key: str, tp_gain_pct):
+        """Per-position take-profit: sell the whole remaining
+        position when its gain vs the entry premium reaches this
+        percent. None clears the target."""
+        self._touch()
+        self._positions_version += 1
+        self._positions_cache.clear()
+        with self._write_lock, self._conn:
+            self._conn.execute(
+                "UPDATE positions SET tp_gain_pct = ? "
+                "WHERE mode = ? AND account = ? AND contract_key = ?",
+                (
+                    None if tp_gain_pct is None else float(tp_gain_pct),
+                    mode, account, contract_key,
+                ),
+            )
+
+    def open_risk_clusters(self, mode: str, account=None) -> list:
+        """Clustered open risk: option positions grouped by
+        (underlying, expiry, right) - three same-direction SPX
+        0dte calls are one bet x3, not three positions. Returns
+        [{underlying, expiry, right, risk}] largest first."""
+        query = (
+            "SELECT underlying, expiry, right, "
+            "SUM(qty * COALESCE(avg_premium, 0) * 100) AS risk "
+            "FROM positions "
+            "WHERE mode = ? AND qty > 0 AND right IS NOT NULL"
+        )
+        params = [mode]
+        if account is not None:
+            query += " AND account = ?"
+            params.append(account)
+        query += " GROUP BY underlying, expiry, right ORDER BY risk DESC"
+        with self._conn:
+            rows = self._conn.execute(query, params).fetchall()
+        return [
+            {
+                "underlying": r[0], "expiry": r[1], "right": r[2],
+                "risk": float(r[3] or 0),
+            }
+            for r in rows if r[3]
+        ]
 
     def signal_text(self, message_key: str):
         """The original alert text for a message key (used to
@@ -999,7 +1057,8 @@ class Store:
                 "SELECT id, mode, account, order_id, kind, "
                 "contract_key, underlying, expiry, strike, "
                 "opt_right, action, qty, est_price, pre_qty, "
-                "pre_avg, placed_ts, status "
+                "pre_avg, placed_ts, status, filled_qty, "
+                "filled_price "
                 "FROM pending_orders WHERE mode = ? "
                 "AND status = 'open'"
             )
@@ -1013,11 +1072,39 @@ class Store:
                     ("id", "mode", "account", "order_id", "kind",
                      "contract_key", "underlying", "expiry", "strike",
                      "opt_right", "action", "qty", "est_price",
-                     "pre_qty", "pre_avg", "placed_ts", "status"),
+                     "pre_qty", "pre_avg", "placed_ts", "status",
+                     "filled_qty", "filled_price"),
                     r,
                 ))
                 for r in self._conn.execute(query, params).fetchall()
             ]
+
+    def update_pending_fill(self, row_id, filled_qty, filled_price):
+        """Accumulate an actual fill onto an open order: the
+        running filled qty and its blended price. Returns the
+        updated totals."""
+        self._touch()
+        with self._write_lock, self._conn:
+            row = self._conn.execute(
+                "SELECT filled_qty, filled_price FROM pending_orders "
+                "WHERE id = ?", (row_id,),
+            ).fetchone()
+            prev_qty = int(row[0] or 0) if row else 0
+            prev_price = row[1] if row else None
+            total = prev_qty + int(filled_qty)
+            blended = (
+                ((prev_qty * (prev_price or 0.0))
+                 + int(filled_qty) * (filled_price or 0.0)) / total
+                if total and (filled_price is not None
+                              or prev_price is not None)
+                else None
+            )
+            self._conn.execute(
+                "UPDATE pending_orders SET filled_qty = ?, "
+                "filled_price = ? WHERE id = ?",
+                (total, blended, row_id),
+            )
+            return total, blended
 
     def settle_pending_order(self, row_id, status):
         self._touch()

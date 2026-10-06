@@ -779,6 +779,20 @@ def _account_summary(ctx, snap, label, value):
         "cash_cad": cash_cad,
         "cash_usd": cash_usd,
         "open_risk": open_risk,
+        # correlation view: the largest (underlying, expiry,
+        # right) cluster's risk - the ui flags one bet dominating
+        # the open-risk cap
+        "open_risk_cluster": (
+            max(
+                (c["risk"] for c in store.open_risk_clusters(
+                    ctx.mode, label
+                )),
+                default=0.0,
+            )
+        ),
+        "cluster_cap_pct": float(
+            getattr(snap["t"], "cluster_cap_pct", 0) or 0
+        ),
         "stock_value": stock_value,
         "option_value": option_value,
         "alloc_base": alloc_base,
@@ -1373,6 +1387,59 @@ def create_app(cfg, store: Store, risk, executor, account=None,
         if isinstance(payload, dict) and "error" in payload:
             return jsonify(payload), 500
         return jsonify(payload)
+
+    @app.post("/api/position-tp")
+    def api_position_tp():
+        """Per-position take-profit: sell the whole remaining
+        position when its gain vs the entry premium reaches this
+        percent (the ALL OUT alert is not guaranteed to arrive).
+        Set beside each position row; tp_gain_pct null clears."""
+        denied = _require_admin()
+        if denied:
+            return denied
+        payload = request.get_json(silent=True) or {}
+        mode = str(payload.get("mode") or ctx.mode or "paper")
+        if mode not in ("paper", "live"):
+            return jsonify({"error": "mode must be paper or live"}), 400
+        label = str(payload.get("label") or "").strip()
+        contract_key = str(payload.get("contract_key") or "").strip()
+        if not label or not contract_key:
+            return jsonify(
+                {"error": "label and contract_key required"}
+            ), 400
+        raw = payload.get("tp_gain_pct", None)
+        if raw in (None, "", 0):
+            tp = None
+        else:
+            try:
+                tp = float(raw)
+            except (TypeError, ValueError):
+                return jsonify({"error": "tp_gain_pct not a number"}), 400
+            if not (0 < tp <= 10000):
+                return jsonify(
+                    {"error": "tp_gain_pct must be 0-10000"}
+                ), 400
+            tp = round(tp, 2)
+        rows = store.list_positions(mode, label)
+        row = next(
+            (r for r in rows if r["contract_key"] == contract_key),
+            None,
+        )
+        if row is None:
+            return jsonify(
+                {"error": f"no {mode} position "
+                          f"{contract_key!r} on {label!r}"}
+            ), 404
+        store.set_position_tp(mode, label, contract_key, tp)
+        # the dashboard's stale-while-revalidate cache would
+        # otherwise keep serving the pre-update rows
+        _section_cache.pop("paper", None)
+        _section_cache.pop("positions", None)
+        return jsonify({
+            "status": "ok",
+            "contract_key": contract_key,
+            "tp_gain_pct": tp,
+        })
 
     @app.post("/api/paper-sell")
     def api_paper_sell():

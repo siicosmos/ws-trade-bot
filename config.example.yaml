@@ -134,7 +134,19 @@ trading:
 
   max_contracts_per_trade: 10   # global cap regardless of tier
   max_open_risk_pct: 30          # per account: max % of account value in open
-                                 # positions at once; new buys skip at the cap
+                                  # positions at once; new buys skip at the cap
+  cluster_cap_pct: 50           # correlation-aware risk: one underlying+expiry+
+                                # direction cluster (e.g. several SPX 0dte calls)
+                                # may never exceed this % of account value; a buy
+                                # into a capped cluster skips even when the global
+                                # cap has room (0 = off)
+  max_slippage_pct: 2           # notice when an actual fill lands this % away
+                                # from the order's estimated price (discord
+                                # notice only - data first, no auto-pause)
+  partial_fill_cancel_pct: 10   # a partially-filled order whose price runs this
+                                # % away from the estimate gets its remainder
+                                # cancelled - the filled part stays as the
+                                # position for future alerts (0 = off)
   stop_loss_pct: 25          # % drop from entry premium that triggers a sell
                              # (paper/live only, needs quotes enabled)
   trailing_stop_pct: 0       # % off the peak premium; 0 = off

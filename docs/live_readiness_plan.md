@@ -6,49 +6,80 @@ technical detail. See also `docs/improvement_plan.md`.
 
 ## Planned items
 
-### 1. Correlation-aware open risk (P1)
-
-Three same-direction SPX 0dte calls count as three positions
-against `max_open_risk_pct` but are one bet x3. The open-risk
-cap should see clusters.
-
-- `store.open_risk(mode, account)` gains a clustered variant:
-  group open option positions by (underlying, expiry, right)
-  and sum qty x premium x 100 per cluster; report both the flat
-  total and the largest cluster.
-- Executor `_at_open_risk_cap` and the notify sizing warnings
-  take a `cluster_cap_pct` (new setting, default 50 = a single
-  cluster may never exceed half the account's open-risk cap).
-  A buy into an already-capped cluster is skipped even when the
-  global cap has room.
-- Dashboard: the open-risk sub line flags "largest cluster = x%
-  of cap" when one cluster dominates.
-- Verify: test that two SPX calls + one SPY call trip the
-  cluster cap while staying under the global cap.
-
-### 2. Slippage guard in live mode (P1)
-
-Live sells price off the quote bid at signal time; a fast tape
-means the fill lands below. The mirror now reconciles actual
-fills against the pending orders, so the check is cheap:
-
-- When `reconcile_pending_fill` settles an order, compare the
-  estimated price vs the fill price; if the difference exceeds
-  `max_slippage_pct` (new setting, default 2%), post a discord
-  notice with both prices. Data only at first - no auto-pause -
-  until the first weeks of live data say otherwise.
-
-### 3. Reader resilience review (P2)
+### 3. Reader resilience review (P2) - reviewed, no code
 
 The pipeline's single point of failure is the Windows UIA
-scraper on one Discord window. Heartbeat, watchdog, restart and
-the raw-alert webhook already exist. Remaining: a daily human
-check of the dashboard reader line ("watching: ..."), and
-optionally a second allowed channel as fallback in
-`reader.channels`. No code planned unless the heartbeat shows
-missed windows.
+scraper on one Discord window. Reviewed with the current
+guards in place: heartbeat + dashboard reader line, watchdog,
+auto-restart, the raw-alert webhook and the multi-channel
+allowlist already cover the failure modes the review was
+worried about. The remaining item is process, not code: a
+daily glance at the dashboard reader line ("watching: ...").
+A second allowed channel as fallback stays an option in
+`reader.channels` (it is an allowlist already) - no code until
+the heartbeat shows missed windows.
 
 ## Landed
+
+### Correlation-aware open risk (was planned #1)
+
+`cluster_cap_pct` (trading config, settings UI "global risk
+cap" sub-section, default 50 = a single cluster may never
+exceed half the account value):
+
+- `store.open_risk_clusters(mode, account)` groups open option
+  positions by (underlying, expiry, right) and sums
+  qty x premium x 100 per cluster, largest first.
+- A buy into an already-capped cluster is skipped even when
+  the global cap has room - in paper, live (option buys) and
+  the notify sizing warnings ("cluster cap reached: ...").
+- Dashboard: the real card's open-risk sub line flags the
+  largest cluster once it nears the cluster cap.
+- Verify: tests/test_live_executor.py
+  `test_live_option_buy_cluster_cap` - two SPX call buys fill
+  the cluster, the third is skipped, a SPY call still trades.
+
+### Slippage guard in live mode (was planned #2)
+
+`max_slippage_pct` (default 2%): when the mirror reconciles an
+actual fill against its pending order, a fill landing beyond
+this % from the order's estimated price posts a discord notice
+with both prices. Data only - no auto-pause.
+
+### Partial-fill price-shock cancel (extra)
+
+Partially-filled live orders are handled properly now:
+
+- Fills accumulate on the pending order (running filled qty +
+  blended price) - a partial fill keeps the order open so the
+  next fill of the remainder still reconciles (it used to
+  settle "filled" on the first fill and orphan the rest).
+- The 300s sweep keeps the FILLED part of a partial order
+  booked exactly (previously a partial fill past the ttl was
+  reverted entirely, erasing real holdings from the ledger).
+- `partial_fill_cancel_pct` (default 10%): a partially-filled
+  order whose market price ran this % away from the estimate
+  gets its remainder cancelled at the broker immediately
+  (`cancel_order`); the filled part stays as the position for
+  future alerts (an ALL OUT later sells what is held). Discord
+  notice with fill/estimate/market.
+- The mirror pass runs unconditionally in live mode (the
+  paper-mirror toggle no longer gates reconciliation).
+
+### Per-position take-profit (extra #2)
+
+"ALL OUT" is not guaranteed to arrive, so each position can
+carry its own gain target, set beside the position in the
+dashboard (admin, options only):
+
+- `positions.tp_gain_pct` (store column) + `set_position_tp()`;
+  the target rides the position row through the dashboard.
+- The stop monitor sells the whole remaining position when the
+  bid reaches entry x (1 + tp%) - `[TP]` trades, running even
+  with the global stops off.
+- `POST /api/position-tp` (admin) sets/clears per
+  (mode, account, contract_key); a tp button sits beside every
+  paper + tracked position row, with a "TP x%" chip on the row.
 
 ### Live-executor test suite + kill switch (safety pass)
 

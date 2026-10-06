@@ -73,17 +73,74 @@ def _status_ok(status):
     )
 
 
-def sweep_pending_orders(store, label):
-    """Expire estimated live bookings that never filled: restore
-    the pre-order position exactly (qty and basis) so the live
-    ledger only carries real fills."""
+def sweep_pending_orders(cfg, store, ws_account, label,
+                         webhook_url=""):
+    """Expire estimated live bookings that never filled and
+    settle partially-filled ones.
+
+    - no fill: restore the pre-order position exactly (qty and
+      basis) so the live ledger only carries real fills.
+    - partial fill: keep the filled part booked exactly (the
+      ledger position must match what the account actually
+      holds) and cancel the stale remainder at the broker.
+    - price shock: a partially-filled order whose market price
+      ran away from the estimate gets its remainder cancelled
+      immediately - the filled part stays as the position for
+      future alerts (an ALL OUT later sells what is held).
+    """
     cutoff = (
         datetime.now(timezone.utc) - timedelta(seconds=PENDING_TTL_SECONDS)
     ).isoformat(timespec="seconds")
+    shock_pct = float(
+        getattr(getattr(cfg, "trading", None),
+                "partial_fill_cancel_pct", 0) or 0
+    )
+    try:
+        ws = ws_account._client()
+    except Exception:
+        ws = None
     for row in store.open_pending_orders("live", label):
+        mult = 100 if (row["kind"] or "option") == "option" else 1
+        filled = int(row.get("filled_qty") or 0)
+
+        # price-shock cancel: a partially-filled order whose
+        # market price ran away from the estimate - cancel the
+        # remainder now (no ttl wait), keep the filled part as
+        # the position for future alerts
+        if (
+            filled and shock_pct > 0
+            and ws is not None and row.get("est_price")
+        ):
+            current = _contract_market_price(ws_account, row)
+            est = float(row["est_price"])
+            if current and est > 0:
+                move = abs(float(current) - est) / est * 100
+            if current and est > 0:
+                move = abs(float(current) - est) / est * 100
+                if move >= shock_pct:
+                    if _shock_cancel(
+                        store, ws, row, float(current), move,
+                        shock_pct, webhook_url,
+                    ):
+                        continue
+
         if (row["placed_ts"] or "") > cutoff:
             continue
-        mult = 100 if (row["kind"] or "option") == "option" else 1
+        if filled:
+            # the filled part is real: correct the estimated
+            # booking down to it and let the rest go
+            store.correct_fill(
+                "live", row["account"], row["contract_key"],
+                row["action"], filled_qty=filled,
+                actual_price=row.get("filled_price"),
+                pre_qty=row["pre_qty"], pre_avg=row["pre_avg"],
+                booked_qty=row["qty"], booked_price=row["est_price"],
+                mult=mult,
+                underlying=row["underlying"], expiry=row["expiry"],
+                strike=row["strike"], opt_right=row["opt_right"],
+            )
+            store.settle_pending_order(row["id"], "partial")
+            continue
         store.correct_fill(
             "live", row["account"], row["contract_key"], row["action"],
             filled_qty=0, actual_price=None,
@@ -96,10 +153,98 @@ def sweep_pending_orders(store, label):
         store.settle_pending_order(row["id"], "expired")
 
 
-def reconcile_pending_fill(store, label, contract_key, action, qty, price):
+def _contract_market_price(ws_account, row):
+    """Current market price for a pending order's contract
+    (options via the ws chain, None when unavailable)."""
+    if (row.get("kind") or "option") != "option":
+        return None
+    try:
+        from .executor import WealthsimpleExecutor
+        from .parser import Alert
+
+        resolver = WealthsimpleExecutor(ws_account.cfg, ws_account)
+        ws = ws_account._client()
+        sec_id = resolver._resolve_security(ws, row["underlying"])
+        if not sec_id:
+            return None
+        alert = Alert(
+            action="SELL",
+            ticker=row["underlying"],
+            kind="option",
+            underlying=row["underlying"],
+            expiry=str(row.get("expiry") or "")[:10],
+            strike=row.get("strike"),
+            right=row.get("opt_right"),
+        )
+        opt, _ = resolver._resolve_option(ws, sec_id, alert)
+        if not opt:
+            return None
+        quote = opt.get("quote") or {}
+        price = (
+            quote.get("bid") or quote.get("ask")
+            or quote.get("last") or quote.get("price")
+        )
+        return float(price) if price else None
+    except Exception:
+        return None
+
+
+def _shock_cancel(store, ws, row, current_price, move_pct,
+                  shock_pct=0, webhook_url=""):
+    """Cancel the unfilled remainder of a price-shocked partial
+    order and settle the ledger to the filled part."""
+    from ..ops.notify import notify_discord
+
+    order_id = str(row.get("order_id") or "")
+    if order_id:
+        try:
+            ws.cancel_order(order_id)
+        except Exception as e:
+            # already filled / already cancelled at the broker -
+            # either way the remainder will not trade against us
+            print(f"pending-order cancel: {e}")
+    mult = 100 if (row.get("kind") or "option") == "option" else 1
+    filled = int(row.get("filled_qty") or 0)
+    store.correct_fill(
+        "live", row["account"], row["contract_key"], row["action"],
+        filled_qty=filled,
+        actual_price=row.get("filled_price"),
+        pre_qty=row["pre_qty"], pre_avg=row["pre_avg"],
+        booked_qty=row["qty"], booked_price=row["est_price"],
+        mult=mult,
+        underlying=row["underlying"], expiry=row["expiry"],
+        strike=row["strike"], opt_right=row["opt_right"],
+    )
+    store.settle_pending_order(row["id"], "partial_cancelled")
+    notify_discord(
+        webhook_url,
+        f"PARTIAL FILLED - REST CANCELLED: {row['contract_key']}",
+        {
+            "filled": f"{filled}x of {row['qty']} "
+                      f"@ ~{row.get('filled_price'):g}",
+            "estimated": f"{row.get('est_price'):g}",
+            "market": f"{float(current_price):g}",
+            "move": f"{move_pct:.1f}% (limit {shock_pct:g}%)",
+            "note": ("the filled part stays as the position - "
+                     "future alerts trade against it"),
+        },
+        ok=False,
+    )
+    return True
+
+
+def reconcile_pending_fill(store, label, contract_key, action, qty,
+                           price, max_slippage_pct=0, webhook_url=""):
     """Match an actual fill to the oldest open pending live order
     for the same contract and action, then correct the estimated
-    booking toward the fill (qty + price), exactly."""
+    booking toward the fill (qty + price), exactly.
+
+    Fills accumulate: a partial fill keeps the order open (with
+    its running filled qty / blended price) so later fills of
+    the same order still reconcile; the order settles once the
+    fills cover its size."""
+    from ..ops.notify import notify_discord
+
     for row in store.open_pending_orders("live", label):
         if (
             row["contract_key"] != contract_key
@@ -107,24 +252,52 @@ def reconcile_pending_fill(store, label, contract_key, action, qty, price):
         ):
             continue
         mult = 100 if (row["kind"] or "option") == "option" else 1
+        total_filled, blended = store.update_pending_fill(
+            row["id"], int(qty), price
+        )
         store.correct_fill(
             "live", row["account"], contract_key, action,
-            filled_qty=qty, actual_price=price,
+            filled_qty=total_filled, actual_price=blended,
             pre_qty=row["pre_qty"], pre_avg=row["pre_avg"],
             booked_qty=row["qty"], booked_price=row["est_price"],
             mult=mult,
             underlying=row["underlying"], expiry=row["expiry"],
             strike=row["strike"], opt_right=row["opt_right"],
         )
-        store.settle_pending_order(row["id"], "filled")
+        est = row["est_price"]
+        slip = (
+            abs((price or 0) - (est or 0)) / est * 100
+            if est else 0.0
+        )
+        if (
+            max_slippage_pct and max_slippage_pct > 0
+            and est and price and slip >= float(max_slippage_pct)
+        ):
+            notify_discord(
+                webhook_url,
+                f"SLIPPAGE: {action} {contract_key}",
+                {
+                    "estimated": f"{est:g}",
+                    "filled": f"{price:g}",
+                    "slippage": f"{slip:.1f}% (limit {max_slippage_pct:g}%)",
+                },
+                ok=False,
+            )
+        if total_filled >= int(row["qty"]):
+            store.settle_pending_order(row["id"], "filled")
         return True
     return False
 
 
-def mirror_real_trades(cfg, store, ws_account, ledger=None):
+def mirror_real_trades(cfg, store, ws_account, ledger=None,
+                       webhook_url=""):
     """Apply new real fills to the paper ledger. Returns a list of
     human-readable descriptions for logging."""
     applied = []
+    slippage_pct = float(
+        getattr(getattr(cfg, "trading", None),
+                "max_slippage_pct", 0) or 0
+    )
     fx_fn = getattr(ledger, "fx", None)
     try:
         activities_fn = ws_account._client().get_activities
@@ -139,7 +312,7 @@ def mirror_real_trades(cfg, store, ws_account, ledger=None):
         # dashboard's real-account today gain reads this ledger
         seed_real_accounts(store, ws_account)
         # expire estimated live bookings that never filled
-        sweep_pending_orders(store, label)
+        sweep_pending_orders(cfg, store, ws_account, label, webhook_url)
         seed = store.meta_get(f"paper_seed:{label}")
         since = store.meta_get(f"mirror:{label}:since")
         if since is None:
@@ -227,9 +400,14 @@ def mirror_real_trades(cfg, store, ws_account, ledger=None):
             # reconcile the live ledger's estimated booking
             # against this actual fill (no-op when no pending
             # live order matches)
+            # reconcile the live ledger's estimated booking
+            # against this actual fill (no-op when no pending
+            # live order matches); a fill that slips past the
+            # configured % from the estimate posts a notice
             reconcile_pending_fill(
                 store, label, shim.contract_key(), action, int(qty),
-                premium,
+                premium, max_slippage_pct=slippage_pct,
+                webhook_url=webhook_url,
             )
             if action == "SELL":
                 held = store.get_position(
@@ -291,11 +469,17 @@ def start_mirror_thread(cfg, store, ws_account, ledger,
                 store.maybe_prune()
             except Exception:
                 pass
-            if not getattr(cfg, "paper", None) or not cfg.paper.mirror:
+            # live mode: the pass is unconditional - fill
+            # reconciliation cannot depend on the paper-mirror
+            # toggle; paper mode: only when mirroring is on
+            if getattr(cfg.trading, "mode", "") != "live" and (
+                not getattr(cfg, "paper", None) or not cfg.paper.mirror
+            ):
                 continue
             try:
                 applied = mirror_real_trades(
-                    cfg, store, ws_account, ledger
+                    cfg, store, ws_account, ledger,
+                    webhook_url=webhook_url,
                 )
             except Exception as e:
                 print(f"trade mirror error: {e}")
