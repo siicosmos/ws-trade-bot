@@ -372,6 +372,26 @@ _WS_QUOTE_RETRY = 30.0
 # page must not stall on it
 _SECTION_TTL = 15.0
 _section_cache = {}
+
+
+def _section_ttl(cfg):
+    """The stale-while-revalidate window rides the settings: a
+    short positions/values refresh must not sit behind a fixed
+    15s cache - cap the ttl at half the shortest refresh so the
+    dashboard keeps up with what the settings promise."""
+    ws = getattr(cfg, "wealthsimple", None)
+    try:
+        positions = float(
+            getattr(ws, "positions_refresh_seconds", 30)
+        )
+        values = float(
+            getattr(ws, "values_refresh_seconds", 60)
+        )
+    except (TypeError, ValueError):
+        return _SECTION_TTL
+    return min(_SECTION_TTL, max(2.5, min(positions / 2, values / 2)))
+
+
 _sec_id_cache = {}
 _ws_quote_cache = {}
 _ws_quote_fail_ts = {}
@@ -940,11 +960,12 @@ def _dashboard_sections(ctx):
         ("positions", _positions_payload, ctx, []),
     )
     now = time.time()
+    ttl = _section_ttl(ctx.cfg)
     results = {}
     pending = []
     for key, fn, arg, fallback in sections:
         hit = _section_cache.get(key)
-        if hit and now - hit[0] < _SECTION_TTL:
+        if hit and now - hit[0] < ttl:
             results[key] = hit[1]
         else:
             pending.append((key, fn, arg, fallback))
