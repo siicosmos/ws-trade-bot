@@ -4534,6 +4534,11 @@ def test_paper_positions_priced_from_moomoo():
     rows = ledger.positions("default")
     assert rows[0]["price"] == 2.0
 
+    # the stub code follows the parsed expiry - the alert's
+    # month/day rolls forward once the date has passed
+    ymd = buy.expiry[2:4] + buy.expiry[5:7] + buy.expiry[8:10]
+    opt_code = f"US.AAOI{ymd}C00105000"
+
     class _Row:
         def __init__(self, code, price):
             self._code, self._price = code, price
@@ -4549,7 +4554,7 @@ def test_paper_positions_priced_from_moomoo():
 
         class _Iloc:
             def __getitem__(self, i):
-                return _Row("US.AAOI261002C00105000", 2.15)
+                return _Row(opt_code, 2.15)
 
         iloc = _Iloc()
 

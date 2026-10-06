@@ -1208,6 +1208,7 @@ def test_manual_paper_sell_endpoint():
     os.close(fd)
     store = Store(path)
     alert = parse_alert("BOUGHT 10/02 AAOI 105c @ 2.0")
+    ck = alert.contract_key()
     store.apply_position(
         "paper", alert, 4, premium=2.0, account="RRSP"
     )
@@ -1218,8 +1219,7 @@ def test_manual_paper_sell_endpoint():
     hdr = {"X-Auth-Token": "t"}
     r = client.post(
         "/api/paper-sell", headers=hdr,
-        json={"label": "RRSP",
-              "contract_key": "AAOI-2026-10-02-105-C"},
+        json={"label": "RRSP", "contract_key": ck},
     )
     assert r.status_code == 200, r.get_data(as_text=True)
     data = r.get_json()
@@ -1232,9 +1232,7 @@ def test_manual_paper_sell_endpoint():
     import trader.web.server as srv
     assert "paper" not in srv._section_cache
     assert "positions" not in srv._section_cache
-    assert store.get_position(
-        "paper", "AAOI-2026-10-02-105-C", "RRSP"
-    ) == 0
+    assert store.get_position("paper", ck, "RRSP") == 0
     # proceeds: 4x $2.00 x100 = $800 cad back to the cash
     assert abs(store.paper_equity("RRSP") - 1800.0) < 0.01
     sells = [t for t in store.recent_trades(10)
@@ -1242,7 +1240,7 @@ def test_manual_paper_sell_endpoint():
              and "manual SELL" in (t["detail"] or "")]
     assert len(sells_of(store)) == 1
     row = [p for p in store.list_positions("paper", "RRSP")
-           if p["contract_key"] == "AAOI-2026-10-02-105-C"]
+           if p["contract_key"] == ck]
     assert not row or int(row[0]["qty"]) == 0
 
 
@@ -1282,6 +1280,7 @@ def test_manual_paper_sell_partial_and_missing():
     client = app.test_client()
     hdr = {"X-Auth-Token": "t", "Content-Type": "application/json"}
     alert = parse_alert("BOUGHT 10/02 DRAM 60c @ 1.6")
+    ck = alert.contract_key()
     store.apply_position(
         "paper", alert, 2, premium=1.6, account="default"
     )
@@ -1289,16 +1288,13 @@ def test_manual_paper_sell_partial_and_missing():
     # partial sell on the right account
     r = client.post(
         "/api/paper-sell", headers=hdr,
-        json={"label": "default",
-              "contract_key": "DRAM-2026-10-02-60-C", "qty": 1},
+        json={"label": "default", "contract_key": ck, "qty": 1},
     )
     assert r.status_code == 200, r.get_data(as_text=True)
     data = r.get_json()
     assert data["sold"] == 1
     assert data["remaining"] == 1
-    assert store.get_position(
-        "paper", "DRAM-2026-10-02-60-C", "default"
-    ) == 1
+    assert store.get_position("paper", ck, "default") == 1
 
     # unknown contract -> 404
     r2 = client.post(
@@ -1352,6 +1348,11 @@ def test_manual_paper_sell_live_price_and_fx():
             self.quotes = QuotesConfig()
             self.paper = types.SimpleNamespace(enabled=True)
 
+    from trader.trading.parser import parse_alert
+
+    alert = parse_alert("BOUGHT 10/02 AAOI 105c @ 2.0")
+    ck = alert.contract_key()
+
     class FakeLedger:
         """stands in for the PaperLedger: the holdings quote and
         the fx rate the sell books against"""
@@ -1361,7 +1362,7 @@ def test_manual_paper_sell_live_price_and_fx():
 
         def positions(self, label):
             return [{
-                "contract_key": "AAOI-2026-10-02-105-C",
+                "contract_key": ck,
                 "price": 3.0, "usd": True,
             }]
 
@@ -1371,9 +1372,6 @@ def test_manual_paper_sell_live_price_and_fx():
     fd, path = tempfile.mkstemp(suffix=".db")
     os.close(fd)
     store = Store(path)
-    from trader.trading.parser import parse_alert
-
-    alert = parse_alert("BOUGHT 10/02 AAOI 105c @ 2.0")
     store.apply_position(
         "paper", alert, 4, premium=2.0, account="RRSP"
     )
@@ -1387,8 +1385,7 @@ def test_manual_paper_sell_live_price_and_fx():
     hdr = {"X-Auth-Token": "t"}
     r = client.post(
         "/api/paper-sell", headers=hdr,
-        json={"label": "RRSP",
-              "contract_key": "AAOI-2026-10-02-105-C"},
+        json={"label": "RRSP", "contract_key": ck},
     )
     assert r.status_code == 200, r.get_data(as_text=True)
     data = r.get_json()
@@ -1401,8 +1398,7 @@ def test_manual_paper_sell_live_price_and_fx():
     # selling the same contract again: it is already gone
     r2 = client.post(
         "/api/paper-sell", headers=hdr,
-        json={"label": "RRSP",
-              "contract_key": "AAOI-2026-10-02-105-C"},
+        json={"label": "RRSP", "contract_key": ck},
     )
     assert r2.status_code == 404
     assert "no paper position" in r2.get_json()["error"]
