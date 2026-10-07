@@ -2211,7 +2211,7 @@ async function changeMyPassword() {
     }),
   });
   const data = await res.json().catch(() => ({}));
-  const msg = document.getElementById("users-msg");
+  const msg = document.getElementById("pw-msg");
   if (msg) msg.textContent = res.status === 200
     ? "password changed" : (data.error || "failed");
   if (res.status === 200) {
