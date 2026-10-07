@@ -444,15 +444,57 @@ def log(msg):
     _append_reader_log(line)
 
 
-def find_config_path():
+def own_config_path():
+    """The reader's own yaml in the reader folder - the single
+    source of truth for reader settings and the reader's
+    webhooks (reader log, raw alerts)."""
     here = os.path.dirname(os.path.abspath(__file__))
-    candidates = (
-        os.path.join(here, "..", "config.yaml"),
-        os.path.join(here, "config.yaml"),
-    )
-    for path in candidates:
-        if os.path.exists(path):
-            return os.path.abspath(path)
+    return os.path.join(here, "config.yaml")
+
+
+def legacy_config_path():
+    here = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(here, "..", "config.yaml")
+
+
+def _migrate_own_config(root_cfg):
+    """One-time migration: flatten the monolith config's reader +
+    discord sections into reader/config.yaml (flat keys). The
+    reader's webhooks (reader log, raw alerts) move here from
+    the discord section - they are reader-domain."""
+    import yaml
+
+    path = own_config_path()
+    reader = root_cfg.get("reader") or {}
+    discord = root_cfg.get("discord") or {}
+    flat = dict(reader)
+    flat["reader_log_webhook_url"] = str(
+        discord.get("reader_log_webhook_url") or "")
+    flat["raw_alert_webhook_url"] = str(
+        discord.get("raw_alert_webhook_url") or "")
+    flat["webhook_url"] = str(discord.get("webhook_url") or "")
+    with open(path, "w", encoding="utf-8") as f:
+        yaml.safe_dump(
+            flat, f, default_flow_style=False, sort_keys=False,
+            allow_unicode=True, width=4096,
+        )
+    log("migrated reader settings to " + path)
+
+
+def find_config_path():
+    if os.path.exists(own_config_path()):
+        return os.path.abspath(own_config_path())
+    legacy = legacy_config_path()
+    if os.path.exists(legacy):
+        try:
+            import yaml as _yaml
+
+            with open(legacy, "r", encoding="utf-8") as f:
+                root_cfg = _yaml.safe_load(f) or {}
+            _migrate_own_config(root_cfg)
+            return os.path.abspath(own_config_path())
+        except OSError:
+            pass
     return None
 
 
@@ -461,7 +503,8 @@ def load_config():
 
     path = find_config_path()
     if path is None:
-        log("config.yaml not found - copy config.example.yaml to config.yaml")
+        log("reader/config.yaml not found - copy "
+            "reader/config.example.yaml to reader/config.yaml")
         sys.exit(1)
     with open(path, "r", encoding="utf-8") as f:
         return yaml.safe_load(f) or {}
@@ -1223,8 +1266,10 @@ def main():
     _log_previous_exit()
     _terminate_stale_reader()
     raw_cfg = load_config()
-    cfg = raw_cfg.get("reader") or {}
-    discord_cfg = raw_cfg.get("discord") or {}
+    # the reader's own yaml is flat (keys at top level); the
+    # legacy root config nests them under reader:/discord:
+    cfg = raw_cfg.get("reader") or raw_cfg
+    discord_cfg = raw_cfg.get("discord") or raw_cfg
     webhook_url = str(discord_cfg.get("webhook_url") or "")
     raw_alert_webhook_url = str(
         discord_cfg.get("raw_alert_webhook_url") or ""
@@ -1280,6 +1325,10 @@ def main():
 
     sync_clock()
     last_clock_check = time.time()
+    config_path = find_config_path()
+    config_mtime = (
+        os.path.getmtime(config_path) if config_path else None
+    )
 
     # anything timestamped today is deliverable, even hours late - the
     # seen-set (persisted across restarts) keeps delivery at-most-once
@@ -1352,6 +1401,23 @@ def main():
 
         if time.time() - last_head_check > 10:
             last_head_check = time.time()
+            # an edited reader/config.yaml applies on restart -
+            # the .bat loop brings the reader back in 5s
+            if config_path:
+                try:
+                    mtime = os.path.getmtime(config_path)
+                except OSError:
+                    mtime = None
+                if config_mtime and mtime and mtime != config_mtime:
+                    log("reader/config.yaml changed - restarting "
+                        "reader to apply it")
+                    notify_restart(
+                        update_webhook_url,
+                        "reader config changed",
+                    )
+                    if _log_hook is not None:
+                        _log_hook.flush_now()
+                    os._exit(77)
             head = git_head(repo_root())
             if head and start_head and head != start_head:
                 if reader_relevant_changes(repo_root(), start_head, head):

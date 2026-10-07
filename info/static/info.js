@@ -199,6 +199,76 @@ async function loadLevels() {
   } catch (e) { /* transient */ }
 }
 
+// ---- settings: auto-update + this app's webhooks (the
+// reader's settings live in the reader's own yaml, the
+// consumer's in the consumer app)
+let settingsDirty = false;
+let lastSettings = null;
+
+function setSettingsDirty(v) {
+  settingsDirty = v;
+  const save = document.getElementById("settings-save");
+  const revert = document.getElementById("settings-revert");
+  if (save) save.style.display = v ? "" : "none";
+  if (revert) revert.style.display = v ? "" : "none";
+}
+
+function openSettings() {
+  document.getElementById("settingsBackdrop").style.display = "flex";
+  loadSettings();
+}
+
+function closeSettings() {
+  document.getElementById("settingsBackdrop").style.display = "none";
+}
+
+function loadSettings() {
+  jget("/api/settings").then(function (s) {
+    lastSettings = s;
+    const au = s.auto_update || {};
+    const dc = s.discord || {};
+    document.getElementById("set-au-enabled").checked = au.enabled;
+    document.getElementById("set-au-interval").value = au.interval_seconds;
+    document.getElementById("set-discord-webhook_url").value = dc.webhook_url || "";
+    document.getElementById("set-discord-pipeline_log_webhook_url").value = dc.pipeline_log_webhook_url || "";
+    document.getElementById("set-discord-update_webhook_url").value = dc.update_webhook_url || "";
+    setSettingsDirty(false);
+  });
+}
+
+async function saveSettings() {
+  const val = (id) => document.getElementById(id).value;
+  const num = (id) => parseFloat(val(id));
+  const payload = {
+    auto_update: {
+      enabled: document.getElementById("set-au-enabled").checked,
+      interval_seconds: parseInt(val("set-au-interval")),
+    },
+    discord: {
+      webhook_url: val("set-discord-webhook_url"),
+      pipeline_log_webhook_url: val("set-discord-pipeline_log_webhook_url"),
+      update_webhook_url: val("set-discord-update_webhook_url"),
+    },
+  };
+  const r = await fetch("/api/settings", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const d = await r.json().catch(() => ({}));
+  if (r.ok && d.status === "ok") {
+    lastSettings = d;
+    setSettingsDirty(false);
+    const msg = document.getElementById("settings-msg");
+    if (msg) msg.textContent = "Saved";
+    setTimeout(function () {
+      if (msg) msg.textContent = "";
+    }, 1500);
+  } else {
+    alert((d.errors || ["save failed"]).join("\n"));
+  }
+}
+
 document.getElementById("levels-save").onclick = async function () {
   const btn = document.getElementById("levels-save");
   const status = document.getElementById("levels-status");

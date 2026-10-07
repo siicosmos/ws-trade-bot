@@ -20,6 +20,9 @@
   <div class="headrow" style="color:var(--muted);font-size:12px;gap:18px">
     <span id="updated">data refreshed</span>
   </div>
+  <div class="headrow" style="justify-content:flex-end;gap:10px">
+    <button class="btn" onclick="openSettings()">settings</button>
+  </div>
 </header>
 
 <main>
@@ -43,6 +46,16 @@
   <p class="set-hint" style="margin-top:8px">shared with every consumer app's levels ladder via the feed.</p>
 </div>
 </main>
+<div id="settingsBackdrop" onclick="if(event.target===this) closeSettings()">
+  <div id="settingsPanel">
+    <div id="settingsHead"><span>Settings</span><button id="settingsClose" class="btn" onclick="closeSettings()">&#215;</button></div>
+    <div id="settingsScroll"><div id="settings" class="card"></div></div>
+    <div id="settings-float">
+      <button id="settings-revert" onclick="loadSettings()">Revert</button>
+      <button id="settings-save" onclick="saveSettings()">Save</button>
+    </div>
+  </div>
+</div>
 <script src="/static/info.js" defer></script>
 </body>
 </html>

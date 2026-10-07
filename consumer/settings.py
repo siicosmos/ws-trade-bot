@@ -1,7 +1,8 @@
 import os
-import tempfile
 
 import yaml
+
+from core.config import dump_yaml_config
 
 EDITABLE_SCALARS = {
     "risk_per_trade_pct": ("float", 0, 100),
@@ -134,14 +135,10 @@ def get_settings(cfg) -> dict:
                 )
             ),
             "webhook_url": cfg.discord.webhook_url,
-            "reader_log_webhook_url": cfg.discord.reader_log_webhook_url,
             "pipeline_log_webhook_url": (
                 cfg.discord.pipeline_log_webhook_url
             ),
             "update_webhook_url": cfg.discord.update_webhook_url,
-            "raw_alert_webhook_url": getattr(
-                cfg.discord, "raw_alert_webhook_url", ""
-            ),
         },
     }
 
@@ -487,10 +484,8 @@ def apply_settings(cfg, payload: dict, config_path=None) -> tuple:
     discord_payload = payload.get("discord") or {}
     for field in (
         "webhook_url",
-        "reader_log_webhook_url",
         "pipeline_log_webhook_url",
         "update_webhook_url",
-        "raw_alert_webhook_url",
     ):
         if field in discord_payload:
             url = str(discord_payload[field]).strip()
@@ -553,32 +548,6 @@ def apply_settings(cfg, payload: dict, config_path=None) -> tuple:
     return applied, errors
 
 
-def _dump_yaml(raw, config_path):
-    """Atomic yaml write, preserving blank-line layout between
-    top-level sections."""
-    directory = os.path.dirname(os.path.abspath(config_path))
-    fd, tmp = tempfile.mkstemp(dir=directory, suffix=".yaml.tmp")
-    with os.fdopen(fd, "w") as f:
-        text = yaml.safe_dump(
-            raw, default_flow_style=False, sort_keys=False,
-            allow_unicode=True, width=4096,
-        )
-        out = []
-        for line in text.split("\n"):
-            if (
-                out
-                and line
-                and not line[0].isspace()
-                and not line.startswith("- ")
-                and line not in ("---", "...")
-                and out[-1] != ""
-            ):
-                out.append("")
-            out.append(line)
-        f.write("\n".join(out))
-    os.replace(tmp, config_path)
-
-
 def set_mode(cfg, mode, config_path=None):
     """Persist trading.mode (the mode slider). Returns False
     when the write failed."""
@@ -589,7 +558,7 @@ def set_mode(cfg, mode, config_path=None):
         return False
     raw.setdefault("trading", {})["mode"] = mode
     try:
-        _dump_yaml(raw, config_path)
+        dump_yaml_config(raw, config_path)
     except OSError:
         return False
     cfg.trading.mode = mode
@@ -620,10 +589,8 @@ def _persist(cfg, config_path):
     dc = raw.setdefault("discord", {})
     for field in (
         "webhook_url",
-        "reader_log_webhook_url",
         "pipeline_log_webhook_url",
         "update_webhook_url",
-        "raw_alert_webhook_url",
     ):
         if field in raw.get("discord", {}) or getattr(
             cfg.discord, field, ""
@@ -683,10 +650,8 @@ def _persist(cfg, config_path):
     dc = raw.setdefault("discord", {})
     for field in (
         "webhook_url",
-        "reader_log_webhook_url",
         "pipeline_log_webhook_url",
         "update_webhook_url",
-        "raw_alert_webhook_url",
     ):
         if field in raw.get("discord", {}) or getattr(
             cfg.discord, field, ""
@@ -707,4 +672,4 @@ def _persist(cfg, config_path):
         for a in cfg.wealthsimple.accounts
     ]
 
-    _dump_yaml(raw, config_path)
+    dump_yaml_config(raw, config_path)

@@ -257,6 +257,34 @@ class Config:
     feed: FeedConfig = field(default_factory=FeedConfig)
 
 
+def dump_yaml_config(raw, config_path):
+    """Atomic yaml write, preserving blank-line layout between
+    top-level sections."""
+    directory = os.path.dirname(os.path.abspath(config_path))
+    fd, tmp = tempfile.mkstemp(dir=directory, suffix=".yaml.tmp")
+    with os.fdopen(fd, "w") as f:
+        text = yaml.safe_dump(
+            raw, default_flow_style=False, sort_keys=False,
+            allow_unicode=True, width=4096,
+        )
+        out = []
+        for line in text.split("\n"):
+            if (
+                out
+                and line
+                and not line[0].isspace()
+                and not line.startswith("- ")
+                and line not in ("---", "...")
+                and out[-1] != ""
+            ):
+                out.append("")
+            out.append(line)
+        f.write("\n".join(out))
+    os.replace(tmp, config_path)
+
+
+
+
 def _get(d, key, default):
     value = d.get(key, default)
     return default if value is None else value

@@ -32,8 +32,27 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
     install_quiet_filter()
     app.config["MAX_CONTENT_LENGTH"] = 1024 * 1024
 
-    # the reader's heartbeat state (dashboard reader line)
+    # the reader's heartbeat state (dashboard reader line).
+    # reader settings live in the reader's own yaml - read the
+    # desired channel marker from there for the "waiting for"
+    # display (best effort; the reader and this app share the box)
     app.reader_state = {"channel": None, "ok": False, "last_seen": None}
+    app.reader_desired = ""
+    try:
+        import yaml as _yaml
+
+        rpath = os.path.join(
+            os.path.dirname(os.path.dirname(
+                os.path.abspath(__file__))),
+            "reader", "config.yaml",
+        )
+        if os.path.exists(rpath):
+            with open(rpath, encoding="utf-8") as f:
+                rcfg = _yaml.safe_load(f) or {}
+            flat = rcfg.get("reader") or rcfg
+            app.reader_desired = str(flat.get("channel_marker") or "")
+    except Exception:
+        pass
 
     logging.getLogger("werkzeug").setLevel(logging.ERROR)
 
@@ -220,8 +239,10 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
         })
 
     # --------------------------------------------------------
-    # reader heartbeat: the reader posts channel/ok and merges
-    # back its live-editable settings
+    # reader heartbeat: the reader posts channel/ok. Reader
+    # settings live in the reader's own yaml (reader/config.yaml)
+    # - the heartbeat no longer pushes settings, it would
+    # override the yaml on every poll
     # --------------------------------------------------------
     @app.post("/api/reader_status")
     def api_reader_status():
@@ -229,39 +250,13 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
         app.reader_state["channel"] = (data.get("channel") or None)
         app.reader_state["ok"] = bool(data.get("ok"))
         app.reader_state["last_seen"] = time.time()
-        return jsonify(
-            {
-                "channel_marker": cfg.reader.channel_marker,
-                "poll_interval": cfg.reader.poll_interval,
-                "max_items": cfg.reader.max_items,
-                "channels": cfg.reader.channels,
-                "channel_servers": getattr(
-                    cfg.reader, "channel_servers", {}
-                ),
-                "auto_switch": bool(
-                    getattr(
-                        cfg.reader, "auto_switch_channel", True
-                    )
-                ),
-                "discord_reopen_seconds": getattr(
-                    cfg.reader, "discord_reopen_seconds", 15
-                ),
-                "discord_restart_seconds": int(
-                    getattr(
-                        cfg.reader, "discord_restart_seconds", 90
-                    )
-                ),
-                "auto_scroll": bool(
-                    getattr(cfg.reader, "auto_scroll", True)
-                ),
-            }
-        )
+        return jsonify({})
 
     @app.get("/api/reader_status")
     def api_reader_status_get():
         last_seen = app.reader_state.get("last_seen")
         state = dict(app.reader_state)
-        state["desired"] = cfg.reader.channel_marker
+        state["desired"] = app.reader_desired
         state["age_seconds"] = (
             round(time.time() - last_seen, 1) if last_seen else None
         )
@@ -291,6 +286,100 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
         from core.ops.updater import update_status_payload
 
         return jsonify(update_status_payload(app))
+
+    # --------------------------------------------------------
+    # settings: auto-update + this app's webhooks (the reader's
+    # settings live in the reader's own yaml, the consumer's in
+    # the consumer app)
+    # --------------------------------------------------------
+    @app.get("/api/settings")
+    def api_settings_get():
+        return jsonify({
+            "auto_update": {
+                "enabled": cfg.auto_update.enabled,
+                "interval_seconds": cfg.auto_update.interval_seconds,
+            },
+            "discord": {
+                "webhook_url": cfg.discord.webhook_url,
+                "pipeline_log_webhook_url": (
+                    cfg.discord.pipeline_log_webhook_url
+                ),
+                "update_webhook_url": cfg.discord.update_webhook_url,
+            },
+        })
+
+    @app.post("/api/settings")
+    def api_settings_post():
+        data = request.get_json(silent=True) or {}
+        errors = []
+        applied = {}
+
+        au = data.get("auto_update") or {}
+        if "enabled" in au:
+            cfg.auto_update.enabled = bool(au["enabled"])
+            applied["auto_update.enabled"] = cfg.auto_update.enabled
+        if "interval_seconds" in au:
+            try:
+                value = int(au["interval_seconds"])
+            except (TypeError, ValueError):
+                value = -1
+            if not (30 <= value <= 86400):
+                errors.append(
+                    "auto_update.interval_seconds: must be 30-86400"
+                )
+            else:
+                cfg.auto_update.interval_seconds = value
+                applied["auto_update.interval_seconds"] = value
+
+        dc = data.get("discord") or {}
+        for field in (
+            "webhook_url",
+            "pipeline_log_webhook_url",
+            "update_webhook_url",
+        ):
+            if field in dc:
+                url = str(dc[field]).strip()
+                if url and not url.startswith("https://"):
+                    errors.append(
+                        f"discord.{field}: must be an https URL"
+                    )
+                else:
+                    setattr(cfg.discord, field, url)
+                    applied[f"discord.{field}"] = url
+
+        if errors:
+            return jsonify({"status": "error", "errors": errors}), 400
+        if applied and config_path:
+            try:
+                with open(config_path) as f:
+                    import yaml as _yaml
+
+                    raw = _yaml.safe_load(f) or {}
+                if applied.get("auto_update.enabled") is not None:
+                    raw.setdefault("auto_update", {})["enabled"] = (
+                        cfg.auto_update.enabled
+                    )
+                if "auto_update.interval_seconds" in applied:
+                    raw.setdefault(
+                        "auto_update", {}
+                    )["interval_seconds"] = (
+                        cfg.auto_update.interval_seconds
+                    )
+                d = raw.setdefault("discord", {})
+                for field in ("webhook_url",
+                              "pipeline_log_webhook_url",
+                              "update_webhook_url"):
+                    if f"discord.{field}" in applied:
+                        d[field] = getattr(cfg.discord, field)
+                from core.config import dump_yaml_config
+
+                dump_yaml_config(raw, config_path)
+            except OSError as e:
+                return jsonify(
+                    {"status": "error",
+                     "errors": [f"could not write config: {e}"]}
+                ), 500
+        return jsonify({"status": "ok", "applied": applied})
 
     @app.get("/api/signals")
     def api_signals():
