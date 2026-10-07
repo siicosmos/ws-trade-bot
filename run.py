@@ -46,6 +46,7 @@ def main():
         ),
     )
     mode = cfg.trading.mode
+    role = getattr(cfg.pipeline, "role", "consumer")
 
     from trader.ops.loghook import install_log_webhook
 
@@ -73,8 +74,19 @@ def main():
     account = None
     executor = None
     paper_ledger = None
+    risk = None
 
-    if mode == "live":
+    if role == "info":
+        # the alert source server: reader ingest + feed only -
+        # no trading wiring (no executors, stops, mirror,
+        # quotes). Consumers run the trading pipeline on their
+        # own machines against their own accounts.
+        print(
+            "info server: reader ingest + alert feed "
+            f"({len(cfg.consumers)} consumer"
+            f"{'s' if len(cfg.consumers) != 1 else ''} registered)"
+        )
+    elif mode == "live":
         account = WealthsimpleAccount(cfg, store)
         executor = WealthsimpleExecutor(cfg, account)
         # the mirror thread always runs in live mode: it books
@@ -154,75 +166,80 @@ def main():
                 "(run scripts/ws_login.py) - using paper values for sizing alerts"
             )
 
-    risk = RiskEngine(cfg, store, account)
+    if role != "info":
+        risk = RiskEngine(cfg, store, account)
 
-    # the stop monitor runs wherever positions are executed: live,
-    # paper-only, or paper alongside notify (it watches the paper
-    # ledger through the PaperExecutor). It also fires the
-    # per-position tp / trailing guards - so it starts whenever
-    # positions execute, even with the global stops at 0
-    paper_alongside = (
-        mode == "notify"
-        and executor is not None
-        and getattr(getattr(cfg, "paper", None), "enabled", False)
-    )
-    if mode in ("paper", "live") or paper_alongside:
-        from trader.trading.stops import StopMonitor
+        # the stop monitor runs wherever positions are executed: live,
+        # paper-only, or paper alongside notify (it watches the paper
+        # ledger through the PaperExecutor). It also fires the
+        # per-position tp / trailing guards - so it starts whenever
+        # positions execute, even with the global stops at 0
+        paper_alongside = (
+            mode == "notify"
+            and executor is not None
+            and getattr(getattr(cfg, "paper", None), "enabled", False)
+        )
+        if mode in ("paper", "live") or paper_alongside:
+            from trader.trading.stops import StopMonitor
 
-        quote_fn = make_quote_provider(cfg, account)
-        quote_src = None
-        if quote_fn is not None:
-            quote_src = (
-                "moomoo" if cfg.quotes.provider == "moomoo" else "ws quotes"
-            )
-        if quote_fn is None:
-            # quotes disabled does not mean unguarded: the paper
-            # ledger already prices its positions (live ws nodes,
-            # ws chains, moomoo) - that map drives the monitor;
-            # live mode falls back to the ws chains directly, an
-            # executing mode must never run without protection
-            if paper_ledger is not None:
-                from trader.trading.paper import _position_key
+            quote_fn = make_quote_provider(cfg, account)
+            quote_src = None
+            if quote_fn is not None:
+                quote_src = (
+                    "moomoo" if cfg.quotes.provider == "moomoo"
+                    else "ws quotes"
+                )
+            if quote_fn is None:
+                # quotes disabled does not mean unguarded: the paper
+                # ledger already prices its positions (live ws nodes,
+                # ws chains, moomoo) - that map drives the monitor;
+                # live mode falls back to the ws chains directly, an
+                # executing mode must never run without protection
+                if paper_ledger is not None:
+                    from trader.trading.paper import _position_key
 
-                def ledger_quote(pos):
-                    try:
-                        quotes = paper_ledger._quotes()
-                    except Exception:
-                        return None
-                    q = (
-                        quotes.get(_position_key(pos))
-                        or quotes.get(pos["contract_key"])
+                    def ledger_quote(pos):
+                        try:
+                            quotes = paper_ledger._quotes()
+                        except Exception:
+                            return None
+                        q = (
+                            quotes.get(_position_key(pos))
+                            or quotes.get(pos["contract_key"])
+                        )
+                        return (q or {}).get("price")
+
+                    quote_fn = ledger_quote
+                    quote_src = "ledger-priced quotes"
+                elif mode == "live":
+                    from trader.trading.quotes import (
+                        make_ws_quote_provider,
                     )
-                    return (q or {}).get("price")
 
-                quote_fn = ledger_quote
-                quote_src = "ledger-priced quotes"
+                    quote_fn = make_ws_quote_provider(cfg, account)
+                    quote_src = "ws option chains"
+            if quote_fn is not None:
+                monitor = StopMonitor(
+                    cfg, store, executor, quote_fn,
+                    cfg.discord.webhook_url,
+                )
+                monitor.start()
+                trail = (
+                    f", trailing {cfg.trading.trailing_stop_pct}%"
+                    if cfg.trading.trailing_stop_pct > 0
+                    else ""
+                )
+                print(
+                    f"stop monitor active ({quote_src}): "
+                    f"{cfg.trading.stop_loss_pct}% stop{trail}, "
+                    f"checked every {cfg.trading.stop_check_seconds}s"
+                )
             elif mode == "live":
-                from trader.trading.quotes import make_ws_quote_provider
-
-                quote_fn = make_ws_quote_provider(cfg, account)
-                quote_src = "ws option chains"
-        if quote_fn is not None:
-            monitor = StopMonitor(
-                cfg, store, executor, quote_fn, cfg.discord.webhook_url
-            )
-            monitor.start()
-            trail = (
-                f", trailing {cfg.trading.trailing_stop_pct}%"
-                if cfg.trading.trailing_stop_pct > 0
-                else ""
-            )
-            print(
-                f"stop monitor active ({quote_src}): "
-                f"{cfg.trading.stop_loss_pct}% stop{trail}, "
-                f"checked every {cfg.trading.stop_check_seconds}s"
-            )
-        elif mode == "live":
-            print(
-                "WARNING: live mode without live quotes - the stop "
-                "monitor is OFF, open positions have no automated "
-                "protection (enable quotes in the settings)"
-            )
+                print(
+                    "WARNING: live mode without live quotes - the stop "
+                    "monitor is OFF, open positions have no automated "
+                    "protection (enable quotes in the settings)"
+                )
 
     from trader.ops.updater import startup_banner
 
@@ -259,7 +276,9 @@ def main():
     if scheme == "https":
         ssl_context = (cfg.pipeline.tls_cert, cfg.pipeline.tls_key)
         print("dashboard served over HTTPS (self-signed)")
-    print(f"pipeline running in {mode.upper()} mode on {cfg.pipeline.host}:{cfg.pipeline.port}")
+    print(f"pipeline running in {role.upper()} role"
+          + (f" ({mode.upper()} mode)" if role == "consumer" else "")
+          + f" on {cfg.pipeline.host}:{cfg.pipeline.port}")
     print(f"dashboard: {scheme}://127.0.0.1:{cfg.pipeline.port}/")
 
     # main-thread hang protection: crashes restart via the .bat

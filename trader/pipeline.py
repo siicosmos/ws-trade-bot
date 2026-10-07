@@ -215,3 +215,35 @@ def process_alert(
         "alert": alert.to_dict(),
         "correction": correction,
     }
+
+
+def ingest_alert(
+    text, author, cfg, store, channel: str = "", ts=None, parsed_ts=None,
+) -> dict:
+    """Info-server ingest: parse + dedupe + record the signal -
+    no execution, no notifications. The recorded signal is what
+    the feed serves to consumer apps (they run the full
+    process_alert on their side)."""
+    if not text or not text.strip():
+        return {"status": "ignored", "reason": "empty message"}
+
+    alert = parse_alert(text, cfg.parser.custom_patterns)
+    correction = is_correction(text)
+    key = _message_key(text, author)
+    if (alert is not None or correction) and store.seen_signal(key):
+        return {"status": "ignored", "reason": "duplicate message"}
+    if store.has_recent_prefix(text):
+        return {
+            "status": "ignored",
+            "reason": "duplicate message (reaction re-read)",
+        }
+    store.record_signal(
+        key, author, text, alert is not None, correction=correction,
+        channel=channel, ts_epoch=ts, parsed_epoch=parsed_ts,
+    )
+    return {
+        "status": "recorded",
+        "alert": alert.to_dict() if alert is not None else None,
+        "correction": correction,
+        "key": key,
+    }

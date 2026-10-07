@@ -3387,21 +3387,29 @@ def test_startup_banner(tmp_path, capsys):
     origin = tmp_path / "origin"
     origin.mkdir()
     (origin / "f.txt").write_text("x\n")
+    # hermetic identity: the commit must not depend on the
+    # machine's global git config
+    git_env = dict(
+        os.environ,
+        GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t",
+        GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t",
+        HOME=str(origin), GIT_CONFIG_GLOBAL="/dev/null",
+    )
     subprocess.run(
-        ["git", "-c", "user.email=t@t", "-c", "user.name=t",
-         "init", "-q", "-b", "main"], cwd=str(origin),
+        ["git", "init", "-q", "-b", "main"], cwd=str(origin),
         capture_output=True,
     )
     subprocess.run(
-        ["git", "add", "-A"], cwd=str(origin), capture_output=True,
+        ["git", "add", "-A"], cwd=str(origin), env=git_env,
+        capture_output=True,
     )
     subprocess.run(
         ["git", "commit", "-q", "-m", "banner test"],
-        cwd=str(origin), capture_output=True,
+        cwd=str(origin), env=git_env, capture_output=True,
     )
     head = subprocess.run(
         ["git", "rev-parse", "--short", "HEAD"], cwd=str(origin),
-        capture_output=True, text=True,
+        env=git_env, capture_output=True, text=True,
     ).stdout.strip()
 
     # no update record - just the commit + subject

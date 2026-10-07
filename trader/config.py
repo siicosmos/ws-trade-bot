@@ -12,6 +12,10 @@ class PipelineConfig:
     auth_token: str = ""
     tls_cert: str = ""
     tls_key: str = ""
+    # consumer = the trading app (default, today's behavior);
+    # info = the alert source server: reader ingest + feed,
+    # no trading
+    role: str = "consumer"
 
 
 @dataclass
@@ -215,6 +219,27 @@ class QuotesConfig:
 
 
 @dataclass
+class ConsumerEntry:
+    """A consumer app allowed to read the alert feed.
+
+    token authenticates both directions: the consumer's feed
+    client uses it against this server's feed API, and this
+    server presents it when pushing alerts to the consumer's
+    own /alert endpoint (push_url; empty = pull-only)."""
+    label: str = ""
+    token: str = ""
+    push_url: str = ""
+
+
+@dataclass
+class FeedConfig:
+    """Consumer side: where the alert feed lives."""
+    url: str = ""
+    token: str = ""
+    poll_seconds: float = 1.0
+
+
+@dataclass
 class Config:
     pipeline: PipelineConfig
     discord: DiscordConfig
@@ -225,6 +250,8 @@ class Config:
     auto_update: AutoUpdateConfig
     quotes: QuotesConfig
     reader: ReaderConfig
+    consumers: List[ConsumerEntry] = field(default_factory=list)
+    feed: FeedConfig = field(default_factory=FeedConfig)
 
 
 def _get(d, key, default):
@@ -276,6 +303,32 @@ def load_config(path: str) -> Config:
     trading_raw = raw.get("trading") or {}
     ws_raw = raw.get("wealthsimple") or {}
     parser_raw = raw.get("parser") or {}
+
+    # role: consumer = the trading app (default - an existing
+    # config keeps today's behavior); info = the alert source
+    # server (reader ingest + feed, no trading)
+    role = str(_get(pipeline_raw, "role", "consumer")).lower()
+    if role not in ("info", "consumer"):
+        role = "consumer"
+
+    consumers = []
+    for entry in raw.get("consumers") or []:
+        if not isinstance(entry, dict):
+            continue
+        consumers.append(
+            ConsumerEntry(
+                label=str(entry.get("label", "")).strip(),
+                token=str(entry.get("token", "")).strip(),
+                push_url=str(entry.get("push_url", "")).strip(),
+            )
+        )
+
+    feed_raw = raw.get("feed") or {}
+    feed = FeedConfig(
+        url=str(_get(feed_raw, "url", "")).strip(),
+        token=str(_get(feed_raw, "token", "")).strip(),
+        poll_seconds=float(_get(feed_raw, "poll_seconds", 1.0)),
+    )
 
     discord_raw = raw.get("discord") or {}
     webhook = os.environ.get("DISCORD_WEBHOOK_URL") or str(
@@ -370,6 +423,7 @@ def load_config(path: str) -> Config:
             auth_token=str(_get(pipeline_raw, "auth_token", "")),
             tls_cert=str(_get(pipeline_raw, "tls_cert", "")),
             tls_key=str(_get(pipeline_raw, "tls_key", "")),
+            role=role,
         ),
         discord=DiscordConfig(
         notify=bool(_get(discord_raw, "notify", True)),
@@ -475,4 +529,6 @@ def load_config(path: str) -> Config:
                 _get(raw.get("quotes") or {}, "moomoo_port", 11111)
             ),
         ),
+        consumers=consumers,
+        feed=feed,
     )

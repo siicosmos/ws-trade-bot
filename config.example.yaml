@@ -20,6 +20,11 @@ paper:
 # pipeline - the web server that runs the dashboard and receives alerts
 # ---------------------------------------------------------------------------
 pipeline:
+  # consumer = the trading app (default: alerts in, sizing,
+  # paper/live execution, dashboard). info = the alert source
+  # server: reader ingest + alert feed for consumer apps, no
+  # trading. split_roles.py generates one config per role.
+  role: consumer
   host: "0.0.0.0"            # what to bind to; 127.0.0.1 = this PC only
   port: 8080
   auth_token: ""             # dashboard + alert password. REQUIRED if host is
@@ -28,6 +33,26 @@ pipeline:
   tls_cert: ""               # HTTPS: paths from scripts/gen_cert.py, e.g.
   tls_key: ""                # "certs/dashboard.crt" / "certs/dashboard.key".
                              # empty = plain HTTP
+
+# ---------------------------------------------------------------------------
+# consumers - info role only: apps allowed to read the alert feed.
+# token authenticates both directions (their feed client against
+# this server; this server's push against their /alert endpoint).
+# push_url empty = pull-only consumer (they long-poll the feed).
+# ---------------------------------------------------------------------------
+# consumers:
+#   - label: owner
+#     token: "GENERATE_A_TOKEN"
+#     push_url: "http://127.0.0.1:8081/alert"
+
+# ---------------------------------------------------------------------------
+# feed - consumer role only: where the info server's alert feed
+# lives. the token must match a consumers[] entry on the server.
+# ---------------------------------------------------------------------------
+# feed:
+#   url: "http://127.0.0.1:8080"
+#   token: "THE_MATCHING_TOKEN"
+#   poll_seconds: 1.0
 
 # ---------------------------------------------------------------------------
 # auto_update - pull code changes from GitHub and restart automatically

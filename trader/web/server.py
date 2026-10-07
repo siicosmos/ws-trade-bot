@@ -1407,6 +1407,19 @@ def create_app(cfg, store: Store, risk, executor, account=None,
             return jsonify({"error": "admin required"}), 403
         return None
 
+    def _role() -> str:
+        return getattr(cfg.pipeline, "role", "consumer") or "consumer"
+
+    def _require_trading():
+        """Info role: the alert source server runs no trading -
+        the executors, ledgers and positions live on consumer
+        apps."""
+        if _role() != "info":
+            return None
+        return jsonify(
+            {"error": "info server - trading runs on consumer apps"}
+        ), 404
+
     @app.get("/api/summary")
     def api_summary():
         payload = _bounded(_summary_payload, ctx)
@@ -1421,6 +1434,9 @@ def create_app(cfg, store: Store, risk, executor, account=None,
 
     @app.post("/api/paper-reset")
     def api_paper_reset():
+        denied = _require_trading()
+        if denied:
+            return denied
         denied = _require_admin()
         if denied:
             return denied
@@ -1454,6 +1470,9 @@ def create_app(cfg, store: Store, risk, executor, account=None,
 
     @app.get("/api/paper-positions")
     def api_paper_positions():
+        denied = _require_trading()
+        if denied:
+            return denied
         payload = _bounded(_paper_positions_payload, ctx)
         if payload is None:
             payload = {
@@ -1466,6 +1485,9 @@ def create_app(cfg, store: Store, risk, executor, account=None,
 
     @app.post("/api/position-sell")
     def api_position_sell():
+        denied = _require_trading()
+        if denied:
+            return denied
         """Manual close of a tracked LIVE position from the open
         positions table: places a REAL sell order at the current
         bid (the same path a stop-monitor exit takes). Sells the
@@ -1539,6 +1561,9 @@ def create_app(cfg, store: Store, risk, executor, account=None,
 
     @app.post("/api/position-tp")
     def api_position_tp():
+        denied = _require_trading()
+        if denied:
+            return denied
         """Per-position sell guards: take-profit (sell the whole
         remaining position when its gain vs the entry premium
         reaches this percent) and a per-position trailing stop
@@ -1609,6 +1634,9 @@ def create_app(cfg, store: Store, risk, executor, account=None,
 
     @app.post("/api/paper-sell")
     def api_paper_sell():
+        denied = _require_trading()
+        if denied:
+            return denied
         """Manual close of a paper position at its live price.
 
         The proceeds return to the paper cash (options x100 at
@@ -1733,6 +1761,9 @@ def create_app(cfg, store: Store, risk, executor, account=None,
 
     @app.get("/api/positions")
     def api_positions():
+        denied = _require_trading()
+        if denied:
+            return denied
         return jsonify(_positions_payload(ctx))
 
     @app.get("/api/signals")
@@ -1998,6 +2029,9 @@ def create_app(cfg, store: Store, risk, executor, account=None,
 
     @app.post("/api/paper-resize")
     def api_paper_resize():
+        denied = _require_trading()
+        if denied:
+            return denied
         """Bring past paper stock positions up to the tier
         sizing (older trades were sized with the flat dollar
         budget). The original alert's size keyword is recovered
@@ -2201,6 +2235,14 @@ def create_app(cfg, store: Store, risk, executor, account=None,
             )
         except (TypeError, ValueError):
             parsed_ts = None
+        if _role() == "info":
+            from ..pipeline import ingest_alert
+
+            return jsonify(ingest_alert(
+                text, author, cfg, store,
+                channel=str(data.get("channel") or ""), ts=ts,
+                parsed_ts=parsed_ts,
+            ))
         result = process_alert(
             text, author, cfg, store, risk, executor, account,
             channel=str(data.get("channel") or ""), ts=ts,
