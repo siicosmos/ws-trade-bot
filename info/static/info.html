@@ -3,43 +3,55 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ws-trade-bot — info server</title>
+<title>WS Trade Bot — info server</title>
 <link rel="stylesheet" href="/static/dashboard.css">
 </head>
 <body>
 <header>
-  <div class="brand">ws-trade-bot <span class="badge" style="background:#1f6feb">INFO SERVER</span></div>
-  <div class="header-right">
-    <span id="reader-line" class="muted">reader: …</span>
-    <a href="/logout" class="muted">logout</a>
+  <div class="headrow">
+    <h1 style="margin:0">WS Trade Bot</h1>
+    <span class="badge info">info server</span>
+    <span id="timebox"><span id="clock"></span></span>
+  </div>
+  <div class="headrow" style="color:var(--muted);font-size:12px;gap:18px">
+    <span id="reader"></span>
+    <span id="git"></span>
+  </div>
+  <div class="headrow" style="color:var(--muted);font-size:12px;gap:18px">
+    <span id="updated">data refreshed</span>
+  </div>
+  <div class="headrow" style="justify-content:flex-end;gap:10px">
+    <span id="me"></span>
+    <a href="/logout" id="logout">log out</a>
   </div>
 </header>
+
 <main>
-  <div class="card">
-    <h2>consumers</h2>
-    <div class="pos-scroll"><table class="pos" id="consumers-table">
-      <tr><th>label</th><th>push url</th><th>feed last seen</th><th>cursor</th><th>pushed</th><th>failed</th><th>last error</th></tr>
-    </table></div>
-    <p class="set-hint">consumers are managed in config_info.yaml (label / token / push_url) — a red row means no feed poll for 30s; push failures fall back to the consumer's pull cursor.</p>
-  </div>
+<h2>Consumers</h2>
+<div class="card" style="padding:0">
+  <div class="pos-scroll"><table class="pos" id="consumers-table" style="margin:0">
+    <tr><th>label</th><th>push url</th><th>feed last seen</th><th>cursor</th><th>pushed</th><th>failed</th><th>last error</th></tr>
+  </table></div>
+</div>
+<p class="set-hint" style="margin-top:8px">consumers are managed in info/config.yaml (label / token / push_url) — a hollow dot means no feed poll for 30s; push failures fall back to the consumer's pull cursor.</p>
 
-  <div class="card">
-    <h2>alert feed</h2>
-    <div class="pos-scroll"><table class="pos" id="signals-table">
-      <tr><th>time</th><th>channel</th><th>author</th><th>text</th><th>parsed</th></tr>
-    </table></div>
-  </div>
+<h2>Alert Feed</h2>
+<div class="card" style="padding:0">
+  <div class="pos-scroll"><table class="pos" id="signals-table" style="margin:0">
+    <tr><th>time</th><th>channel</th><th>author</th><th>text</th><th>parsed</th></tr>
+  </table></div>
+</div>
 
-  <div class="card">
-    <h2>spx levels (tomorrow's plan)</h2>
-    <textarea id="levels-input" rows="8" placeholder="paste the daily plan message here..."></textarea>
-    <div style="margin-top:10px;display:flex;gap:10px;align-items:center">
-      <button id="levels-save" class="btn">save</button>
-      <span class="set-hint" id="levels-status"></span>
-    </div>
-    <p class="set-hint">shared with every consumer app's levels ladder via the feed.</p>
+<h2>SPX Levels — tomorrow's plan</h2>
+<div class="card">
+  <textarea id="levels-input" rows="8" placeholder="paste the daily plan message here..."></textarea>
+  <div style="margin-top:10px;display:flex;gap:10px;align-items:center">
+    <button id="levels-save" class="btn">save</button>
+    <span class="set-hint" id="levels-status"></span>
   </div>
+  <p class="set-hint" style="margin-top:8px">shared with every consumer app's levels ladder via the feed.</p>
+</div>
 </main>
-<script src="/static/info.js"></script>
+<script src="/static/info.js" defer></script>
 </body>
 </html>

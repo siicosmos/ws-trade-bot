@@ -9,6 +9,7 @@ feed.
 """
 
 import hmac
+import os
 import logging
 import time
 from datetime import timedelta
@@ -67,6 +68,20 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
             )
             _page_cache["html"] = html
         return app.response_class(html, mimetype="text/html")
+
+    @app.get("/static/dashboard.css")
+    def shared_css():
+        # the site-wide stylesheet lives in core/static (one
+        # design language for both apps)
+        from flask import send_from_directory
+
+        return send_from_directory(
+            os.path.join(
+                os.path.dirname(os.path.dirname(
+                    os.path.abspath(__file__))), "core", "static",
+            ),
+            "dashboard.css", mimetype="text/css",
+        )
 
     @app.get("/health")
     def health():
@@ -273,6 +288,12 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
         text = str(data.get("text") or "")[:8000]
         store.meta_set("spx_levels_text", text)
         return jsonify({"status": "ok"})
+
+    @app.get("/api/update_status")
+    def api_update_status():
+        from core.ops.updater import update_status_payload
+
+        return jsonify(update_status_payload(app))
 
     @app.get("/api/signals")
     def api_signals():

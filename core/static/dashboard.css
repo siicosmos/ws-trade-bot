@@ -21,6 +21,7 @@
     font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
   }
   .badge.notify { background: #1f6feb33; color: var(--blue); }
+  .badge.info { background: #1f6feb33; color: var(--blue); }
   .badge.paper { background: #d2992233; color: var(--yellow); }
   .badge.live { background: #f8514933; color: var(--red); }
   .badge.live::before { content: "\\25CF "; animation: pulse 1.5s infinite; }

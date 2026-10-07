@@ -435,3 +435,23 @@ class AutoUpdater:
         self._record_update("auto")
         self._restart()
         return True
+
+
+def update_status_payload(app):
+    updater = getattr(app, "ws_updater", None)
+    if updater is None:
+        return {"status": "disabled"}
+    return {
+        "status": "active",
+        "interval_seconds": (
+            getattr(updater.cfg.auto_update, "interval_seconds", 600)
+        ),
+        "last_check": updater.last_check,
+        "result": updater.last_result,
+        "errors": updater.errors,
+        "head": (updater.start_head or "")[:8],
+        "branch": updater.branch,
+        "last_pull": updater.last_pull(),
+    }
+
+

@@ -1109,24 +1109,6 @@ def _positions_payload(ctx):
     return rows
 
 
-def _update_status_payload(app):
-    updater = getattr(app, "ws_updater", None)
-    if updater is None:
-        return {"status": "disabled"}
-    return {
-        "status": "active",
-        "interval_seconds": (
-            getattr(updater.cfg.auto_update, "interval_seconds", 600)
-        ),
-        "last_check": updater.last_check,
-        "result": updater.last_result,
-        "errors": updater.errors,
-        "head": (updater.start_head or "")[:8],
-        "branch": updater.branch,
-        "last_pull": updater.last_pull(),
-    }
-
-
 def create_app(cfg, store: Store, risk, executor, account=None,
                config_path=None) -> Flask:
     app = Flask(__name__)
@@ -1180,6 +1162,20 @@ def create_app(cfg, store: Store, risk, executor, account=None,
             )
             _dashboard_cache["html"] = html
         return app.response_class(html, mimetype="text/html")
+
+    @app.get("/static/dashboard.css")
+    def shared_css():
+        # the site-wide stylesheet lives in core/static (one
+        # design language for both apps)
+        from flask import send_from_directory
+
+        return send_from_directory(
+            os.path.join(
+                os.path.dirname(os.path.dirname(
+                    os.path.abspath(__file__))), "core", "static",
+            ),
+            "dashboard.css", mimetype="text/css",
+        )
 
     @app.get("/health")
     def health():
@@ -1731,6 +1727,7 @@ def create_app(cfg, store: Store, risk, executor, account=None,
         and cached - a slow or stalled ws api serves the last
         good payload instead of pinning the request thread."""
         from consumer.settings import get_settings
+        from core.ops.updater import update_status_payload
 
         summary, paper, positions = _dashboard_sections(ctx)
         return jsonify(
@@ -1741,7 +1738,7 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                 "signals": store.recent_signals(50),
                 "trades": store.recent_trades(50),
                 "settings": get_settings(cfg),
-                "update_status": _update_status_payload(app),
+                "update_status": update_status_payload(app),
                 "me": _me(),
             }
         )
@@ -1807,7 +1804,9 @@ def create_app(cfg, store: Store, risk, executor, account=None,
 
     @app.get("/api/update_status")
     def api_update_status():
-        return jsonify(_update_status_payload(app))
+        from core.ops.updater import update_status_payload
+
+        return jsonify(update_status_payload(app))
 
     @app.post("/api/paper-resize")
     def api_paper_resize():
