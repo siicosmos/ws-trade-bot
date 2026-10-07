@@ -1,15 +1,15 @@
-// ws-trade-bot server architecture - render with:
+// ws-trade-bot architecture - render with:
 //   dot -Tpng -o docs/architecture.png docs/architecture.dot
 digraph architecture {
   rankdir=LR;
-  graph [fontname="Helvetica", label="ws-trade-bot — server architecture", labelloc=t, fontsize=16];
+  graph [fontname="Helvetica", label="ws-trade-bot — one alert source, many independent trading apps", labelloc=t, fontsize=16];
   node [shape=plaintext, fontname="Helvetica", fontsize=11];
   edge [color="#57606a", fontname="Helvetica", fontsize=9];
 
   phone [label=<
     <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" BGCOLOR="white">
       <TR><TD BGCOLOR="#8957e5" COLSPAN="2"><FONT COLOR="white"><B>your phone / browser</B></FONT></TD></TR>
-      <TR><TD ALIGN="LEFT">dashboard</TD><TD ALIGN="LEFT">5s poll · one round trip</TD></TR>
+      <TR><TD ALIGN="LEFT">dashboards</TD><TD ALIGN="LEFT">5s poll · per app</TD></TR>
       <TR><TD ALIGN="LEFT">Discord app</TD><TD ALIGN="LEFT">webhook notifications</TD></TR>
     </TABLE>>];
 
@@ -23,7 +23,7 @@ digraph architecture {
     <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" BGCOLOR="white">
       <TR><TD BGCOLOR="#1f6feb" COLSPAN="2"><FONT COLOR="white"><B>Wealthsimple</B></FONT></TD></TR>
       <TR><TD ALIGN="LEFT">GraphQL gateway</TD><TD ALIGN="LEFT">allowlisted documents</TD></TR>
-      <TR><TD ALIGN="LEFT">activities · quotes</TD><TD ALIGN="LEFT">orders (live mode)</TD></TR>
+      <TR><TD ALIGN="LEFT">activities · quotes</TD><TD ALIGN="LEFT">orders (consumer live mode)</TD></TR>
     </TABLE>>];
 
   moomoo [label=<
@@ -33,77 +33,102 @@ digraph architecture {
     </TABLE>>];
 
   subgraph cluster_pc {
-    label="pipeline PC (Windows) — start_pipeline.bat / start_reader.bat restart loops";
+    label="owner's PC (Windows) — start_reader.bat / start_info.bat / start_consumer.bat restart loops";
     fontsize=13;
     color="#30363d";
 
     reader [label=<
       <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" BGCOLOR="white">
-        <TR><TD BGCOLOR="#1f6feb" COLSPAN="2"><FONT COLOR="white"><B>reader</B> — trader-independent</FONT></TD></TR>
+        <TR><TD BGCOLOR="#8957e5" COLSPAN="2"><FONT COLOR="white"><B>reader</B> — trader-independent</FONT></TD></TR>
         <TR><TD ALIGN="LEFT">discord_reader.py</TD><TD ALIGN="LEFT">UIA on the Discord client</TD></TR>
         <TR><TD ALIGN="LEFT">parser + seen-set</TD><TD ALIGN="LEFT">relevance-gated restarts</TD></TR>
       </TABLE>>];
 
-    subgraph cluster_pipeline {
-      label="pipeline — run.py";
+    subgraph cluster_info {
+      label="info server — run.py -c config_info.yaml (role: info)";
+      fontsize=12;
+      color="#1f6feb";
+
+      iweb [label=<
+        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" BGCOLOR="white">
+          <TR><TD BGCOLOR="#1f6feb" COLSPAN="2"><FONT COLOR="white"><B>ingest + feed</B></FONT></TD></TR>
+          <TR><TD ALIGN="LEFT">POST /alert → parse</TD><TD ALIGN="LEFT">dedupe · record signal</TD></TR>
+          <TR><TD ALIGN="LEFT">GET /api/feed</TD><TD ALIGN="LEFT">long-poll · cursor · levels</TD></TR>
+          <TR><TD ALIGN="LEFT">fan-out thread</TD><TD ALIGN="LEFT">push → consumers' /alert</TD></TR>
+        </TABLE>>];
+
+      istore [label=<
+        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" BGCOLOR="white">
+          <TR><TD BGCOLOR="#1f6feb" COLSPAN="2"><FONT COLOR="white"><B>store</B> — SQLite (WAL)</FONT></TD></TR>
+          <TR><TD ALIGN="LEFT">signals (the feed)</TD><TD ALIGN="LEFT">meta (levels text)</TD></TR>
+        </TABLE>>];
+
+      infodash [label=<
+        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" BGCOLOR="white">
+          <TR><TD BGCOLOR="#1f6feb" COLSPAN="2"><FONT COLOR="white"><B>info dashboard</B></FONT></TD></TR>
+          <TR><TD ALIGN="LEFT">consumer health</TD><TD ALIGN="LEFT">reader line · levels editor</TD></TR>
+        </TABLE>>];
+    }
+
+    subgraph cluster_consumer {
+      label="consumer app — run.py -c config_consumer.yaml (role: consumer) — one per trader";
       fontsize=12;
       color="#8957e5";
 
-      web [label=<
+      cfeed [label=<
         <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" BGCOLOR="white">
-          <TR><TD BGCOLOR="#1f6feb" COLSPAN="2"><FONT COLOR="white"><B>web/</B> — Flask (HTTPS · user sessions)</FONT></TD></TR>
-          <TR><TD ALIGN="LEFT">GET / dashboard page</TD><TD ALIGN="LEFT">single html · css inlined</TD></TR>
-          <TR><TD ALIGN="LEFT">GET /api/dashboard</TD><TD ALIGN="LEFT">one batched poll</TD></TR>
-          <TR><TD ALIGN="LEFT">GET /api/history</TD><TD ALIGN="LEFT">search trades/signals</TD></TR>
-          <TR><TD ALIGN="LEFT">POST /alert · /api/settings</TD><TD ALIGN="LEFT">token (machine) · login (users)</TD></TR>
+          <TR><TD BGCOLOR="#8957e5" COLSPAN="2"><FONT COLOR="white"><B>alert sources</B></FONT></TD></TR>
+          <TR><TD ALIGN="LEFT">/alert route (push)</TD><TD ALIGN="LEFT">feed client (long-poll)</TD></TR>
+          <TR><TD ALIGN="LEFT" COLSPAN="2">atomic signal claim - dual delivery is idempotent</TD></TR>
         </TABLE>>];
 
-      proc [label=<
+      cproc [label=<
         <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" BGCOLOR="white">
-          <TR><TD BGCOLOR="#1f6feb" COLSPAN="2"><FONT COLOR="white"><B>pipeline.py</B> — alert processing</FONT></TD></TR>
-          <TR><TD ALIGN="LEFT">parser → risk engine</TD><TD ALIGN="LEFT">dedupe · mismatch detect</TD></TR>
-          <TR><TD ALIGN="LEFT">executor</TD><TD ALIGN="LEFT">notify · paper · live</TD></TR>
+          <TR><TD BGCOLOR="#8957e5" COLSPAN="2"><FONT COLOR="white"><B>trading pipeline</B></FONT></TD></TR>
+          <TR><TD ALIGN="LEFT">risk engine</TD><TD ALIGN="LEFT">sizing · caps</TD></TR>
+          <TR><TD ALIGN="LEFT">mode slider</TD><TD ALIGN="LEFT">notify · paper · live</TD></TR>
         </TABLE>>];
 
-      store [label=<
+      cexec [label=<
         <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" BGCOLOR="white">
-          <TR><TD BGCOLOR="#1f6feb" COLSPAN="2"><FONT COLOR="white"><B>store.py</B> — SQLite (WAL)</FONT></TD></TR>
-          <TR><TD ALIGN="LEFT">signals · trades · positions</TD><TD ALIGN="LEFT">per-thread conns</TD></TR>
-          <TR><TD ALIGN="LEFT">pending_orders · users · meta</TD><TD ALIGN="LEFT">daily retention prune</TD></TR>
+          <TR><TD BGCOLOR="#8957e5" COLSPAN="2"><FONT COLOR="white"><B>own executors + ledgers</B></FONT></TD></TR>
+          <TR><TD ALIGN="LEFT">paper ledger (seeded)</TD><TD ALIGN="LEFT">live executor (own ws login)</TD></TR>
+          <TR><TD ALIGN="LEFT">stop monitor</TD><TD ALIGN="LEFT">mirror · fill reconciliation</TD></TR>
         </TABLE>>];
 
-      threads [label=<
+      cstore [label=<
         <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" BGCOLOR="white">
-          <TR><TD BGCOLOR="#1f6feb" COLSPAN="2"><FONT COLOR="white"><B>supervised threads</B> — ops/supervise.py</FONT></TD></TR>
-          <TR><TD ALIGN="LEFT">auto-updater</TD><TD ALIGN="LEFT">pull · restart gating</TD></TR>
-          <TR><TD ALIGN="LEFT">trade mirror</TD><TD ALIGN="LEFT">real fills → ledgers · reconciles live estimates</TD></TR>
-          <TR><TD ALIGN="LEFT">stop monitor</TD><TD ALIGN="LEFT">quotes vs stops (runs whenever a mode executes)</TD></TR>
-          <TR><TD ALIGN="LEFT">webhook batcher</TD><TD ALIGN="LEFT">log lines → Discord</TD></TR>
-          <TR><TD ALIGN="LEFT">health watchdog</TD><TD ALIGN="LEFT">self-checks /health · exits on hang</TD></TR>
+          <TR><TD BGCOLOR="#8957e5" COLSPAN="2"><FONT COLOR="white"><B>own store</B> — SQLite (WAL)</FONT></TD></TR>
+          <TR><TD ALIGN="LEFT">signals · trades · positions</TD><TD ALIGN="LEFT">pending_orders · meta</TD></TR>
         </TABLE>>];
 
-      paper [label=<
+      cdash [label=<
         <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" BGCOLOR="white">
-          <TR><TD BGCOLOR="#1f6feb" COLSPAN="2"><FONT COLOR="white"><B>paper ledger</B> — trading/</FONT></TD></TR>
-          <TR><TD ALIGN="LEFT">seeded from live NLV</TD><TD ALIGN="LEFT">cash + MTM via live quotes</TD></TR>
+          <TR><TD BGCOLOR="#8957e5" COLSPAN="2"><FONT COLOR="white"><B>own dashboard</B> — localhost</FONT></TD></TR>
+          <TR><TD ALIGN="LEFT">cards · positions · trade log</TD><TD ALIGN="LEFT">settings · mode slider</TD></TR>
         </TABLE>>];
     }
   }
 
-  reader -> web [label="POST /alert\ntoken", dir=forward];
-  reader -> web [label="heartbeat\nreader status", style=dashed];
-  phone -> web [label="Tailscale\nsession", dir=forward];
-  web -> proc [label="alert"];
-  proc -> store [dir=forward];
-  threads -> store [dir=forward];
-  proc -> paper [label="paper fills", style=dashed];
-  threads -> paper [label="mirrored fills", style=dashed];
-  web -> ws [label="positions · margin\nvalues (cached)", dir=forward];
-  threads -> ws [label="activities (mirror)\noption chains (stops)", style=dashed];
-  threads -> moomoo [label="option/index quotes\n(stop monitor · SPX ladder)", style=dashed, color="#238636"];
-  proc -> ws [label="live orders", style=dashed];
-  web -> phone [label="notify · update webhooks", color="#8957e5"];
-  threads -> github [label="fetch · ff-only pull", style=dashed];
-  github -> threads [label="restart (exit 77)\nif trader/* changed", style=dashed];
-  threads -> web [label="watchdog self-checks /health,\nexit 1 after 5 min hang", color="#f85149", style=dashed];
+  reader -> iweb [label="POST /alert\ntoken", dir=forward];
+  reader -> iweb [label="heartbeat\nreader status", style=dashed];
+  iweb -> iweb [label="fan-out: push each\nsignal to consumers", style=dashed];
+  iweb -> store_note [style=invis];
+  store_note [style=invis];
+  iweb -> istore [dir=forward];
+  cfeed -> cproc [label="alert", dir=forward];
+  cproc -> cexec [dir=forward];
+  cexec -> cstore [dir=forward];
+  cproc -> cstore [dir=forward];
+  cdash -> cproc [label="5s poll", style=dashed];
+  infodash -> iweb [label="poll", style=dashed];
+
+  phone -> cdash [label="Tailscale\n(optional)", dir=forward];
+  phone -> infodash [label="Tailscale", dir=forward];
+  phone -> iweb [label="consumer push\n(when reachable)", style=dashed, color="#8957e5"];
+  cfeed -> iweb [label="long-pull\nGET /api/feed", style=dashed, color="#238636"];
+
+  cexec -> ws [label="positions · values\norders (live)", style=dashed];
+  cexec -> moomoo [label="option/index quotes\n(stop monitor · ladder)", style=dashed, color="#238636"];
+  phone -> ws [style=invis];
 }
