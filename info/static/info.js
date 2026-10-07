@@ -201,9 +201,73 @@ async function loadLevels() {
 
 // ---- settings: auto-update + this app's webhooks (the
 // reader's settings live in the reader's own yaml, the
-// consumer's in the consumer app)
+// consumer's in the consumer app). Same section styles and
+// field helpers as the consumer dashboard's settings popup.
 let settingsDirty = false;
 let lastSettings = null;
+
+function _fieldHelp(tip) {
+  // hover tooltips are useless on a phone - the help text is
+  // rendered under the field and shown on touch/small screens
+  // (hidden on desktop, where the tooltip works)
+  return tip
+    ? '<div class="field-help">' + esc(tip) + "</div>" : "";
+}
+
+function _numField(id, label, value, tip) {
+  return '<div class="set-field"><label>' + esc(label) + '</label>' +
+    '<input id="' + id + '" type="number" step="any" value="' +
+    esc(value == null ? "" : value) + '">' + _fieldHelp(tip) + '</div>';
+}
+
+function _check(id, label, checked, tip) {
+  return '<div class="set-check"><label' +
+    (tip ? ' title="' + esc(tip) + '"' : "") +
+    '><input id="' + id + '" type="checkbox"' + (checked ? " checked" : "") +
+    '> ' + esc(label) + '</label>' + _fieldHelp(tip) + '</div>';
+}
+
+function _hookField(id, label, tip, placeholder, value) {
+  return '<div class="set-field full"><label title="' + esc(tip) + '">' +
+    esc(label) + '</label><textarea id="' + id + '" rows="2" title="' +
+    esc(tip) + '" placeholder="' + esc(placeholder) + '">' +
+    esc(value || "") + '</textarea>' + _fieldHelp(tip) + '</div>';
+}
+
+function renderSettings(s) {
+  const el = document.getElementById("settings");
+  const au = s.auto_update || {};
+  const dc = s.discord || {};
+  const hooks = [
+    ["set-discord-webhook_url", "trade alerts",
+      "webhook for parsed alerts and info-server notices",
+      "main alerts channel", dc.webhook_url || ""],
+    ["set-discord-pipeline_log_webhook_url", "pipeline log",
+      "info server log tail; empty = off",
+      "empty = off", dc.pipeline_log_webhook_url || ""],
+    ["set-discord-update_webhook_url", "update notices",
+      "restart and update notices; empty = the trade alerts channel",
+      "empty = trade alerts channel", dc.update_webhook_url || ""],
+  ];
+  el.innerHTML =
+    '<div class="set-section"><div class="set-title">github code update</div>' +
+    '<div class="set-checks" style="margin-bottom:10px">' +
+      _check("set-au-enabled", "auto-update", au.enabled,
+        "pull and apply code updates from github automatically") +
+    '</div>' +
+    '<div class="set-grid">' +
+      _numField("set-au-interval", "update check (s)", au.interval_seconds,
+        "seconds between github update checks") +
+    '</div></div>' +
+    '<div class="set-section"><div class="set-title">discord webhooks (take effect after restart)</div>' +
+    '<div class="set-grid wide">' +
+    hooks.map(function (h) { return _hookField(h[0], h[1], h[2], h[3], h[4]); }).join("") +
+    '</div></div>';
+  el.querySelectorAll("input,textarea").forEach(function (i) {
+    i.addEventListener("input", function () { setSettingsDirty(true); });
+    i.addEventListener("change", function () { setSettingsDirty(true); });
+  });
+}
 
 function setSettingsDirty(v) {
   settingsDirty = v;
@@ -225,13 +289,7 @@ function closeSettings() {
 function loadSettings() {
   jget("/api/settings").then(function (s) {
     lastSettings = s;
-    const au = s.auto_update || {};
-    const dc = s.discord || {};
-    document.getElementById("set-au-enabled").checked = au.enabled;
-    document.getElementById("set-au-interval").value = au.interval_seconds;
-    document.getElementById("set-discord-webhook_url").value = dc.webhook_url || "";
-    document.getElementById("set-discord-pipeline_log_webhook_url").value = dc.pipeline_log_webhook_url || "";
-    document.getElementById("set-discord-update_webhook_url").value = dc.update_webhook_url || "";
+    renderSettings(s);
     setSettingsDirty(false);
   });
 }
