@@ -106,18 +106,54 @@ async function loadFeedStatus() {
   } catch (e) { /* transient */ }
 }
 
+function fmtIso(ts) {
+  let s = String(ts);
+  // stored values are UTC; append Z when a value lacks a timezone
+  if (!/[zZ+]/.test(s.slice(-6))) s += "Z";
+  return s;
+}
+
+function fmtTime(ts) {
+  if (!ts) return "\u2014";
+  const d = new Date(fmtIso(ts));
+  if (isNaN(d)) return String(ts);
+  const pad = (n) => String(n).padStart(2, "0");
+  return pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + " " +
+    pad(d.getHours()) + ":" + pad(d.getMinutes());
+}
+
+function renderSignals(rows) {
+  // identical to the consumer dashboard's Recent Alerts table:
+  // time / message / status tags - the .msg cell wraps long
+  // chatter inside its 420px column instead of blowing the
+  // table boundary
+  const el = document.getElementById("signals");
+  if (!rows || !rows.length) {
+    el.innerHTML = '<div class="empty">no alerts yet</div>';
+    return;
+  }
+  let html = "<table><tr><th>Time</th><th>Message</th><th>Status</th></tr>";
+  for (const s of rows) {
+    const test = (s.channel || "").toLowerCase().indexOf("test") >= 0
+      ? ' <span class="tag skip" title="' + esc(s.channel || "") + '">test</span>'
+      : "";
+    const tag = (s.parsed
+      ? '<span class="tag buy">signal</span>'
+      : (s.correction
+        ? '<span class="tag skip">correction</span>'
+        : '<span class="tag ignored">ignored</span>')) + test;
+    html += "<tr><td>" + fmtTime(s.ts) + '</td><td class="msg">' +
+      esc(s.text || "") + "</td><td>" + tag + "</td></tr>";
+  }
+  el.innerHTML = html + "</table>";
+}
+
 async function loadSignals() {
   try {
     const rows = await jget("/api/signals?limit=20");
-    const t = document.getElementById("signals-table");
-    t.innerHTML = "<tr><th>time</th><th>channel</th><th>author</th><th>text</th><th>parsed</th></tr>" +
-      (rows || []).map(function (r) {
-        return "<tr><td>" + esc((r.ts || "").replace("T", " ")) + "</td>" +
-          "<td>" + esc(r.channel || "\u2014") + "</td>" +
-          "<td>" + esc(r.author || "\u2014") + "</td>" +
-          '<td class="msg">' + esc(r.text || "") + "</td>" +
-          "<td>" + (r.parsed ? "\u2713" : "\u2014") + "</td></tr>";
-      }).join("");
+    renderSignals(rows);
+    lastRefresh = Date.now();
+    tickClock();
   } catch (e) { /* transient */ }
 }
 
