@@ -122,16 +122,34 @@ function fmtTime(ts) {
     pad(d.getHours()) + ":" + pad(d.getMinutes());
 }
 
+let showIgnored = true;
+
+function toggleIgnored() {
+  showIgnored = !showIgnored;
+  document.getElementById("toggle-ignored").textContent =
+    showIgnored ? "Hide ignored" : "Show ignored";
+  loadSignals();
+}
+
 function renderSignals(rows) {
   // identical to the consumer dashboard's Recent Alerts table:
   // time / message / status tags - the .msg cell wraps long
   // chatter inside its 420px column instead of blowing the
   // table boundary
   const el = document.getElementById("signals");
+  const visible = showIgnored
+    ? rows
+    : rows.filter(function (s) { return s.parsed || s.correction; });
   if (!rows || !rows.length) {
     el.innerHTML = '<div class="empty">no alerts yet</div>';
     return;
   }
+  if (!visible.length) {
+    el.innerHTML =
+      '<div class="empty">no matching alerts (ignored hidden)</div>';
+    return;
+  }
+  rows = visible;
   let html = "<table><tr><th>Time</th><th>Message</th><th>Status</th></tr>";
   for (const s of rows) {
     const test = (s.channel || "").toLowerCase().indexOf("test") >= 0
