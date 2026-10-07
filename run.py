@@ -57,20 +57,11 @@ def main():
     from trader.ops.loghook import install_log_webhook
 
     # the .bat restart loop writes the exit code; surface it.
-    # per-role files: config_info.yaml -> info_exit.txt,
-    # config_consumer.yaml -> consumer_exit.txt, config.yaml ->
-    # pipeline_exit.txt (the roles share a repo and would
-    # otherwise read each other's last words)
-    stem = os.path.splitext(os.path.basename(args.config))[0]
-    role_suffix = (
-        stem[len("config_"):]
-        if stem.startswith("config_") and len(stem) > len("config_")
-        else ""
+    # the file lives next to the db - each role folder (its own
+    # config.yaml + trades.db) reports its own last words
+    exit_file = os.path.join(
+        os.path.dirname(os.path.abspath(args.db)), "pipeline_exit.txt"
     )
-    exit_name = (
-        f"{role_suffix}_exit.txt" if role_suffix else "pipeline_exit.txt"
-    )
-    exit_file = os.path.join(ROOT, exit_name)
     try:
         with open(exit_file) as f:
             print("previous run: " + f.read().strip())

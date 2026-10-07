@@ -127,23 +127,26 @@ def test_role_split_instances_do_not_kill_each_other(
     monkeypatch, tmp_path
 ):
     """The info server and the consumer app share run.py - the
-    stale-instance cleanup must scope to the same config or the
-    two roles terminate each other in a restart loop (seen live:
-    exit code 15 ping-pong between start_info and
-    start_consumer)."""
+    stale-instance cleanup must scope to the same resolved
+    config or the two roles terminate each other in a restart
+    loop (seen live: exit code 15 ping-pong between the two
+    start.bat loops). Each role runs from its own folder with
+    its own config.yaml."""
     root = str(tmp_path)
     script = os.path.join(root, "run.py")
+    info_dir = os.path.join(root, "info")
+    consumer_dir = os.path.join(root, "consumer")
     info_cmd = [
         "C:\\venv\\Scripts\\python.exe", "run.py",
-        "-c", "config_info.yaml",
+        "-c", "config.yaml",
     ]
     consumer_cmd = [
         "C:\\venv\\Scripts\\python.exe", "run.py",
-        "-c", "config_consumer.yaml",
+        "-c", "config.yaml",
     ]
 
-    info_proc = _FakeProcess(200, 190, info_cmd, root)
-    consumer_proc = _FakeProcess(300, 290, consumer_cmd, root)
+    info_proc = _FakeProcess(200, 190, info_cmd, info_dir)
+    consumer_proc = _FakeProcess(300, 290, consumer_cmd, consumer_dir)
     by_pid = {200: info_proc, 300: consumer_proc}
     fake = _fake_psutil_module([info_proc, consumer_proc], by_pid)
     monkeypatch.setitem(sys.modules, "psutil", fake)
@@ -151,12 +154,13 @@ def test_role_split_instances_do_not_kill_each_other(
 
     from trader.ops.processes import terminate_stale_instances
 
-    # the consumer starts: the info server (different config)
-    # must survive; a stale copy of the consumer's own config
-    # still dies
+    # the consumer starts (cwd = consumer/, -c config.yaml):
+    # the info server resolves to a different config and must
+    # survive; a stale copy of the consumer's own config still
+    # dies
     killed = terminate_stale_instances(
         script,
-        config_path=os.path.join(root, "config_consumer.yaml"),
+        config_path=os.path.join(consumer_dir, "config.yaml"),
     )
     assert killed == [300]
     assert not info_proc.terminated
@@ -166,8 +170,8 @@ def test_role_split_instances_do_not_kill_each_other(
 def test_role_cleanup_matches_default_config_candidates(
     monkeypatch, tmp_path
 ):
-    """A candidate started without -c runs config.yaml - it is a
-    different instance from a -c config_consumer.yaml start."""
+    """A candidate started without -c runs config.yaml in its own
+    cwd - it is a different instance from a role-folder start."""
     root = str(tmp_path)
     script = os.path.join(root, "run.py")
     bare_cmd = ["C:\\venv\\Scripts\\python.exe", "run.py"]
@@ -180,12 +184,12 @@ def test_role_cleanup_matches_default_config_candidates(
 
     killed = terminate_stale_instances(
         script,
-        config_path=os.path.join(root, "config_consumer.yaml"),
+        config_path=os.path.join(root, "consumer", "config.yaml"),
     )
     assert killed == []
     assert not bare.terminated
 
-    # ...but a bare-config start claims bare-config stale copies
+    # ...but a root-config start claims root-config stale copies
     killed = terminate_stale_instances(
         script, config_path=os.path.join(root, "config.yaml")
     )

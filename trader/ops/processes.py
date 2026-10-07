@@ -33,23 +33,23 @@ def _protected_pids(me):
     return pids
 
 
-def _candidate_config(cmd, script_dir):
+def _candidate_config(cmd, cwd):
     """A candidate process's resolved -c/--config value, resolved
-    against its working directory (= script_dir, verified by the
-    caller). No -c means the default config.yaml."""
+    against its own working directory. No -c means the default
+    config.yaml in that directory."""
     for i, c in enumerate(cmd):
         s = str(c)
         if s in ("-c", "--config"):
             if i + 1 < len(cmd):
                 return os.path.normcase(os.path.abspath(
-                    os.path.join(script_dir, str(cmd[i + 1]))
+                    os.path.join(cwd, str(cmd[i + 1]))
                 ))
         elif s.startswith("--config="):
             return os.path.normcase(os.path.abspath(
-                os.path.join(script_dir, s.split("=", 1)[1])
+                os.path.join(cwd, s.split("=", 1)[1])
             ))
     return os.path.normcase(
-        os.path.abspath(os.path.join(script_dir, "config.yaml"))
+        os.path.abspath(os.path.join(cwd, "config.yaml"))
     )
 
 
@@ -57,13 +57,14 @@ def terminate_stale_instances(script_path, config_path=None, log=print):
     """Kill python processes running this same entry point.
 
     Matches a python process whose command line references this
-    exact script (full path or basename) and whose working
-    directory is this script's directory. With config_path set,
-    the candidate must also run the SAME config: the info server
-    and the consumer app share run.py but use different configs
-    (config_info.yaml / config_consumer.yaml) - without this
+    exact script (full path or basename). With config_path set,
+    the candidate must also run the SAME resolved config (its -c
+    value resolved against its own working directory): each role
+    lives in its own folder with its own config.yaml, and the
+    info server and the consumer app share run.py - without this
     check they would terminate each other in a restart loop.
-    Returns the pids that were terminated.
+    Without config_path the legacy rule applies (same script
+    directory). Returns the pids that were terminated.
     """
     try:
         import psutil
@@ -74,13 +75,8 @@ def terminate_stale_instances(script_path, config_path=None, log=print):
     protected = _protected_pids(me)
     script = os.path.normcase(os.path.abspath(script_path))
     script_dir = os.path.normcase(os.path.dirname(script))
-    # my own config resolved the same way candidates resolve
-    # theirs (against the script dir, so a start from another
-    # cwd still matches)
     my_cfg = (
-        os.path.normcase(os.path.abspath(
-            os.path.join(script_dir, config_path)
-        ))
+        os.path.normcase(os.path.abspath(config_path))
         if config_path else None
     )
     stale = []
@@ -107,11 +103,10 @@ def terminate_stale_instances(script_path, config_path=None, log=print):
                     cwd = os.path.normcase(p.cwd())
                 except (psutil.AccessDenied, psutil.NoSuchProcess):
                     continue
-                if cwd != script_dir:
-                    continue
-                if my_cfg is not None and _candidate_config(
-                    cmd, script_dir
-                ) != my_cfg:
+                if my_cfg is not None:
+                    if _candidate_config(cmd, cwd) != my_cfg:
+                        continue
+                elif cwd != script_dir:
                     continue
                 stale.append(p)
             except (psutil.NoSuchProcess, psutil.AccessDenied):
