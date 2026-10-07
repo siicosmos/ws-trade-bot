@@ -1236,6 +1236,104 @@ function _subsection(title, body, tip) {
     _fieldHelp(tip) + body + '</div>';
 }
 
+function _modeSlider(mode) {
+  const stops = ["notify", "paper", "live"];
+  return '<div class="mode-slider">' + stops.map(function (m) {
+    return '<button type="button" class="mode-stop' +
+      (mode === m ? " active mode-" + m : "") +
+      '" data-mode="' + m + '" onclick="onModeClick(\'' + m + '\')">' +
+      m + '</button>';
+  }).join("") + '</div>';
+}
+
+let _restarting = false;
+
+function onModeClick(mode) {
+  if (_restarting) return;
+  const current = (lastSettings.trading || {}).mode;
+  if (mode === current) return;
+  if (mode === "live") {
+    openInputModal(
+      "Switch to LIVE mode",
+      "live places REAL orders on the Wealthsimple account on " +
+      "every parsed alert. The app restarts to apply. " +
+      "Type LIVE to confirm.",
+      {label: "type LIVE to confirm", placeholder: "LIVE", value: ""},
+      null,
+      async function () {
+        const v = (
+          document.getElementById("mInput").value || ""
+        ).trim().toUpperCase();
+        if (v !== "LIVE") {
+          onModeClick("live");   // wrong token - ask again
+          return;
+        }
+        await doModeSwitch("live");
+      }
+    );
+    return;
+  }
+  const text = mode === "paper"
+    ? "paper simulates every fill against the local ledger - " +
+      "no real orders. The app restarts to apply."
+    : "notify only sends sizing previews to the webhook - " +
+      "nothing executes. The app restarts to apply.";
+  openModal("Switch to " + mode + " mode", text, "switch",
+    async function () { await doModeSwitch(mode); });
+}
+
+async function doModeSwitch(mode) {
+  try {
+    const r = await fetch("/api/mode", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: mode }),
+    });
+    const d = await r.json();
+    if (!r.ok) {
+      alert((d.errors || [d.error || "mode switch failed"]).join("\n"));
+      return;
+    }
+    if (d.restarting) {
+      _restarting = true;
+      let el = document.getElementById("restart-overlay");
+      if (!el) {
+        el = document.createElement("div");
+        el.id = "restart-overlay";
+        document.body.appendChild(el);
+      }
+      el.textContent = "pipeline restarting in " + mode +
+        " mode - reconnecting\u2026";
+      el.style.display = "flex";
+      // the process exits ~1.5s after the response; ignore the
+      // first 3s of health checks (the old process is still
+      // up), then reload as soon as it answers again
+      const started = Date.now();
+      const deadline = started + 60000;
+      const poll = setInterval(async function () {
+        if (Date.now() > deadline) {
+          clearInterval(poll);
+          location.reload();
+          return;
+        }
+        if (Date.now() - started < 3000) return;
+        try {
+          const h = await fetch("/health");
+          if (h.ok) {
+            clearInterval(poll);
+            location.reload();
+          }
+        } catch (e) { /* down - keep polling */ }
+      }, 1000);
+    } else {
+      setSettingsDirty(false);
+      load();
+    }
+  } catch (e) {
+    alert("mode switch failed: " + e);
+  }
+}
+
 function renderSettings(s) {
   lastSettings = s;
   // leave the form alone while the user has unsaved edits - the
@@ -1250,20 +1348,23 @@ function renderSettings(s) {
   const q = s.quotes || {};
 
   // 1. automation: one section for everything the bot runs on.
-  // top row: the global behaviour toggles. below: grouped
-  // sub-sections - mirror fills, 0dte, global risk cap, quotes
-  // provider, github code update and account value monitoring
+  // top row: the mode slider + global behaviour toggles. below:
+  // grouped sub-sections - paper ledger, 0dte, risk caps,
+  // stops & exits, live fills, quotes provider, github code
+  // update and account value monitoring
   let html = _section("automation",
     '<div class="set-checks" style="margin-bottom:0">' +
-      _check("set-notify", "notify", dc.notify !== false,
-        "send parsed trade alerts to the discord webhook") +
-      _check("set-paper-enabled", "paper trading", s.paper && s.paper.enabled,
-        "simulate executions against the paper ledger alongside notify mode") +
+      '<div class="set-check"><label>mode</label>' +
+        _modeSlider(t.mode) +
+        _fieldHelp("notify = alerts only \u00b7 paper = simulated fills \u00b7 live = real orders - switching warns, saves and restarts the app") +
+      '</div>' +
+      _check("set-notify", "phone notifications", dc.notify !== false,
+        "send parsed trade alerts and results to the discord webhook") +
       _check("set-trading_paused", "trading paused (kill switch)",
         t.trading_paused,
         "emergency stop: blocks every new BUY immediately, no restart needed - exits (alert sells, stops) stay allowed") +
     '</div>' +
-    _subsection("mirror fills",
+    _subsection("paper ledger",
       '<div class="set-checks" style="margin-bottom:10px">' +
         _check("set-paper-mirror", "mirror real fills", s.paper && s.paper.mirror,
           "copy real wealthsimple fills into the paper ledger") +
@@ -1272,6 +1373,9 @@ function renderSettings(s) {
         _numField("set-mirror-interval", "mirror every (s)",
           s.paper && s.paper.mirror_interval_seconds,
           "seconds between real-fill mirror scans") +
+        _numField("set-paper_account_value", "paper value $",
+          t.paper_account_value,
+          "fallback paper equity when live account values are unavailable (fresh paper accounts seed from the live value)") +
       '</div>') +
     _subsection("0dte",
       '<div class="set-checks" style="margin-bottom:10px">' +
@@ -1284,7 +1388,7 @@ function renderSettings(s) {
           t.lotto_gain_budget_pct,
           "hero-or-zero / profits-only buys may spend at most this % of today's realized sell gains", "big") +
       '</div>') +
-    _subsection("global risk cap",
+    _subsection("risk caps",
       '<div class="set-grid">' +
         _numField("set-risk_per_trade_pct", "default risk %", t.risk_per_trade_pct,
           "% of account value risked per trade when no size keyword is given", "big") +
@@ -1294,16 +1398,32 @@ function renderSettings(s) {
           "stop opening new risk once deployed capital exceeds this % of account value", "big") +
         _numField("set-cluster_cap_pct", "cluster cap %", t.cluster_cap_pct,
           "one underlying+expiry+direction cluster (e.g. several SPX 0dte calls) may never exceed this % of account value - a buy into a capped cluster is skipped even when the global cap has room (0 = off)", "big") +
-        _numField("set-partial_fill_cancel_pct", "partial-fill cancel %", t.partial_fill_cancel_pct,
-          "a partially-filled order whose price runs this % away from the estimate gets its remainder cancelled - the filled part stays as the position (0 = off)", "big") +
-        _numField("set-max_slippage_pct", "slippage notice %", t.max_slippage_pct,
-          "a live fill landing this % away from the order's estimated price posts a discord notice with both prices (data only, 0 = off)", "big") +
-        _numField("set-stop_loss_pct", "stop loss %", t.stop_loss_pct,
-          "global stop loss % below entry (per-size overrides live in the size tiers below)", "big") +
         _numField("set-max_daily_loss_pct", "daily loss cap %", t.max_daily_loss_pct,
           "hard daily-loss circuit breaker: once today's realized pnl sinks below this % of account value, new buys pause until tomorrow (0 = off)", "big") +
+      '</div>') +
+    _subsection("stops & exits",
+      '<div class="set-grid">' +
+        _numField("set-stop_loss_pct", "stop loss %", t.stop_loss_pct,
+          "global stop loss % below entry (per-size overrides live in the size tiers below)", "big") +
         _numField("set-trailing_stop_pct", "trailing stop %", t.trailing_stop_pct,
           "trailing stop distance once in profit; 0 disables", "big") +
+        _numField("set-stop_check_seconds", "stop check (s)", t.stop_check_seconds,
+          "how often the stop monitor polls quotes") +
+      '</div>') +
+    _subsection("live fills",
+      '<div class="set-grid">' +
+        '<div class="set-field"><label>order type</label>' +
+        '<div class="field-help">order type used for live executions</div>' +
+        '<select id="set-order_type" title="order type used for live executions">' +
+          '<option value="market"' + (t.order_type === "market" ? " selected" : "") + '>market</option>' +
+          '<option value="limit"' + (t.order_type === "limit" ? " selected" : "") + '>limit</option>' +
+        '</select></div>' +
+        _numField("set-limit_offset_pct", "limit offset %", t.limit_offset_pct,
+          "how far past the market price a limit order chases (limit order type only)") +
+        _numField("set-max_slippage_pct", "slippage notice %", t.max_slippage_pct,
+          "a live fill landing this % away from the order's estimated price posts a discord notice with both prices (data only, 0 = off)", "big") +
+        _numField("set-partial_fill_cancel_pct", "partial-fill cancel %", t.partial_fill_cancel_pct,
+          "a partially-filled order whose price runs this % away from the estimate gets its remainder cancelled - the filled part stays as the position (0 = off)", "big") +
       '</div>') +
     _subsection("quotes provider",
       '<div class="set-checks" style="margin-bottom:10px">' +
@@ -1395,13 +1515,14 @@ function renderSettings(s) {
     tiers += '<div class="set-field"><label>' + esc(name) + '</label>' +
       '<input id="set-stocktier-' + esc(name) + '" type="number" step="any" value="' + val + '"></div>';
   }
+  tiers += _numField("set-position_size_cad", "stock fallback size $",
+    t.position_size_cad,
+    "flat per-trade dollars for stock buys when no size tier matches the alert");
   tiers += '</div>';
   html += _section("size tiers", tiers);
 
   // 3. trading limits
   html += _section("trading limits", '<div class="set-grid">' +
-    _numField("set-stop_check_seconds", "stop check (s)", t.stop_check_seconds,
-      "how often the stop monitor polls quotes") +
     _numField("set-max_consecutive_losses", "max losses in row", t.max_consecutive_losses,
       "pause trading after this many consecutive losses; 0 = off") +
     _numField("set-min_dte_days", "min DTE", t.min_dte_days,
@@ -1412,16 +1533,8 @@ function renderSettings(s) {
       "minimum wait between consecutive trades") +
     _numField("set-dedupe_window_minutes", "dedupe (min)", t.dedupe_window_minutes,
       "window for recognizing duplicate alerts") +
-    _numField("set-limit_offset_pct", "limit offset %", t.limit_offset_pct,
-      "how far past the market price a limit order chases (limit order type only)") +
     _numField("set-history_retention_days", "history retention (d)", t.history_retention_days,
       "days to keep signals and trades; 0 = keep forever (takes effect after restart)") +
-    '<div class="set-field"><label title="order type used for live executions">' +
-    'order type</label>' +
-    '<select id="set-order_type" title="order type used for live executions">' +
-      '<option value="market"' + (t.order_type === "market" ? " selected" : "") + '>market</option>' +
-      '<option value="limit"' + (t.order_type === "limit" ? " selected" : "") + '>limit</option>' +
-    '</select></div>' +
     '</div>' +
     '<div class="set-checks" style="margin:10px 0 0">' +
       _check("set-sell_only_if_held", "sell only if held",
@@ -1541,7 +1654,7 @@ async function saveSettings() {
   const val = (id) => document.getElementById(id).value;
   const num = (id) => parseFloat(val(id));
   const trading = {};
-  for (const k of ["risk_per_trade_pct","max_contracts_per_trade","max_open_risk_pct","cluster_cap_pct","max_slippage_pct","partial_fill_cancel_pct","stop_loss_pct","max_daily_loss_pct","trailing_stop_pct","stop_check_seconds","max_consecutive_losses","min_dte_days","max_trades_per_day","cooldown_seconds","dedupe_window_minutes","limit_offset_pct","history_retention_days","lotto_gain_budget_pct"]) {
+  for (const k of ["risk_per_trade_pct","max_contracts_per_trade","max_open_risk_pct","cluster_cap_pct","max_slippage_pct","partial_fill_cancel_pct","stop_loss_pct","max_daily_loss_pct","trailing_stop_pct","stop_check_seconds","max_consecutive_losses","min_dte_days","max_trades_per_day","cooldown_seconds","dedupe_window_minutes","limit_offset_pct","history_retention_days","lotto_gain_budget_pct","position_size_cad","paper_account_value"]) {
     trading[k] = num("set-" + k);
   }
   trading.order_type = val("set-order_type");
@@ -1761,6 +1874,12 @@ async function openLevels() {
   renderLevelsChart();
   try {
     const data = await api("/api/spx");
+    // a consumer whose levels sync from the info server's feed
+    // is read-only - the edit would be overwritten on the next
+    // feed poll
+    const ro = data.editable === false;
+    document.getElementById("levels-editor").style.display = ro ? "none" : "";
+    document.getElementById("levels-readonly").style.display = ro ? "" : "none";
     if (data.text != null && data.text !== "" && data.text !== saved) {
       document.getElementById("levels-input").value = data.text;
       localStorage.setItem("spx_levels_raw", data.text);

@@ -3,6 +3,7 @@ vs consumer app (the trading pipeline)."""
 
 import os
 import sys
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -10,7 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pytest  # noqa: E402
 
 from test_pipeline import _fresh_store, ConfigStub, TradingConfig  # noqa: E402
-from trader.config import load_config  # noqa: E402
+from trader.config import FeedConfig, load_config  # noqa: E402
 from trader.pipeline import ingest_alert  # noqa: E402
 from trader.trading.risk import RiskEngine  # noqa: E402
 from trader.ws.account import PaperAccount  # noqa: E402
@@ -199,3 +200,157 @@ def test_consumer_role_trading_routes_work():
     client = app.test_client()
     r = client.get("/api/positions", headers=_headers("t"))
     assert r.status_code == 200
+
+
+# ---------------------------------------------------------------- mode api
+
+def _tmp_config(tmp_path):
+    path = tmp_path / "config.yaml"
+    path.write_text("trading:\n  mode: notify\n  stop_loss_pct: 25\n")
+    return str(path)
+
+
+def _app_with_config(role, config_path, auth_token="t"):
+    store = _fresh_store()
+    cfg = ConfigStub(TradingConfig(mode="notify"), auth_token=auth_token)
+    cfg.pipeline.role = role
+    account = PaperAccount(cfg, store)
+    from trader.trading.executor import PaperExecutor
+
+    risk = RiskEngine(cfg, store, account)
+    app = __import__(
+        "trader.web.server", fromlist=["create_app"]
+    ).create_app(
+        cfg, store, risk, PaperExecutor(cfg, store, account), account,
+        config_path=config_path,
+    )
+    return app, store, cfg
+
+
+def test_mode_endpoint_persists_and_reports_restart(tmp_path):
+    config_path = _tmp_config(tmp_path)
+    app, store, cfg = _app_with_config("consumer", config_path)
+    client = app.test_client()
+    r = client.post(
+        "/api/mode", json={"mode": "paper"}, headers=_headers("t")
+    )
+    assert r.status_code == 200
+    data = r.get_json()
+    # no restart callback on the test app - it reports no restart
+    assert data["restarting"] is False
+    assert data["mode"] == "paper"
+    # persisted to the config file
+    import yaml
+
+    raw = yaml.safe_load(open(config_path))
+    assert raw["trading"]["mode"] == "paper"
+    # and the live config object moved too
+    assert cfg.trading.mode == "paper"
+
+
+def test_mode_endpoint_restarts_via_callback(tmp_path):
+    config_path = _tmp_config(tmp_path)
+    app, store, cfg = _app_with_config("consumer", config_path)
+    restarted = []
+    app.restart_pipeline = lambda: restarted.append(1)
+    client = app.test_client()
+    r = client.post(
+        "/api/mode", json={"mode": "paper"}, headers=_headers("t")
+    )
+    assert r.get_json()["restarting"] is True
+    deadline = time.time() + 5
+    while not restarted and time.time() < deadline:
+        time.sleep(0.05)
+    assert restarted, "the restart callback fired after the response"
+
+
+def test_mode_endpoint_validation(tmp_path):
+    config_path = _tmp_config(tmp_path)
+    app, store, cfg = _app_with_config("consumer", config_path)
+    client = app.test_client()
+    r = client.post(
+        "/api/mode", json={"mode": "banana"}, headers=_headers("t")
+    )
+    assert r.status_code == 400
+    # same mode: no-op, no restart
+    r = client.post(
+        "/api/mode", json={"mode": "notify"}, headers=_headers("t")
+    )
+    assert r.get_json()["restarting"] is False
+
+
+def test_mode_endpoint_requires_admin(tmp_path):
+    config_path = _tmp_config(tmp_path)
+    app, store, cfg = _app_with_config("consumer", config_path)
+    client = app.test_client()
+    r = client.post("/api/mode", json={"mode": "paper"})
+    assert r.status_code == 401
+
+
+def test_mode_endpoint_survives_missing_config(tmp_path):
+    # a config path whose directory does not exist: the persist
+    # fails, the endpoint reports 500 and the live mode stays
+    app, store, cfg = _app_with_config(
+        "consumer", str(tmp_path / "nope" / "config.yaml")
+    )
+    client = app.test_client()
+    r = client.post(
+        "/api/mode", json={"mode": "live"}, headers=_headers("t")
+    )
+    assert r.status_code == 500
+    assert cfg.trading.mode == "notify"
+
+
+def test_spx_levels_readonly_with_feed(tmp_path):
+    store = _fresh_store()
+    cfg = ConfigStub(TradingConfig(mode="notify"), auth_token="t")
+    cfg.feed = FeedConfig(url="http://info:8080", token="x")
+    account = PaperAccount(cfg, store)
+    from trader.trading.executor import PaperExecutor
+
+    risk = RiskEngine(cfg, store, account)
+    app = __import__(
+        "trader.web.server", fromlist=["create_app"]
+    ).create_app(
+        cfg, store, risk, PaperExecutor(cfg, store, account), account
+    )
+    client = app.test_client()
+    r = client.post(
+        "/api/spx-levels", json={"text": "Pivot 6800"},
+        headers=_headers("t"),
+    )
+    assert r.status_code == 403
+    # and the ladder payload flags it read-only
+    r = client.get("/api/spx", headers=_headers("t"))
+    assert r.get_json()["editable"] is False
+
+
+def test_spx_levels_editable_without_feed():
+    store = _fresh_store()
+    cfg = ConfigStub(TradingConfig(mode="notify"), auth_token="t")
+    account = PaperAccount(cfg, store)
+    from trader.trading.executor import PaperExecutor
+
+    risk = RiskEngine(cfg, store, account)
+    app = __import__(
+        "trader.web.server", fromlist=["create_app"]
+    ).create_app(
+        cfg, store, risk, PaperExecutor(cfg, store, account), account
+    )
+    client = app.test_client()
+    r = client.post(
+        "/api/spx-levels", json={"text": "Pivot 6800"},
+        headers=_headers("t"),
+    )
+    assert r.status_code == 200
+    r = client.get("/api/spx", headers=_headers("t"))
+    assert r.get_json()["editable"] is True
+
+
+def test_get_settings_includes_mode():
+    store = _fresh_store()
+    cfg = ConfigStub(TradingConfig(mode="paper"))
+    from trader.settings import get_settings
+
+    s = get_settings(cfg)
+    assert s["trading"]["mode"] == "paper"

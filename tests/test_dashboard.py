@@ -1501,9 +1501,10 @@ def test_settings_layout_0dte_control_section():
     assert '_section("0dte control"' not in js
     assert js.count('_section("automation"') == 1
     # the quick + 0dte fields live inside the automation section
+    # (the mode slider replaced the notify/paper checkboxes)
     a_start = js.index('_section("automation"')
     a_end = js.index('_section("size tiers"')
-    for fid in ("set-notify", "set-paper-enabled",
+    for fid in ("set-notify", "_modeSlider(t.mode)",
                 "set-back_to_entry_enabled", "set-lotto_gain_budget_pct",
                 "set-risk_per_trade_pct", "set-paper-mirror",
                 "set-au-enabled"):
@@ -1515,8 +1516,9 @@ def test_settings_layout_0dte_control_section():
 
 def test_settings_automation_subsections():
     """the automation section groups its fields into titled
-    sub-sections: mirror fills, 0dte, global risk cap, quotes
-    provider, github code update and account value monitoring."""
+    sub-sections: paper ledger, 0dte, risk caps, stops & exits,
+    live fills, quotes provider, github code update and account
+    value monitoring."""
     import trader.web.dashboard as dash
 
     js = DASHBOARD_JS
@@ -1528,14 +1530,16 @@ def test_settings_automation_subsections():
         "async function saveSettings"
     )]
     assert fn.index("let html =") < fn.index("html +=")
-    # the six titled sub-sections, in order
+    # the titled sub-sections, in order
     a_start = js.index('_section("automation"')
     a_end = js.index('_section("size tiers"')
     auto = js[a_start:a_end]
     subs = [
-        "_subsection(\"mirror fills\"",
+        "_subsection(\"paper ledger\"",
         "_subsection(\"0dte\"",
-        "_subsection(\"global risk cap\"",
+        "_subsection(\"risk caps\"",
+        "_subsection(\"stops & exits\"",
+        "_subsection(\"live fills\"",
         "_subsection(\"quotes provider\"",
         "_subsection(\"github code update\"",
         "_subsection(\"account value monitoring\"",
@@ -1552,20 +1556,27 @@ def test_settings_automation_subsections():
         spans.append(auto[start:end])
     assert "set-paper-mirror" in spans[0]
     assert "set-mirror-interval" in spans[0]
+    assert "set-paper_account_value" in spans[0]
     assert "set-back_to_entry_enabled" in spans[1]
     assert "set-lotto_gain_budget_pct" in spans[1]
     for fid in ("set-risk_per_trade_pct", "set-max_contracts_per_trade",
-                "set-max_open_risk_pct", "set-stop_loss_pct",
-                "set-trailing_stop_pct"):
+                "set-max_open_risk_pct", "set-cluster_cap_pct",
+                "set-max_daily_loss_pct"):
         assert fid in spans[2]
+    for fid in ("set-stop_loss_pct", "set-trailing_stop_pct",
+                "set-stop_check_seconds"):
+        assert fid in spans[3]
+    for fid in ("set-order_type", "set-limit_offset_pct",
+                "set-max_slippage_pct", "set-partial_fill_cancel_pct"):
+        assert fid in spans[4]
     for fid in ("set-quotes-provider", "set-quotes-moomoo_host",
                 "set-quotes-moomoo_port", "set-quotes-enabled"):
-        assert fid in spans[3]
+        assert fid in spans[5]
     for fid in ("set-au-enabled", "set-au-interval"):
-        assert fid in spans[4]
+        assert fid in spans[6]
     for fid in ("set-ws-positions", "set-ws-values",
                 "set-ws-margin-rate"):
-        assert fid in spans[5]
+        assert fid in spans[7]
 
 
 def test_unified_button_and_section_styles():

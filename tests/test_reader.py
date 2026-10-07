@@ -342,7 +342,7 @@ def test_channel_allowed():
 def test_merged_config_channels():
     resp = {"channels": ["Player-Alerts", " test-alerts ", ""]}
     (marker, poll, items, channels, servers, reopen, restart,
-     auto_switch, changed) = dr.merged_config(
+     auto_switch, auto_scroll, changed) = dr.merged_config(
         resp, "", 0.5, 40, ["test-alerts"]
     )
     assert changed
@@ -361,7 +361,7 @@ def test_merged_config_channel_servers():
         "discord_restart_seconds": 120,
     }
     (marker, poll, items, channels, servers, reopen, restart,
-     auto_switch, changed) = dr.merged_config(
+     auto_switch, auto_scroll, changed) = dr.merged_config(
         resp, "", 0.5, 40, ["test-alerts"], {}, 15, 90
     )
     assert changed

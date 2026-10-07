@@ -300,6 +300,9 @@ def main():
         )
     )
     app.ws_updater = updater
+    # the mode slider restarts the app after persisting (the
+    # executors/threads wire by mode at startup)
+    app.restart_pipeline = _restart_pipeline
     scheme = "https" if cfg.pipeline.tls_cert and cfg.pipeline.tls_key else "http"
     ssl_context = None
     if scheme == "https":

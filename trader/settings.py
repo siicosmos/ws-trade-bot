@@ -22,6 +22,8 @@ EDITABLE_SCALARS = {
     "dedupe_window_minutes": ("int", 0, 1440),
     "limit_offset_pct": ("float", 0, 5),
     "history_retention_days": ("int", 0, 3650),
+    "position_size_cad": ("float", 0, 1000000),
+    "paper_account_value": ("float", 0, 100000000),
 }
 EDITABLE_ENUMS = {"order_type": ("market", "limit")}
 EDITABLE_BOOLS = (
@@ -47,6 +49,9 @@ EDITABLE_ACCOUNT_NUMERIC = {
 
 def get_settings(cfg) -> dict:
     trading = {k: getattr(cfg.trading, k) for k in EDITABLE_SCALARS}
+    # mode is display-only here - it changes through /api/mode
+    # (persist + restart), not the settings form
+    trading["mode"] = cfg.trading.mode
     for k in EDITABLE_ENUMS:
         trading[k] = getattr(cfg.trading, k)
     for k in EDITABLE_BOOLS:
@@ -548,6 +553,50 @@ def apply_settings(cfg, payload: dict, config_path=None) -> tuple:
     return applied, errors
 
 
+def _dump_yaml(raw, config_path):
+    """Atomic yaml write, preserving blank-line layout between
+    top-level sections."""
+    directory = os.path.dirname(os.path.abspath(config_path))
+    fd, tmp = tempfile.mkstemp(dir=directory, suffix=".yaml.tmp")
+    with os.fdopen(fd, "w") as f:
+        text = yaml.safe_dump(
+            raw, default_flow_style=False, sort_keys=False,
+            allow_unicode=True, width=4096,
+        )
+        out = []
+        for line in text.split("\n"):
+            if (
+                out
+                and line
+                and not line[0].isspace()
+                and not line.startswith("- ")
+                and line not in ("---", "...")
+                and out[-1] != ""
+            ):
+                out.append("")
+            out.append(line)
+        f.write("\n".join(out))
+    os.replace(tmp, config_path)
+
+
+def set_mode(cfg, mode, config_path=None):
+    """Persist trading.mode (the mode slider). Returns False
+    when the write failed."""
+    try:
+        with open(config_path) as f:
+            raw = yaml.safe_load(f) or {}
+    except OSError:
+        return False
+    raw.setdefault("trading", {})["mode"] = mode
+    try:
+        _dump_yaml(raw, config_path)
+    except OSError:
+        return False
+    cfg.trading.mode = mode
+    cfg.trading.dry_run = mode != "live"
+    return True
+
+
 def _persist(cfg, config_path):
     with open(config_path) as f:
         raw = yaml.safe_load(f) or {}
@@ -658,24 +707,4 @@ def _persist(cfg, config_path):
         for a in cfg.wealthsimple.accounts
     ]
 
-    directory = os.path.dirname(os.path.abspath(config_path))
-    fd, tmp = tempfile.mkstemp(dir=directory, suffix=".yaml.tmp")
-    with os.fdopen(fd, "w") as f:
-        text = yaml.safe_dump(
-            raw, default_flow_style=False, sort_keys=False,
-            allow_unicode=True, width=4096,
-        )
-        out = []
-        for line in text.split("\n"):
-            if (
-                out
-                and line
-                and not line[0].isspace()
-                and not line.startswith("- ")
-                and line not in ("---", "...")
-                and out[-1] != ""
-            ):
-                out.append("")
-            out.append(line)
-        f.write("\n".join(out))
-    os.replace(tmp, config_path)
+    _dump_yaml(raw, config_path)

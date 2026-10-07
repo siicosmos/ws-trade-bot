@@ -967,12 +967,12 @@ def channel_allowed(title_channel, channels, marker):
 
 def merged_config(resp, marker, poll_interval, max_items, channels,
                   channel_servers=None, reopen_seconds=15,
-                  restart_after=90, auto_switch=True):
+                  restart_after=90, auto_switch=True, auto_scroll=True):
     changed = False
     if resp is None:
         return (marker, poll_interval, max_items, channels,
                 channel_servers, reopen_seconds, restart_after,
-                auto_switch, False)
+                auto_switch, auto_scroll, False)
     if "auto_switch" in resp:
         want = bool(resp.get("auto_switch"))
         if want != auto_switch:
@@ -1031,9 +1031,15 @@ def merged_config(resp, marker, poll_interval, max_items, channels,
             max_items = m
     except (TypeError, ValueError):
         pass
+    if "auto_scroll" in resp:
+        want_scroll = bool(resp.get("auto_scroll"))
+        if want_scroll != auto_scroll:
+            auto_scroll = want_scroll
+            changed = True
     return (
         marker, poll_interval, max_items, channels, channel_servers,
-        reopen_seconds, restart_after, auto_switch, changed,
+        reopen_seconds, restart_after, auto_switch, auto_scroll,
+        changed,
     )
 
 
@@ -1591,10 +1597,10 @@ def main():
                     )
                     (marker, poll_interval, max_items, channels,
                      channel_servers, reopen_seconds, restart_after,
-                     auto_switch, changed) = merged_config(
+                     auto_switch, auto_scroll, changed) = merged_config(
                         resp, marker, poll_interval, max_items, channels,
                         channel_servers, reopen_seconds, restart_after,
-                        auto_switch,
+                        auto_switch, auto_scroll,
                     )
                     if changed:
                         log(
@@ -1636,10 +1642,10 @@ def main():
                 )
                 (new_marker, new_poll, new_max, new_channels,
                  new_servers, new_reopen, new_restart, new_switch,
-                 changed) = merged_config(
+                 new_scroll, changed) = merged_config(
                     resp, marker, poll_interval, max_items, channels,
                     channel_servers, reopen_seconds, restart_after,
-                    auto_switch,
+                    auto_switch, auto_scroll,
                 )
                 if changed:
                     marker = new_marker
@@ -1650,6 +1656,7 @@ def main():
                     reopen_seconds = new_reopen
                     restart_after = new_restart
                     auto_switch = new_switch
+                    auto_scroll = new_scroll
                     container = None
                     log(
                         f"channel config -> marker={marker!r} "

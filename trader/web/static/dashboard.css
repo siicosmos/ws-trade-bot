@@ -227,6 +227,27 @@
     letter-spacing: .3px; white-space: nowrap;
   }
   .mini-toggle:hover { border-color: var(--muted); }
+  .mode-slider {
+    display: inline-flex; border: 1px solid #30363d; border-radius: 8px;
+    overflow: hidden; background: #0d1117;
+  }
+  .mode-stop {
+    background: transparent; color: var(--muted); border: none;
+    padding: 6px 14px; font-size: 12px; font-weight: 600;
+    cursor: pointer; font-family: inherit;
+  }
+  .mode-stop + .mode-stop { border-left: 1px solid #30363d; }
+  .mode-stop.active { color: #fff; }
+  .mode-stop.active.mode-notify { background: #1f6feb; }
+  .mode-stop.active.mode-paper { background: #9e6a03; }
+  .mode-stop.active.mode-live { background: #b62324; }
+  .mode-stop:hover:not(.active) { color: var(--text); background: #161b22; }
+  #restart-overlay {
+    display: none; position: fixed; inset: 0; z-index: 200;
+    background: rgba(13, 17, 23, 0.88); color: var(--text);
+    align-items: center; justify-content: center; font-size: 15px;
+    font-weight: 600; text-align: center; padding: 20px;
+  }
   .mini-toggle:disabled {
     opacity: .35; cursor: not-allowed;
   }

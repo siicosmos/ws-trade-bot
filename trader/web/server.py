@@ -1894,7 +1894,9 @@ def create_app(cfg, store: Store, risk, executor, account=None,
         # reports an age, ws reports the market status)
         stale = bool(age and age > 120) or status == "CLOSED"
         # the saved levels text rides along: it is the
-        # cross-device source of truth for the ladder
+        # cross-device source of truth for the ladder. editable
+        # is False when a feed sync owns it (the consumer's copy
+        # is overwritten by the info server on every poll)
         return jsonify({
             "price": price, "age": age, "error": error,
             "stale": stale, "status": status,
@@ -1904,6 +1906,9 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                 "positions_refresh_seconds", 30,
             ),
             "text": store.meta_get("spx_levels_text"),
+            "editable": not (
+                getattr(getattr(cfg, "feed", None), "url", "")
+            ),
             "ts": time.time(),
         })
 
@@ -1911,7 +1916,14 @@ def create_app(cfg, store: Store, risk, executor, account=None,
     def api_spx_levels():
         """Save the pasted levels text - every device's popup
         loads it from here (planned item #17: per-item state in
-        the database)."""
+        the database). A consumer whose levels sync from the info
+        server's feed is read-only - the edit would be
+        overwritten on the next poll."""
+        if getattr(getattr(cfg, "feed", None), "url", ""):
+            return jsonify(
+                {"error": "levels sync from the info server's feed - "
+                          "edit them on the info dashboard"}
+            ), 403
         data = request.get_json(silent=True) or {}
         text = str(data.get("text") or "")[:8000]
         store.meta_set("spx_levels_text", text)
@@ -1990,6 +2002,44 @@ def create_app(cfg, store: Store, risk, executor, account=None,
             }
         )
 
+    @app.post("/api/mode")
+    def api_mode_post():
+        """The mode slider: persist trading.mode and restart this
+        app (the executors/threads wire by mode at startup)."""
+        denied = _require_admin()
+        if denied:
+            return denied
+        data = request.get_json(silent=True) or {}
+        mode = str(data.get("mode") or "").strip().lower()
+        if mode not in ("notify", "paper", "live"):
+            return jsonify(
+                {"status": "error",
+                 "errors": ["mode: must be notify, paper or live"]}
+            ), 400
+        if mode == cfg.trading.mode:
+            return jsonify({
+                "status": "ok", "mode": mode, "restarting": False,
+            })
+        from ..settings import set_mode
+
+        if not set_mode(cfg, mode, config_path):
+            return jsonify(
+                {"status": "error",
+                 "errors": ["could not write the config file"]}
+            ), 500
+        restart = callable(getattr(app, "restart_pipeline", None))
+        if restart:
+            # respond first, then exit - the .bat loop restarts
+            # with the new mode
+            def _late_exit():
+                time.sleep(1.5)
+                app.restart_pipeline()
+
+            threading.Thread(target=_late_exit, daemon=True).start()
+        return jsonify({
+            "status": "ok", "mode": mode, "restarting": restart,
+        })
+
     @app.post("/api/reader_status")
     def api_reader_status():
         data = request.get_json(silent=True) or {}
@@ -2017,6 +2067,9 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                     getattr(
                         cfg.reader, "discord_restart_seconds", 90
                     )
+                ),
+                "auto_scroll": bool(
+                    getattr(cfg.reader, "auto_scroll", True)
                 ),
             }
         )
