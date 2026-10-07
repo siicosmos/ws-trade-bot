@@ -16,3 +16,4 @@ certs/
 pipeline.log*
 reader.log*
 *_exit.txt
+*.log
