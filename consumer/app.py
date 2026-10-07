@@ -82,7 +82,7 @@ def main(cfg, args):
         cfg.discord.pipeline_log_webhook_url,
         log_path=os.path.join(
             os.path.dirname(os.path.abspath(args.db)),
-            "pipeline.log",
+            "consumer.log",
         ),
     )
 

@@ -8,7 +8,10 @@ import time
 UPDATE_RECORD = ".last_update.json"
 
 
-PIPELINE_RESTART_FILES = ("trader/*", "run.py", "requirements.txt")
+PIPELINE_RESTART_FILES = (
+    "trader/*", "core/*", "info/*", "consumer/*",
+    "run.py", "requirements.txt",
+)
 READER_RESTART_FILES = ("reader/*", "requirements.txt")
 # per-role globs: each app restarts only when code it executes
 # changed (the shared core moves both)

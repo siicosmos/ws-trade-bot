@@ -363,3 +363,32 @@ def test_get_settings_includes_mode():
 
     s = get_settings(cfg)
     assert s["trading"]["mode"] == "paper"
+
+
+def test_session_cookies_never_collide_between_apps():
+    """Cookies ignore ports - two apps on one host (two
+    consumers, or a consumer next to anything else) must set
+    differently-named session cookies or each login logs the
+    other out."""
+    from consumer.web import create_app
+
+    apps = []
+    for port in (8081, 8082):
+        store = _fresh_store()
+        cfg = ConfigStub(TradingConfig(mode="paper"), auth_token="t")
+        cfg.pipeline.port = port
+        account = PaperAccount(cfg, store)
+        from consumer.trading.executor import PaperExecutor
+        from consumer.trading.risk import RiskEngine
+
+        risk = RiskEngine(cfg, store, account)
+        apps.append(create_app(
+            cfg, store, risk,
+            PaperExecutor(cfg, store, account), account,
+        ))
+    names = []
+    for app in apps:
+        with app.test_request_context():
+            names.append(app.config["SESSION_COOKIE_NAME"])
+    assert names == ["ws_session_8081", "ws_session_8082"]
+    assert len(set(names)) == 2

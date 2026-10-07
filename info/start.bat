@@ -39,7 +39,7 @@ if %EXITCODE% == -1073741510 (
 )
 echo info server exited with code %EXITCODE% - restarting in 5s
 (echo info server exited with code %EXITCODE%)> pipeline_exit.txt
-echo check pipeline.log in this folder for the traceback
+echo details in info.log in this folder ^(an external kill ^(exit 15^) leaves no traceback^)
 ping -n 6 127.0.0.1 >nul
 goto start
 

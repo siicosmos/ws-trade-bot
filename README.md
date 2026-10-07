@@ -453,8 +453,8 @@ isolated runtimes:
 
 ```
 ws-trade-bot/
-  info/        config.yaml (role: info) · trades.db · start.bat
-  consumer/    config.yaml (role: consumer) · trades.db · start.bat
+  info/        config.yaml (role: info) · trades.db · info.log · start.bat
+  consumer/    config.yaml (role: consumer) · trades.db · consumer.log · start.bat
   reader/      the Discord watcher (own venv)
 ```
 
@@ -546,8 +546,9 @@ incl. the kill switch), `test_settings_update.py`, `test_users.py`,
   `run.py` kills stale copies of itself holding the port
   (`ops/processes.py`) and prints the previous exit code from
   `pipeline_exit.txt`.
-- **logs**: pipeline.log + reader.log, both optionally teed to Discord
-  in 3s batches (`install_log_webhook`).
+- **logs**: per app and per folder - `info/info.log`,
+  `consumer/consumer.log`, `reader/reader.log` - each optionally
+  teed to Discord in 3s batches (`install_log_webhook`).
 - **updates**: `git fetch` + ff-only pull every
   `auto_update.interval_seconds`; dirty runtime files are healed;
   `.last_update.json` records the last pull; the dashboard shows the

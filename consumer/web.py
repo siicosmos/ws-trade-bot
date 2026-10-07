@@ -1114,6 +1114,12 @@ def create_app(cfg, store: Store, risk, executor, account=None,
     app = Flask(__name__)
     install_quiet_filter()
     app.secret_key = load_secret_key(config_path)
+    # cookies ignore ports: two apps on the same host (two
+    # consumers, or a consumer next to anything else) must not
+    # share a cookie name or they log each other out
+    app.config["SESSION_COOKIE_NAME"] = "ws_session_" + str(
+        getattr(cfg.pipeline, "port", 8080)
+    )
     app.permanent_session_lifetime = timedelta(days=30)
     app.config["MAX_CONTENT_LENGTH"] = 1024 * 1024
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
