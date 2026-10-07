@@ -22,10 +22,15 @@ def main():
     args = ap.parse_args()
 
     # a hard restart can leave the previous instance holding
-    # the port - clear it before we bind
+    # the port - clear it before we bind. the config path
+    # scopes the match: the info server and the consumer app
+    # share run.py but must never kill each other
     from trader.ops.processes import terminate_stale_instances
 
-    terminate_stale_instances(os.path.abspath(__file__))
+    terminate_stale_instances(
+        os.path.abspath(__file__),
+        config_path=os.path.abspath(args.config),
+    )
 
     cfg = load_config(args.config)
     if (
@@ -51,8 +56,21 @@ def main():
 
     from trader.ops.loghook import install_log_webhook
 
-    # the .bat restart loop writes the exit code; surface it
-    exit_file = os.path.join(ROOT, "pipeline_exit.txt")
+    # the .bat restart loop writes the exit code; surface it.
+    # per-role files: config_info.yaml -> info_exit.txt,
+    # config_consumer.yaml -> consumer_exit.txt, config.yaml ->
+    # pipeline_exit.txt (the roles share a repo and would
+    # otherwise read each other's last words)
+    stem = os.path.splitext(os.path.basename(args.config))[0]
+    role_suffix = (
+        stem[len("config_"):]
+        if stem.startswith("config_") and len(stem) > len("config_")
+        else ""
+    )
+    exit_name = (
+        f"{role_suffix}_exit.txt" if role_suffix else "pipeline_exit.txt"
+    )
+    exit_file = os.path.join(ROOT, exit_name)
     try:
         with open(exit_file) as f:
             print("previous run: " + f.read().strip())

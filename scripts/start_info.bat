@@ -37,7 +37,7 @@ if %EXITCODE% == -1073741510 (
   goto end
 )
 echo info server exited with code %EXITCODE% - restarting in 5s
-(echo info server exited with code %EXITCODE%)> "%~dp0..\pipeline_exit.txt"
+(echo info server exited with code %EXITCODE%)> "%~dp0..\info_exit.txt"
 echo check pipeline.log next to trades-info.db for the traceback
 ping -n 6 127.0.0.1 >nul
 goto start

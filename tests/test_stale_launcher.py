@@ -121,3 +121,73 @@ def test_reader_stale_cleanup_spares_own_launcher(monkeypatch):
 
     assert stranger.terminated
     assert not launcher.terminated
+
+
+def test_role_split_instances_do_not_kill_each_other(
+    monkeypatch, tmp_path
+):
+    """The info server and the consumer app share run.py - the
+    stale-instance cleanup must scope to the same config or the
+    two roles terminate each other in a restart loop (seen live:
+    exit code 15 ping-pong between start_info and
+    start_consumer)."""
+    root = str(tmp_path)
+    script = os.path.join(root, "run.py")
+    info_cmd = [
+        "C:\\venv\\Scripts\\python.exe", "run.py",
+        "-c", "config_info.yaml",
+    ]
+    consumer_cmd = [
+        "C:\\venv\\Scripts\\python.exe", "run.py",
+        "-c", "config_consumer.yaml",
+    ]
+
+    info_proc = _FakeProcess(200, 190, info_cmd, root)
+    consumer_proc = _FakeProcess(300, 290, consumer_cmd, root)
+    by_pid = {200: info_proc, 300: consumer_proc}
+    fake = _fake_psutil_module([info_proc, consumer_proc], by_pid)
+    monkeypatch.setitem(sys.modules, "psutil", fake)
+    monkeypatch.setattr(os, "getpid", lambda: 100)
+
+    from trader.ops.processes import terminate_stale_instances
+
+    # the consumer starts: the info server (different config)
+    # must survive; a stale copy of the consumer's own config
+    # still dies
+    killed = terminate_stale_instances(
+        script,
+        config_path=os.path.join(root, "config_consumer.yaml"),
+    )
+    assert killed == [300]
+    assert not info_proc.terminated
+    assert consumer_proc.terminated
+
+
+def test_role_cleanup_matches_default_config_candidates(
+    monkeypatch, tmp_path
+):
+    """A candidate started without -c runs config.yaml - it is a
+    different instance from a -c config_consumer.yaml start."""
+    root = str(tmp_path)
+    script = os.path.join(root, "run.py")
+    bare_cmd = ["C:\\venv\\Scripts\\python.exe", "run.py"]
+    bare = _FakeProcess(200, 190, bare_cmd, root)
+    fake = _fake_psutil_module([bare], {200: bare})
+    monkeypatch.setitem(sys.modules, "psutil", fake)
+    monkeypatch.setattr(os, "getpid", lambda: 100)
+
+    from trader.ops.processes import terminate_stale_instances
+
+    killed = terminate_stale_instances(
+        script,
+        config_path=os.path.join(root, "config_consumer.yaml"),
+    )
+    assert killed == []
+    assert not bare.terminated
+
+    # ...but a bare-config start claims bare-config stale copies
+    killed = terminate_stale_instances(
+        script, config_path=os.path.join(root, "config.yaml")
+    )
+    assert killed == [200]
+    assert bare.terminated
