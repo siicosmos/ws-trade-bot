@@ -6,21 +6,23 @@ quotes are consumer-app territory. This app is the alert
 source: the reader POSTs alerts, signals are recorded, and
 consumers receive them via push (fan-out) and the long-poll
 feed.
+
+No login: the dashboard is open (read-only data - signals,
+levels, consumer health), so a session cookie here can never
+fight with the consumer app's cookie on the same host. The one
+protected route is POST /alert - a fake alert would make every
+consumer app trade - it requires the reader's token.
 """
 
 import hmac
 import os
 import logging
 import time
-from datetime import timedelta
 
 from flask import Flask, Response, jsonify, request
 
 from core.store import Store
-from core.web_common import (
-    LOGIN_HTML, install_auth, install_gzip, install_quiet_filter,
-    load_secret_key,
-)
+from core.web_common import install_gzip, install_quiet_filter
 from .dashboard import INFO_CSS, INFO_HTML
 from .ingest import ingest_alert
 
@@ -28,29 +30,20 @@ from .ingest import ingest_alert
 def create_app(cfg, store: Store, config_path=None) -> Flask:
     app = Flask(__name__)
     install_quiet_filter()
-    app.secret_key = load_secret_key(config_path)
-    app.permanent_session_lifetime = timedelta(days=30)
     app.config["MAX_CONTENT_LENGTH"] = 1024 * 1024
-    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-    if getattr(cfg.pipeline, "tls_cert", "") and getattr(
-        cfg.pipeline, "tls_key", ""
-    ):
-        app.config["SESSION_COOKIE_SECURE"] = True
-
-    # first boot: the access token becomes the admin password so
-    # the existing workflow keeps working
-    if store.user_count() == 0 and cfg.pipeline.auth_token:
-        store.create_user("admin", cfg.pipeline.auth_token, "admin")
 
     # the reader's heartbeat state (dashboard reader line)
     app.reader_state = {"channel": None, "ok": False, "last_seen": None}
 
     logging.getLogger("werkzeug").setLevel(logging.ERROR)
 
-    # the feed authenticates with per-consumer tokens (its own
-    # check) - exempt it from the session/token guard
-    install_auth(app, cfg, store, LOGIN_HTML,
-                 exempt_paths=("/api/feed",))
+    def _reader_token_ok():
+        """POST /alert is the one guarded route: a fake alert
+        would make every consumer app trade."""
+        token = cfg.pipeline.auth_token
+        supplied = request.headers.get("X-Auth-Token", "")
+        return bool(token) and hmac.compare_digest(supplied, token)
+
     install_gzip(app)
 
     _page_cache = {"html": ""}
@@ -93,7 +86,11 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
 
     @app.post("/alert")
     def alert():
-        """Reader ingest: parse + dedupe + record - no execution."""
+        """Reader ingest: parse + dedupe + record - no execution.
+        Token-guarded: a fake alert would make every consumer
+        app trade."""
+        if not _reader_token_ok():
+            return jsonify({"error": "unauthorized"}), 401
         data = request.get_json(silent=True) or {}
         text = data.get("text", "")
         author = data.get("author", "")

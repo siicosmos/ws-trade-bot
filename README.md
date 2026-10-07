@@ -290,7 +290,10 @@ the legacy `X-Auth-Token` machine token for scripts and the reader.
 **Info dashboard** (`role: info`) — the lean source-of-truth page:
 consumer health table (feed last-seen, cursor, push stats), the
 recent alert feed, the reader line, and the SPX levels editor (the
-cross-device source of truth).
+cross-device source of truth). **No login** — it serves no session
+cookie (so it can't fight the consumer app's cookie on the same
+host); the one guarded route is `POST /alert` (the reader's token —
+a fake alert would make consumers trade).
 
 ## HTTP API reference
 
@@ -305,7 +308,7 @@ check the session role.
 | GET | `/` | session | dashboard page (lean info page when `role: info`) |
 | GET | `/health` | none | liveness `{"status":"ok"}` (watchdog target) |
 | GET | `/api/feed` | consumer token | **info role** — alerts after the `since=` cursor (long-poll `wait=` up to 25s), SPX levels text, new cursor; without `since=`: head-only (fresh consumers anchor here) |
-| GET | `/api/feed-status` | any | **info role** — per-consumer health (last seen, cursor, pushed/failed, last error) |
+| GET | `/api/feed-status` | open | **info role** — per-consumer health (last seen, cursor, pushed/failed, last error) |
 | GET | `/api/summary` | any | account cards summary (mode, values, margin, risk, reader, stops) |
 | GET | `/api/dashboard` | any | one batched poll: summary + paper positions + positions + signals + trades + settings + update status + me (cached, stale-while-revalidate) |
 | GET | `/api/positions` | any | open positions (live WS rows where fetchable, ledger rows otherwise) |
