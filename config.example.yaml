@@ -53,6 +53,7 @@ pipeline:
 #   url: "http://127.0.0.1:8080"
 #   token: "THE_MATCHING_TOKEN"
 #   poll_seconds: 1.0
+#   verify_ssl: false       # the info server usually runs a self-signed cert
 
 # ---------------------------------------------------------------------------
 # auto_update - pull code changes from GitHub and restart automatically

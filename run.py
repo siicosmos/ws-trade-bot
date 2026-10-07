@@ -4,6 +4,7 @@ import sys
 
 from trader.ws.account import PaperAccount, WealthsimpleAccount
 from trader.config import load_config
+from trader.pipeline import process_alert
 from trader.trading.executor import PaperExecutor, WealthsimpleExecutor
 from trader.trading.quotes import make_quote_provider
 from trader.trading.risk import RiskEngine
@@ -175,6 +176,27 @@ def main():
 
     if role != "info":
         risk = RiskEngine(cfg, store, account)
+
+        # the alert feed: pull alerts from the info server and
+        # run them through the same process_alert as the /alert
+        # route (push delivery needs no code here - the route is
+        # already up). the atomic signal claim makes dual
+        # delivery idempotent
+        if getattr(cfg, "feed", None) and cfg.feed.url:
+            from trader.ops.feedclient import start_feed_client
+
+            def _on_feed_alert(text, author, ts, channel):
+                process_alert(
+                    text, author, cfg, store, risk, executor,
+                    account, channel=channel, ts=ts,
+                )
+
+            start_feed_client(
+                cfg, store, _on_feed_alert,
+                cfg.discord.update_webhook_url
+                or cfg.discord.webhook_url,
+            )
+            print(f"feed client: pulling alerts from {cfg.feed.url}")
 
         # the stop monitor runs wherever positions are executed: live,
         # paper-only, or paper alongside notify (it watches the paper

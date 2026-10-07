@@ -2047,14 +2047,28 @@ def create_app(cfg, store: Store, risk, executor, account=None,
         """Consumer feed: alerts recorded after the ?since= cursor
         (signal rowid), the current SPX levels text, and a
         long-poll wait so consumers get new alerts near-instantly.
-        Auth: X-Auth-Token must match a consumers[] entry."""
+        Auth: X-Auth-Token must match a consumers[] entry.
+        Without since=: head-only - just the current cursor (a
+        fresh consumer starts there; replaying history would
+        execute old alerts)."""
         consumer = _consumer_by_token(
             request.headers.get("X-Auth-Token", "")
         )
         if consumer is None:
             return jsonify({"error": "invalid consumer token"}), 401
+        head = store.max_signal_rowid()
+        raw_since = request.args.get("since", None)
+        if raw_since is None:
+            from ..ops import fanout
+
+            fanout.record_seen(consumer.label, head)
+            return jsonify({
+                "alerts": [],
+                "levels": store.meta_get("spx_levels_text") or "",
+                "cursor": head,
+            })
         try:
-            since = int(request.args.get("since", 0) or 0)
+            since = int(raw_since)
         except (TypeError, ValueError):
             since = 0
         try:

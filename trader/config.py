@@ -237,6 +237,9 @@ class FeedConfig:
     url: str = ""
     token: str = ""
     poll_seconds: float = 1.0
+    # the info server usually runs a self-signed cert - verify
+    # only when explicitly asked for
+    verify_ssl: bool = False
 
 
 @dataclass
@@ -328,6 +331,7 @@ def load_config(path: str) -> Config:
         url=str(_get(feed_raw, "url", "")).strip(),
         token=str(_get(feed_raw, "token", "")).strip(),
         poll_seconds=float(_get(feed_raw, "poll_seconds", 1.0)),
+        verify_ssl=bool(_get(feed_raw, "verify_ssl", False)),
     )
 
     discord_raw = raw.get("discord") or {}
