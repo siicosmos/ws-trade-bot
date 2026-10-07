@@ -19,6 +19,8 @@ def _read(name):
 DASHBOARD_HTML = _read("dashboard.html")
 DASHBOARD_CSS = _read("dashboard.css")
 DASHBOARD_JS = _read("dashboard.js")
+INFO_HTML = _read("info.html")
+INFO_JS = _read("info.js")
 
 
 def LOGIN_HTML(error=None, first=False):

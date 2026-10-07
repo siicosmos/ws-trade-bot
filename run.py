@@ -81,6 +81,13 @@ def main():
         # no trading wiring (no executors, stops, mirror,
         # quotes). Consumers run the trading pipeline on their
         # own machines against their own accounts.
+        from trader.ops.fanout import start_fanout_thread
+
+        start_fanout_thread(
+            cfg, store,
+            cfg.discord.update_webhook_url
+            or cfg.discord.webhook_url,
+        )
         print(
             "info server: reader ingest + alert feed "
             f"({len(cfg.consumers)} consumer"

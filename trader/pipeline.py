@@ -28,6 +28,30 @@ def _notify_enabled(cfg):
     )
 
 
+def _claim_signal(store, text, author, alert, correction, channel, ts,
+                  parsed_ts):
+    """Dedupe + record, atomically. Alerts and corrections are
+    claimed by the INSERT itself (PK conflict = duplicate) - two
+    delivery paths (push + feed pull) can race on the same
+    message and only one may execute it. Chatter keeps the old
+    check-then-record flow (re-reads re-notify by design).
+    Returns (key, claimed, reason) - reason only when not
+    claimed."""
+    key = _message_key(text, author)
+    is_signal = alert is not None or correction
+    if is_signal and store.seen_signal(key):
+        return key, False, "duplicate message"
+    if store.has_recent_prefix(text):
+        return key, False, "duplicate message (reaction re-read)"
+    inserted = store.record_signal(
+        key, author, text, alert is not None, correction=correction,
+        channel=channel, ts_epoch=ts, parsed_epoch=parsed_ts,
+    )
+    if is_signal and not inserted:
+        return key, False, "duplicate message"
+    return key, True, None
+
+
 def process_alert(
     text, author, cfg, store, risk: RiskEngine, executor, account=None,
     channel: str = "", ts=None, parsed_ts=None,
@@ -37,18 +61,11 @@ def process_alert(
 
     alert = parse_alert(text, cfg.parser.custom_patterns)
     correction = is_correction(text)
-    key = _message_key(text, author)
-    if (alert is not None or correction) and store.seen_signal(key):
-        return {"status": "ignored", "reason": "duplicate message"}
-    if store.has_recent_prefix(text):
-        return {
-            "status": "ignored",
-            "reason": "duplicate message (reaction re-read)",
-        }
-    store.record_signal(
-        key, author, text, alert is not None, correction=correction,
-        channel=channel, ts_epoch=ts, parsed_epoch=parsed_ts,
+    key, claimed, reason = _claim_signal(
+        store, text, author, alert, correction, channel, ts, parsed_ts,
     )
+    if not claimed:
+        return {"status": "ignored", "reason": reason}
 
     mismatch = None
     if (
@@ -229,18 +246,11 @@ def ingest_alert(
 
     alert = parse_alert(text, cfg.parser.custom_patterns)
     correction = is_correction(text)
-    key = _message_key(text, author)
-    if (alert is not None or correction) and store.seen_signal(key):
-        return {"status": "ignored", "reason": "duplicate message"}
-    if store.has_recent_prefix(text):
-        return {
-            "status": "ignored",
-            "reason": "duplicate message (reaction re-read)",
-        }
-    store.record_signal(
-        key, author, text, alert is not None, correction=correction,
-        channel=channel, ts_epoch=ts, parsed_epoch=parsed_ts,
+    key, claimed, reason = _claim_signal(
+        store, text, author, alert, correction, channel, ts, parsed_ts,
     )
+    if not claimed:
+        return {"status": "ignored", "reason": reason}
     return {
         "status": "recorded",
         "alert": alert.to_dict() if alert is not None else None,

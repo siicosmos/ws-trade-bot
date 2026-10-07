@@ -5,6 +5,8 @@ config.yaml
 trades.db
 reader/discord_tree.txt
 *.db
+*.db-shm
+*.db-wal
 .env
 ws_tokens.env
 certs/

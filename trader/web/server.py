@@ -12,7 +12,9 @@ from datetime import timedelta
 from flask import Flask, Response, g, jsonify, redirect, request, session
 
 from ..ws.account_types import REGISTERED_ACCOUNT_TYPES
-from .dashboard import LOGIN_HTML, DASHBOARD_CSS, DASHBOARD_HTML
+from .dashboard import (
+    LOGIN_HTML, DASHBOARD_CSS, DASHBOARD_HTML, INFO_HTML,
+)
 from ..pipeline import process_alert
 from ..store import Store
 from ..trading.margin import Holding, compute_requirement, resolve_rate
@@ -1230,6 +1232,10 @@ def create_app(cfg, store: Store, risk, executor, account=None,
         token = cfg.pipeline.auth_token
         if request.path in ("/health", "/favicon.ico", "/login"):
             return None
+        # the feed authenticates with per-consumer tokens (not
+        # the pipeline token) - it does its own check
+        if request.path == "/api/feed":
+            return None
         if not token and store.user_count() == 0:
             # legacy install (no token, no users): open access,
             # exactly as before user accounts existed; /login
@@ -1366,10 +1372,12 @@ def create_app(cfg, store: Store, risk, executor, account=None,
         # trade-log block especially) is painted before the js
         # pulls data - the load-time layout shift shrinks to the
         # first-paint frame. composed once per process; an update
-        # restarts the pipeline, which recomposes it
+        # restarts the pipeline, which recomposes it. the info
+        # role serves its own lean page (consumers, feed, levels)
+        template = INFO_HTML if _role() == "info" else DASHBOARD_HTML
         html = _dashboard_cache["html"]
         if not html:
-            html = DASHBOARD_HTML.replace(
+            html = template.replace(
                 '<link rel="stylesheet" href="/static/dashboard.css">',
                 "<style>\n" + DASHBOARD_CSS + "\n</style>",
                 1,
@@ -2022,6 +2030,103 @@ def create_app(cfg, store: Store, risk, executor, account=None,
             round(time.time() - last_seen, 1) if last_seen else None
         )
         return jsonify(state)
+
+    # --------------------------------------------------------
+    # info role: the alert feed for consumer apps
+    # --------------------------------------------------------
+    def _consumer_by_token(token):
+        import hmac as _hmac
+
+        for c in getattr(cfg, "consumers", None) or []:
+            if c.token and _hmac.compare_digest(c.token, token):
+                return c
+        return None
+
+    @app.get("/api/feed")
+    def api_feed():
+        """Consumer feed: alerts recorded after the ?since= cursor
+        (signal rowid), the current SPX levels text, and a
+        long-poll wait so consumers get new alerts near-instantly.
+        Auth: X-Auth-Token must match a consumers[] entry."""
+        consumer = _consumer_by_token(
+            request.headers.get("X-Auth-Token", "")
+        )
+        if consumer is None:
+            return jsonify({"error": "invalid consumer token"}), 401
+        try:
+            since = int(request.args.get("since", 0) or 0)
+        except (TypeError, ValueError):
+            since = 0
+        try:
+            wait = min(
+                max(float(request.args.get("wait", 0) or 0), 0.0), 25.0
+            )
+        except (TypeError, ValueError):
+            wait = 0.0
+        deadline = time.time() + wait
+        rows = store.signals_since(since)
+        while not rows and time.time() < deadline:
+            time.sleep(0.3)
+            rows = store.signals_since(since)
+        from ..pipeline import parse_alert as _parse
+
+        alerts = []
+        for r in rows:
+            parsed = None
+            if r["parsed"]:
+                try:
+                    a = _parse(
+                        r["text"], cfg.parser.custom_patterns
+                    )
+                    parsed = a.to_dict() if a else None
+                except Exception:
+                    parsed = None
+            alerts.append({
+                "id": r["id"],
+                "ts": r["ts"],
+                "author": r["author"],
+                "text": r["text"],
+                "correction": bool(r["correction"]),
+                "channel": r["channel"],
+                "alert": parsed,
+            })
+        cursor = alerts[-1]["id"] if alerts else since
+        from ..ops import fanout
+
+        fanout.record_seen(consumer.label, cursor)
+        return jsonify({
+            "alerts": alerts,
+            "levels": store.meta_get("spx_levels_text") or "",
+            "cursor": cursor,
+        })
+
+    @app.get("/api/feed-status")
+    def api_feed_status():
+        """Info dashboard: per-consumer push/pull health."""
+        from ..ops import fanout
+
+        state = fanout.snapshot()
+        by_label = {
+            c["label"]: c for c in state["consumers"]
+        }
+        now = time.time()
+        consumers = []
+        for c in getattr(cfg, "consumers", None) or []:
+            s = dict(by_label.get(c.label, {}))
+            s["label"] = c.label
+            s["push_url"] = c.push_url
+            age = (
+                round(now - s["last_seen"], 1)
+                if s.get("last_seen") else None
+            )
+            s["last_seen_age"] = age
+            s["alive"] = age is not None and age < 30
+            consumers.append(s)
+        return jsonify({
+            "role": _role(),
+            "consumers": consumers,
+            "signals_recorded": store.max_signal_rowid(),
+        })
 
     @app.get("/api/update_status")
     def api_update_status():

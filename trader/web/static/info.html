@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ws-trade-bot — info server</title>
+<link rel="stylesheet" href="/static/dashboard.css">
+</head>
+<body>
+<header>
+  <div class="brand">ws-trade-bot <span class="badge" style="background:#1f6feb">INFO SERVER</span></div>
+  <div class="header-right">
+    <span id="reader-line" class="muted">reader: …</span>
+    <a href="/logout" class="muted">logout</a>
+  </div>
+</header>
+<main>
+  <div class="card">
+    <h2>consumers</h2>
+    <div class="pos-scroll"><table class="pos" id="consumers-table">
+      <tr><th>label</th><th>push url</th><th>feed last seen</th><th>cursor</th><th>pushed</th><th>failed</th><th>last error</th></tr>
+    </table></div>
+    <p class="set-hint">consumers are managed in config_info.yaml (label / token / push_url) — a red row means no feed poll for 30s; push failures fall back to the consumer's pull cursor.</p>
+  </div>
+
+  <div class="card">
+    <h2>alert feed</h2>
+    <div class="pos-scroll"><table class="pos" id="signals-table">
+      <tr><th>time</th><th>channel</th><th>author</th><th>text</th><th>parsed</th></tr>
+    </table></div>
+  </div>
+
+  <div class="card">
+    <h2>spx levels (tomorrow's plan)</h2>
+    <textarea id="levels-input" rows="8" placeholder="paste the daily plan message here..."></textarea>
+    <div style="margin-top:10px;display:flex;gap:10px;align-items:center">
+      <button id="levels-save" class="btn">save</button>
+      <span class="set-hint" id="levels-status"></span>
+    </div>
+    <p class="set-hint">shared with every consumer app's levels ladder via the feed.</p>
+  </div>
+</main>
+<script src="/static/info.js"></script>
+</body>
+</html>

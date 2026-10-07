@@ -313,7 +313,12 @@ class Store:
 
     def record_signal(self, message_key: str, author: str, text: str, parsed: bool,
                       correction: bool = False, channel: str = "",
-                      ts_epoch=None, parsed_epoch=None):
+                      ts_epoch=None, parsed_epoch=None) -> bool:
+        """Record a signal; returns True when the row was newly
+        inserted (False = duplicate key). The INSERT OR IGNORE
+        under the write lock is the atomic dedupe: two delivery
+        paths (push + feed pull) can race on the same message
+        and only one wins."""
         self.maybe_prune()
         self._touch()
         # both stored in UTC: the alert's own (Discord-displayed) time
@@ -336,7 +341,7 @@ class Store:
             if ts_epoch else self._now()
         )
         with self._write_lock, self._conn:
-            self._conn.execute(
+            cur = self._conn.execute(
                 "INSERT OR IGNORE INTO signals "
                 "(message_key, ts, author, text, parsed, correction, "
                 "channel, received_ts) "
@@ -344,6 +349,30 @@ class Store:
                 (message_key, ts, author, text[:2000], int(parsed),
                  int(correction), channel[:80], received),
             )
+            return cur.rowcount > 0
+
+    def signals_since(self, since_rowid: int = 0, limit: int = 200):
+        """Signals with rowid > since_rowid, oldest first - the
+        feed API's cursor window. rowid is the monotonic feed
+        position (insertion order)."""
+        keys = ("id", "message_key", "ts", "author", "text", "parsed",
+                "correction", "channel", "received_ts")
+        with self._conn:
+            rows = self._conn.execute(
+                "SELECT rowid AS id, message_key, ts, author, text, "
+                "parsed, correction, channel, received_ts "
+                "FROM signals WHERE rowid > ? "
+                "ORDER BY rowid LIMIT ?",
+                (since_rowid, limit),
+            ).fetchall()
+        return [dict(zip(keys, r)) for r in rows]
+
+    def max_signal_rowid(self) -> int:
+        with self._conn:
+            row = self._conn.execute(
+                "SELECT COALESCE(MAX(rowid), 0) FROM signals"
+            ).fetchone()
+        return int(row[0]) if row else 0
 
     def maybe_prune(self, now=None):
         """Drop signals/trades older than the retention window,
