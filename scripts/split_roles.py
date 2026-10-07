@@ -7,11 +7,11 @@ Windows box). Each role gets its own folder under the repo:
   info/
     config.yaml      role: info - reader ingest + alert feed
     trades.db        copy of trades.db (signals drive the feed)
-    start.bat        launcher + restart loop (own logs/exit file)
+                     launcher: scripts\start_info.bat (own logs/exit file)
   consumer/
     config.yaml      role: consumer - the trading app (yours)
     trades.db        copy of trades.db (full history carries over)
-    start.bat        launcher + restart loop
+                     launcher: scripts\start_consumer.bat
 
 The reader config keeps pointing at localhost:8080, which stays
 the info server; the consumer app moves to port 8081 and is
@@ -81,8 +81,8 @@ def main():
                     print(f"moved {db_src} -> {db_dst}")
         print(
             "\nnext steps:\n"
-            "  1. start the info server:   info\\start.bat\n"
-            "  2. start your consumer app: consumer\\start.bat\n"
+            "  1. start the info server:   scripts\\start_info.bat\n"
+            "  2. start your consumer app: scripts\\start_consumer.bat\n"
             "  3. the reader keeps running as-is (it still posts"
             " to :8080)\n"
         )
@@ -150,8 +150,8 @@ def main():
     print(
         """
 next steps:
-  1. start the info server:   info\\start.bat
-  2. start your consumer app: consumer\\start.bat
+  1. start the info server:   scripts\\start_info.bat
+  2. start your consumer app: scripts\\start_consumer.bat
      (dashboard on http://127.0.0.1:8081 - expose it via
       Tailscale if you want it on your phone)
   3. the reader keeps running as-is (it still posts to :8080)
@@ -159,7 +159,6 @@ next steps:
      config.example.yaml to consumer\\config.yaml, set
      role: consumer + the feed url/token, and add a consumer
      entry with their token to the info server's config
-  5. retire start_pipeline.bat once both roles run
 """
     )
 

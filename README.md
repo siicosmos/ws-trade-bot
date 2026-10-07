@@ -447,15 +447,17 @@ parser misses.
 
 ### The owner's box (Windows) — reader + info server + your consumer app
 
-Each role lives in its **own folder** with its own `config.yaml`,
-`trades.db`, logs, and `start.bat` launcher — one code checkout, two
-isolated runtimes:
+Each role lives in its **own folder** with its own `config.yaml`
+and `trades.db`; the launchers live in `scripts/` and every log
+lands in the shared `logs/` folder:
 
 ```
 ws-trade-bot/
-  info/        config.yaml (role: info) · trades.db · info.log · start.bat
-  consumer/    config.yaml (role: consumer) · trades.db · consumer.log · start.bat
+  info/        config.yaml (role: info) · trades.db
+  consumer/    config.yaml (role: consumer) · trades.db
   reader/      the Discord watcher (own venv)
+  scripts/     start_info.bat · start_consumer.bat · the rest
+  logs/        info.log · consumer.log · reader.log
 ```
 
 1. **Clone** the repo (or run `scripts/setup_ssh.ps1` to set up the
@@ -466,9 +468,9 @@ ws-trade-bot/
    `consumer/trades.db` (port 8081, own token, registered as a push
    consumer). An earlier flat-layout split (`config_info.yaml` at the
    root) is moved into the folders automatically, tokens preserved.
-3. **Info server**: `info\start.bat` — the reader keeps posting to
+3. **Info server**: `scripts\start_info.bat` — the reader keeps posting to
    `:8080` unchanged.
-4. **Your consumer app**: `consumer\start.bat` — dashboard on
+4. **Your consumer app**: `scripts\start_consumer.bat` — dashboard on
    `http://127.0.0.1:8081` (expose via Tailscale for phone access).
 5. **Wealthsimple login** (consumer): `python scripts/ws_login.py` —
    saves tokens to gitignored `ws_tokens.env` at the repo root and
@@ -484,13 +486,13 @@ ws-trade-bot/
 ### Another user's consumer app (any machine)
 
 1. Install the repo + `pip install -r requirements.txt` (or run
-   `consumer\start.bat`, which does it).
+   `scripts\start_consumer.bat`, which does it).
 2. Copy `config.example.yaml` → `consumer/config.yaml`; set
    `pipeline.role: consumer`, a local `pipeline.auth_token`, the
    `feed:` section (the info server's URL + their consumer token),
    and their `wealthsimple.accounts[]`.
 3. `python scripts/ws_login.py` with THEIR Wealthsimple login.
-4. Run `consumer\start.bat` — they get the full dashboard, their own
+4. Run `scripts\start_consumer.bat` — they get the full dashboard, their own
    paper/live trading, their own webhook alerts.
 5. The owner adds a matching `consumers[]` entry (label + token) on
    the info server; add a `push_url` too if the consumer is
@@ -546,8 +548,8 @@ incl. the kill switch), `test_settings_update.py`, `test_users.py`,
   `run.py` kills stale copies of itself holding the port
   (`ops/processes.py`) and prints the previous exit code from
   `pipeline_exit.txt`.
-- **logs**: per app and per folder - `info/info.log`,
-  `consumer/consumer.log`, `reader/reader.log` - each optionally
+- **logs**: one shared folder - `logs/info.log`,
+  `logs/consumer.log`, `logs/reader.log` - each optionally
   teed to Discord in 3s batches (`install_log_webhook`).
 - **updates**: `git fetch` + ff-only pull every
   `auto_update.interval_seconds`; dirty runtime files are healed;
@@ -574,11 +576,12 @@ config.example.yaml        # documented config template
 info/                      # the info server's runtime folder
   config.yaml              # role: info (gitignored)
   trades.db                # signals + users (gitignored)
-  start.bat                # launcher + restart loop
 consumer/                  # the consumer app's runtime folder (one per trader)
   config.yaml              # role: consumer (gitignored)
   trades.db                # full trading state (gitignored)
-  start.bat                # launcher + restart loop
+scripts/
+  start_info.bat           # info launcher + restart loop
+  start_consumer.bat       # consumer launcher + restart loop
 reader/
   discord_reader.py        # UIA Discord watcher (standalone, Windows)
   inspect_discord.py       # Discord window utilities + CLI diagnostic
@@ -623,7 +626,8 @@ consumer/                  # the trading app (code + runtime + launcher)
     ws_http.py ws_common.py ws_tokens.py account_types.py
 scripts/                   # split_roles, ws_login, gen_cert, expectancy,
                            # diagnose, clean_start, setup_ssh, dump_discord_tree,
-                           # start_reader/start_discord/start_pipeline .bat
+                           # start_info/start_consumer/start_reader/
+                           # start_discord .bat
 tests/                     # pytest suite (+ scripts/: e2e_test, ui_test)
 docs/                      # diagrams (.dot/.png/.svg) + live_readiness_plan.md
 certs/                     # self-signed TLS (gitignored)

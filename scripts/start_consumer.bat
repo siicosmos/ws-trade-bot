@@ -1,8 +1,9 @@
 @echo off
 rem consumer app: the trading pipeline fed by the info server's
-rem alert feed. everything this role needs lives in this folder:
-rem   config.yaml (role: consumer) · trades.db · pipeline.log
-cd /d %~dp0
+rem alert feed. everything this role needs lives in the consumer
+rem folder: config.yaml (role: consumer) · trades.db · consumer.log
+rem this launcher lives in scripts\ - it cds into ..\consumer
+cd /d %~dp0..\consumer
 
 if not exist ..\.venv (
   echo creating venv...
@@ -39,7 +40,7 @@ if %EXITCODE% == -1073741510 (
 )
 echo consumer app exited with code %EXITCODE% - restarting in 5s
 (echo consumer app exited with code %EXITCODE%)> pipeline_exit.txt
-echo details in consumer.log in this folder ^(an external kill ^(exit 15^) leaves no traceback^)
+echo details in logs\consumer.log in the repo root ^(an external kill ^(exit 15^) leaves no traceback^)
 ping -n 6 127.0.0.1 >nul
 goto start
 

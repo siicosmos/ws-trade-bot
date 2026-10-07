@@ -132,6 +132,20 @@ class TeeStream:
         return getattr(self._original, name)
 
 
+def default_log_path(name):
+    """All runtime logs live in the repo's logs/ folder - one
+    place to look, per-app names keep them apart (the folder is
+    created on demand so a fresh checkout just works)."""
+    root = os.path.dirname(os.path.dirname(
+        os.path.dirname(os.path.abspath(__file__))))
+    folder = os.path.join(root, "logs")
+    try:
+        os.makedirs(folder, exist_ok=True)
+    except OSError:
+        pass
+    return os.path.join(folder, name)
+
+
 def install_log_webhook(url, log_path=None):
     batcher = WebhookBatcher(url) if url else None
     log_file = LogFile(log_path) if log_path else None

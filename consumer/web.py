@@ -1142,7 +1142,7 @@ def create_app(cfg, store: Store, risk, executor, account=None,
     if store.user_count() == 0 and cfg.pipeline.auth_token:
         store.create_user("admin", cfg.pipeline.auth_token, "admin")
 
-    # the 5s dashboard polls otherwise flood pipeline.log with
+    # the 5s dashboard polls otherwise flood consumer.log with
     # access lines for every api call
     logging.getLogger("werkzeug").setLevel(logging.ERROR)
 

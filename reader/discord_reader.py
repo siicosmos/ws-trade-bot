@@ -298,8 +298,15 @@ _stayup_log_ts = 0.0
 
 
 def _append_reader_log(line):
-    """Crash tracebacks survive here even when the process dies."""
-    path = READER_LOG or os.path.join(repo_root(), "reader.log")
+    """Crash tracebacks survive here even when the process dies.
+    The log lives in the repo's logs/ folder, next to the info
+    and consumer logs."""
+    folder = os.path.join(repo_root(), "logs")
+    path = READER_LOG or os.path.join(folder, "reader.log")
+    try:
+        os.makedirs(folder, exist_ok=True)
+    except OSError:
+        pass
     try:
         if os.path.exists(path) and os.path.getsize(path) > READER_LOG_MAX:
             if os.path.exists(path + ".1"):

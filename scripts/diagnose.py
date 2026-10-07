@@ -110,8 +110,9 @@ def main():
         exit_code = 1
         result(FAIL, f"port {port} can be bound", detail + hint)
 
-    print("\nif all checks passed, start the pipeline with "
-          "scripts\\start_pipeline.bat and open http://127.0.0.1:%d/ "
+    print("\nif all checks passed, start the app with "
+          "scripts\\start_info.bat or scripts\\start_consumer.bat "
+          "and open http://127.0.0.1:%d/ "
           "(use 127.0.0.1, not localhost, if the browser cannot connect)"
           % port)
     sys.exit(exit_code)

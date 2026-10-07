@@ -63,15 +63,14 @@ def main() -> int:
     args = parser.parse_args()
 
     log_files = []
-    for pattern in ("pipeline.log*", "reader.log*"):
-        log_files.extend(
-            sorted(glob.glob(os.path.join(REPO_ROOT, pattern)))
-        )
-        # logs also live next to the db (pipeline.log follows the db)
-        log_files.extend(
-            sorted(glob.glob(os.path.join(os.path.dirname(
-                os.path.abspath(args.db)), pattern)))
-        )
+    log_roots = [REPO_ROOT, os.path.dirname(os.path.abspath(args.db))]
+    for pattern in ("pipeline.log*", "reader.log*",
+                    "info.log*", "consumer.log*"):
+        for root in log_roots:
+            log_files.extend(sorted(glob.glob(os.path.join(root, pattern))))
+    # the shared logs/ folder: everything in it is a runtime log
+    log_files.extend(sorted(glob.glob(
+        os.path.join(REPO_ROOT, "logs", "*"))))
 
     if not os.path.exists(args.db):
         print(f"database not found: {args.db}")

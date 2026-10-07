@@ -13,7 +13,7 @@ certs/
 .last_update.json
 .session_key
 .reader_seen.json
-pipeline.log*
 reader.log*
+logs/
 *_exit.txt
 *.log

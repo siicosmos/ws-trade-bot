@@ -1,8 +1,9 @@
 @echo off
 rem info server: reader ingest + alert feed, no trading.
-rem everything this role needs lives in this folder:
-rem   config.yaml (role: info) · trades.db · pipeline.log
-cd /d %~dp0
+rem everything this role needs lives in the info folder:
+rem   config.yaml (role: info) · trades.db · info.log
+rem this launcher lives in scripts\ - it cds into ..\info
+cd /d %~dp0..\info
 
 if not exist ..\.venv (
   echo creating venv...
@@ -39,7 +40,7 @@ if %EXITCODE% == -1073741510 (
 )
 echo info server exited with code %EXITCODE% - restarting in 5s
 (echo info server exited with code %EXITCODE%)> pipeline_exit.txt
-echo details in info.log in this folder ^(an external kill ^(exit 15^) leaves no traceback^)
+echo details in logs\info.log in the repo root ^(an external kill ^(exit 15^) leaves no traceback^)
 ping -n 6 127.0.0.1 >nul
 goto start
 

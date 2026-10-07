@@ -19,7 +19,7 @@ from consumer.trading.quotes import (
 )
 from consumer.trading.risk import RiskEngine
 from consumer.web import create_app
-from core.ops.loghook import install_log_webhook
+from core.ops.loghook import default_log_path, install_log_webhook
 from core.ops.updater import AutoUpdater, startup_banner
 from core.ops.watchdog import start_health_watchdog
 from core.store import Store
@@ -80,10 +80,7 @@ def main(cfg, args):
 
     log_batcher = install_log_webhook(
         cfg.discord.pipeline_log_webhook_url,
-        log_path=os.path.join(
-            os.path.dirname(os.path.abspath(args.db)),
-            "consumer.log",
-        ),
+        log_path=default_log_path("consumer.log"),
     )
 
     from consumer.ws.ws_tokens import load_env_tokens
