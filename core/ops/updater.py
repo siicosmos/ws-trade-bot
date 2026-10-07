@@ -10,6 +10,11 @@ UPDATE_RECORD = ".last_update.json"
 
 PIPELINE_RESTART_FILES = ("trader/*", "run.py", "requirements.txt")
 READER_RESTART_FILES = ("reader/*", "requirements.txt")
+# per-role globs: each app restarts only when code it executes
+# changed (the shared core moves both)
+INFO_RESTART_FILES = ("core/*", "info/*", "run.py", "requirements.txt")
+CONSUMER_RESTART_FILES = ("core/*", "consumer/*", "run.py",
+                          "requirements.txt")
 
 
 def git_changed_files(root, old, new):
@@ -121,10 +126,12 @@ def startup_banner(name, root):
 
 
 class AutoUpdater:
-    def __init__(self, cfg, root, webhook_url="", restart=None):
+    def __init__(self, cfg, root, webhook_url="", restart=None,
+                 restart_files=None):
         self.cfg = cfg
         self.root = root
         self.webhook_url = webhook_url
+        self.restart_files = restart_files or PIPELINE_RESTART_FILES
         self._restart = restart or (lambda: os._exit(77))
         self._thread = None
         self.last_check = None
@@ -139,7 +146,7 @@ class AutoUpdater:
 
     def start(self):
         if self._thread is None or not self._thread.is_alive():
-            from .supervise import supervised
+            from core.ops.supervise import supervised
 
             self._thread, _ = supervised(
                 "auto-update", self._run, self.webhook_url
@@ -244,11 +251,12 @@ class AutoUpdater:
         exits), False when the change is irrelevant and the
         update loop must keep running."""
         new = self._head()
-        from .notify import notify_discord
+        from core.ops.notify import notify_discord
 
         changed = git_changed_files(self.root, self.start_head, new)
         if changed is not None and not files_match(
-            changed, PIPELINE_RESTART_FILES
+            changed, getattr(self, "restart_files",
+                           PIPELINE_RESTART_FILES)
         ):
             print("auto-update: local change does not touch the "
                   "pipeline - not restarting")
@@ -388,11 +396,12 @@ class AutoUpdater:
         print(f"auto-update: updated to {new[:8]}:\n{commits}")
         self.last_result = f"updated to {new[:8]}"
 
-        from .notify import notify_discord
+        from core.ops.notify import notify_discord
 
         changed = git_changed_files(self.root, local, new)
         if changed is not None and not files_match(
-            changed, PIPELINE_RESTART_FILES
+            changed, getattr(self, "restart_files",
+                           PIPELINE_RESTART_FILES)
         ):
             # the pull still updates docs/reader/tests - just not
             # anything this process executes

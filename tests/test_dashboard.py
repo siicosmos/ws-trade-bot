@@ -2,7 +2,7 @@ import os
 import re
 import types
 
-from trader.web.dashboard import DASHBOARD_HTML, DASHBOARD_CSS, DASHBOARD_JS
+from consumer.dashboard import DASHBOARD_HTML, DASHBOARD_CSS, DASHBOARD_JS
 
 
 def _strip_complete_strings(line):
@@ -23,7 +23,7 @@ def test_dashboard_script_strings_terminated():
 def test_clock_has_no_inline_style_override():
     # an inline style once silently beat the #clock rule, freezing it at 12px
     import re
-    import trader.web.dashboard as dash
+    import consumer.dashboard as dash
 
     m = re.search(r'<span id="clock"[^>]*>', dash.DASHBOARD_HTML)
     assert m and "style" not in m.group(0)
@@ -36,7 +36,7 @@ def test_clock_has_no_inline_style_override():
 
 
 def test_header_rows_and_mobile_wrap():
-    import trader.web.dashboard as dash
+    import consumer.dashboard as dash
 
     html = dash.DASHBOARD_HTML + dash.DASHBOARD_CSS
     # row 1: title, mode badge, timebox (age + clock) pinned right
@@ -66,7 +66,7 @@ def test_header_rows_and_mobile_wrap():
 
 
 def test_pageshow_rechecks_auth_after_back_button():
-    import trader.web.dashboard as dash
+    import consumer.dashboard as dash
 
     js = dash.DASHBOARD_JS
     handler = js[js.index("pageshow"):js.index("pageshow") + 400]
@@ -76,7 +76,7 @@ def test_pageshow_rechecks_auth_after_back_button():
 
 def test_settings_list_inputs_span_full_row():
     # narrow grid cells clipped the whitelist / skip-underlyings hints
-    import trader.web.dashboard as dash
+    import consumer.dashboard as dash
 
     js = dash.DASHBOARD_JS
     css = dash.DASHBOARD_CSS
@@ -88,7 +88,7 @@ def test_settings_list_inputs_span_full_row():
 
 
 def test_login_page_rejects_injection():
-    import trader.web.dashboard as dash
+    import consumer.dashboard as dash
 
     rendered = dash.LOGIN_HTML('<script>alert(1)</script>')
     assert "<script>alert(1)</script>" not in rendered
@@ -98,7 +98,7 @@ def test_login_page_rejects_injection():
 def test_open_risk_percentage_colored_by_cap():
     # the open-risk text inherits the bar's warning colors (red over the
     # cap, yellow near it) and goes bold when exceeded
-    import trader.web.dashboard as dash
+    import consumer.dashboard as dash
 
     js = dash.DASHBOARD_JS
     assert 'open risk \' + (hidden ? "••••••" : fmtMoney(risk)' in js
@@ -107,7 +107,7 @@ def test_open_risk_percentage_colored_by_cap():
 
 
 def test_positions_table_shows_price_and_return():
-    import trader.web.dashboard as dash
+    import consumer.dashboard as dash
 
     js = dash.DASHBOARD_JS
     assert "<th class=num>Avg $</th>" in js
@@ -129,7 +129,7 @@ def test_positions_table_shows_price_and_return():
 
 
 def test_currency_split_display():
-    import trader.web.dashboard as dash
+    import consumer.dashboard as dash
 
     js = dash.DASHBOARD_JS
     # account value gains a USD equivalent
@@ -141,7 +141,7 @@ def test_currency_split_display():
 
 
 def test_long_text_wraps_and_webhooks_are_textareas():
-    import trader.web.dashboard as dash
+    import consumer.dashboard as dash
 
     html = dash.DASHBOARD_HTML + dash.DASHBOARD_CSS
     # alert entries wrap instead of overflowing the panel
@@ -159,7 +159,7 @@ def test_long_text_wraps_and_webhooks_are_textareas():
 def test_git_status_wording():
     # "not checked yet" appeared twice (as result and as age); pulls say
     # "last auto/manual pull Xm ago" and the age is labeled "checked"
-    import trader.web.dashboard as dash
+    import consumer.dashboard as dash
 
     js = dash.DASHBOARD_JS
     assert '"first check pending"' in js
@@ -172,7 +172,7 @@ def test_git_status_wording():
 def test_settings_form_not_clobbered_while_editing():
     # the 5s refresh re-rendered the settings form and wiped edits
     # before the user could save them
-    import trader.web.dashboard as dash
+    import consumer.dashboard as dash
 
     js = dash.DASHBOARD_JS
     assert "let settingsDirty = false;" in js
@@ -189,7 +189,7 @@ def test_settings_form_not_clobbered_while_editing():
 
 
 def test_currency_toggle():
-    import trader.web.dashboard as dash
+    import consumer.dashboard as dash
 
     js = dash.DASHBOARD_JS
     assert 'localStorage.getItem("ws_card_currency")' in js
@@ -200,7 +200,7 @@ def test_currency_toggle():
 
 
 def test_dte_badge_colors():
-    import trader.web.dashboard as dash
+    import consumer.dashboard as dash
 
     js = dash.DASHBOARD_JS
     assert "function dteBadge(" in js
@@ -214,7 +214,7 @@ def test_dte_badge_colors():
 
 
 def test_positions_table_always_fits_panel():
-    import trader.web.dashboard as dash
+    import consumer.dashboard as dash
 
     html = dash.DASHBOARD_HTML + dash.DASHBOARD_CSS
     # scroll on small screens, adaptive widths on wide ones
@@ -224,7 +224,7 @@ def test_positions_table_always_fits_panel():
 
 
 def test_badges_do_not_wrap():
-    import trader.web.dashboard as dash
+    import consumer.dashboard as dash
 
     html = dash.DASHBOARD_HTML + dash.DASHBOARD_CSS
     assert "white-space: nowrap" in html
@@ -235,7 +235,7 @@ def test_badges_do_not_wrap():
 
 
 def test_utc_storage_rendered_locally():
-    import trader.web.dashboard as dash
+    import consumer.dashboard as dash
 
     js = dash.DASHBOARD_JS
     # stored UTC gets a Z and renders via the browser clock mechanism
@@ -246,7 +246,7 @@ def test_utc_storage_rendered_locally():
 
 
 def test_dual_timestamps_rendered():
-    import trader.web.dashboard as dash
+    import consumer.dashboard as dash
 
     js = dash.DASHBOARD_JS
     # recent alerts show the alert time and when it was parsed down
@@ -256,7 +256,7 @@ def test_dual_timestamps_rendered():
 
 
 def test_stock_kind_cell():
-    import trader.web.dashboard as dash
+    import consumer.dashboard as dash
 
     js = dash.DASHBOARD_JS
     # stocks render their own compact cell (symbol + stock label)
@@ -265,7 +265,7 @@ def test_stock_kind_cell():
 
 
 def test_stock_currency_display():
-    import trader.web.dashboard as dash
+    import consumer.dashboard as dash
 
     js = dash.DASHBOARD_JS
     # stocks use multiplier 1 (not the 100x option multiplier) and
@@ -275,7 +275,7 @@ def test_stock_currency_display():
 
 
 def test_stock_section_and_alloc_bar():
-    import trader.web.dashboard as dash
+    import consumer.dashboard as dash
 
     js = dash.DASHBOARD_JS
     # stock holdings render into their own section
@@ -287,7 +287,7 @@ def test_stock_section_and_alloc_bar():
 
 
 def test_stock_holdings_hidden_by_default():
-    import trader.web.dashboard as dash
+    import consumer.dashboard as dash
 
     js = dash.DASHBOARD_JS
     # holdings section is collapsed until the user opts in
@@ -296,7 +296,7 @@ def test_stock_holdings_hidden_by_default():
 
 
 def test_hide_value_eye_toggle():
-    import trader.web.dashboard as dash
+    import consumer.dashboard as dash
 
     js = dash.DASHBOARD_JS
     # per-card eye toggle masks value and cash amounts, persisted
@@ -316,7 +316,7 @@ def test_hide_value_eye_toggle():
 
 
 def test_margin_requirement_line():
-    import trader.web.dashboard as dash
+    import consumer.dashboard as dash
 
     js = dash.DASHBOARD_JS
     assert "margin used" in js
@@ -326,7 +326,7 @@ def test_margin_requirement_line():
 
 
 def test_margin_lines_show_currencies():
-    import trader.web.dashboard as dash
+    import consumer.dashboard as dash
 
     js = dash.DASHBOARD_JS
     assert 'fmtMoney(a.margin_used_usd || 0)' in js
@@ -341,7 +341,7 @@ def test_margin_lines_show_currencies():
 
 
 def test_avg_single_value_and_signed_cost():
-    import trader.web.dashboard as dash
+    import consumer.dashboard as dash
 
     js = dash.DASHBOARD_JS
     # avg is one number: per-share for legs, per-contract for spreads
@@ -355,7 +355,7 @@ def test_avg_single_value_and_signed_cost():
 
 
 def test_portfolio_value_and_tappable_breakdown():
-    import trader.web.dashboard as dash
+    import consumer.dashboard as dash
 
     js = dash.DASHBOARD_JS
     assert "portfolio value" in js
@@ -364,7 +364,7 @@ def test_portfolio_value_and_tappable_breakdown():
 
 
 def test_open_risk_and_breakdown_masked():
-    import trader.web.dashboard as dash
+    import consumer.dashboard as dash
 
     js = dash.DASHBOARD_JS
     assert 'open risk \' + (hidden ? "••••••"' in js
@@ -374,7 +374,7 @@ def test_open_risk_and_breakdown_masked():
 
 
 def test_margin_usage_bar():
-    import trader.web.dashboard as dash
+    import consumer.dashboard as dash
 
     js = dash.DASHBOARD_JS
     assert "function marginUsageBar" in js
@@ -383,7 +383,7 @@ def test_margin_usage_bar():
 
 
 def test_section_toggles_and_paper_detail():
-    import trader.web.dashboard as dash
+    import consumer.dashboard as dash
 
     js = dash.DASHBOARD_JS
     # alerts and trades sections collapse, persisted
@@ -397,7 +397,7 @@ def test_section_toggles_and_paper_detail():
 
 
 def test_section_state_applied_on_load():
-    import trader.web.dashboard as dash
+    import consumer.dashboard as dash
 
     js = dash.DASHBOARD_JS
     # persisted hidden state must apply at startup, not only after
@@ -407,7 +407,7 @@ def test_section_state_applied_on_load():
 
 
 def test_paper_badge_and_holdings_hint():
-    import trader.web.dashboard as dash
+    import consumer.dashboard as dash
 
     js = dash.DASHBOARD_JS
     assert 'id="paper-badge"' in dash.DASHBOARD_HTML
@@ -417,7 +417,7 @@ def test_paper_badge_and_holdings_hint():
 
 
 def test_paper_open_state_migration():
-    import trader.web.dashboard as dash
+    import consumer.dashboard as dash
 
     js = dash.DASHBOARD_JS
     # old single-label values (pre-JSON-array) must not crash the
@@ -432,7 +432,7 @@ def test_no_duplicate_element_ids():
     must never carry the same id twice."""
     import re
 
-    import trader.web.dashboard as dash
+    import consumer.dashboard as dash
 
     ids = re.findall(r'id="([a-zA-Z0-9_-]+)"', dash.DASHBOARD_HTML)
     assert len(ids) == len(set(ids)), (
@@ -442,7 +442,7 @@ def test_no_duplicate_element_ids():
 
 
 def test_history_search_bar_is_single_and_last():
-    import trader.web.dashboard as dash
+    import consumer.dashboard as dash
 
     html = dash.DASHBOARD_HTML
     assert html.count('id="history-search"') == 1
@@ -459,7 +459,7 @@ def test_levels_spy_spot_and_refresh_cadence():
     """/api/spx carries spy's own realtime quote (it trades
     overnight) and the poll rides the positions refresh setting;
     the spy pane shows 'SPY now: x' under its title."""
-    import trader.web.server as srv
+    import consumer.web as srv
 
     src = open(srv.__file__).read()
     assert '"spy": spy' in src
@@ -481,7 +481,7 @@ def test_levels_spy_spot_and_refresh_cadence():
 def test_levels_ladder_wide_screen_and_stack():
     """spx stays the left column; wide screens widen the panel,
     narrow screens stack spy under spx."""
-    import trader.web.dashboard as dash
+    import consumer.dashboard as dash
 
     css = dash.DASHBOARD_CSS
     assert "@media (min-width: 1100px)" in css
@@ -511,11 +511,11 @@ def test_spx_endpoint_reports_market_status():
     positions refresh setting."""
     import types
 
-    from trader.config import (
+    from core.config import (
         AutoUpdateConfig, DiscordConfig, QuotesConfig, ReaderConfig,
         TradingConfig, WealthsimpleConfig,
     )
-    from trader.web.server import create_app
+    from consumer.web import create_app
 
     class Stub:
         def __init__(self):
@@ -558,8 +558,8 @@ def test_spx_endpoint_reports_market_status():
     import tempfile
     import time as time_mod
 
-    import trader.web.server as srv
-    from trader.store import Store
+    import consumer.web as srv
+    from core.store import Store
 
     class _FreshStore:
         def __enter__(self):
@@ -571,7 +571,7 @@ def test_spx_endpoint_reports_market_status():
         def __exit__(self, *a):
             return False
 
-    import trader.trading.quotes as quotes_mod
+    import consumer.trading.quotes as quotes_mod
     saved = quotes_mod.ACTIVE_QUOTE_PROVIDER
     quotes_mod.ACTIVE_QUOTE_PROVIDER = None
     srv._sec_id_cache.clear()
@@ -605,13 +605,13 @@ def test_spx_endpoint_survives_hung_ws_api(monkeypatch):
     import tempfile
     import time as time_mod
 
-    import trader.web.server as srv
-    from trader.config import (
+    import consumer.web as srv
+    from core.config import (
         AutoUpdateConfig, DiscordConfig, QuotesConfig, ReaderConfig,
         TradingConfig, WealthsimpleConfig,
     )
-    from trader.store import Store
-    from trader.web.server import create_app
+    from core.store import Store
+    from consumer.web import create_app
 
     class Stub:
         def __init__(self):
@@ -645,7 +645,7 @@ def test_spx_endpoint_survives_hung_ws_api(monkeypatch):
 
     fd, path = tempfile.mkstemp(suffix=".db")
     os.close(fd)
-    import trader.trading.quotes as quotes_mod
+    import consumer.trading.quotes as quotes_mod
     saved = quotes_mod.ACTIVE_QUOTE_PROVIDER
     quotes_mod.ACTIVE_QUOTE_PROVIDER = None
     try:
@@ -680,13 +680,13 @@ def test_dashboard_endpoint_survives_hung_ws_api(monkeypatch):
     import tempfile
     import time as time_mod
 
-    import trader.web.server as srv
-    from trader.config import (
+    import consumer.web as srv
+    from core.config import (
         AutoUpdateConfig, DiscordConfig, QuotesConfig, ReaderConfig,
         TradingConfig, WealthsimpleConfig,
     )
-    from trader.store import Store
-    from trader.web.server import create_app
+    from core.store import Store
+    from consumer.web import create_app
 
     class Stub:
         def __init__(self):
@@ -745,13 +745,13 @@ def test_dashboard_sections_serve_stale_cache(monkeypatch):
     import tempfile
     import time as time_mod
 
-    import trader.web.server as srv
-    from trader.config import (
+    import consumer.web as srv
+    from core.config import (
         AutoUpdateConfig, DiscordConfig, QuotesConfig, ReaderConfig,
         TradingConfig, WealthsimpleConfig,
     )
-    from trader.store import Store
-    from trader.web.server import create_app
+    from core.store import Store
+    from consumer.web import create_app
 
     class Stub:
         def __init__(self):
@@ -822,7 +822,7 @@ def test_ws_http_shim_injects_timeout(monkeypatch):
     """every wealthsimple request must carry a hard timeout -
     the client library sends none, and a stalled connection
     once pinned the whole waitress pool."""
-    import trader.ws.ws_http as ws_http
+    import consumer.ws.ws_http as ws_http
     from wealthsimple_python import client as client_mod
 
     seen = {}
@@ -857,12 +857,12 @@ def test_spx_endpoint_prefers_moomoo_spy(monkeypatch):
     import tempfile
     import types
 
-    from trader.config import (
+    from core.config import (
         AutoUpdateConfig, DiscordConfig, QuotesConfig, ReaderConfig,
         TradingConfig, WealthsimpleConfig,
     )
-    from trader.store import Store
-    from trader.web.server import create_app
+    from core.store import Store
+    from consumer.web import create_app
 
     class Stub:
         def __init__(self):
@@ -902,8 +902,8 @@ def test_spx_endpoint_prefers_moomoo_spy(monkeypatch):
 
             return FakeWS()
 
-    import trader.trading.quotes as quotes_mod
-    import trader.web.server as srv
+    import consumer.trading.quotes as quotes_mod
+    import consumer.web as srv
     saved = quotes_mod.ACTIVE_QUOTE_PROVIDER
     quotes_mod.ACTIVE_QUOTE_PROVIDER = StubProvider()
     srv._sec_id_cache.clear()
@@ -935,12 +935,12 @@ def test_spx_proxy_only_as_last_resort(monkeypatch):
     status) wins and the proxy only answers when ws cannot."""
     import tempfile
 
-    from trader.config import (
+    from core.config import (
         AutoUpdateConfig, DiscordConfig, QuotesConfig, ReaderConfig,
         TradingConfig, WealthsimpleConfig,
     )
-    from trader.store import Store
-    from trader.web.server import create_app
+    from core.store import Store
+    from consumer.web import create_app
 
     class Stub:
         def __init__(self):
@@ -980,8 +980,8 @@ def test_spx_proxy_only_as_last_resort(monkeypatch):
 
             return FakeWS()
 
-    import trader.trading.quotes as quotes_mod
-    import trader.web.server as srv
+    import consumer.trading.quotes as quotes_mod
+    import consumer.web as srv
     saved = quotes_mod.ACTIVE_QUOTE_PROVIDER
     quotes_mod.ACTIVE_QUOTE_PROVIDER = ProxyProvider()
     srv._sec_id_cache.clear()
@@ -1013,7 +1013,7 @@ def test_no_eval_or_string_timers_in_shipped_pages():
     their own scripts and run under their own csp)."""
     import re
 
-    import trader.web.dashboard as dash
+    import consumer.dashboard as dash
 
     js = DASHBOARD_JS
     assert "eval(" not in js
@@ -1072,12 +1072,12 @@ def test_dashboard_inlines_the_stylesheet():
     reserved layout paints before the data arrives."""
     import tempfile
 
-    from trader.config import (
+    from core.config import (
         AutoUpdateConfig, DiscordConfig, QuotesConfig, ReaderConfig,
         TradingConfig, WealthsimpleConfig,
     )
-    from trader.store import Store
-    from trader.web.server import create_app
+    from core.store import Store
+    from consumer.web import create_app
 
     class Stub:
         def __init__(self):
@@ -1114,12 +1114,12 @@ def test_text_responses_ship_gzipped():
     import gzip as gzip_mod
     import tempfile
 
-    from trader.config import (
+    from core.config import (
         AutoUpdateConfig, DiscordConfig, QuotesConfig, ReaderConfig,
         TradingConfig, WealthsimpleConfig,
     )
-    from trader.store import Store
-    from trader.web.server import create_app
+    from core.store import Store
+    from consumer.web import create_app
 
     class Stub:
         def __init__(self):
@@ -1156,11 +1156,11 @@ def test_text_responses_ship_gzipped():
 
 
 def _paper_app(store):
-    from trader.config import (
+    from core.config import (
         AutoUpdateConfig, DiscordConfig, QuotesConfig, ReaderConfig,
         TradingConfig, WealthsimpleConfig,
     )
-    from trader.web.server import create_app
+    from consumer.web import create_app
 
     class Stub:
         def __init__(self):
@@ -1184,13 +1184,13 @@ def test_manual_paper_sell_endpoint():
     same path an alert sell takes."""
     import tempfile
 
-    from trader.config import (
+    from core.config import (
         AutoUpdateConfig, DiscordConfig, QuotesConfig, ReaderConfig,
         TradingConfig, WealthsimpleConfig,
     )
-    from trader.store import Store
-    from trader.trading.parser import parse_alert
-    from trader.web.server import create_app
+    from core.store import Store
+    from core.parser import parse_alert
+    from consumer.web import create_app
 
     class Stub:
         def __init__(self):
@@ -1229,7 +1229,7 @@ def test_manual_paper_sell_endpoint():
     assert data["remaining"] == 0
     # the cached dashboard sections were dropped: the next poll
     # shows the position gone instead of a stale pre-sell copy
-    import trader.web.server as srv
+    import consumer.web as srv
     assert "paper" not in srv._section_cache
     assert "positions" not in srv._section_cache
     assert store.get_position("paper", ck, "RRSP") == 0
@@ -1253,13 +1253,13 @@ def sells_of(store):
 def test_manual_paper_sell_partial_and_missing():
     import tempfile
 
-    from trader.config import (
+    from core.config import (
         AutoUpdateConfig, DiscordConfig, QuotesConfig, ReaderConfig,
         TradingConfig, WealthsimpleConfig,
     )
-    from trader.store import Store
-    from trader.trading.parser import parse_alert
-    from trader.web.server import create_app
+    from core.store import Store
+    from core.parser import parse_alert
+    from consumer.web import create_app
 
     class Stub:
         def __init__(self):
@@ -1318,7 +1318,7 @@ def test_paper_manual_sell_ui():
     # lingers on the next poll otherwise and looks unfilled)
     assert '"Sold"' in js and "data.realized" in js
     # the sell price lookup is bounded so the post answers fast
-    import trader.web.server as srv
+    import consumer.web as srv
     assert "_bounded(_paper_positions_payload, ctx)" in open(srv.__file__).read()
 
 
@@ -1328,13 +1328,13 @@ def test_manual_paper_sell_live_price_and_fx():
     full close reports the position as gone."""
     import tempfile
 
-    from trader.config import (
+    from core.config import (
         AutoUpdateConfig, DiscordConfig, QuotesConfig, ReaderConfig,
         TradingConfig, WealthsimpleConfig,
     )
-    from trader.store import Store
-    from trader.trading.parser import parse_alert
-    from trader.web.server import create_app
+    from core.store import Store
+    from core.parser import parse_alert
+    from consumer.web import create_app
 
     class Stub:
         def __init__(self):
@@ -1348,7 +1348,7 @@ def test_manual_paper_sell_live_price_and_fx():
             self.quotes = QuotesConfig()
             self.paper = types.SimpleNamespace(enabled=True)
 
-    from trader.trading.parser import parse_alert
+    from core.parser import parse_alert
 
     alert = parse_alert("BOUGHT 10/02 AAOI 105c @ 2.0")
     ck = alert.contract_key()
@@ -1411,12 +1411,12 @@ def test_paper_reset_invalidates_sections():
     like it did nothing)."""
     import tempfile
 
-    from trader.config import (
+    from core.config import (
         AutoUpdateConfig, DiscordConfig, QuotesConfig, ReaderConfig,
         TradingConfig, WealthsimpleConfig,
     )
-    from trader.store import Store
-    from trader.web.server import create_app
+    from core.store import Store
+    from consumer.web import create_app
 
     class Stub:
         def __init__(self):
@@ -1457,7 +1457,7 @@ def test_paper_reset_invalidates_sections():
 
 
 def srv_section_cache():
-    import trader.web.server as srv
+    import consumer.web as srv
 
     return srv._section_cache
 
@@ -1466,7 +1466,7 @@ def test_settings_layout_mirror_and_automation():
     """the mirror real fills fields live inside the automation
     section (one "keeps itself in sync" section) and the
     automation section sits right above the reader."""
-    import trader.web.dashboard as dash
+    import consumer.dashboard as dash
 
     js = DASHBOARD_JS
     # automation appears exactly once and the mirror fields are
@@ -1493,7 +1493,7 @@ def test_settings_layout_0dte_control_section():
     (auto b2e sell + lotto budget) are folded into the automation
     section; the size tiers (whose per-tier b2e override feeds
     the 0dte controls) sit directly under it."""
-    import trader.web.dashboard as dash
+    import consumer.dashboard as dash
 
     js = DASHBOARD_JS
     # no standalone quick controls / 0dte sections
@@ -1519,7 +1519,7 @@ def test_settings_automation_subsections():
     sub-sections: paper ledger, 0dte, risk caps, stops & exits,
     live fills, quotes provider, github code update and account
     value monitoring."""
-    import trader.web.dashboard as dash
+    import consumer.dashboard as dash
 
     js = DASHBOARD_JS
     # renderSettings declares its accumulator before the first
@@ -1584,7 +1584,7 @@ def test_unified_button_and_section_styles():
     (neutral dark, #8b949e hover) with .danger and .sm variants,
     the h2 rows use the .h2row flex helper, and no button carries
     a duplicated inline background style."""
-    import trader.web.dashboard as dash
+    import consumer.dashboard as dash
 
     html = dash.DASHBOARD_HTML
     js = dash.DASHBOARD_JS
@@ -1619,7 +1619,7 @@ def test_real_card_today_gain_above_risk_bar():
     the open risk bar, read from the mode-aware ledger number
     (live ledger in live mode, paper ledger otherwise) so the
     card and the lotto budget always agree."""
-    import trader.web.dashboard as dash
+    import consumer.dashboard as dash
 
     js = DASHBOARD_JS
     # the real card reads the mode-aware realized_today, falling
@@ -1641,7 +1641,7 @@ def test_position_tp_endpoint():
     import os
     import tempfile
 
-    from trader.store import Store
+    from core.store import Store
 
     fd, path = tempfile.mkstemp(suffix=".db")
     os.close(fd)
@@ -1650,7 +1650,7 @@ def test_position_tp_endpoint():
     client = app.test_client()
     hdr = {"X-Auth-Token": "t"}
 
-    from trader.trading.parser import parse_alert
+    from core.parser import parse_alert
 
     alert = parse_alert("BOUGHT 0DTE SPY 759c @ 2.0")
     store.apply_position("paper", alert, 2, premium=2.0)

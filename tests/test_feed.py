@@ -10,21 +10,20 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from test_pipeline import _fresh_store, ConfigStub, TradingConfig  # noqa: E402
-from trader.ops import fanout  # noqa: E402
-from trader.pipeline import ingest_alert, process_alert  # noqa: E402
-from trader.trading.risk import RiskEngine  # noqa: E402
-from trader.ws.account import PaperAccount  # noqa: E402
+from info import fanout  # noqa: E402
+from consumer.pipeline import ingest_alert, process_alert  # noqa: E402
+from consumer.trading.risk import RiskEngine  # noqa: E402
+from consumer.ws.account import PaperAccount  # noqa: E402
 
 
 def _info_app(consumers):
     store = _fresh_store()
     cfg = ConfigStub(TradingConfig(mode="notify"), auth_token="admin-token")
-    cfg.pipeline.role = "info"
     cfg.consumers = consumers
     fanout.FEED_STATE["consumers"] = {}  # fresh shared state per test
     app = __import__(
-        "trader.web.server", fromlist=["create_app"]
-    ).create_app(cfg, store, None, None, None)
+        "info.web", fromlist=["create_app"]
+    ).create_app(cfg, store)
     return app, store, cfg
 
 
@@ -45,7 +44,7 @@ def _info_cfg():
 
 def test_feed_rejects_bad_token():
     app, store, cfg = _info_app(
-        [__import__("trader.config", fromlist=["ConsumerEntry"])
+        [__import__("core.config", fromlist=["ConsumerEntry"])
          .ConsumerEntry(label="c1", token="tok1")]
     )
     client = app.test_client()
@@ -56,7 +55,7 @@ def test_feed_rejects_bad_token():
 
 
 def test_feed_serves_alerts_since_cursor():
-    entry = __import__("trader.config", fromlist=["ConsumerEntry"]) \
+    entry = __import__("core.config", fromlist=["ConsumerEntry"]) \
         .ConsumerEntry(label="c1", token="tok1")
     app, store, cfg = _info_app([entry])
     r1 = _record(store, "BOUGHT 0DTE SPY 759c @ 1.5 small")
@@ -79,7 +78,7 @@ def test_feed_serves_alerts_since_cursor():
 
 
 def test_feed_includes_levels():
-    entry = __import__("trader.config", fromlist=["ConsumerEntry"]) \
+    entry = __import__("core.config", fromlist=["ConsumerEntry"]) \
         .ConsumerEntry(label="c1", token="tok1")
     app, store, cfg = _info_app([entry])
     store.meta_set("spx_levels_text", "Pivot 6800\nR1 6810")
@@ -89,7 +88,7 @@ def test_feed_includes_levels():
 
 
 def test_feed_long_poll_wakes_on_new_signal():
-    entry = __import__("trader.config", fromlist=["ConsumerEntry"]) \
+    entry = __import__("core.config", fromlist=["ConsumerEntry"]) \
         .ConsumerEntry(label="c1", token="tok1")
     app, store, cfg = _info_app([entry])
     client = app.test_client()
@@ -110,7 +109,7 @@ def test_feed_long_poll_wakes_on_new_signal():
 
 
 def test_feed_records_last_seen():
-    entry = __import__("trader.config", fromlist=["ConsumerEntry"]) \
+    entry = __import__("core.config", fromlist=["ConsumerEntry"]) \
         .ConsumerEntry(label="c1", token="tok1")
     app, store, cfg = _info_app([entry])
     client = app.test_client()
@@ -121,14 +120,13 @@ def test_feed_records_last_seen():
 
 
 def test_feed_status_lists_all_configured_consumers():
-    entry = __import__("trader.config", fromlist=["ConsumerEntry"]) \
+    entry = __import__("core.config", fromlist=["ConsumerEntry"]) \
         .ConsumerEntry(label="c1", token="tok1", push_url="http://x/alert")
     app, store, cfg = _info_app([entry])
     client = app.test_client()
     resp = client.get("/api/feed-status", headers=_h("admin-token"))
     assert resp.status_code == 200
     data = resp.get_json()
-    assert data["role"] == "info"
     assert len(data["consumers"]) == 1
     c = data["consumers"][0]
     assert c["label"] == "c1"
@@ -139,7 +137,7 @@ def test_feed_status_lists_all_configured_consumers():
 # ---------------------------------------------------------------- fan-out
 
 def test_fanout_pushes_new_signals():
-    entry = __import__("trader.config", fromlist=["ConsumerEntry"]) \
+    entry = __import__("core.config", fromlist=["ConsumerEntry"]) \
         .ConsumerEntry(
             label="c1", token="tok1", push_url="http://push-target/alert"
         )
@@ -157,7 +155,7 @@ def test_fanout_pushes_new_signals():
     orig = _requests.post
     _requests.post = _fake_post
     try:
-        from trader.ops.fanout import _tick
+        from info.fanout import _tick
         _record(store, "BOUGHT 0DTE SPY 759c @ 1.5 small")
         _tick(store, [entry], {entry.token: 0})
     finally:
@@ -174,7 +172,7 @@ def test_fanout_pushes_new_signals():
 
 
 def test_fanout_push_failure_advances_cursor():
-    entry = __import__("trader.config", fromlist=["ConsumerEntry"]) \
+    entry = __import__("core.config", fromlist=["ConsumerEntry"]) \
         .ConsumerEntry(
             label="c1", token="tok1", push_url="http://push-target/alert"
         )
@@ -192,7 +190,7 @@ def test_fanout_push_failure_advances_cursor():
     try:
         fanout.FEED_STATE["consumers"] = {}
         _record(store, "BOUGHT 0DTE SPY 759c @ 1.5 small")
-        from trader.ops import fanout as f
+        from info import fanout as f
 
         orig_retry = f.PUSH_RETRY_SECONDS
         f.PUSH_RETRY_SECONDS = 0
@@ -217,7 +215,7 @@ def test_dual_delivery_dedupe_race():
     cfg = ConfigStub(TradingConfig(mode="paper"))
     account = PaperAccount(cfg, store)
     risk = RiskEngine(cfg, store, account)
-    from trader.trading.executor import PaperExecutor
+    from consumer.trading.executor import PaperExecutor
 
     executor = PaperExecutor(cfg, store, account)
     text = "BOUGHT 0DTE SPY 759c @ 1.5 small"

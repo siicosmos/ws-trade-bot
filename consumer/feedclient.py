@@ -15,7 +15,7 @@ from datetime import datetime
 
 import requests
 
-from .supervise import supervised
+from core.ops.supervise import supervised
 
 # backoff on feed errors: seconds between polls after failures
 BACKOFF_MIN = 2.0
@@ -29,7 +29,7 @@ def _epoch(iso_ts):
         return None
 
 
-def _loop(cfg, store, on_alert):
+def _loop(cfg, store, on_alert, state=None):
     base = cfg.feed.url.rstrip("/")
     headers = {"X-Auth-Token": cfg.feed.token}
     verify = bool(getattr(cfg.feed, "verify_ssl", False))
@@ -47,6 +47,10 @@ def _loop(cfg, store, on_alert):
                 r.raise_for_status()
                 cursor = int(r.json()["cursor"])
                 backoff = BACKOFF_MIN
+                if state is not None:
+                    state["last_seen"] = time.time()
+                    state["ok"] = True
+                    state["cursor"] = cursor
             else:
                 r = requests.get(
                     f"{base}/api/feed",
@@ -57,6 +61,10 @@ def _loop(cfg, store, on_alert):
                 data = r.json()
                 cursor = int(data["cursor"])
                 backoff = BACKOFF_MIN
+                if state is not None:
+                    state["last_seen"] = time.time()
+                    state["ok"] = True
+                    state["cursor"] = cursor
                 levels = data.get("levels")
                 if levels and levels != store.meta_get(
                     "spx_levels_text"
@@ -73,23 +81,28 @@ def _loop(cfg, store, on_alert):
                     except Exception:
                         # one bad alert must not kill the feed
                         pass
-        except Exception:
+        except Exception as e:
+            if state is not None:
+                state["ok"] = False
+                state["error"] = str(e)[:200]
             time.sleep(backoff)
             backoff = min(backoff * 2, BACKOFF_MAX)
             continue
         time.sleep(poll)
 
 
-def start_feed_client(cfg, store, on_alert, webhook_url=""):
+def start_feed_client(cfg, store, on_alert, webhook_url="",
+                      state=None):
     """on_alert(text, author, ts_epoch, channel) - usually a
-    process_alert call. Returns the thread or None when no feed
-    is configured."""
+    process_alert call. state (optional dict) tracks liveness
+    for the dashboard's status line. Returns the thread or None
+    when no feed is configured."""
     if not getattr(cfg, "feed", None) or not cfg.feed.url:
         return None
     if not cfg.feed.token:
         return None
     t, _state = supervised(
-        "feed client", lambda: _loop(cfg, store, on_alert),
+        "feed client", lambda: _loop(cfg, store, on_alert, state),
         webhook_url,
     )
     return t

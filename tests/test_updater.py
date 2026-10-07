@@ -1,7 +1,7 @@
 import os
 import subprocess
 
-from trader.ops.updater import AutoUpdater
+from core.ops.updater import AutoUpdater
 
 
 def _cfg(interval=600, enabled=False):
@@ -87,7 +87,7 @@ def test_updater_restart_on_local_change(tmp_path):
 def test_check_once_pulls_and_restarts(tmp_path):
     import subprocess
 
-    from trader.ops.updater import AutoUpdater, _git
+    from core.ops.updater import AutoUpdater, _git
 
     env = {
         **os.environ,
@@ -223,7 +223,7 @@ def test_seed_skipped_without_pull_reflog(tmp_path):
 def test_interval_change_applies_mid_cycle(tmp_path, monkeypatch):
     # a shorter interval saved while a long cycle is waiting must
     # shorten the running wait instead of waiting out the old deadline
-    import trader.ops.updater as upd
+    import core.ops.updater as upd
 
     class FakeClock:
         def __init__(self):
@@ -287,7 +287,7 @@ def test_interval_change_applies_mid_cycle(tmp_path, monkeypatch):
 
 def test_updater_ignores_untracked_files(tmp_path):
     import subprocess
-    from trader.ops.updater import AutoUpdater
+    from core.ops.updater import AutoUpdater
 
     repo = tmp_path / "repo"
     repo.mkdir()

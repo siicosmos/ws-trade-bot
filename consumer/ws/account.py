@@ -2,17 +2,17 @@ import time
 from datetime import datetime, timezone
 from typing import List
 
-from ..config import WSAccountConfig
-from ..trading.strategies import classify_legs
-from .ws_tokens import persist_env_tokens
-from ..trading.paper import (  # noqa: F401 - re-exported
+from core.config import WSAccountConfig
+from consumer.trading.strategies import classify_legs
+from consumer.ws.ws_tokens import persist_env_tokens
+from consumer.trading.paper import (  # noqa: F401 - re-exported
     PaperAccount,
     PaperLedger,
     seed_paper_accounts,
 )
 
 
-from .ws_common import (  # noqa: F401 - shared leaf (plan #6)
+from consumer.ws.ws_common import (  # noqa: F401 - shared leaf (plan #6)
     _amount,
     _amount_opt,
     _quote_price,
@@ -50,7 +50,7 @@ class WealthsimpleAccount:
         if self._ws is None:
             from wealthsimple_python import WealthsimpleV2
 
-            from .ws_http import install
+            from consumer.ws.ws_http import install
 
             install()
             self._ws = WealthsimpleV2()
@@ -73,7 +73,7 @@ class WealthsimpleAccount:
         rate = None
         try:
             ws = self._client()
-            from trader.ws.ws_security_query import (
+            from consumer.ws.ws_security_query import (
                 FETCH_SECURITY, security_variables,
             )
 
@@ -277,7 +277,7 @@ class WealthsimpleAccount:
             # marginRequirement / strategyType / legs that the
             # library's minimal variant does not
             try:
-                from trader.ws.ws_positions_query import (
+                from consumer.ws.ws_positions_query import (
                     FETCH_IDENTITY_POSITIONS, app_positions_variables,
                 )
 
@@ -325,7 +325,7 @@ class WealthsimpleAccount:
         return mapped[1]
 
     def _map_stocks(self, raw):
-        from .mapping import map_stocks
+        from consumer.ws.mapping import map_stocks
 
         return map_stocks(raw)
 
@@ -361,7 +361,7 @@ class WealthsimpleAccount:
         return mapped[0]
 
     def _map_options(self, raw):
-        from .mapping import map_options
+        from consumer.ws.mapping import map_options
 
         out = map_options(raw, self._usd_cad_quote)
         for data in out.values():

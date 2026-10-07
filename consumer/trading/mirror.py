@@ -12,7 +12,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
-from .paper import seed_real_accounts
+from consumer.trading.paper import seed_real_accounts
 
 # an estimated live booking older than this is reversed: the
 # order never filled, so the ledger must not carry it
@@ -159,8 +159,8 @@ def _contract_market_price(ws_account, row):
     if (row.get("kind") or "option") != "option":
         return None
     try:
-        from .executor import WealthsimpleExecutor
-        from .parser import Alert
+        from consumer.trading.executor import WealthsimpleExecutor
+        from core.parser import Alert
 
         resolver = WealthsimpleExecutor(ws_account.cfg, ws_account)
         ws = ws_account._client()
@@ -193,7 +193,7 @@ def _shock_cancel(store, ws, row, current_price, move_pct,
                   shock_pct=0, webhook_url=""):
     """Cancel the unfilled remainder of a price-shocked partial
     order and settle the ledger to the filled part."""
-    from ..ops.notify import notify_discord
+    from core.ops.notify import notify_discord
 
     order_id = str(row.get("order_id") or "")
     if order_id:
@@ -243,7 +243,7 @@ def reconcile_pending_fill(store, label, contract_key, action, qty,
     its running filled qty / blended price) so later fills of
     the same order still reconcile; the order settles once the
     fills cover its size."""
-    from ..ops.notify import notify_discord
+    from core.ops.notify import notify_discord
 
     for row in store.open_pending_orders("live", label):
         if (
@@ -487,7 +487,7 @@ def start_mirror_thread(cfg, store, ws_account, ledger,
             for line in applied:
                 print(f"trade mirror: {line}")
 
-    from ..ops.supervise import supervised
+    from core.ops.supervise import supervised
 
     thread, _ = supervised("mirror", run, webhook_url)
     return thread

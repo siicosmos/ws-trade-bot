@@ -11,11 +11,11 @@ import tempfile
 import types
 from datetime import date
 
-from trader.config import TradingConfig, WealthsimpleConfig
-from trader.store import Store
-from trader.trading.executor import WealthsimpleExecutor
-from trader.trading.parser import parse_alert
-from trader.ws.account import WSAccountConfig
+from core.config import TradingConfig, WealthsimpleConfig
+from core.store import Store
+from consumer.trading.executor import WealthsimpleExecutor
+from core.parser import parse_alert
+from consumer.ws.account import WSAccountConfig
 
 # 0DTE alerts parse to today's date - the fake chain serves it
 TODAY = date.today().isoformat()
@@ -347,7 +347,7 @@ def test_live_b2e_and_stop_sells_execute_live(monkeypatch):
         "live", parse_alert("BOUGHT 0DTE SPY 759c @ 1.0 lotto size"),
         2, premium=1.0, account="RRSP",
     )
-    from trader.trading.stops import StopMonitor
+    from consumer.trading.stops import StopMonitor
 
     monitor = StopMonitor(cfg, store, ex, lambda pos: 0.5, "")
     pos = store.list_positions("live", "RRSP")[0]
@@ -374,7 +374,7 @@ def _trade_rows(store):
 def test_kill_switch_blocks_buys_allows_sells():
     """the runtime kill switch: paused blocks every new BUY,
     exits stay takeable."""
-    from trader.trading.risk import RiskEngine
+    from consumer.trading.risk import RiskEngine
 
     cfg = _live_cfg(trading_paused=True)
     store = _store()

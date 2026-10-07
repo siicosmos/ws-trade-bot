@@ -34,7 +34,7 @@ ROOT = os.path.abspath(
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from trader.web.dashboard import (  # noqa: E402
+from consumer.dashboard import (  # noqa: E402
     DASHBOARD_CSS, DASHBOARD_HTML, DASHBOARD_JS,
 )
 

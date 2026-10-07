@@ -991,7 +991,7 @@ def test_snap_verifies_then_falls_back_to_end_key(monkeypatch):
 def test_store_keeps_message_time():
     import time as time_mod
 
-    from trader.store import Store
+    from core.store import Store
 
     store = Store(":memory:")
     epoch = time_mod.time() - 3600  # an hour ago

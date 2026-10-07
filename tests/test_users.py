@@ -8,7 +8,7 @@ import tempfile
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from trader.store import Store, _hash_password, _verify_password
+from core.store import Store, _hash_password, _verify_password
 
 
 def _fresh_store():
@@ -50,11 +50,11 @@ def test_user_crud_and_roles():
 
 
 def _make_app(store):
-    from trader.config import (
+    from core.config import (
         AutoUpdateConfig, DiscordConfig, QuotesConfig, ReaderConfig,
         TradingConfig, WealthsimpleConfig,
     )
-    from trader.web.server import create_app
+    from consumer.web import create_app
 
     class Stub:
         def __init__(self):
@@ -197,10 +197,10 @@ def test_self_password_change_requires_current():
 def test_first_admin_bootstrap_and_token_fallback():
     s = _fresh_store()
     # a config without a token: no seeding, first-visit claim
-    from trader.config import (
+    from core.config import (
         AutoUpdateConfig, DiscordConfig, QuotesConfig, ReaderConfig,
     )
-    from trader.web.server import create_app
+    from consumer.web import create_app
 
     class Stub:
         def __init__(self, token):

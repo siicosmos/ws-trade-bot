@@ -40,7 +40,7 @@ digraph runtime {
     updater [label=<
       <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" BGCOLOR="white">
         <TR><TD BGCOLOR="#238636" COLSPAN="2"><FONT COLOR="white"><B>auto-updater</B></FONT></TD></TR>
-        <TR><TD ALIGN="LEFT">GitHub check / interval</TD><TD ALIGN="LEFT">exit 77 when trader/* changes</TD></TR>
+        <TR><TD ALIGN="LEFT">GitHub check / interval</TD><TD ALIGN="LEFT">exit 77 when its code changes</TD></TR>
       </TABLE>>];
 
     mirror [label=<
@@ -70,7 +70,7 @@ digraph runtime {
 
   // -------------------------------------------------- reader process
   subgraph cluster_reader {
-    label="reader — python reader/discord_reader.py (standalone, no trader imports)";
+    label="reader — python reader/discord_reader.py (standalone)";
     fontsize=13;
     color="#8957e5";
 

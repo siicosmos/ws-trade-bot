@@ -55,8 +55,9 @@ owner's box typically runs all three).
 
 Restart loops (`scripts/start_*.bat`) relaunch their process 5s after
 any nonzero exit. The watchdog exits 1 on a 5-minute hang; the
-auto-updater exits 77 when `trader/*` code changed — or when the mode
-slider switches the consumer's trading mode.
+auto-updater exits 77 when code it executes changed (core/* + its
+role folder) — or when the mode slider switches the consumer's
+trading mode.
 
 External services:
 
@@ -65,7 +66,7 @@ External services:
   all under the consumer's own login (`ws_tokens.env` from
   `scripts/ws_login.py`). The pipeline uses allowlisted GraphQL
   documents extracted from the WS app bundle
-  (`trader/ws/ws_positions_query.py`, `ws_security_query.py`) plus the
+  (`consumer/ws/ws_positions_query.py`, `ws_security_query.py`) plus the
   `wealthsimple-python` client. All HTTP calls get a hard 15s timeout
   (`ws/ws_http.py`).
 - **moomoo / OpenD** (optional, consumer app): realtime option/index
@@ -77,7 +78,7 @@ External services:
 
 ### Supervised background threads
 
-All wrapped by `trader/ops/supervise.py` (crash → log + Discord notice
+All wrapped by `core/ops/supervise.py` (crash → log + Discord notice
 + 30s retry):
 
 | thread | module | runs on | job |
@@ -255,7 +256,8 @@ WS-only regardless; moomoo is read-only pricing.
 
 ## Dashboard
 
-Two dashboards from one static asset set (`trader/web/static/`),
+Two dashboards from per-app static asset sets (`consumer/static/`,
+`info/static/`),
 served by Flask. Auth: username+password sessions (`users` table,
 pbkdf2, first boot claims the admin account from the access token) or
 the legacy `X-Auth-Token` machine token for scripts and the reader.
@@ -431,7 +433,8 @@ them from its heartbeat.
 
 ### `auto_update`
 `enabled` (true), `interval_seconds` (600). Restarts (exit 77) only
-when `trader/*`, `run.py`, or `requirements.txt` changed.
+when code it executes changed (`core/*` + its role folder,
+`run.py`, or `requirements.txt`).
 
 ### `parser`
 `custom_patterns` ([]) — extra regexes for alert formats the built-in
@@ -522,7 +525,7 @@ true` on 127.0.0.1 exercises the whole pipeline without real orders.
 .venv/bin/python tests/scripts/ui_test.py
 
 # JS syntax check after editing the dashboard
-node --check trader/web/static/dashboard.js
+node --check consumer/static/dashboard.js
 ```
 
 Key suites: `test_pipeline.py` (end-to-end alert processing),
@@ -576,13 +579,30 @@ reader/
   discord_reader.py        # UIA Discord watcher (standalone, Windows)
   inspect_discord.py       # Discord window utilities + CLI diagnostic
   requirements-windows.txt
-trader/
+core/                      # shared foundation (both apps execute this)
   config.py                # YAML → dataclass config (load_config)
-  settings.py              # settings get/apply/persist + set_mode
   store.py                 # SQLite persistence + migrations
-  pipeline.py              # process_alert (consumer) / ingest_alert (info)
+  parser.py                # alert regexes, Alert dataclass, contract keys
+  signals.py               # message keys + the atomic signal claim
+  web_common.py            # session auth, login page, gzip, log quieting
+  ops/
+    notify.py loghook.py processes.py supervise.py updater.py watchdog.py
+info/                      # the alert source app (code + runtime + launcher)
+  server.py                # wiring: store, fan-out, updater, watchdog, wsgi
+  web.py                   # Flask app: ingest, feed, reader heartbeat, levels
+  ingest.py                # parse + dedupe + record (no execution)
+  fanout.py                # push alerts to consumers' /alert endpoints
+  dashboard.py             # lean info page assets
+  static/info.{html,js}
+consumer/                  # the trading app (code + runtime + launcher)
+  app.py                   # wiring: executors, stops, mirror, feed client
+  web.py                   # Flask app: dashboard API, settings, mode, users
+  pipeline.py              # process_alert: parse → dedupe → risk → execute
+  settings.py              # settings get/apply/persist + set_mode
+  feedclient.py            # long-poll the info server's alert feed
+  dashboard.py             # trading dashboard assets
+  static/dashboard.{html,css,js}
   trading/
-    parser.py              # alert regexes, Alert dataclass, contract keys
     executor.py            # sizing core, PaperExecutor, WealthsimpleExecutor
     risk.py                # RiskEngine pre-trade gates
     paper.py               # PaperAccount, PaperLedger, seeding
@@ -597,15 +617,6 @@ trader/
     ws_positions_query.py  # the app's FetchIdentityPositions document
     ws_security_query.py   # the app's FetchSecurity document
     ws_http.py ws_common.py ws_tokens.py account_types.py
-  web/
-    server.py              # Flask app: auth, routes, feed, caches
-    dashboard.py           # page loaders, login template
-    static/dashboard.{html,css,js}   # consumer dashboard
-    static/info.{html,js}            # lean info-server dashboard
-  ops/
-    notify.py loghook.py processes.py supervise.py updater.py watchdog.py
-    fanout.py              # info role: push alerts to consumers
-    feedclient.py          # consumer role: pull the alert feed
 scripts/                   # split_roles, ws_login, gen_cert, expectancy,
                            # diagnose, clean_start, setup_ssh, dump_discord_tree,
                            # start_reader/start_discord/start_pipeline .bat

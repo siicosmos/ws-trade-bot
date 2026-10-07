@@ -31,7 +31,7 @@ def supervised(
             pass
         if webhook_url:
             try:
-                from .notify import notify_discord
+                from core.ops.notify import notify_discord
 
                 notify_discord(
                     webhook_url,

@@ -1,7 +1,7 @@
 import threading
 import time
 
-from .parser import Alert
+from core.parser import Alert
 
 # the live quote provider, held for the web layer (the spx
 # levels ladder polls the index spot through it)
@@ -37,7 +37,7 @@ def make_quote_provider(cfg, account):
 
 def make_ws_quote_provider(cfg, account):
     try:
-        from .executor import WealthsimpleExecutor
+        from consumer.trading.executor import WealthsimpleExecutor
 
         resolver = WealthsimpleExecutor(cfg, account)
         ws = resolver._client()

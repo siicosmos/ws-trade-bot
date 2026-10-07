@@ -5,7 +5,7 @@ modules so none of them import each other for these."""
 
 from typing import List
 
-from ..config import WSAccountConfig
+from core.config import WSAccountConfig
 
 
 def _amount(node) -> float:

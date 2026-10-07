@@ -1,0 +1,282 @@
+"""The info server's web app: alert ingest, the consumer feed,
+reader heartbeat, and the lean admin dashboard.
+
+No trading lives here - the executors, ledgers, positions and
+quotes are consumer-app territory. This app is the alert
+source: the reader POSTs alerts, signals are recorded, and
+consumers receive them via push (fan-out) and the long-poll
+feed.
+"""
+
+import hmac
+import logging
+import time
+from datetime import timedelta
+
+from flask import Flask, Response, jsonify, request
+
+from core.store import Store
+from core.web_common import (
+    LOGIN_HTML, install_auth, install_gzip, install_quiet_filter,
+    load_secret_key,
+)
+from .dashboard import INFO_CSS, INFO_HTML
+from .ingest import ingest_alert
+
+
+def create_app(cfg, store: Store, config_path=None) -> Flask:
+    app = Flask(__name__)
+    install_quiet_filter()
+    app.secret_key = load_secret_key(config_path)
+    app.permanent_session_lifetime = timedelta(days=30)
+    app.config["MAX_CONTENT_LENGTH"] = 1024 * 1024
+    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+    if getattr(cfg.pipeline, "tls_cert", "") and getattr(
+        cfg.pipeline, "tls_key", ""
+    ):
+        app.config["SESSION_COOKIE_SECURE"] = True
+
+    # first boot: the access token becomes the admin password so
+    # the existing workflow keeps working
+    if store.user_count() == 0 and cfg.pipeline.auth_token:
+        store.create_user("admin", cfg.pipeline.auth_token, "admin")
+
+    # the reader's heartbeat state (dashboard reader line)
+    app.reader_state = {"channel": None, "ok": False, "last_seen": None}
+
+    logging.getLogger("werkzeug").setLevel(logging.ERROR)
+
+    # the feed authenticates with per-consumer tokens (its own
+    # check) - exempt it from the session/token guard
+    install_auth(app, cfg, store, LOGIN_HTML,
+                 exempt_paths=("/api/feed",))
+    install_gzip(app)
+
+    _page_cache = {"html": ""}
+
+    @app.get("/")
+    def info_page():
+        # the stylesheet is inlined into the head (same pattern
+        # as the consumer dashboard)
+        html = _page_cache["html"]
+        if not html:
+            html = INFO_HTML.replace(
+                '<link rel="stylesheet" href="/static/dashboard.css">',
+                "<style>\n" + INFO_CSS + "\n</style>",
+                1,
+            )
+            _page_cache["html"] = html
+        return app.response_class(html, mimetype="text/html")
+
+    @app.get("/health")
+    def health():
+        return jsonify({"status": "ok"})
+
+    @app.get("/favicon.ico")
+    def favicon():
+        return Response(status=204)
+
+    @app.post("/alert")
+    def alert():
+        """Reader ingest: parse + dedupe + record - no execution."""
+        data = request.get_json(silent=True) or {}
+        text = data.get("text", "")
+        author = data.get("author", "")
+        try:
+            ts = float(data.get("ts")) if data.get("ts") else None
+        except (TypeError, ValueError):
+            ts = None
+        try:
+            parsed_ts = (
+                float(data.get("parsed_ts"))
+                if data.get("parsed_ts") else None
+            )
+        except (TypeError, ValueError):
+            parsed_ts = None
+        return jsonify(ingest_alert(
+            text, author, cfg, store,
+            channel=str(data.get("channel") or ""), ts=ts,
+            parsed_ts=parsed_ts,
+        ))
+
+    # --------------------------------------------------------
+    # the alert feed for consumer apps
+    # --------------------------------------------------------
+    def _consumer_by_token(token):
+        for c in getattr(cfg, "consumers", None) or []:
+            if c.token and hmac.compare_digest(c.token, token):
+                return c
+        return None
+
+    @app.get("/api/feed")
+    def api_feed():
+        """Consumer feed: alerts recorded after the ?since= cursor
+        (signal rowid), the current SPX levels text, and a
+        long-poll wait so consumers get new alerts near-instantly.
+        Auth: X-Auth-Token must match a consumers[] entry.
+        Without since=: head-only - just the current cursor (a
+        fresh consumer starts there; replaying history would
+        execute old alerts)."""
+        consumer = _consumer_by_token(
+            request.headers.get("X-Auth-Token", "")
+        )
+        if consumer is None:
+            return jsonify({"error": "invalid consumer token"}), 401
+        head = store.max_signal_rowid()
+        raw_since = request.args.get("since", None)
+        if raw_since is None:
+            from .fanout import record_seen
+
+            record_seen(consumer.label, head)
+            return jsonify({
+                "alerts": [],
+                "levels": store.meta_get("spx_levels_text") or "",
+                "cursor": head,
+            })
+        try:
+            since = int(raw_since)
+        except (TypeError, ValueError):
+            since = 0
+        try:
+            wait = min(
+                max(float(request.args.get("wait", 0) or 0), 0.0), 25.0
+            )
+        except (TypeError, ValueError):
+            wait = 0.0
+        deadline = time.time() + wait
+        rows = store.signals_since(since)
+        while not rows and time.time() < deadline:
+            time.sleep(0.3)
+            rows = store.signals_since(since)
+        from core.parser import parse_alert
+
+        alerts = []
+        for r in rows:
+            parsed = None
+            if r["parsed"]:
+                try:
+                    a = parse_alert(
+                        r["text"], cfg.parser.custom_patterns
+                    )
+                    parsed = a.to_dict() if a else None
+                except Exception:
+                    parsed = None
+            alerts.append({
+                "id": r["id"],
+                "ts": r["ts"],
+                "author": r["author"],
+                "text": r["text"],
+                "correction": bool(r["correction"]),
+                "channel": r["channel"],
+                "alert": parsed,
+            })
+        cursor = alerts[-1]["id"] if alerts else since
+        from .fanout import record_seen
+
+        record_seen(consumer.label, cursor)
+        return jsonify({
+            "alerts": alerts,
+            "levels": store.meta_get("spx_levels_text") or "",
+            "cursor": cursor,
+        })
+
+    @app.get("/api/feed-status")
+    def api_feed_status():
+        """Info dashboard: per-consumer push/pull health."""
+        from .fanout import snapshot
+
+        state = snapshot()
+        by_label = {
+            c["label"]: c for c in state["consumers"]
+        }
+        now = time.time()
+        consumers = []
+        for c in getattr(cfg, "consumers", None) or []:
+            s = dict(by_label.get(c.label, {}))
+            s["label"] = c.label
+            s["push_url"] = c.push_url
+            age = (
+                round(now - s["last_seen"], 1)
+                if s.get("last_seen") else None
+            )
+            s["last_seen_age"] = age
+            s["alive"] = age is not None and age < 30
+            consumers.append(s)
+        return jsonify({
+            "consumers": consumers,
+            "signals_recorded": store.max_signal_rowid(),
+        })
+
+    # --------------------------------------------------------
+    # reader heartbeat: the reader posts channel/ok and merges
+    # back its live-editable settings
+    # --------------------------------------------------------
+    @app.post("/api/reader_status")
+    def api_reader_status():
+        data = request.get_json(silent=True) or {}
+        app.reader_state["channel"] = (data.get("channel") or None)
+        app.reader_state["ok"] = bool(data.get("ok"))
+        app.reader_state["last_seen"] = time.time()
+        return jsonify(
+            {
+                "channel_marker": cfg.reader.channel_marker,
+                "poll_interval": cfg.reader.poll_interval,
+                "max_items": cfg.reader.max_items,
+                "channels": cfg.reader.channels,
+                "channel_servers": getattr(
+                    cfg.reader, "channel_servers", {}
+                ),
+                "auto_switch": bool(
+                    getattr(
+                        cfg.reader, "auto_switch_channel", True
+                    )
+                ),
+                "discord_reopen_seconds": getattr(
+                    cfg.reader, "discord_reopen_seconds", 15
+                ),
+                "discord_restart_seconds": int(
+                    getattr(
+                        cfg.reader, "discord_restart_seconds", 90
+                    )
+                ),
+                "auto_scroll": bool(
+                    getattr(cfg.reader, "auto_scroll", True)
+                ),
+            }
+        )
+
+    @app.get("/api/reader_status")
+    def api_reader_status_get():
+        last_seen = app.reader_state.get("last_seen")
+        state = dict(app.reader_state)
+        state["desired"] = cfg.reader.channel_marker
+        state["age_seconds"] = (
+            round(time.time() - last_seen, 1) if last_seen else None
+        )
+        return jsonify(state)
+
+    # --------------------------------------------------------
+    # spx levels: the info server is the source of truth
+    # --------------------------------------------------------
+    @app.get("/api/levels")
+    def api_levels():
+        return jsonify({
+            "text": store.meta_get("spx_levels_text"),
+            "editable": True,
+        })
+
+    @app.post("/api/spx-levels")
+    def api_spx_levels():
+        """Save the pasted levels text - consumers receive it via
+        the feed and render it read-only on their ladder."""
+        data = request.get_json(silent=True) or {}
+        text = str(data.get("text") or "")[:8000]
+        store.meta_set("spx_levels_text", text)
+        return jsonify({"status": "ok"})
+
+    @app.get("/api/signals")
+    def api_signals():
+        limit = request.args.get("limit", default=50, type=int)
+        return jsonify(store.recent_signals(limit))
+
+    return app

@@ -5,13 +5,13 @@ from datetime import date, timedelta
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from trader.ws.account import PaperAccount
-from trader.config import ReaderConfig, TradingConfig, WealthsimpleConfig, WSAccountConfig
-from trader.trading.executor import PaperExecutor
-from trader.trading.parser import parse_alert
-from trader.trading.risk import RiskEngine
-from trader.trading.stops import StopMonitor
-from trader.store import Store
+from consumer.ws.account import PaperAccount
+from core.config import ReaderConfig, TradingConfig, WealthsimpleConfig, WSAccountConfig
+from consumer.trading.executor import PaperExecutor
+from core.parser import parse_alert
+from consumer.trading.risk import RiskEngine
+from consumer.trading.stops import StopMonitor
+from core.store import Store
 
 
 class ConfigStub:
@@ -192,7 +192,7 @@ def test_moomoo_provider_reconnects_after_opend_drop():
     real = sys.modules.get("moomoo")
     stub = types.ModuleType("moomoo")
 
-    from trader.trading.quotes import MoomooQuoteProvider
+    from consumer.trading.quotes import MoomooQuoteProvider
 
     made = []
 
@@ -280,7 +280,7 @@ def test_lotto_gain_cap_and_parser_qualifiers():
     profits_only alert, and both spend at most the configured
     fraction of today's realized gains (zero gains -> zero
     budget)."""
-    from trader.trading.executor import lotto_gain_cap
+    from consumer.trading.executor import lotto_gain_cap
 
     cfg = ConfigStub(TradingConfig(mode="paper"))
     store = _fresh_store()
@@ -382,7 +382,7 @@ def test_per_size_stop_fires_for_lotto_width():
         mode = "paper"
 
         def execute(self, alert, cfg, store):
-            from trader.trading.executor import ExecutionResult
+            from consumer.trading.executor import ExecutionResult
 
             return ExecutionResult(
                 True, f"SELL 1x @ {alert.premium}", qty=1
@@ -600,10 +600,10 @@ def test_paper_stops_run_without_quotes_enabled():
                 },
             }]}
 
-    from trader.ws.account import PaperLedger
+    from consumer.ws.account import PaperLedger
 
     ledger = PaperLedger(cfg, store, FakeWS())
-    from trader.trading.paper import _position_key
+    from consumer.trading.paper import _position_key
 
     def ledger_quote(pos):
         quotes = ledger._quotes()

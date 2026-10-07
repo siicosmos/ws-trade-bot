@@ -9,8 +9,8 @@ import os
 import tempfile
 import types
 
-from trader.store import Store
-from trader.trading.mirror import mirror_real_trades
+from core.store import Store
+from consumer.trading.mirror import mirror_real_trades
 
 
 def _option_node(action, qty, premium, cid, strike=105,
@@ -140,7 +140,7 @@ def test_reconcile_full_fill_reprices_sell():
     """booked 2 sold @ 2.0 against a 1.0 basis (est realized
     +200), filled 2 @ 2.5: realized corrects to +300 (truth) and
     the order settles filled."""
-    from trader.trading.mirror import reconcile_pending_fill
+    from consumer.trading.mirror import reconcile_pending_fill
 
     store = _store()
     store.apply_position(
@@ -165,7 +165,7 @@ def test_partial_fill_restores_exact_basis():
     """booked 2 sold @ 2.0 (pre 2 @ 1.0), filled only 1 @ 2.5:
     qty restores to 1 and realized is the truth (1x(2.5-1.0)x100
     = +150), not the estimate's +200."""
-    from trader.trading.mirror import reconcile_pending_fill
+    from consumer.trading.mirror import reconcile_pending_fill
 
     store = _store()
     store.apply_position(
@@ -186,7 +186,7 @@ def test_partial_fill_restores_exact_basis():
 def test_sweep_reverses_unfilled_estimate_exactly():
     """a buy estimate that never filled restores the pre-order
     position exactly: qty and the average premium both."""
-    from trader.trading.mirror import (
+    from consumer.trading.mirror import (
         sweep_pending_orders, reconcile_pending_fill
     )
     import sqlite3
@@ -224,7 +224,7 @@ def test_sweep_keeps_partially_filled_booking():
     """an order that partially filled before the ttl keeps the
     filled part booked exactly (the account really holds it) -
     only the unfilled remainder is reversed."""
-    from trader.trading.mirror import (
+    from consumer.trading.mirror import (
         sweep_pending_orders, reconcile_pending_fill
     )
     import sqlite3
@@ -237,7 +237,7 @@ def test_sweep_keeps_partially_filled_booking():
         "live", _est_shim("BUY"), 2, premium=2.0, account="RRSP"
     )
     # one contract actually filled @ 2.2
-    from trader.trading.mirror import reconcile_pending_fill
+    from consumer.trading.mirror import reconcile_pending_fill
 
     assert reconcile_pending_fill(
         store, "RRSP", "AAOI-2026-10-02-105-C", "BUY", 1, 2.2
@@ -274,7 +274,7 @@ def test_partial_fill_accumulates_and_settles():
     """fills of one order accumulate: 1 of 2, then the rest -
     each correction re-books from the pre snapshot with the
     blended price, and the order settles only when complete."""
-    from trader.trading.mirror import reconcile_pending_fill
+    from consumer.trading.mirror import reconcile_pending_fill
 
     store = _store()
     row = _pending(store, "BUY", 2, 2.0, pre_qty=0, pre_avg=None)
@@ -350,7 +350,7 @@ def test_shock_cancel_keeps_filled_part():
     cancel pct away from the estimate: the remainder is
     cancelled and the filled part stays as the position -
     future alerts (an ALL OUT) trade against what is held."""
-    from trader.trading.mirror import (
+    from consumer.trading.mirror import (
         sweep_pending_orders, reconcile_pending_fill
     )
     import sqlite3
@@ -398,7 +398,7 @@ def test_shock_cancel_keeps_filled_part():
 def test_no_shock_leaves_partial_order_open():
     """a partial fill whose market price stayed near the
     estimate is untouched by the sweep until the ttl."""
-    from trader.trading.mirror import (
+    from consumer.trading.mirror import (
         sweep_pending_orders, reconcile_pending_fill
     )
     import types as _types
@@ -427,10 +427,10 @@ def test_no_shock_leaves_partial_order_open():
 def test_slippage_notice_on_reconcile():
     """a fill landing beyond max_slippage_pct from the order's
     estimate posts a notice with both prices."""
-    from trader.trading.mirror import reconcile_pending_fill
+    from consumer.trading.mirror import reconcile_pending_fill
 
     posted = []
-    import trader.ops.notify as notify
+    import core.ops.notify as notify
 
     orig = notify.notify_discord
 

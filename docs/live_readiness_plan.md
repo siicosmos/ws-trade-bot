@@ -109,7 +109,7 @@ as thoroughly as the paper paths:
 
 The live executor no longer trusts its own estimates:
 
-- `pending_orders` table (trader/store.py): every live order records
+- `pending_orders` table (core/store.py): every live order records
   the contract, action, qty, estimated price and the pre-order
   position snapshot (pre_qty, pre_avg) at placement.
 - The mirror pass sweeps orders older than `PENDING_TTL_SECONDS`

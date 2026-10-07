@@ -39,13 +39,13 @@ digraph architecture {
 
     reader [label=<
       <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" BGCOLOR="white">
-        <TR><TD BGCOLOR="#8957e5" COLSPAN="2"><FONT COLOR="white"><B>reader</B> — trader-independent</FONT></TD></TR>
+        <TR><TD BGCOLOR="#8957e5" COLSPAN="2"><FONT COLOR="white"><B>reader</B> — standalone</FONT></TD></TR>
         <TR><TD ALIGN="LEFT">discord_reader.py</TD><TD ALIGN="LEFT">UIA on the Discord client</TD></TR>
         <TR><TD ALIGN="LEFT">parser + seen-set</TD><TD ALIGN="LEFT">relevance-gated restarts</TD></TR>
       </TABLE>>];
 
     subgraph cluster_info {
-      label="info server — run.py -c config_info.yaml (role: info)";
+      label="info/ — the alert source (ingest + feed, no trading)";
       fontsize=12;
       color="#1f6feb";
 
@@ -71,7 +71,7 @@ digraph architecture {
     }
 
     subgraph cluster_consumer {
-      label="consumer app — run.py -c config_consumer.yaml (role: consumer) — one per trader";
+      label="consumer/ — the trading app (own ws login, own store, own dashboard)";
       fontsize=12;
       color="#8957e5";
 

@@ -5,24 +5,24 @@ import types
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from trader.ws.account import PaperAccount
-from trader.config import ReaderConfig, TradingConfig, WealthsimpleConfig, WSAccountConfig, \
+from consumer.ws.account import PaperAccount
+from core.config import ReaderConfig, TradingConfig, WealthsimpleConfig, WSAccountConfig, \
     AutoUpdateConfig, QuotesConfig
-from trader.trading.executor import PaperExecutor
-from trader.trading.parser import parse_alert
-from trader.trading.quotes import MoomooQuoteProvider
-from trader.trading.risk import RiskEngine
-from trader.settings import apply_settings, get_settings
-from trader.trading.stops import StopMonitor
-from trader.store import Store
-from trader.ops.updater import AutoUpdater
+from consumer.trading.executor import PaperExecutor
+from core.parser import parse_alert
+from consumer.trading.quotes import MoomooQuoteProvider
+from consumer.trading.risk import RiskEngine
+from consumer.settings import apply_settings, get_settings
+from consumer.trading.stops import StopMonitor
+from core.store import Store
+from core.ops.updater import AutoUpdater
 
 
 class ConfigStub:
     def __init__(self, trading=None, accounts=None, auth_token=""):
         self.trading = trading or TradingConfig(mode="paper")
         self.pipeline = type("PI", (), {"auth_token": auth_token})()
-        from trader.config import DiscordConfig
+        from core.config import DiscordConfig
 
         self.discord = DiscordConfig()
         self.parser = type("P", (), {"custom_patterns": []})()
@@ -30,7 +30,7 @@ class ConfigStub:
         self.reader = ReaderConfig()
         self.auto_update = AutoUpdateConfig()
         self.quotes = QuotesConfig()
-        from trader.config import PaperConfig
+        from core.config import PaperConfig
 
         self.paper = PaperConfig()
 
@@ -58,7 +58,7 @@ def test_apply_settings_updates_memory_and_file():
             "trading:\n  mode: paper\n  risk_per_trade_pct: 5\n"
             "discord:\n  webhook_url: \"x\"\n"
         )
-    from trader.config import load_config
+    from core.config import load_config
 
     cfg = load_config(cfg_path)
     assert cfg.discord.webhook_url == "x"
@@ -70,7 +70,7 @@ def test_apply_settings_updates_memory_and_file():
     assert cfg.trading.risk_per_trade_pct == 7
     assert applied["trading.risk_per_trade_pct"] == 7
 
-    from trader.config import load_config
+    from core.config import load_config
 
     reloaded = load_config(cfg_path)
     assert reloaded.trading.risk_per_trade_pct == 7
@@ -142,7 +142,7 @@ def test_settings_take_effect_immediately():
     account = PaperAccount(cfg, store)
 
     alert = parse_alert("BOUGHT 0DTE SPY 759c @ 1.5 @everyone")
-    from trader.trading.executor import account_sizing
+    from consumer.trading.executor import account_sizing
 
     def contracts():
         rows = account_sizing(alert, cfg, account)
@@ -155,7 +155,7 @@ def test_settings_take_effect_immediately():
 
 
 def test_settings_endpoint_roundtrip():
-    from trader.web.server import create_app
+    from consumer.web import create_app
 
     fd, cfg_path = tempfile.mkstemp(suffix=".yaml")
     os.close(fd)
@@ -219,7 +219,7 @@ def test_moomoo_price_extraction():
 
 
 def _fake_updater(root, results):
-    import trader.ops.updater as up
+    import core.ops.updater as up
 
     calls = []
 
@@ -246,7 +246,7 @@ def _fake_updater(root, results):
 
 
 def test_updater_skips_when_dirty():
-    import trader.ops.updater as up
+    import core.ops.updater as up
 
     restarts = []
 
@@ -273,7 +273,7 @@ def test_updater_skips_when_dirty():
 
 
 def test_updater_pulls_and_restarts():
-    import trader.ops.updater as up
+    import core.ops.updater as up
 
     seq = {
         "rev-parse": type("R", (), {
@@ -329,7 +329,7 @@ def test_updater_pulls_and_restarts():
 
 
 def test_updater_up_to_date_no_restart():
-    import trader.ops.updater as up
+    import core.ops.updater as up
 
     def fake_git(root, *args):
         class R:
@@ -393,7 +393,7 @@ def test_reader_settings_apply_and_persist():
     assert cfg.reader.poll_interval == 0.75
     assert cfg.reader.max_items == 60
 
-    from trader.config import load_config
+    from core.config import load_config
 
     reloaded = load_config(cfg_path)
     assert reloaded.reader.channel_marker == "🚨│player-alerts"
@@ -415,13 +415,12 @@ def test_reader_settings_validation():
 
 
 def test_reader_status_endpoints():
-    from trader.web.server import create_app
+    # the reader heartbeats the info server (its alert source)
+    from info.web import create_app
 
     cfg = ConfigStub(TradingConfig(mode="notify"))
     store = _fresh_store()
-    account = PaperAccount(cfg, store)
-    risk = RiskEngine(cfg, store, account)
-    app = create_app(cfg, store, risk, None, account)
+    app = create_app(cfg, store)
     client = app.test_client()
 
     resp = client.post(
@@ -433,23 +432,17 @@ def test_reader_status_endpoints():
     assert data["channel_marker"] == ""
     assert data["poll_interval"] == 0.5
 
-    client.post(
-        "/api/settings",
-        json={"reader": {"channel_marker": "player-alerts"}},
-    )
+    # reader knobs are config-file managed on the info server
+    cfg.reader.channel_marker = "player-alerts"
     resp = client.post(
         "/api/reader_status", json={"channel": "test", "ok": True}
     )
     assert resp.get_json()["channel_marker"] == "player-alerts"
 
-    summary = client.get("/api/summary").get_json()
-    assert summary["reader"]["channel"] == "test"
-    assert summary["reader"]["desired"] == "player-alerts"
-    assert summary["reader"]["age_seconds"] is not None
-
-    state = client.get("/api/reader_status").get_json()
-    assert state["channel"] == "test"
-    assert state["desired"] == "player-alerts"
+    status = client.get("/api/reader_status").get_json()
+    assert status["channel"] == "test"
+    assert status["desired"] == "player-alerts"
+    assert status["age_seconds"] is not None
 
 
 def test_account_settings_apply_and_persist():
@@ -492,7 +485,7 @@ def test_account_settings_apply_and_persist():
     assert personal.paper_value == 2500
     assert personal.account_id == "p1-updated"
 
-    from trader.config import load_config
+    from core.config import load_config
 
     reloaded = load_config(cfg_path)
     assert reloaded.wealthsimple.exchange_hint == "NASDAQ"
@@ -552,8 +545,8 @@ def test_reader_channels_setting(tmp_path):
     import os
     import yaml
 
-    from trader.config import load_config
-    from trader.settings import apply_settings, get_settings
+    from core.config import load_config
+    from consumer.settings import apply_settings, get_settings
 
     cfg_path = tmp_path / "config.yaml"
     with open(cfg_path, "w") as f:
@@ -586,8 +579,8 @@ def test_reader_channels_setting(tmp_path):
 
 
 def test_quotes_disabled_by_default(tmp_path):
-    from trader.config import load_config
-    from trader.trading.quotes import make_quote_provider
+    from core.config import load_config
+    from consumer.trading.quotes import make_quote_provider
 
     cfg_path = tmp_path / "config.yaml"
     with open(cfg_path, "w") as f:
@@ -605,8 +598,8 @@ def test_quotes_disabled_by_default(tmp_path):
 
 
 def test_persist_preserves_blank_lines_and_order(tmp_path):
-    from trader.config import load_config
-    from trader.settings import apply_settings
+    from core.config import load_config
+    from consumer.settings import apply_settings
 
     cfg_path = tmp_path / "config.yaml"
     cfg_path.write_text(
@@ -642,8 +635,8 @@ def test_persist_preserves_blank_lines_and_order(tmp_path):
 
 
 def test_size_tiers_merge_with_defaults(tmp_path):
-    from trader.config import load_config
-    from trader.settings import apply_settings
+    from core.config import load_config
+    from consumer.settings import apply_settings
 
     cfg_path = tmp_path / "config.yaml"
     cfg_path.write_text(
@@ -676,8 +669,8 @@ def test_size_tiers_merge_with_defaults(tmp_path):
 
 
 def test_ws_refresh_settings_editable(tmp_path):
-    from trader.config import load_config
-    from trader.settings import apply_settings, get_settings
+    from core.config import load_config
+    from consumer.settings import apply_settings, get_settings
 
     cfg_path = tmp_path / "config.yaml"
     cfg_path.write_text(
@@ -712,8 +705,8 @@ def test_ws_refresh_settings_editable(tmp_path):
 
 
 def test_update_webhook_setting(tmp_path):
-    from trader.config import load_config
-    from trader.settings import apply_settings, get_settings
+    from core.config import load_config
+    from consumer.settings import apply_settings, get_settings
 
     cfg_path = tmp_path / "config.yaml"
     cfg_path.write_text(
@@ -745,8 +738,8 @@ def test_update_webhook_setting(tmp_path):
 
 
 def test_all_webhooks_editable(tmp_path):
-    from trader.config import load_config
-    from trader.settings import apply_settings, get_settings
+    from core.config import load_config
+    from consumer.settings import apply_settings, get_settings
 
     cfg_path = tmp_path / "config.yaml"
     cfg_path.write_text(
@@ -793,8 +786,8 @@ def test_all_webhooks_editable(tmp_path):
 
 
 def test_paper_settings_roundtrip(tmp_path):
-    from trader.config import load_config
-    from trader.settings import get_settings, apply_settings
+    from core.config import load_config
+    from consumer.settings import get_settings, apply_settings
 
     path = tmp_path / "cfg.yaml"
     path.write_text("trading:\n  mode: notify\n")
@@ -816,8 +809,8 @@ def test_paper_settings_roundtrip(tmp_path):
 
 
 def test_discord_notify_toggle(tmp_path):
-    from trader.config import load_config
-    from trader.settings import apply_settings, get_settings
+    from core.config import load_config
+    from consumer.settings import apply_settings, get_settings
 
     path = tmp_path / "cfg.yaml"
     path.write_text(
@@ -942,11 +935,11 @@ def test_size_tier_stop_loss_roundtrip():
     get_settings."""
     import tempfile
 
-    from trader.config import (
+    from core.config import (
         AutoUpdateConfig, DiscordConfig, QuotesConfig, ReaderConfig,
         TradingConfig, WealthsimpleConfig,
     )
-    from trader.settings import apply_settings, get_settings
+    from consumer.settings import apply_settings, get_settings
 
     class Stub:
         def __init__(self):
@@ -989,7 +982,7 @@ def test_size_tier_stop_loss_roundtrip():
 
     # the settings payload serves the tier stops back
     s = __import__(
-        "trader.settings", fromlist=["get_settings"]
+        "consumer.settings", fromlist=["get_settings"]
     ).get_settings(cfg)
     assert s["trading"]["size_tiers"]["lotto"]["stop_loss_pct"] == 55
     assert s["trading"]["back_to_entry_enabled"] is True
@@ -1002,13 +995,13 @@ def test_account_summary_carries_realized_today():
     import tempfile
     import types as _types
 
-    from trader.config import (
+    from core.config import (
         AutoUpdateConfig, DiscordConfig, QuotesConfig, ReaderConfig,
         TradingConfig, WealthsimpleConfig,
     )
-    from trader.store import Store
-    from trader.trading.parser import parse_alert
-    from trader.web.server import create_app
+    from core.store import Store
+    from core.parser import parse_alert
+    from consumer.web import create_app
 
     class Stub:
         def __init__(self):
@@ -1071,13 +1064,13 @@ def test_real_card_today_gain_reads_real_ledger():
     import tempfile
     import types as _types
 
-    from trader.config import (
+    from core.config import (
         AutoUpdateConfig, DiscordConfig, QuotesConfig, ReaderConfig,
         TradingConfig, WealthsimpleConfig,
     )
-    from trader.store import Store
-    from trader.trading.parser import parse_alert
-    from trader.web.server import create_app
+    from core.store import Store
+    from core.parser import parse_alert
+    from consumer.web import create_app
 
     class Stub:
         def __init__(self):
@@ -1133,7 +1126,7 @@ def test_real_card_today_gain_reads_real_ledger():
     client = app.test_client()
     # the module-level section cache may hold an earlier test's
     # summary within its ttl - drop it for this store's payload
-    import trader.web.server as srv
+    import consumer.web as srv
 
     srv._section_cache.clear()
     accounts = client.get(
@@ -1157,11 +1150,11 @@ def test_real_card_today_gain_reads_real_ledger():
 def test_trading_paused_kill_switch_roundtrip():
     """the runtime kill switch survives the settings round trip:
     applied into cfg (no restart needed) and served back."""
-    from trader.config import (
+    from core.config import (
         AutoUpdateConfig, DiscordConfig, QuotesConfig, ReaderConfig,
         TradingConfig, WealthsimpleConfig,
     )
-    from trader.settings import apply_settings, get_settings
+    from consumer.settings import apply_settings, get_settings
 
     class Stub:
         def __init__(self):

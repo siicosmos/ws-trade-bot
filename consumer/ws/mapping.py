@@ -6,8 +6,8 @@ fetched nodes plus the multi-leg grouping into verticals,
 butterflies, condors and iron flies. map_options takes the
 usd-cad quote callable so it has no transport dependency."""
 
-from ..trading.strategies import classify_legs
-from .ws_common import _amount, _amount_opt, _quote_price
+from consumer.trading.strategies import classify_legs
+from consumer.ws.ws_common import _amount, _amount_opt, _quote_price
 
 
 def map_stocks(raw):

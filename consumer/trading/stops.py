@@ -2,8 +2,8 @@ import datetime as _dt
 import threading
 import time
 
-from ..ops.notify import notify_discord
-from .parser import Alert
+from core.ops.notify import notify_discord
+from core.parser import Alert
 
 
 class StopMonitor:
@@ -29,7 +29,7 @@ class StopMonitor:
 
     def start(self):
         if self._thread is None or not self._thread.is_alive():
-            from ..ops.supervise import supervised
+            from core.ops.supervise import supervised
 
             self._thread, _ = supervised(
                 "stop-monitor", self._run, self.webhook_url

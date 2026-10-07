@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 
 import requests
 
-from .supervise import supervised
+from core.ops.supervise import supervised
 
 # how hard the push tries before leaving the alert to the
 # consumer's pull cursor

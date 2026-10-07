@@ -11,103 +11,16 @@ from datetime import timedelta
 
 from flask import Flask, Response, g, jsonify, redirect, request, session
 
-from ..ws.account_types import REGISTERED_ACCOUNT_TYPES
-from .dashboard import (
-    LOGIN_HTML, DASHBOARD_CSS, DASHBOARD_HTML, INFO_HTML,
+from consumer.ws.account_types import REGISTERED_ACCOUNT_TYPES
+from consumer.dashboard import (
+    LOGIN_HTML, DASHBOARD_CSS, DASHBOARD_HTML,
 )
-from ..pipeline import process_alert
-from ..store import Store
-from ..trading.margin import Holding, compute_requirement, resolve_rate
-
-QUIET_GET_PATHS = (
-    "/",
-    "/health",
-    "/favicon.ico",
-    "/api/summary",
-    "/api/positions",
-    "/api/signals",
-    "/api/trades",
-    "/api/settings",
-    "/api/reader_status",
-    "/api/update_status",
+from consumer.pipeline import process_alert
+from core.store import Store
+from core.web_common import (
+    install_auth, install_gzip, install_quiet_filter, load_secret_key,
 )
-
-QUIET_POST_PATHS = (
-    "/api/reader_status",
-)
-
-
-QUIET_GET_PREFIXES = (
-    "/.well-known/",
-)
-
-
-class QuietPathsFilter(logging.Filter):
-    def filter(self, record):
-        try:
-            msg = record.getMessage()
-        except Exception:
-            return True
-        for path in QUIET_POST_PATHS:
-            if f" {path} HTTP" in msg:
-                return False
-        for path in QUIET_GET_PATHS:
-            if f"GET {path} HTTP" in msg:
-                return False
-        for prefix in QUIET_GET_PREFIXES:
-            if f"GET {prefix}" in msg:
-                return False
-        return True
-
-
-def install_quiet_filter():
-    werkzeug = logging.getLogger("werkzeug")
-    if not any(
-        isinstance(f, QuietPathsFilter) for f in werkzeug.filters
-    ):
-        werkzeug.addFilter(QuietPathsFilter())
-
-
-LOGIN_FAIL_LIMIT = 5
-LOCKOUT_SECONDS = 900
-_LOGIN_FAILS = {}
-
-
-def _purge_login_fails(now):
-    """Drop fail entries not touched for a day - the dict must
-    not grow without bound under sustained attacks. (A zero
-    locked_until means 'not locked yet', not 'long expired'.)"""
-    stale = [
-        ip for ip, e in _LOGIN_FAILS.items()
-        if now - e.get("ts", 0) > 86400
-    ]
-    for ip in stale:
-        _LOGIN_FAILS.pop(ip, None)
-
-
-def _load_secret_key(config_path):
-    if not config_path:
-        return secrets.token_hex(32)
-    key_file = os.path.join(
-        os.path.dirname(os.path.abspath(config_path)), ".session_key"
-    )
-    try:
-        with open(key_file) as f:
-            key = f.read().strip()
-        if key:
-            return key
-    except OSError:
-        pass
-    key = secrets.token_hex(32)
-    try:
-        with open(key_file, "w") as f:
-            f.write(key)
-        # the session signing key is only for this user
-        os.chmod(key_file, 0o600)
-    except OSError:
-        pass
-    return key
-
+from consumer.trading.margin import Holding, compute_requirement, resolve_rate
 
 def _paper_card_metrics(
     ledger, store, cfg, label, value, registered, conv_fx
@@ -178,7 +91,7 @@ def _paper_card_metrics(
         cfg.wealthsimple, "margin_rate_overrides", {}
     ) or {}
 
-    from ..trading.margin import (
+    from consumer.trading.margin import (
         Holding, compute_requirement, resolve_rate,
     )
 
@@ -209,7 +122,7 @@ def _paper_card_metrics(
             continue
         key = (pos.get("underlying"), pos.get("expiry"))
         groups.setdefault(key, []).append(pos)
-    from ..trading.strategies import classify_legs
+    from consumer.trading.strategies import classify_legs
 
     for (sym, _expiry), legs in groups.items():
         shaped = []
@@ -332,6 +245,11 @@ class PipelineContext:
     config_path: str = None
     reader_state: dict = field(default_factory=lambda: {
         "channel": None, "ok": False, "last_seen": None,
+    })
+    # the feed client's liveness (alerts pulled from the info
+    # server) - the dashboard's status line shows this when set
+    feed_state: dict = field(default_factory=lambda: {
+        "last_seen": None, "ok": None, "cursor": None,
     })
     summary_cache: dict = field(default_factory=lambda: {
         "ts": 0.0, "accounts": None, "ver": -1,
@@ -676,8 +594,8 @@ def _margin_metrics(ctx, label, value, live, sk, conv_fx,
 
 
 def _acct_by_label(cfg, label):
-    from ..ws.ws_common import effective_accounts as _ea
-    from ..ws.ws_common import account_label as _al
+    from consumer.ws.ws_common import effective_accounts as _ea
+    from consumer.ws.ws_common import account_label as _al
 
     for acct in _ea(cfg):
         if _al(acct) == label:
@@ -689,7 +607,7 @@ def _effective_open_risk_cap(cfg, label):
     """The account's own open-risk cap override when set (a
     small account may deploy a high share of its own value),
     the global cap otherwise."""
-    from ..trading.executor import effective_open_risk_cap
+    from consumer.trading.executor import effective_open_risk_cap
 
     return effective_open_risk_cap(_acct_by_label(cfg, label), cfg)
 
@@ -1101,12 +1019,24 @@ def _summary_payload(ctx):
     store = ctx.store
     mode = ctx.mode
     t = cfg.trading
-    last_seen = ctx.reader_state.get("last_seen")
-    reader = dict(ctx.reader_state)
-    reader["desired"] = cfg.reader.channel_marker
-    reader["age_seconds"] = (
-        round(time.time() - last_seen, 1) if last_seen else None
-    )
+    feed_seen = (ctx.feed_state or {}).get("last_seen")
+    if feed_seen:
+        # alerts arrive from the info server's feed - the status
+        # line reports the feed, not a (absent) local reader
+        reader = {
+            "channel": "the alert feed",
+            "ok": True,
+            "last_seen": feed_seen,
+            "desired": None,
+            "age_seconds": round(time.time() - feed_seen, 1),
+        }
+    else:
+        last_seen = ctx.reader_state.get("last_seen")
+        reader = dict(ctx.reader_state)
+        reader["desired"] = cfg.reader.channel_marker
+        reader["age_seconds"] = (
+            round(time.time() - last_seen, 1) if last_seen else None
+        )
     return {
         "mode": mode,
         "paper": bool(
@@ -1201,7 +1131,7 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                config_path=None) -> Flask:
     app = Flask(__name__)
     install_quiet_filter()
-    app.secret_key = _load_secret_key(config_path)
+    app.secret_key = load_secret_key(config_path)
     app.permanent_session_lifetime = timedelta(days=30)
     app.config["MAX_CONTENT_LENGTH"] = 1024 * 1024
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
@@ -1214,8 +1144,9 @@ def create_app(cfg, store: Store, risk, executor, account=None,
         account=account, mode=cfg.trading.mode,
         config_path=config_path,
     )
-    # compat aliases (tests and the reader poke these directly)
+    # compat aliases (tests poke these directly)
     app.reader_state = ctx.reader_state
+    app.feed_state = ctx.feed_state
     app._summary_cache = ctx.summary_cache
 
     # first boot: the access token becomes the admin password so
@@ -1227,141 +1158,8 @@ def create_app(cfg, store: Store, risk, executor, account=None,
     # access lines for every api call
     logging.getLogger("werkzeug").setLevel(logging.ERROR)
 
-    @app.before_request
-    def auth_guard():
-        token = cfg.pipeline.auth_token
-        if request.path in ("/health", "/favicon.ico", "/login"):
-            return None
-        # the feed authenticates with per-consumer tokens (not
-        # the pipeline token) - it does its own check
-        if request.path == "/api/feed":
-            return None
-        if not token and store.user_count() == 0:
-            # legacy install (no token, no users): open access,
-            # exactly as before user accounts existed; /login
-            # remains reachable to bootstrap the first admin
-            return None
-        if session.get("auth"):
-            return None
-        supplied = request.headers.get("X-Auth-Token", "")
-        if supplied and token and hmac.compare_digest(supplied, token):
-            g.admin = True
-            return None
-        if request.path.startswith("/api/") or request.path == "/alert":
-            return jsonify({"error": "unauthorized"}), 401
-        return redirect("/login")
-
-    @app.route("/login", methods=["GET", "POST"])
-    def login():
-        token = cfg.pipeline.auth_token
-        first = store.user_count() == 0
-        ip = request.remote_addr or "?"
-        now = time.time()
-        _purge_login_fails(now)
-        entry = _LOGIN_FAILS.get(ip)
-        if entry and entry.get("locked_until", 0) > now:
-            return Response(
-                LOGIN_HTML("too many attempts - try again later",
-                           first=first),
-                403,
-                mimetype="text/html",
-                headers={"Cache-Control": "no-store"},
-            )
-        error = None
-        if request.method == "POST":
-            username = str(request.form.get("username") or "").strip()
-            supplied = request.form.get("password", "")
-
-            def _fail(label):
-                nonlocal error
-                count = (entry or {}).get("count", 0) + 1
-                if count >= LOGIN_FAIL_LIMIT:
-                    _LOGIN_FAILS[ip] = {
-                        "count": count,
-                        "locked_until": now + LOCKOUT_SECONDS,
-                        "ts": now,
-                    }
-                    error = "too many attempts - try again later"
-                else:
-                    _LOGIN_FAILS[ip] = {
-                        "count": count, "locked_until": 0, "ts": now,
-                    }
-                    error = label
-                time.sleep(1)
-
-            if first:
-                # claim the first admin account
-                if not re.fullmatch(r"[A-Za-z0-9_-]{1,32}", username):
-                    _fail("pick a username (letters, digits, - _)")
-                elif len(supplied) < 6:
-                    _fail("password must be at least 6 characters")
-                else:
-                    store.create_user(username, supplied, "admin")
-                    _LOGIN_FAILS.pop(ip, None)
-                    session.permanent = True
-                    session["auth"] = True
-                    session["user"] = {
-                        "username": username, "role": "admin",
-                    }
-                    return redirect("/")
-            elif not username and token and hmac.compare_digest(
-                supplied, token
-            ):
-                # legacy: the bare access token still opens an
-                # owner session (scripts, old bookmarks)
-                _LOGIN_FAILS.pop(ip, None)
-                session.permanent = True
-                session["auth"] = True
-                return redirect("/")
-            else:
-                user = store.verify_user(username, supplied)
-                if user is not None:
-                    _LOGIN_FAILS.pop(ip, None)
-                    session.permanent = True
-                    session["auth"] = True
-                    session["user"] = user
-                    return redirect("/")
-                _fail("wrong username or password")
-        return Response(
-            LOGIN_HTML(error, first=first), mimetype="text/html",
-            headers={"Cache-Control": "no-store"},
-        )
-
-    @app.route("/logout")
-    def logout():
-        session.clear()
-        return redirect("/login")
-
-    @app.after_request
-    def no_store(resp):
-        # unconditional: flask's static handler sets no-cache,
-        # and the page must never serve stale after an update
-        resp.headers["Cache-Control"] = "no-store"
-        # gzip the text payloads (the dashboard js alone is
-        # ~80 kb and phones on the lan pull it every reload)
-        try:
-            compressible = (
-                "text/" in resp.content_type
-                or "javascript" in resp.content_type
-                or resp.content_type == "application/json"
-            )
-            accepts = request.headers.get("Accept-Encoding", "")
-            if (
-                "gzip" in accepts.lower()
-                and compressible
-                and resp.content_length
-                and resp.content_length > 500
-            ):
-                resp.direct_passthrough = False
-                body = gzip.compress(resp.get_data(), 6)
-                if len(body) < resp.content_length:
-                    resp.set_data(body)
-                    resp.headers["Content-Encoding"] = "gzip"
-                    resp.headers["Content-Length"] = str(len(body))
-            resp.headers.setdefault("Vary", "Accept-Encoding")
-        except Exception:
-            pass
-        return resp
+    install_auth(app, cfg, store, LOGIN_HTML)
+    install_gzip(app)
 
     _dashboard_cache = {"html": ""}
 
@@ -1372,12 +1170,10 @@ def create_app(cfg, store: Store, risk, executor, account=None,
         # trade-log block especially) is painted before the js
         # pulls data - the load-time layout shift shrinks to the
         # first-paint frame. composed once per process; an update
-        # restarts the pipeline, which recomposes it. the info
-        # role serves its own lean page (consumers, feed, levels)
-        template = INFO_HTML if _role() == "info" else DASHBOARD_HTML
+        # restarts the pipeline, which recomposes it
         html = _dashboard_cache["html"]
         if not html:
-            html = template.replace(
+            html = DASHBOARD_HTML.replace(
                 '<link rel="stylesheet" href="/static/dashboard.css">',
                 "<style>\n" + DASHBOARD_CSS + "\n</style>",
                 1,
@@ -1415,19 +1211,6 @@ def create_app(cfg, store: Store, risk, executor, account=None,
             return jsonify({"error": "admin required"}), 403
         return None
 
-    def _role() -> str:
-        return getattr(cfg.pipeline, "role", "consumer") or "consumer"
-
-    def _require_trading():
-        """Info role: the alert source server runs no trading -
-        the executors, ledgers and positions live on consumer
-        apps."""
-        if _role() != "info":
-            return None
-        return jsonify(
-            {"error": "info server - trading runs on consumer apps"}
-        ), 404
-
     @app.get("/api/summary")
     def api_summary():
         payload = _bounded(_summary_payload, ctx)
@@ -1442,9 +1225,6 @@ def create_app(cfg, store: Store, risk, executor, account=None,
 
     @app.post("/api/paper-reset")
     def api_paper_reset():
-        denied = _require_trading()
-        if denied:
-            return denied
         denied = _require_admin()
         if denied:
             return denied
@@ -1461,7 +1241,7 @@ def create_app(cfg, store: Store, risk, executor, account=None,
         store.reset_paper_account(label)
         seeded = []
         if hasattr(account, "_positions_raw"):
-            from ..ws.account import seed_paper_accounts
+            from consumer.ws.account import seed_paper_accounts
 
             seeded = seed_paper_accounts(cfg, store, account) or []
         ctx.summary_cache["ts"] = 0.0
@@ -1478,9 +1258,6 @@ def create_app(cfg, store: Store, risk, executor, account=None,
 
     @app.get("/api/paper-positions")
     def api_paper_positions():
-        denied = _require_trading()
-        if denied:
-            return denied
         payload = _bounded(_paper_positions_payload, ctx)
         if payload is None:
             payload = {
@@ -1493,9 +1270,6 @@ def create_app(cfg, store: Store, risk, executor, account=None,
 
     @app.post("/api/position-sell")
     def api_position_sell():
-        denied = _require_trading()
-        if denied:
-            return denied
         """Manual close of a tracked LIVE position from the open
         positions table: places a REAL sell order at the current
         bid (the same path a stop-monitor exit takes). Sells the
@@ -1528,7 +1302,7 @@ def create_app(cfg, store: Store, risk, executor, account=None,
             return jsonify({"error": "position is empty"}), 400
 
         # a real sell order at the current bid
-        from ..trading.parser import Alert
+        from core.parser import Alert
 
         alert = Alert(
             action="SELL",
@@ -1569,9 +1343,6 @@ def create_app(cfg, store: Store, risk, executor, account=None,
 
     @app.post("/api/position-tp")
     def api_position_tp():
-        denied = _require_trading()
-        if denied:
-            return denied
         """Per-position sell guards: take-profit (sell the whole
         remaining position when its gain vs the entry premium
         reaches this percent) and a per-position trailing stop
@@ -1642,9 +1413,6 @@ def create_app(cfg, store: Store, risk, executor, account=None,
 
     @app.post("/api/paper-sell")
     def api_paper_sell():
-        denied = _require_trading()
-        if denied:
-            return denied
         """Manual close of a paper position at its live price.
 
         The proceeds return to the paper cash (options x100 at
@@ -1704,7 +1472,7 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                 {"error": "no price for this contract - "
                  "cannot sell without a quote"}
             ), 409
-        from ..trading.parser import Alert
+        from core.parser import Alert
 
         is_option = bool(row["right"])
         alert = Alert(
@@ -1769,9 +1537,6 @@ def create_app(cfg, store: Store, risk, executor, account=None,
 
     @app.get("/api/positions")
     def api_positions():
-        denied = _require_trading()
-        if denied:
-            return denied
         return jsonify(_positions_payload(ctx))
 
     @app.get("/api/signals")
@@ -1791,7 +1556,7 @@ def create_app(cfg, store: Store, risk, executor, account=None,
         SPY trades overnight and post-market, so its own quote
         keeps the spy ladder live when the index is closed; the
         closed index shows its market close instead of a spot."""
-        from ..trading.quotes import ACTIVE_QUOTE_PROVIDER
+        from consumer.trading.quotes import ACTIVE_QUOTE_PROVIDER
 
         provider = ACTIVE_QUOTE_PROVIDER
         price = None
@@ -1955,7 +1720,7 @@ def create_app(cfg, store: Store, risk, executor, account=None,
 
     @app.get("/api/settings")
     def api_settings_get():
-        from ..settings import get_settings
+        from consumer.settings import get_settings
 
         return jsonify(get_settings(cfg))
 
@@ -1965,7 +1730,7 @@ def create_app(cfg, store: Store, risk, executor, account=None,
         Each ws-touching section refreshes concurrently, bounded
         and cached - a slow or stalled ws api serves the last
         good payload instead of pinning the request thread."""
-        from ..settings import get_settings
+        from consumer.settings import get_settings
 
         summary, paper, positions = _dashboard_sections(ctx)
         return jsonify(
@@ -1986,7 +1751,7 @@ def create_app(cfg, store: Store, risk, executor, account=None,
         denied = _require_admin()
         if denied:
             return denied
-        from ..settings import apply_settings
+        from consumer.settings import apply_settings
 
         payload = request.get_json(silent=True) or {}
         applied, errors = apply_settings(cfg, payload, config_path)
@@ -2020,7 +1785,7 @@ def create_app(cfg, store: Store, risk, executor, account=None,
             return jsonify({
                 "status": "ok", "mode": mode, "restarting": False,
             })
-        from ..settings import set_mode
+        from consumer.settings import set_mode
 
         if not set_mode(cfg, mode, config_path):
             return jsonify(
@@ -2040,170 +1805,12 @@ def create_app(cfg, store: Store, risk, executor, account=None,
             "status": "ok", "mode": mode, "restarting": restart,
         })
 
-    @app.post("/api/reader_status")
-    def api_reader_status():
-        data = request.get_json(silent=True) or {}
-        ctx.reader_state["channel"] = (data.get("channel") or None)
-        ctx.reader_state["ok"] = bool(data.get("ok"))
-        ctx.reader_state["last_seen"] = time.time()
-        return jsonify(
-            {
-                "channel_marker": cfg.reader.channel_marker,
-                "poll_interval": cfg.reader.poll_interval,
-                "max_items": cfg.reader.max_items,
-                "channels": cfg.reader.channels,
-                "channel_servers": getattr(
-                    cfg.reader, "channel_servers", {}
-                ),
-                "auto_switch": bool(
-                    getattr(
-                        cfg.reader, "auto_switch_channel", True
-                    )
-                ),
-                "discord_reopen_seconds": getattr(
-                    cfg.reader, "discord_reopen_seconds", 15
-                ),
-                "discord_restart_seconds": int(
-                    getattr(
-                        cfg.reader, "discord_restart_seconds", 90
-                    )
-                ),
-                "auto_scroll": bool(
-                    getattr(cfg.reader, "auto_scroll", True)
-                ),
-            }
-        )
-
-    @app.get("/api/reader_status")
-    def api_reader_status_get():
-        last_seen = ctx.reader_state.get("last_seen")
-        state = dict(ctx.reader_state)
-        state["desired"] = cfg.reader.channel_marker
-        state["age_seconds"] = (
-            round(time.time() - last_seen, 1) if last_seen else None
-        )
-        return jsonify(state)
-
-    # --------------------------------------------------------
-    # info role: the alert feed for consumer apps
-    # --------------------------------------------------------
-    def _consumer_by_token(token):
-        import hmac as _hmac
-
-        for c in getattr(cfg, "consumers", None) or []:
-            if c.token and _hmac.compare_digest(c.token, token):
-                return c
-        return None
-
-    @app.get("/api/feed")
-    def api_feed():
-        """Consumer feed: alerts recorded after the ?since= cursor
-        (signal rowid), the current SPX levels text, and a
-        long-poll wait so consumers get new alerts near-instantly.
-        Auth: X-Auth-Token must match a consumers[] entry.
-        Without since=: head-only - just the current cursor (a
-        fresh consumer starts there; replaying history would
-        execute old alerts)."""
-        consumer = _consumer_by_token(
-            request.headers.get("X-Auth-Token", "")
-        )
-        if consumer is None:
-            return jsonify({"error": "invalid consumer token"}), 401
-        head = store.max_signal_rowid()
-        raw_since = request.args.get("since", None)
-        if raw_since is None:
-            from ..ops import fanout
-
-            fanout.record_seen(consumer.label, head)
-            return jsonify({
-                "alerts": [],
-                "levels": store.meta_get("spx_levels_text") or "",
-                "cursor": head,
-            })
-        try:
-            since = int(raw_since)
-        except (TypeError, ValueError):
-            since = 0
-        try:
-            wait = min(
-                max(float(request.args.get("wait", 0) or 0), 0.0), 25.0
-            )
-        except (TypeError, ValueError):
-            wait = 0.0
-        deadline = time.time() + wait
-        rows = store.signals_since(since)
-        while not rows and time.time() < deadline:
-            time.sleep(0.3)
-            rows = store.signals_since(since)
-        from ..pipeline import parse_alert as _parse
-
-        alerts = []
-        for r in rows:
-            parsed = None
-            if r["parsed"]:
-                try:
-                    a = _parse(
-                        r["text"], cfg.parser.custom_patterns
-                    )
-                    parsed = a.to_dict() if a else None
-                except Exception:
-                    parsed = None
-            alerts.append({
-                "id": r["id"],
-                "ts": r["ts"],
-                "author": r["author"],
-                "text": r["text"],
-                "correction": bool(r["correction"]),
-                "channel": r["channel"],
-                "alert": parsed,
-            })
-        cursor = alerts[-1]["id"] if alerts else since
-        from ..ops import fanout
-
-        fanout.record_seen(consumer.label, cursor)
-        return jsonify({
-            "alerts": alerts,
-            "levels": store.meta_get("spx_levels_text") or "",
-            "cursor": cursor,
-        })
-
-    @app.get("/api/feed-status")
-    def api_feed_status():
-        """Info dashboard: per-consumer push/pull health."""
-        from ..ops import fanout
-
-        state = fanout.snapshot()
-        by_label = {
-            c["label"]: c for c in state["consumers"]
-        }
-        now = time.time()
-        consumers = []
-        for c in getattr(cfg, "consumers", None) or []:
-            s = dict(by_label.get(c.label, {}))
-            s["label"] = c.label
-            s["push_url"] = c.push_url
-            age = (
-                round(now - s["last_seen"], 1)
-                if s.get("last_seen") else None
-            )
-            s["last_seen_age"] = age
-            s["alive"] = age is not None and age < 30
-            consumers.append(s)
-        return jsonify({
-            "role": _role(),
-            "consumers": consumers,
-            "signals_recorded": store.max_signal_rowid(),
-        })
-
     @app.get("/api/update_status")
     def api_update_status():
         return jsonify(_update_status_payload(app))
 
     @app.post("/api/paper-resize")
     def api_paper_resize():
-        denied = _require_trading()
-        if denied:
-            return denied
         """Bring past paper stock positions up to the tier
         sizing (older trades were sized with the flat dollar
         budget). The original alert's size keyword is recovered
@@ -2221,8 +1828,8 @@ def create_app(cfg, store: Store, risk, executor, account=None,
         ledger = getattr(executor, "account", None)
         if ledger is None or not hasattr(ledger, "values"):
             return jsonify({"error": "no paper ledger"}), 400
-        from ..trading.mirror import MirrorShim
-        from ..trading.parser import parse_alert
+        from consumer.trading.mirror import MirrorShim
+        from core.parser import parse_alert
 
         tiers = getattr(
             cfg.trading, "stock_size_tiers", None
@@ -2407,14 +2014,6 @@ def create_app(cfg, store: Store, risk, executor, account=None,
             )
         except (TypeError, ValueError):
             parsed_ts = None
-        if _role() == "info":
-            from ..pipeline import ingest_alert
-
-            return jsonify(ingest_alert(
-                text, author, cfg, store,
-                channel=str(data.get("channel") or ""), ts=ts,
-                parsed_ts=parsed_ts,
-            ))
         result = process_alert(
             text, author, cfg, store, risk, executor, account,
             channel=str(data.get("channel") or ""), ts=ts,

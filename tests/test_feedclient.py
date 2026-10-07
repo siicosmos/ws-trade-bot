@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from test_pipeline import _fresh_store, ConfigStub, TradingConfig  # noqa: E402
-from trader.ops import feedclient  # noqa: E402
+from consumer import feedclient  # noqa: E402
 
 
 class _FeedCfg:

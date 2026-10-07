@@ -13,7 +13,7 @@ class WebhookBatcher:
         self.lines = []
         self.lock = threading.Lock()
         if url:
-            from .supervise import supervised
+            from core.ops.supervise import supervised
 
             supervised("webhook-batcher", self._run, url)
             # buffered lines must survive the process: the last

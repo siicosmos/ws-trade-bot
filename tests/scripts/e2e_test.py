@@ -446,50 +446,53 @@ def run_settings_phase():
 
 
 def run_reader_status_phase():
-    print("\n=== PHASE F: reader channel control via portal ===")
+    print("\n=== PHASE F: reader heartbeat on the info server ===")
     cfg_path = os.path.join(tempfile.mkdtemp(), "config.yaml")
     db_path = os.path.join(tempfile.mkdtemp(), "trades.db")
     write_config(cfg_path, "notify")
+    # the reader heartbeats the info server (its alert source);
+    # reader knobs are config-file managed there
+    import yaml as _yaml
+    with open(cfg_path) as f:
+        cfg_raw = _yaml.safe_load(f)
+    cfg_raw["pipeline"]["role"] = "info"
+    cfg_raw["pipeline"]["auth_token"] = "info-token"
+    cfg_raw["reader"]["channel_marker"] = "player-alerts"
+    cfg_raw["consumers"] = []
+    with open(cfg_path, "w") as f:
+        _yaml.safe_dump(cfg_raw, f)
     proc, health = start_pipeline(cfg_path, db_path)
     try:
         base = _current_base()
+        hdr = {"X-Auth-Token": "info-token"}
         r = requests.post(
             f"{base}/api/reader_status",
-            json={"channel": "test-channel", "ok": True}, timeout=5,
+            json={"channel": "test-channel", "ok": True},
+            headers=hdr, timeout=5,
         ).json()
-        check("reader heartbeat returns config", r["channel_marker"] == "", str(r))
+        check("reader heartbeat returns config",
+              r["channel_marker"] == "player-alerts", str(r))
 
-        r = requests.post(
-            f"{base}/api/settings",
-            json={"reader": {"channel_marker": "player-alerts",
-                             "poll_interval": 0.75}},
-            timeout=5,
+        status = requests.get(
+            f"{base}/api/reader_status", headers=hdr, timeout=5,
+        ).json()
+        check("reader status shows the channel",
+              status["channel"] == "test-channel", str(status))
+        check("reader status shows desired marker",
+              status["desired"] == "player-alerts", str(status))
+        check("reader status shows heartbeat age",
+              status["age_seconds"] is not None, str(status))
+
+        # the info app has no trading routes
+        r = requests.get(f"{base}/api/positions", timeout=5)
+        check("info app has no trading routes", r.status_code == 404, str(r.status_code))
+
+        # the feed answers a token-authed head-only poll
+        r = requests.get(
+            f"{base}/api/feed",
+            headers={"X-Auth-Token": "nope"}, timeout=5,
         )
-        check("portal sets channel marker", r.status_code == 200, r.text[:200])
-
-        r = requests.post(
-            f"{base}/api/reader_status",
-            json={"channel": "test-channel", "ok": True}, timeout=5,
-        ).json()
-        check("reader receives new marker", r["channel_marker"] == "player-alerts", str(r))
-        check("reader receives new poll interval", r["poll_interval"] == 0.75, str(r))
-
-        summary = requests.get(f"{base}/api/summary", timeout=5).json()
-        check("summary shows reader watching", summary["reader"]["channel"] == "test-channel")
-        check("summary shows desired channel", summary["reader"]["desired"] == "player-alerts")
-        check("summary shows heartbeat age", summary["reader"]["age_seconds"] is not None)
-
-        r = requests.post(
-            f"{base}/api/settings",
-            json={"reader": {"channel_marker": ""}},
-            timeout=5,
-        )
-        check("marker can be cleared for follow mode", r.status_code == 200)
-        r = requests.post(
-            f"{base}/api/reader_status",
-            json={"channel": "whatever", "ok": True}, timeout=5,
-        ).json()
-        check("cleared marker reaches reader", r["channel_marker"] == "")
+        check("feed rejects a bad consumer token", r.status_code == 401, str(r.status_code))
     finally:
         stop(proc)
 

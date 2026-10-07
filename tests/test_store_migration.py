@@ -5,7 +5,7 @@ def test_old_db_gets_received_ts_column(tmp_path):
     # init, not on first write - /api/signals runs before any alert
     import sqlite3
 
-    from trader.store import Store
+    from core.store import Store
 
     db = tmp_path / "old.db"
     conn = sqlite3.connect(db)
@@ -28,7 +28,7 @@ def test_old_trades_table_gets_message_key(tmp_path):
     other trades additions."""
     import sqlite3
 
-    from trader.store import Store
+    from core.store import Store
 
     db = tmp_path / "old_trades.db"
     conn = sqlite3.connect(db)
@@ -64,7 +64,7 @@ def test_timestamp_expiry_keys_are_healed(tmp_path):
     the paper price matches the real account's quote."""
     import sqlite3
 
-    from trader.store import Store
+    from core.store import Store
 
     db = tmp_path / "ts_expiry.db"
     store = Store(str(db))
@@ -93,7 +93,7 @@ def test_timestamp_expiry_keys_merge_with_plain_date_rows(tmp_path):
     duplicate the position - the rows merge."""
     import sqlite3
 
-    from trader.store import Store
+    from core.store import Store
 
     db = tmp_path / "ts_expiry_merge.db"
     store = Store(str(db))

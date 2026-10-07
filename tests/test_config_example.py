@@ -1,6 +1,6 @@
 import os
 
-import trader.config as config
+import core.config as config
 
 EXAMPLE = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),

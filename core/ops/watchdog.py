@@ -44,7 +44,7 @@ def start_health_watchdog(
     process exits 1 so the .bat loop restarts it."""
     import requests
 
-    from .supervise import supervised
+    from core.ops.supervise import supervised
 
     _exit = _exit or os._exit
     state = {"fail_since": None}
@@ -87,7 +87,7 @@ def start_health_watchdog(
                 )
                 if webhook_url:
                     try:
-                        from .notify import notify_discord
+                        from core.ops.notify import notify_discord
 
                         notify_discord(
                             webhook_url,

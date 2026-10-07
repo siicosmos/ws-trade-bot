@@ -7,7 +7,7 @@ store."""
 
 import time
 
-from ..ws.ws_common import (
+from consumer.ws.ws_common import (
     _amount_opt,
     _quote_price,
     account_label,
@@ -83,7 +83,7 @@ class PaperLedger:
         no live-account counterpart, so the ws positions path
         can't price them - one batch snapshot covers every
         paper contract."""
-        from .quotes import ACTIVE_QUOTE_PROVIDER
+        from consumer.trading.quotes import ACTIVE_QUOTE_PROVIDER
 
         provider = ACTIVE_QUOTE_PROVIDER
         if provider is None or not hasattr(provider, "candidate_codes"):
@@ -145,7 +145,7 @@ class PaperLedger:
         if time.time() < self._chain_backoff_until:
             return quotes
         try:
-            from .executor import WealthsimpleExecutor
+            from consumer.trading.executor import WealthsimpleExecutor
 
             resolver = WealthsimpleExecutor(self.cfg, self.ws_account)
             # the account's own client - a fresh WealthsimpleV2
@@ -164,7 +164,7 @@ class PaperLedger:
                 )
                 if not sec_id:
                     continue
-                from .parser import Alert
+                from core.parser import Alert
 
                 alert = Alert(
                     action="SELL",

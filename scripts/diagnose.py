@@ -47,7 +47,7 @@ def main():
         sys.exit(1)
 
     try:
-        from trader.config import load_config
+        from core.config import load_config
 
         cfg = load_config(config_path)
         result(OK, f"config.yaml loads (mode={cfg.trading.mode}, "
@@ -62,7 +62,7 @@ def main():
 
     db_path = os.path.join(ROOT, "trades.db")
     try:
-        from trader.store import Store
+        from core.store import Store
 
         Store(db_path)
         result(OK, "trades.db opens (schema/migrations ok)")

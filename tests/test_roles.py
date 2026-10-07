@@ -1,5 +1,5 @@
-"""Role split: info server (reader ingest + feed, no trading)
-vs consumer app (the trading pipeline)."""
+"""App split: the info server (reader ingest + feed, no
+trading) vs the consumer app (the trading pipeline)."""
 
 import os
 import sys
@@ -11,10 +11,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pytest  # noqa: E402
 
 from test_pipeline import _fresh_store, ConfigStub, TradingConfig  # noqa: E402
-from trader.config import FeedConfig, load_config  # noqa: E402
-from trader.pipeline import ingest_alert  # noqa: E402
-from trader.trading.risk import RiskEngine  # noqa: E402
-from trader.ws.account import PaperAccount  # noqa: E402
+from core.config import FeedConfig, load_config  # noqa: E402
+from info.ingest import ingest_alert  # noqa: E402
+from consumer.trading.risk import RiskEngine  # noqa: E402
+from consumer.ws.account import PaperAccount  # noqa: E402
 
 
 # ---------------------------------------------------------------- config
@@ -130,20 +130,29 @@ def test_ingest_alert_empty():
 
 # ---------------------------------------------------------------- routes
 
-def _make_app_role(role, auth_token=""):
-    """Build an app in the given role with a stubbed config."""
+def _make_consumer_app(auth_token=""):
+    """Build the consumer (trading) app with a stubbed config."""
     store = _fresh_store()
     cfg = ConfigStub(TradingConfig(mode="paper"), auth_token=auth_token)
-    cfg.pipeline.role = role
     account = PaperAccount(cfg, store)
-    from trader.trading.executor import PaperExecutor
+    from consumer.trading.executor import PaperExecutor
 
     risk = RiskEngine(cfg, store, account)
     app = __import__(
-        "trader.web.server", fromlist=["create_app"]
+        "consumer.web", fromlist=["create_app"]
     ).create_app(
         cfg, store, risk, PaperExecutor(cfg, store, account), account
     )
+    return app, store
+
+
+def _make_info_app(auth_token=""):
+    """Build the info (alert source) app with a stubbed config."""
+    store = _fresh_store()
+    cfg = ConfigStub(TradingConfig(mode="notify"), auth_token=auth_token)
+    app = __import__(
+        "info.web", fromlist=["create_app"]
+    ).create_app(cfg, store)
     return app, store
 
 
@@ -151,8 +160,8 @@ def _headers(token):
     return {"X-Auth-Token": token, "Content-Type": "application/json"}
 
 
-def test_info_role_alert_route_ingests_only():
-    app, store = _make_app_role("info", auth_token="t")
+def test_info_app_alert_route_ingests_only():
+    app, store = _make_info_app(auth_token="t")
     client = app.test_client()
     r = client.post(
         "/alert",
@@ -164,8 +173,10 @@ def test_info_role_alert_route_ingests_only():
     assert store.search_history(kind="trades")[1] == 0
 
 
-def test_info_role_trading_routes_404():
-    app, _ = _make_app_role("info", auth_token="t")
+def test_info_app_has_no_trading_routes():
+    """The trading routes do not exist on the info app - the
+    executors, ledgers and positions live on consumer apps."""
+    app, _ = _make_info_app(auth_token="t")
     client = app.test_client()
     h = _headers("t")
     for method, path in (
@@ -179,11 +190,10 @@ def test_info_role_trading_routes_404():
     ):
         r = client.open(path, method=method, headers=h, json={})
         assert r.status_code == 404, path
-        assert "info server" in r.get_json()["error"]
 
 
-def test_consumer_role_alert_route_executes():
-    app, store = _make_app_role("consumer", auth_token="t")
+def test_consumer_app_alert_route_executes():
+    app, store = _make_consumer_app(auth_token="t")
     client = app.test_client()
     r = client.post(
         "/alert",
@@ -195,8 +205,8 @@ def test_consumer_role_alert_route_executes():
     assert store.search_history(kind="trades")[1]
 
 
-def test_consumer_role_trading_routes_work():
-    app, _ = _make_app_role("consumer", auth_token="t")
+def test_consumer_app_trading_routes_work():
+    app, _ = _make_consumer_app(auth_token="t")
     client = app.test_client()
     r = client.get("/api/positions", headers=_headers("t"))
     assert r.status_code == 200
@@ -210,16 +220,15 @@ def _tmp_config(tmp_path):
     return str(path)
 
 
-def _app_with_config(role, config_path, auth_token="t"):
+def _app_with_config(config_path, auth_token="t"):
     store = _fresh_store()
     cfg = ConfigStub(TradingConfig(mode="notify"), auth_token=auth_token)
-    cfg.pipeline.role = role
     account = PaperAccount(cfg, store)
-    from trader.trading.executor import PaperExecutor
+    from consumer.trading.executor import PaperExecutor
 
     risk = RiskEngine(cfg, store, account)
     app = __import__(
-        "trader.web.server", fromlist=["create_app"]
+        "consumer.web", fromlist=["create_app"]
     ).create_app(
         cfg, store, risk, PaperExecutor(cfg, store, account), account,
         config_path=config_path,
@@ -229,7 +238,7 @@ def _app_with_config(role, config_path, auth_token="t"):
 
 def test_mode_endpoint_persists_and_reports_restart(tmp_path):
     config_path = _tmp_config(tmp_path)
-    app, store, cfg = _app_with_config("consumer", config_path)
+    app, store, cfg = _app_with_config(config_path)
     client = app.test_client()
     r = client.post(
         "/api/mode", json={"mode": "paper"}, headers=_headers("t")
@@ -250,7 +259,7 @@ def test_mode_endpoint_persists_and_reports_restart(tmp_path):
 
 def test_mode_endpoint_restarts_via_callback(tmp_path):
     config_path = _tmp_config(tmp_path)
-    app, store, cfg = _app_with_config("consumer", config_path)
+    app, store, cfg = _app_with_config(config_path)
     restarted = []
     app.restart_pipeline = lambda: restarted.append(1)
     client = app.test_client()
@@ -266,7 +275,7 @@ def test_mode_endpoint_restarts_via_callback(tmp_path):
 
 def test_mode_endpoint_validation(tmp_path):
     config_path = _tmp_config(tmp_path)
-    app, store, cfg = _app_with_config("consumer", config_path)
+    app, store, cfg = _app_with_config(config_path)
     client = app.test_client()
     r = client.post(
         "/api/mode", json={"mode": "banana"}, headers=_headers("t")
@@ -281,7 +290,7 @@ def test_mode_endpoint_validation(tmp_path):
 
 def test_mode_endpoint_requires_admin(tmp_path):
     config_path = _tmp_config(tmp_path)
-    app, store, cfg = _app_with_config("consumer", config_path)
+    app, store, cfg = _app_with_config(config_path)
     client = app.test_client()
     r = client.post("/api/mode", json={"mode": "paper"})
     assert r.status_code == 401
@@ -291,7 +300,7 @@ def test_mode_endpoint_survives_missing_config(tmp_path):
     # a config path whose directory does not exist: the persist
     # fails, the endpoint reports 500 and the live mode stays
     app, store, cfg = _app_with_config(
-        "consumer", str(tmp_path / "nope" / "config.yaml")
+        str(tmp_path / "nope" / "config.yaml")
     )
     client = app.test_client()
     r = client.post(
@@ -306,11 +315,11 @@ def test_spx_levels_readonly_with_feed(tmp_path):
     cfg = ConfigStub(TradingConfig(mode="notify"), auth_token="t")
     cfg.feed = FeedConfig(url="http://info:8080", token="x")
     account = PaperAccount(cfg, store)
-    from trader.trading.executor import PaperExecutor
+    from consumer.trading.executor import PaperExecutor
 
     risk = RiskEngine(cfg, store, account)
     app = __import__(
-        "trader.web.server", fromlist=["create_app"]
+        "consumer.web", fromlist=["create_app"]
     ).create_app(
         cfg, store, risk, PaperExecutor(cfg, store, account), account
     )
@@ -329,11 +338,11 @@ def test_spx_levels_editable_without_feed():
     store = _fresh_store()
     cfg = ConfigStub(TradingConfig(mode="notify"), auth_token="t")
     account = PaperAccount(cfg, store)
-    from trader.trading.executor import PaperExecutor
+    from consumer.trading.executor import PaperExecutor
 
     risk = RiskEngine(cfg, store, account)
     app = __import__(
-        "trader.web.server", fromlist=["create_app"]
+        "consumer.web", fromlist=["create_app"]
     ).create_app(
         cfg, store, risk, PaperExecutor(cfg, store, account), account
     )
@@ -350,7 +359,7 @@ def test_spx_levels_editable_without_feed():
 def test_get_settings_includes_mode():
     store = _fresh_store()
     cfg = ConfigStub(TradingConfig(mode="paper"))
-    from trader.settings import get_settings
+    from consumer.settings import get_settings
 
     s = get_settings(cfg)
     assert s["trading"]["mode"] == "paper"

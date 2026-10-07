@@ -53,7 +53,7 @@ def test_protected_pids_walks_ancestors(monkeypatch):
     fake = _fake_psutil_module([me, launcher, shell], by_pid)
     monkeypatch.setitem(sys.modules, "psutil", fake)
 
-    from trader.ops.processes import _protected_pids
+    from core.ops.processes import _protected_pids
 
     assert _protected_pids(100) == {100, 50, 40}
 
@@ -81,7 +81,7 @@ def test_stale_cleanup_spares_own_venv_launcher(monkeypatch, tmp_path):
     monkeypatch.setitem(sys.modules, "psutil", fake)
     monkeypatch.setattr(os, "getpid", lambda: 100)
 
-    from trader.ops.processes import terminate_stale_instances
+    from core.ops.processes import terminate_stale_instances
 
     killed = terminate_stale_instances(script)
 
@@ -152,7 +152,7 @@ def test_role_split_instances_do_not_kill_each_other(
     monkeypatch.setitem(sys.modules, "psutil", fake)
     monkeypatch.setattr(os, "getpid", lambda: 100)
 
-    from trader.ops.processes import terminate_stale_instances
+    from core.ops.processes import terminate_stale_instances
 
     # the consumer starts (cwd = consumer/, -c config.yaml):
     # the info server resolves to a different config and must
@@ -180,7 +180,7 @@ def test_role_cleanup_matches_default_config_candidates(
     monkeypatch.setitem(sys.modules, "psutil", fake)
     monkeypatch.setattr(os, "getpid", lambda: 100)
 
-    from trader.ops.processes import terminate_stale_instances
+    from core.ops.processes import terminate_stale_instances
 
     killed = terminate_stale_instances(
         script,

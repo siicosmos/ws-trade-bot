@@ -5,8 +5,8 @@ from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from trader.store import Store
-from trader.trading.parser import parse_alert
+from core.store import Store
+from core.parser import parse_alert
 
 
 def _fresh_store():
@@ -117,11 +117,11 @@ def test_search_signals_filters():
 
 
 def test_history_endpoint():
-    from trader.config import (
+    from core.config import (
         AutoUpdateConfig, DiscordConfig, QuotesConfig, ReaderConfig,
         TradingConfig, WealthsimpleConfig,
     )
-    from trader.web.server import create_app
+    from consumer.web import create_app
 
     class Stub:
         def __init__(self):
@@ -217,11 +217,11 @@ def test_search_both_pagination():
 
 
 def test_history_endpoint_both():
-    from trader.config import (
+    from core.config import (
         AutoUpdateConfig, DiscordConfig, QuotesConfig, ReaderConfig,
         TradingConfig, WealthsimpleConfig,
     )
-    from trader.web.server import create_app
+    from consumer.web import create_app
 
     class Stub:
         def __init__(self):
@@ -278,7 +278,7 @@ def test_pipeline_trades_carry_the_signal_key():
     # and stay unlinked by design)
     import inspect
 
-    from trader import pipeline
+    from consumer import pipeline
 
     src = inspect.getsource(pipeline)
     calls = src.count("store.record_trade(")
