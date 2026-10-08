@@ -3602,12 +3602,15 @@ def test_startup_banner(tmp_path, capsys):
     origin.mkdir()
     (origin / "f.txt").write_text("x\n")
     # hermetic identity: the commit must not depend on the
-    # machine's global git config
+    # machine's global git config (an empty file - /dev/null is
+    # not a valid GIT_CONFIG_GLOBAL value on windows)
+    empty_global = tmp_path / "empty.gitconfig"
+    empty_global.write_text("")
     git_env = dict(
         os.environ,
         GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t",
         GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t",
-        HOME=str(origin), GIT_CONFIG_GLOBAL="/dev/null",
+        HOME=str(origin), GIT_CONFIG_GLOBAL=str(empty_global),
     )
     subprocess.run(
         ["git", "init", "-q", "-b", "main"], cwd=str(origin),

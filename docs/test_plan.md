@@ -16,6 +16,10 @@ Run the automated suite with:
 .venv/bin/python -m pytest tests -q -m essential   # core behavior
 ```
 
+On windows the interpreter lives at `.venv\Scripts\python.exe`
+(every `.venv/bin/...` command above becomes
+`.venv\Scripts\...`).
+
 minimum ⊂ essential ⊂ full: the minimum set proves the install is
 alive (configs load, alerts parse, settings save); essential adds
 the core behavior modules (parser, settings, reader, stops, users,

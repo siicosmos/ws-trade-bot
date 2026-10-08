@@ -14,8 +14,9 @@ the interactions that have historically broken:
   - negative-zero P&L rendering ("+$-0.00")
 
 Usage:  python tests/scripts/ui_test.py
-Needs:  chrome/chromium on PATH (or CHROME_BIN=...). Skips
-with a note when no browser is available.
+Needs:  chrome/chromium/edge - on PATH, in its standard install
+        location (windows), or via CHROME_BIN. Skips with a note
+        when no browser is available.
 """
 
 import http.server
@@ -390,6 +391,19 @@ def find_chrome():
         path = shutil.which(name)
         if path:
             return path
+    # windows installs are not on PATH - probe the standard
+    # locations (edge is chromium-based and runs headless too)
+    for path in (
+        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+        r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+        os.path.expandvars(
+            r"%LocalAppData%\Google\Chrome\Application\chrome.exe"
+        ),
+        r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+        r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+    ):
+        if os.path.exists(path):
+            return path
     return None
 
 
@@ -469,57 +483,6 @@ def build_page():
     if '"mode": "notify"' not in html:
         raise RuntimeError("canned data missing from page")
     return html.replace("</body>", HARNESS + "</body>")
-
-
-def _wsl():
-    try:
-        with open("/proc/version", encoding="utf-8") as f:
-            return "microsoft" in f.read().lower()
-    except OSError:
-        return False
-
-
-def _file_url(path):
-    # a windows chrome.exe (wsl) cannot open a wsl /tmp path -
-    # translate a /mnt/<drive>/... path to a drive-letter url
-    if _wsl() and path.startswith("/mnt/"):
-        drive, rest = path[5], path[6:]
-        return "file:///{}/:{}".format(drive.upper(), rest)
-    return "file://" + path
-
-
-def _win_temp():
-    # the windows %TEMP% path (and its /mnt view) - empty when the
-    # windows side cannot be reached
-    p = subprocess.run(
-        ["powershell.exe", "-NoProfile", "-Command",
-         "[IO.Path]::GetTempPath()"],
-        capture_output=True, text=True, timeout=60,
-    )
-    win = p.stdout.strip().rstrip("\\")
-    if not win or not win[1:2] == ":":
-        return "", None
-    drive, rest = win[0].lower(), win[3:].replace("\\", "/")
-    return win, "/mnt/{}/{}".format(drive, rest)
-
-
-def _write_win_file(win_path, data):
-    # the page must be written BY a windows process: a file created
-    # from wsl on a /mnt mount races the 9p metadata sync and the
-    # windows chrome intermittently fails it with
-    # ERR_FILE_NOT_FOUND. the payload travels base64 (pure ascii -
-    # a raw utf-8 stdin gets mojibake'd by the console decoder,
-    # which swallows bytes inside js strings and breaks the page)
-    import base64
-    p = subprocess.run(
-        ["powershell.exe", "-NoProfile", "-Command",
-         '$b64 = [Console]::In.ReadToEnd();'
-         '[IO.File]::WriteAllBytes(\'' + win_path + '\','
-         '[Convert]::FromBase64String($b64))'],
-        input=base64.b64encode(data).decode("ascii"),
-        capture_output=True, text=True, timeout=120,
-    )
-    return p.returncode == 0
 
 
 def main():

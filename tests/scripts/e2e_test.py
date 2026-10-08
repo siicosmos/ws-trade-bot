@@ -12,7 +12,11 @@ import yaml
 ROOT = os.path.abspath(
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
 )
-PYTHON = os.path.join(ROOT, ".venv", "bin", "python")
+# the venv layout differs per OS (Scripts\python.exe on windows)
+if os.name == "nt":
+    PYTHON = os.path.join(ROOT, ".venv", "Scripts", "python.exe")
+else:
+    PYTHON = os.path.join(ROOT, ".venv", "bin", "python")
 if not os.path.exists(PYTHON):
     PYTHON = sys.executable
 

@@ -595,14 +595,18 @@ warning modal, and a typed `LIVE` confirmation for live mode.
 
 ```bash
 python -m venv .venv
+# windows: .venv\Scripts\python -m pip install -r requirements.txt
 .venv/bin/pip install -r requirements.txt
 cp config/consumer.config.yaml config.yaml   # keep host 127.0.0.1 for a dev stub
-.venv/bin/python run.py -c config.yaml
+.venv/bin/python run.py -c config.yaml       # windows: .venv\Scripts\python run.py -c config.yaml
 ```
 
-The pipeline runs fine on Linux (the reader does not — it needs the
-Windows UIA). A dev config with `mode: notify` + `paper.enabled:
-true` on 127.0.0.1 exercises the whole pipeline without real orders.
+The venv layout differs per OS: `.venv/bin/` on linux/macOS,
+`.venv\Scripts\` on windows — every `.venv/bin/...` command below
+becomes `.venv\Scripts\...` there. The pipeline runs fine on Linux
+and Windows (the reader does not — it needs the Windows UIA). A dev
+config with `mode: notify` + `paper.enabled: true` on 127.0.0.1
+exercises the whole pipeline without real orders.
 
 ## Testing
 
@@ -620,10 +624,14 @@ minimum ⊂ essential ⊂ full:
 # full: everything (~490 tests, stubs for the reader's UIA) - the default
 .venv/bin/python -m pytest tests -q --ignore=tests/scripts
 
+# windows: same commands with .venv\Scripts\python (the suite runs
+# on any OS; the reader tests stub the UIA)
+
 # full-stack black-box E2E (boots the real server on a temp config/db)
 .venv/bin/python tests/scripts/e2e_test.py
 
-# headless-Chrome dashboard smoke test (needs chrome on PATH)
+# headless-Chrome dashboard smoke test (chrome/edge on PATH or in
+# its standard install location, or set CHROME_BIN)
 .venv/bin/python tests/scripts/ui_test.py
 
 # JS syntax check after editing the dashboard (needs node)
