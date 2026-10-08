@@ -37,8 +37,7 @@ def test_role_info_and_consumers_parsed(tmp_path):
     path = _write_cfg(
         tmp_path,
         """
-pipeline:
-  role: info
+info:
   auth_token: t
 consumers:
   - label: owner
@@ -57,8 +56,10 @@ consumers:
     assert cfg.consumers[1].push_url == ""
 
 
-def test_role_invalid_falls_back_to_consumer(tmp_path):
-    path = _write_cfg(tmp_path, "pipeline:\n  role: banana\n")
+def test_unknown_role_section_defaults_to_consumer(tmp_path):
+    # an unrecognized section name is not a role - the consumer
+    # default applies
+    path = _write_cfg(tmp_path, "banana:\n  role: info\n")
     assert load_config(path).pipeline.role == "consumer"
 
 

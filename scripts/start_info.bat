@@ -21,8 +21,6 @@ if errorlevel 1 (
   )
 )
 
-rem one-time rename: the per-role config name
-if not exist info.config.yaml if exist config.yaml ren config.yaml info.config.yaml
 
 if not exist info.config.yaml (
   echo info.config.yaml missing - copy ..\config\info.config.yaml here

@@ -21,8 +21,6 @@ if errorlevel 1 (
   )
 )
 
-rem one-time rename: the per-role config name
-if not exist consumer.config.yaml if exist config.yaml ren config.yaml consumer.config.yaml
 
 if not exist consumer.config.yaml (
   echo consumer.config.yaml missing - copy ..\config\consumer.config.yaml here

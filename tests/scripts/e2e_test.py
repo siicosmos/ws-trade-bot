@@ -36,17 +36,17 @@ def check(name, condition, detail=""):
         print(f"  FAIL  {name}  {detail}")
 
 
-def write_config(path, mode, auth_token="", **trading):
+def write_config(path, mode, auth_token="", role="consumer", **trading):
     global _phase_seq
     _phase_seq += 1
     cfg = {
-        "pipeline": {
+        role: {
             "host": "127.0.0.1",
             "port": PORT + _phase_seq,
             "auth_token": auth_token,
         },
         "reader": {},
-        "discord": {"webhook_url": ""},
+        "discord": {"trade_alert_webhook_url": ""},
         "auto_update": {"enabled": False},
         "quotes": {"provider": "ws"},
         "trading": {"mode": mode, **trading},
@@ -454,14 +454,12 @@ def run_reader_status_phase():
     print("\n=== PHASE F: reader heartbeat on the info server ===")
     cfg_path = os.path.join(tempfile.mkdtemp(), "config.yaml")
     db_path = os.path.join(tempfile.mkdtemp(), "trades.db")
-    write_config(cfg_path, "notify")
+    write_config(cfg_path, "notify", role="info", auth_token="info-token")
     # the reader heartbeats the info server (its alert source);
     # reader knobs are config-file managed there
     import yaml as _yaml
     with open(cfg_path) as f:
         cfg_raw = _yaml.safe_load(f)
-    cfg_raw["pipeline"]["role"] = "info"
-    cfg_raw["pipeline"]["auth_token"] = "info-token"
     cfg_raw["reader"]["channels"] = ["player-alerts"]
     cfg_raw["consumers"] = []
     with open(cfg_path, "w") as f:

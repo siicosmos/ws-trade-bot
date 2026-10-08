@@ -93,24 +93,14 @@ def test_examples_load_through_core_config():
         assert cfg.pipeline.role in ("consumer", "info")
 
 
-def test_legacy_pipeline_section_still_loads(tmp_path):
-    # legacy configs: pipeline: with an explicit role: field
-    path = tmp_path / "legacy.yaml"
-    path.write_text(
-        "pipeline:\n"
-        "  role: info\n"
-        "  port: 9999\n"
-    )
-    cfg = config.load_config(str(path))
-    assert cfg.pipeline.role == "info"
-    assert cfg.pipeline.port == 9999
-
-    path.write_text(
-        "pipeline:\n"
-        "  port: 9998\n"
-    )
+def test_missing_role_section_defaults_to_consumer(tmp_path):
+    # a config with neither info: nor consumer: (e.g. a bare test
+    # yaml) loads as the consumer role with default host/port
+    path = tmp_path / "bare.yaml"
+    path.write_text("trading:\n  mode: paper\n")
     cfg = config.load_config(str(path))
     assert cfg.pipeline.role == "consumer"
+    assert cfg.pipeline.port == 8080
 
 
 def test_section_key_wins_over_role_field(tmp_path):
@@ -124,25 +114,6 @@ def test_section_key_wins_over_role_field(tmp_path):
     assert cfg.pipeline.role == "info"
     assert cfg.pipeline.port == 9997
 
-
-def test_run_db_migration(tmp_path):
-    import run
-
-    db = tmp_path / "consumer.trades.db"
-    (tmp_path / "trades.db").write_text("old")
-    (tmp_path / "trades.db-wal").write_text("wal")
-    run.migrate_legacy_db(str(db))
-    assert db.read_text() == "old"
-    assert (tmp_path / "consumer.trades.db-wal").read_text() == "wal"
-    assert not os.path.exists(tmp_path / "trades.db")
-    # a second run is a no-op
-    run.migrate_legacy_db(str(db))
-
-    # explicit old name or missing old file: untouched
-    other = tmp_path / "sub" / "x.trades.db"
-    (tmp_path / "sub").mkdir()
-    run.migrate_legacy_db(str(tmp_path / "sub" / "trades.db"))
-    assert not other.exists()
 
 def test_account_type_loaded_and_normalized(tmp_path):
     path = tmp_path / "c.yaml"

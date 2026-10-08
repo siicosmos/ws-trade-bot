@@ -579,9 +579,6 @@ def _persist(cfg, config_path):
             cfg.discord, field, ""
         ):
             dc[field] = getattr(cfg.discord, field)
-    # the legacy key names are obsolete - drop them on save
-    dc.pop("pipeline_log_webhook_url", None)
-    dc.pop("webhook_url", None)
 
     ws = raw.setdefault("wealthsimple", {})
     ws["accounts"] = [

@@ -139,10 +139,10 @@ All wrapped by `core/ops/supervise.py` (crash → log + Discord notice
 The consumer's `trading.mode` selects its execution path — switched
 live from the dashboard's **mode slider** (persist + app restart; the
 info server and other consumers are unaffected). `paper.enabled: true`
-still adds paper execution *alongside* notify mode for legacy configs.
-Paper accounts are seeded once from the live value and positions
-(`seed_paper_accounts`); `paper.mirror: true` copies your own real
-fills into the paper ledger at actual prices.
+adds paper execution *alongside* notify mode (phone notifications +
+simulated fills). Paper accounts are seeded once from the live value
+and positions (`seed_paper_accounts`); `paper.mirror: true` copies
+your own real fills into the paper ledger at actual prices.
 
 | mode | execution | ledger | notifications |
 |---|---|---|---|
@@ -390,8 +390,8 @@ the role's config; the rest needs a restart.
 
 ### `consumer` / `info` — role + web server
 The web-server section is named for the role (`consumer:` in the
-consumer config, `info:` in the info config — legacy configs use
-`pipeline:` with an explicit `role:` field, still loaded):
+consumer config, `info:` in the info config — the section key IS
+the role; a config with neither defaults to consumer):
 `host` (0.0.0.0), `port` (8080 default), `auth_token` (**required**
 when binding non-localhost — the server refuses to start otherwise;
 the dashboard password and the reader's credential),
@@ -463,10 +463,9 @@ reader watches the file's mtime and restarts to apply an edit.
 
 ### `discord` — webhooks
 `notify` (master switch), `trade_alert_webhook_url` (trade alerts to
-your phone; legacy configs' `webhook_url` still reads),
-`consumer_log_webhook_url` (this app's log tail; legacy configs'
-`pipeline_log_webhook_url` still reads), `update_webhook_url`
-(empty = off — no fallback webhook anywhere). The reader's webhooks
+your phone), `consumer_log_webhook_url` (this app's log tail),
+`update_webhook_url` (empty = off — no fallback webhook anywhere).
+The reader's webhooks
 (`reader_log_webhook_url`, `raw_alert_webhook_url`,
 `update_webhook_url`) live in `reader/reader.config.yaml`; the info
 server only uses `consumer_log_webhook_url` + `update_webhook_url`.

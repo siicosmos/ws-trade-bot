@@ -10,8 +10,8 @@
 
 # ---------------------------------------------------------------------------
 # info - this app's web server: reader ingest + alert feed + the
-# admin dashboard. the section name IS the role (legacy configs
-# use pipeline: with an explicit role: field - both load)
+# admin dashboard. the section name IS the role (the consumer's
+# config uses consumer:)
 # ---------------------------------------------------------------------------
 info:
   host: "0.0.0.0"            # what to bind to; 127.0.0.1 = this PC only

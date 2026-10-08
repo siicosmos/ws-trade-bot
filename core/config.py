@@ -22,14 +22,12 @@ class PipelineConfig:
 @dataclass
 class DiscordConfig:
     # this app's log tail (consumer.log / info.log) posted to
-    # discord in batches; empty = off. legacy configs call it
-    # pipeline_log_webhook_url - still read as a fallback
+    # discord in batches; empty = off
     consumer_log_webhook_url: str = ""
     update_webhook_url: str = ""
     # send parsed alerts to the webhook
     notify: bool = True
-    # trade alerts to your phone (consumer). legacy configs call
-    # it webhook_url - still read as a fallback
+    # trade alerts to your phone (consumer)
     trade_alert_webhook_url: str = ""
 
 
@@ -345,11 +343,11 @@ def load_config(path: str) -> Config:
     with open(path, "r") as f:
         raw = yaml.safe_load(f) or {}
 
-    # new-style configs name the web-server section for the role
-    # (consumer: / info: - the section key IS the role); legacy
-    # configs use pipeline: with an explicit role: field
+    # the web-server section is named for the role (consumer: /
+    # info: - the section key IS the role); a config with neither
+    # defaults to the consumer role with default host/port
     pipeline_raw = None
-    role = None
+    role = "consumer"
     for key, section_role in (("info", "info"), ("consumer", "consumer")):
         section = raw.get(key)
         if isinstance(section, dict) and section:
@@ -357,16 +355,14 @@ def load_config(path: str) -> Config:
             role = section_role
             break
     if pipeline_raw is None:
-        pipeline_raw = raw.get("pipeline") or {}
+        pipeline_raw = {}
     trading_raw = raw.get("trading") or {}
     ws_raw = raw.get("wealthsimple") or {}
     parser_raw = raw.get("parser") or {}
 
-    # role: consumer = the trading app (default - an existing
-    # config keeps today's behavior); info = the alert source
-    # server (reader ingest + feed, no trading)
-    if role is None:
-        role = str(_get(pipeline_raw, "role", "consumer")).lower()
+    # role: consumer = the trading app; info = the alert source
+    # server (reader ingest + feed, no trading) - the section key
+    # already decided (missing section = consumer default)
     if role not in ("info", "consumer"):
         role = "consumer"
 
@@ -394,8 +390,6 @@ def load_config(path: str) -> Config:
     webhook = (
         os.environ.get("DISCORD_WEBHOOK_URL")
         or str(_get(discord_raw, "trade_alert_webhook_url", ""))
-        # legacy key name - still read as a fallback
-        or str(_get(discord_raw, "webhook_url", ""))
     )
 
     mode = str(_get(trading_raw, "mode", "notify")).lower()
@@ -492,11 +486,7 @@ def load_config(path: str) -> Config:
             notify=bool(_get(discord_raw, "notify", True)),
             trade_alert_webhook_url=webhook,
             consumer_log_webhook_url=str(
-                _get(
-                    discord_raw,
-                    "consumer_log_webhook_url",
-                    _get(discord_raw, "pipeline_log_webhook_url", ""),
-                )
+                _get(discord_raw, "consumer_log_webhook_url", "")
             ),
             update_webhook_url=str(
                 _get(discord_raw, "update_webhook_url", "")

@@ -19,20 +19,6 @@ from core.config import load_config
 ROOT = os.path.dirname(os.path.abspath(__file__))
 
 
-def migrate_legacy_db(db_path):
-    """One-time rename: trades.db -> <role>.trades.db (the
-    per-role db naming). Fires only when the new name is free and
-    the old file is still next to it."""
-    full = os.path.abspath(db_path)
-    old = os.path.join(os.path.dirname(full), "trades.db")
-    if full == old or os.path.exists(full) or not os.path.exists(old):
-        return
-    for suffix in ("", "-wal", "-shm"):
-        if os.path.exists(old + suffix):
-            os.rename(old + suffix, full + suffix)
-    print(f"migrated {old} -> {full}")
-
-
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("-c", "--config", default="config.yaml")
@@ -57,7 +43,6 @@ def main():
     # info.trades.db (an explicit --db always wins)
     if not args.db:
         args.db = f"{role}.trades.db"
-        migrate_legacy_db(args.db)
 
     if role == "info":
         from info.server import main as info_main

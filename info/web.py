@@ -398,8 +398,6 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
                               "update_webhook_url"):
                     if f"discord.{field}" in applied:
                         d[field] = getattr(cfg.discord, field)
-                # the legacy key name is obsolete - drop it on save
-                d.pop("pipeline_log_webhook_url", None)
                 from core.config import dump_yaml_config
 
                 dump_yaml_config(raw, config_path)

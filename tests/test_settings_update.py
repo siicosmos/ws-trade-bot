@@ -60,12 +60,12 @@ def test_apply_settings_updates_memory_and_file():
     with open(cfg_path, "w") as f:
         f.write(
             "trading:\n  mode: paper\n  risk_per_trade_pct: 5\n"
-            "discord:\n  webhook_url: \"x\"\n"
+            "discord:\n  trade_alert_webhook_url: \"x\"\n"
         )
     from core.config import load_config
 
     cfg = load_config(cfg_path)
-    assert cfg.discord.trade_alert_webhook_url == "x"  # legacy key fallback
+    assert cfg.discord.trade_alert_webhook_url == "x"
 
     applied, errors = apply_settings(
         cfg, {"trading": {"risk_per_trade_pct": 7}}, cfg_path
@@ -78,7 +78,6 @@ def test_apply_settings_updates_memory_and_file():
 
     reloaded = load_config(cfg_path)
     assert reloaded.trading.risk_per_trade_pct == 7
-    # the legacy key survives the round-trip through the new name
     assert reloaded.discord.trade_alert_webhook_url == "x"
     assert reloaded.trading.mode == "paper"
     os.unlink(cfg_path)
@@ -720,25 +719,6 @@ def test_all_webhooks_editable(tmp_path):
     assert errors2 and "https" in errors2[0]
 
 
-def test_legacy_pipeline_log_webhook_key_still_reads(tmp_path):
-    """configs written before the rename keep working: the
-    pipeline_log_webhook_url value feeds consumer_log_webhook_url."""
-    from core.config import load_config
-
-    cfg_path = tmp_path / "config.yaml"
-    cfg_path.write_text(
-        "discord:\n"
-        "  pipeline_log_webhook_url: "
-        "\"https://discord.com/api/webhooks/legacy\"\n",
-        encoding="utf-8",
-    )
-    cfg = load_config(str(cfg_path))
-    assert (
-        cfg.discord.consumer_log_webhook_url
-        == "https://discord.com/api/webhooks/legacy"
-    )
-
-
 def test_paper_settings_roundtrip(tmp_path):
     from core.config import load_config
     from consumer.settings import get_settings, apply_settings
@@ -1351,56 +1331,18 @@ def test_paper_adjust_switches_holding_type():
         "SPX-2026-10-16-7620-P"]
 
 
-def test_trade_alert_webhook_new_key_and_legacy_fallback(tmp_path):
-    """the renamed trade_alert_webhook_url parses directly; configs
-    written before the rename keep working via webhook_url."""
+def test_trade_alert_webhook_url_parses(tmp_path):
+    """the renamed trade_alert_webhook_url key parses directly."""
     from core.config import load_config
 
-    new_path = tmp_path / "new.yaml"
-    new_path.write_text(
+    path = tmp_path / "new.yaml"
+    path.write_text(
         "discord:\n"
         "  trade_alert_webhook_url: "
         "\"https://discord.com/api/webhooks/new\"\n",
         encoding="utf-8",
     )
     assert (
-        load_config(str(new_path)).discord.trade_alert_webhook_url
+        load_config(str(path)).discord.trade_alert_webhook_url
         == "https://discord.com/api/webhooks/new"
-    )
-
-    legacy_path = tmp_path / "legacy.yaml"
-    legacy_path.write_text(
-        "discord:\n"
-        "  webhook_url: \"https://discord.com/api/webhooks/old\"\n",
-        encoding="utf-8",
-    )
-    assert (
-        load_config(str(legacy_path)).discord.trade_alert_webhook_url
-        == "https://discord.com/api/webhooks/old"
-    )
-
-
-def test_settings_save_migrates_legacy_trade_webhook_key(tmp_path):
-    """a settings save rewrites the legacy webhook_url key to
-    trade_alert_webhook_url - the obsolete name does not survive."""
-    from core.config import load_config
-
-    from consumer.settings import apply_settings
-
-    cfg_path = tmp_path / "config.yaml"
-    cfg_path.write_text(
-        "trading:\n  mode: notify\n"
-        "discord:\n"
-        "  webhook_url: \"https://discord.com/api/webhooks/old\"\n",
-        encoding="utf-8",
-    )
-    cfg = load_config(str(cfg_path))
-    applied, errors = apply_settings(
-        cfg, {"trading": {"risk_per_trade_pct": 7}}, str(cfg_path)
-    )
-    assert errors == []
-    text = cfg_path.read_text(encoding="utf-8")
-    assert "trade_alert_webhook_url" in text
-    assert "webhook_url:" not in text.replace(
-        "trade_alert_webhook_url:", ""
     )

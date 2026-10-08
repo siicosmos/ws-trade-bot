@@ -29,8 +29,7 @@ paper:
 
 # ---------------------------------------------------------------------------
 # consumer - this app's web server: the dashboard + the /alert route.
-# the section name IS the role (legacy configs use pipeline: with an
-# explicit role: field - both load)
+# the section name IS the role (the info server's config uses info:)
 # ---------------------------------------------------------------------------
 consumer:
   host: "0.0.0.0"            # what to bind to; 127.0.0.1 = this PC only
@@ -84,7 +83,6 @@ discord:
   # (the settings "notify" checkbox)
   notify: true
   trade_alert_webhook_url: "YOUR_PRIVATE_SERVER_WEBHOOK_URL"  # trade alerts to your phone
-                                # (legacy configs' webhook_url still reads)
   consumer_log_webhook_url: ""  # this app's log tail (consumer.log) posted
                                 # to discord; empty = off
   update_webhook_url: ""        # app update/restart notices; empty = off
