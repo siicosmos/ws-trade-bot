@@ -1712,3 +1712,29 @@ def test_paper_adjust_type_switch_and_cash_pools():
     # the card's cash line renders both pools natively
     assert "a.paper_cash_usd" in js
     assert 'fmtMoney(Math.max(0, a.paper_cash_usd)) + " usd"' in js
+
+
+def test_settings_save_refreshes_form_and_touch_guard():
+    # the save worked but the form kept showing the pre-save
+    # numbers (the poll-driven re-render is skipped while the
+    # modal is open) - a successful save now re-renders the form
+    import consumer.dashboard as dash
+
+    js = dash.DASHBOARD_JS
+    assert "renderSettings((lastPayload && lastPayload.settings)" in js
+    # a scroll gesture starting on the dim backdrop fired a click
+    # at touchend and closed open popups "by themselves" on phones
+    assert "backdropTouchMoved" in js
+    html = dash.DASHBOARD_HTML
+    assert "!backdropTouchMoved" in html
+
+    # the info server: same two fixes on its own assets
+    info_root = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "info", "static",
+    )
+    ijs = open(os.path.join(info_root, "info.js")).read()
+    ihtml = open(os.path.join(info_root, "info.html")).read()
+    assert "loadSettings();" in ijs.split("async function saveSettings")[1]
+    assert "backdropTouchMoved" in ijs
+    assert "!backdropTouchMoved" in ihtml

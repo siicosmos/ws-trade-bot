@@ -101,7 +101,7 @@
     </div>
   </div>
 </div>
-<div id="settingsBackdrop" onclick="if(event.target===this) requestCloseSettings()">
+<div id="settingsBackdrop" onclick="if(event.target===this && !backdropTouchMoved) requestCloseSettings()">
   <div id="settingsPanel">
     <div id="settingsHead"><span>Settings</span><button id="settingsClose" class="btn" onclick="requestCloseSettings()">&#215;</button></div>
     <div id="settingsScroll"><div id="settings" class="card"></div></div>
@@ -111,7 +111,7 @@
     </div>
   </div>
 </div>
-<div id="paperSettingsBackdrop" onclick="if(event.target===this) closePaperSettings()" style="display:none">
+<div id="paperSettingsBackdrop" onclick="if(event.target===this && !backdropTouchMoved) closePaperSettings()" style="display:none">
   <div id="paperSettingsPanel">
     <div id="paperSettingsHead"><span id="paperSettingsTitle">paper account</span><button id="paperSettingsClose" class="btn" onclick="closePaperSettings()">&#215;</button></div>
     <div id="paperSettingsScroll"><div id="paperSettingsBody" class="card"></div></div>

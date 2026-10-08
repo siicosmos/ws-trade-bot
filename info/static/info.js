@@ -4,6 +4,12 @@
 // the consumer dashboard (clock, reader line, git badge).
 "use strict";
 
+// a scroll gesture on a modal's dim backdrop must not close it
+// (see the consumer dashboard for the same guard)
+let backdropTouchMoved = false;
+document.addEventListener("touchstart", function() { backdropTouchMoved = false; }, {passive: true});
+document.addEventListener("touchmove", function() { backdropTouchMoved = true; }, {passive: true});
+
 let lastRefresh = null;
 
 // the write routes (levels editor, settings) are token-guarded -
@@ -341,8 +347,10 @@ async function saveSettings() {
   const r = await jpost("/api/settings", payload);
   const d = await r.json().catch(() => ({}));
   if (r.ok && d.status === "ok") {
-    lastSettings = d;
     setSettingsDirty(false);
+    // re-fetch + re-render - the form would otherwise keep
+    // showing the pre-save numbers
+    loadSettings();
     const msg = document.getElementById("settings-msg");
     if (msg) msg.textContent = "Saved";
     setTimeout(function () {

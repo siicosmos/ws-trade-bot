@@ -1042,6 +1042,13 @@ document.addEventListener("keydown", function(e) {
   if (sp && sp.style.display === "flex") requestCloseSettings();
 });
 
+// a scroll gesture starting on a modal's dim backdrop fires a
+// click at touchend (small movements do not cancel the tap) -
+// that closed open popups "by themselves" on touch screens
+let backdropTouchMoved = false;
+document.addEventListener("touchstart", function() { backdropTouchMoved = false; }, {passive: true});
+document.addEventListener("touchmove", function() { backdropTouchMoved = true; }, {passive: true});
+
 let lastRefresh = null;
 
 let showIgnored = true;
@@ -2018,7 +2025,11 @@ async function saveSettings() {
     document.getElementById("settings-save").textContent = "Saved";
     setTimeout(() => document.getElementById("settings-save").textContent = "Save", 1500);
     setSettingsDirty(false);
-    load();
+    await load();
+    // the poll-driven re-render is skipped while the modal is
+    // open - without this the form keeps showing the pre-save
+    // numbers and the save looks like it failed
+    renderSettings((lastPayload && lastPayload.settings) || lastSettings);
   }
 }
 
