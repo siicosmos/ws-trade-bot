@@ -233,7 +233,8 @@ def process_alert(
         cfg.discord.webhook_url, alert, sizing=exec_sizing,
         correction=correction, mismatch=mismatch,
         prefix=f"[{executor.mode.upper()}] ", extra_fields=extra,
-        ok=result.ok,
+        # the box color follows the action - sells are red, buys
+        # green - the result field carries the outcome
     )
 
     return {
