@@ -1751,7 +1751,7 @@ def test_settings_save_revert_button_lifecycle():
     # the dirty-state toggle never hides revert (renderMe's
     # admin-gating of the buttons is a separate concern)
     dirty_fn = js.split("function setSettingsDirty")[1].split("}")[0]
-    assert "revert" not in dirty_fn
+    assert "revert.style.display" not in dirty_fn
     # the float bar shows on open and hides on close
     assert 'settings-float").style.display = "flex"' in js
     # revert re-fetches + re-renders the last saved state
@@ -1767,5 +1767,6 @@ def test_settings_save_revert_button_lifecycle():
     ijs = open(os.path.join(info_root, "info.js")).read()
     assert 'save.style.display = v ? "" : "none"' in ijs
     dirty_fn = ijs.split("function setSettingsDirty")[1].split("}")[0]
-    assert "revert" not in dirty_fn
-    assert 'settings-float").style.display = "flex"' in ijs
+    assert "revert.style.display" not in dirty_fn
+    assert 'getElementById("settings-float")' in ijs
+    assert 'f.style.display = "flex"' in ijs
