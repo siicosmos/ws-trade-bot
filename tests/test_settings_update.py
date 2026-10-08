@@ -375,52 +375,6 @@ def test_updater_up_to_date_no_restart():
         up._git = original
 
 
-def test_reader_settings_apply_and_persist():
-    fd, cfg_path = tempfile.mkstemp(suffix=".yaml")
-    os.close(fd)
-    with open(cfg_path, "w") as f:
-        f.write(
-            "reader:\n"
-            "  pipeline_url: http://localhost:8080/alert\n"
-            "  auth_token: secret123\n"
-        )
-    cfg = ConfigStub(TradingConfig(mode="notify"))
-
-    applied, errors = apply_settings(
-        cfg,
-        {"reader": {
-            "channel_marker": "🚨│player-alerts",
-            "poll_interval": 0.75,
-            "max_items": 60,
-        }},
-        cfg_path,
-    )
-    assert errors == []
-    assert cfg.reader.channel_marker == "🚨│player-alerts"
-    assert cfg.reader.poll_interval == 0.75
-    assert cfg.reader.max_items == 60
-
-    from core.config import load_config
-
-    reloaded = load_config(cfg_path)
-    assert reloaded.reader.channel_marker == "🚨│player-alerts"
-    assert reloaded.reader.pipeline_url == "http://localhost:8080/alert"
-    assert reloaded.reader.auth_token == "secret123"
-    os.unlink(cfg_path)
-
-
-def test_reader_settings_validation():
-    cfg = ConfigStub(TradingConfig(mode="notify"))
-    applied, errors = apply_settings(
-        cfg, {"reader": {"poll_interval": 0.01}}
-    )
-    assert errors
-    applied, errors = apply_settings(
-        cfg, {"reader": {"max_items": 100000}}
-    )
-    assert errors
-
-
 def test_reader_status_endpoints():
     # the reader heartbeats the info server (its alert source).
     # reader settings live in the reader's own yaml - the
@@ -556,43 +510,6 @@ def test_account_settings_validation():
     personal = [a for a in cfg.wealthsimple.accounts
                 if a.label == "Personal"][0]
     assert personal.max_contracts_per_trade == 3
-
-
-def test_reader_channels_setting(tmp_path):
-    import os
-    import yaml
-
-    from core.config import load_config
-    from consumer.settings import apply_settings, get_settings
-
-    cfg_path = tmp_path / "config.yaml"
-    with open(cfg_path, "w") as f:
-        f.write("reader:\n  poll_interval: 0.5\n")
-    cfg = load_config(str(cfg_path))
-    assert cfg.reader.channels == []
-
-    applied, errors = apply_settings(
-        cfg,
-        {"reader": {"channels": ["Test-Alerts", "player-alerts"]}},
-        str(cfg_path),
-    )
-    assert not errors, errors
-    assert cfg.reader.channels == ["player-alerts", "test-alerts"]
-
-    s = get_settings(cfg)
-    assert s["reader"]["channels"] == ["player-alerts", "test-alerts"]
-
-    with open(cfg_path) as f:
-        raw = yaml.safe_load(f)
-    assert set(raw["reader"]["channels"]) == {
-        "player-alerts", "test-alerts",
-    }
-
-    applied, errors = apply_settings(
-        cfg, {"reader": {"channels": []}}, str(cfg_path)
-    )
-    assert not errors, errors
-    assert cfg.reader.channels == []
 
 
 def test_quotes_disabled_by_default(tmp_path):

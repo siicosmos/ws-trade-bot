@@ -57,6 +57,14 @@ discord:
                                 # empty = use the main webhook channel
 
 # ---------------------------------------------------------------------------
+# trading - the info server only reads history_retention_days from
+# here (the daily prune of recorded signals); everything else stays
+# defaulted
+# ---------------------------------------------------------------------------
+# trading:
+#   history_retention_days: 365
+
+# ---------------------------------------------------------------------------
 # parser - extra regex patterns for alert formats the built-in parser misses
 # ---------------------------------------------------------------------------
 parser:

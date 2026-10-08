@@ -1475,15 +1475,10 @@ def test_settings_layout_mirror_and_automation():
     # folded into it - there is no standalone mirror section
     assert js.count('_section("automation"') == 1
     assert '_section("mirror real fills"' not in js
-    # automation sits directly above reader
-    assert js.index('_section("automation"') < js.index(
-        '_section("reader"'
-    )
-    a_start = js.index('_section("automation"')
-    a_end = js.index('_section("reader"')
-    # the mirror checkbox/interval ride the automation section
-    assert "set-paper-mirror" in js[a_start:a_end]
-    assert "set-mirror-interval" in js[a_start:a_end]
+    # the reader section is gone from the consumer's settings -
+    # the reader reads its own reader/reader.config.yaml
+    assert '_section("reader"' not in js
+    assert "set-reader-" not in js
     # accounts: the last section in the form
     assert js.index('_section("accounts') > js.index(
         '_section("discord webhooks'

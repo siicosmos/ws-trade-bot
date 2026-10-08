@@ -1540,7 +1540,6 @@ function renderSettings(s) {
   if (settingsDirty) return;
   const el = document.getElementById("settings");
   const t = s.trading || {};
-  const rd = s.reader || {};
   const dc = s.discord || {};
   const ws = s.wealthsimple || {};
   const au = s.auto_update || {};
@@ -1755,39 +1754,6 @@ function renderSettings(s) {
       "never trade these underlyings", true) +
     '</div>');
 
-  // 5. reader
-  html += _section("reader", '<div class="set-grid">' +
-    _txtField("set-reader-channel_marker", "channel marker",
-      rd.channel_marker, "e.g. player-alerts",
-      "only read messages from the discord channel containing this text; empty = whatever channel is open") +
-    _numField("set-reader-poll_interval", "poll interval (s)", rd.poll_interval,
-      "how often the reader scans the discord window") +
-    _numField("set-reader-max_items", "max messages kept", rd.max_items,
-      "how many recent messages the reader scans each poll") +
-    '<div class="set-field"><label title="server=channel pairs: the reader selects the server first, then clicks the channel">' +
-    'server \u2192 channel pairs (comma-separated)</label>' +
-    '<input id="set-reader-channel_servers" type="text" value="' + esc(
-      Object.entries(rd.channel_servers || {})
-        .map(([c, s]) => s + "=" + c).join(", ")
-    ) + '" placeholder="SPX Plays=player-alerts"></div>' +
-    _numField("set-reader-discord_reopen_seconds", "discord reopen (s)",
-      rd.discord_reopen_seconds,
-      "seconds between attempts to start discord when no window shows") +
-    _numField("set-reader-discord_restart_seconds", "restart stuck discord (s)",
-      rd.discord_restart_seconds,
-      "kill and restart discord when it runs this long without a window (takes effect after reader restart)") +
-    _txtField("set-reader-channels", "allowed channels (comma-separated)",
-      (rd.channels || []).join(", "), "e.g. test-alerts, player-alerts",
-      "only these discord channels are read; empty = any", true) +
-    '</div>' +
-    '<div class="set-checks" style="margin:10px 0 0">' +
-      _check("set-reader-auto_scroll", "auto scroll to newest message", rd.auto_scroll,
-        "keep the discord window scrolled to the newest message") +
-      _check("set-reader-auto_switch", "auto-switch to the first allowed channel",
-        rd.auto_switch !== false,
-        "click into the wanted channel when discord opens elsewhere") +
-    '</div>');
-
   // 6. discord webhooks
   const hooks = [
     ["set-discord-webhook_url", "trade alerts",
@@ -1987,25 +1953,6 @@ async function saveSettings() {
   const payload = {
     trading,
     accounts,
-    reader: {
-      channel_marker: val("set-reader-channel_marker"),
-      poll_interval: num("set-reader-poll_interval"),
-      max_items: parseInt(val("set-reader-max_items")),
-      channels: val("set-reader-channels").split(",").map(function(s) { return s.trim(); }).filter(Boolean),
-      auto_scroll: document.getElementById("set-reader-auto_scroll").checked,
-      auto_switch: document.getElementById("set-reader-auto_switch").checked,
-      channel_servers: (function() {
-        const map = {};
-        val("set-reader-channel_servers").split(",").forEach(function(part) {
-          const server = part.split("=")[0].trim();
-          const name = (part.split("=")[1] || "").trim().toLowerCase();
-          if (name && server) map[name] = server;
-        });
-        return map;
-      })(),
-      discord_reopen_seconds: parseInt(val("set-reader-discord_reopen_seconds")),
-      discord_restart_seconds: parseInt(val("set-reader-discord_restart_seconds")),
-    },
     auto_update: { enabled: document.getElementById("set-au-enabled").checked, interval_seconds: parseInt(val("set-au-interval")) },
     wealthsimple: {
       positions_refresh_seconds: parseInt(val("set-ws-positions")),
