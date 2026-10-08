@@ -415,7 +415,10 @@ def test_reader_settings_validation():
 
 
 def test_reader_status_endpoints():
-    # the reader heartbeats the info server (its alert source)
+    # the reader heartbeats the info server (its alert source).
+    # reader settings live in the reader's own yaml - the
+    # heartbeat only reports channel/ok; the dashboard's
+    # "desired" line reads reader/config.yaml at app build time
     from info.web import create_app
 
     cfg = ConfigStub(TradingConfig(mode="notify"))
@@ -428,19 +431,19 @@ def test_reader_status_endpoints():
         json={"channel": "🚨│player-alerts", "ok": True},
     )
     assert resp.status_code == 200
-    data = resp.get_json()
-    assert data["channel_marker"] == ""
-    assert data["poll_interval"] == 0.5
+    assert resp.get_json() == {}
 
-    # reader knobs are config-file managed on the info server
-    cfg.reader.channel_marker = "player-alerts"
+    # the reader's desired channel marker comes from the
+    # reader's own yaml (surfaced here for the dashboard line)
+    app.reader_desired = "player-alerts"
     resp = client.post(
         "/api/reader_status", json={"channel": "test", "ok": True}
     )
-    assert resp.get_json()["channel_marker"] == "player-alerts"
+    assert resp.get_json() == {}
 
     status = client.get("/api/reader_status").get_json()
     assert status["channel"] == "test"
+    assert status["ok"] is True
     assert status["desired"] == "player-alerts"
     assert status["age_seconds"] is not None
 
@@ -752,8 +755,7 @@ def test_all_webhooks_editable(tmp_path):
     s = get_settings(cfg)
     for field in (
         "webhook_url",
-        "reader_log_webhook_url",
-        "pipeline_log_webhook_url",
+        "consumer_log_webhook_url",
         "update_webhook_url",
     ):
         assert field in s["discord"]
@@ -762,10 +764,8 @@ def test_all_webhooks_editable(tmp_path):
         cfg,
         {
             "discord": {
-                "reader_log_webhook_url":
-                    "https://discord.com/api/webhooks/rl",
-                "pipeline_log_webhook_url":
-                    "https://discord.com/api/webhooks/pl",
+                "consumer_log_webhook_url":
+                    "https://discord.com/api/webhooks/cl",
                 "update_webhook_url":
                     "https://discord.com/api/webhooks/up",
             }
@@ -775,14 +775,32 @@ def test_all_webhooks_editable(tmp_path):
     assert not errors, errors
     text = cfg_path.read_text(encoding="utf-8")
     assert "webhooks/main" in text          # untouched value survives
-    assert "webhooks/rl" in text
-    assert "webhooks/pl" in text
+    assert "webhooks/cl" in text
     assert "webhooks/up" in text
 
     bad, errors2 = apply_settings(
         cfg, {"discord": {"webhook_url": "ftp://nope"}}, None
     )
     assert errors2 and "https" in errors2[0]
+
+
+def test_legacy_pipeline_log_webhook_key_still_reads(tmp_path):
+    """configs written before the rename keep working: the
+    pipeline_log_webhook_url value feeds consumer_log_webhook_url."""
+    from core.config import load_config
+
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(
+        "discord:\n"
+        "  pipeline_log_webhook_url: "
+        "\"https://discord.com/api/webhooks/legacy\"\n",
+        encoding="utf-8",
+    )
+    cfg = load_config(str(cfg_path))
+    assert (
+        cfg.discord.consumer_log_webhook_url
+        == "https://discord.com/api/webhooks/legacy"
+    )
 
 
 def test_paper_settings_roundtrip(tmp_path):

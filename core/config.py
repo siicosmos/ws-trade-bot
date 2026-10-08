@@ -22,12 +22,11 @@ class PipelineConfig:
 @dataclass
 class DiscordConfig:
     webhook_url: str = ""
-    reader_log_webhook_url: str = ""
-    pipeline_log_webhook_url: str = ""
+    # this app's log tail (consumer.log / info.log) posted to
+    # discord in batches; empty = off. legacy configs call it
+    # pipeline_log_webhook_url - still read as a fallback
+    consumer_log_webhook_url: str = ""
     update_webhook_url: str = ""
-    # raw alert copy-paste feed: every alert the reader delivers
-    # is posted here as plain text
-    raw_alert_webhook_url: str = ""
     # send parsed alerts to the webhook
     notify: bool = True
 
@@ -461,17 +460,15 @@ def load_config(path: str) -> Config:
         discord=DiscordConfig(
         notify=bool(_get(discord_raw, "notify", True)),
             webhook_url=webhook,
-            reader_log_webhook_url=str(
-                _get(discord_raw, "reader_log_webhook_url", "")
-            ),
-            pipeline_log_webhook_url=str(
-                _get(discord_raw, "pipeline_log_webhook_url", "")
+            consumer_log_webhook_url=str(
+                _get(
+                    discord_raw,
+                    "consumer_log_webhook_url",
+                    _get(discord_raw, "pipeline_log_webhook_url", ""),
+                )
             ),
             update_webhook_url=str(
                 _get(discord_raw, "update_webhook_url", "")
-            ),
-            raw_alert_webhook_url=str(
-                _get(discord_raw, "raw_alert_webhook_url", "")
             ),
         ),
         trading=trading,

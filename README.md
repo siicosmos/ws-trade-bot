@@ -321,8 +321,7 @@ check the session role.
 | GET | `/api/signals?limit=` | any | recent recorded signals |
 | GET | `/api/trades?limit=` | any | recent trade log |
 | GET | `/api/history` | any | search retained history (kind, ticker/action/status/mode, since/until, q, limit/offset) |
-| GET | `/api/spx` | any | realtime SPX/SPY spot for the ladder (moomoo or WS, SPY×10.0391 proxy fallback) + levels text + `editable` flag |
-| POST | `/api/spx-levels` | any | save the pasted levels text (403 on a feed consumer — the info server owns it) |
+| GET | `/api/spx` | any | realtime SPX/SPY spot for the ladder (moomoo or WS, SPY×10.0391 proxy fallback) + the feed-synced levels text (read-only — the info server owns it) |
 | GET | `/api/settings` | any | the dashboard-editable settings view (incl. the current mode) |
 | POST | `/api/settings` | admin | validate + apply + persist settings (no restart) |
 | POST | `/api/mode` | admin | the mode slider: validate + persist `trading.mode` + restart the app |
@@ -431,8 +430,10 @@ them from its heartbeat.
 
 ### `discord` — webhooks
 `notify` (master switch), `webhook_url` (trade alerts to your phone),
-`reader_log_webhook_url`, `pipeline_log_webhook_url`,
-`update_webhook_url`, `raw_alert_webhook_url` (raw alert feed).
+`consumer_log_webhook_url` (this app's log tail; legacy configs'
+`pipeline_log_webhook_url` still reads), `update_webhook_url`.
+The reader's webhooks (`reader_log_webhook_url`, `raw_alert_webhook_url`)
+live in `reader/config.yaml`.
 
 ### `auto_update`
 `enabled` (true), `interval_seconds` (600). Restarts (exit 77) only

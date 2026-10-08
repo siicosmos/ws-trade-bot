@@ -1592,18 +1592,12 @@ function renderSettings(s) {
     ["set-discord-webhook_url", "trade alerts",
       "webhook for parsed alerts and execution results",
       "main alerts channel", dc.webhook_url || ""],
-    ["set-discord-reader_log_webhook_url", "reader log",
-      "periodic reader heartbeat; empty = off",
-      "empty = off", dc.reader_log_webhook_url || ""],
-    ["set-discord-pipeline_log_webhook_url", "pipeline log",
-      "pipeline log tail; empty = off",
-      "empty = off", dc.pipeline_log_webhook_url || ""],
+    ["set-discord-consumer_log_webhook_url", "consumer log",
+      "consumer.log tail; empty = off",
+      "empty = off", dc.consumer_log_webhook_url || ""],
     ["set-discord-update_webhook_url", "update notices",
       "restart and update notices; empty = the trade alerts channel",
       "empty = trade alerts channel", dc.update_webhook_url || ""],
-    ["set-discord-raw_alert_webhook_url", "raw alerts",
-      "copy-paste feed: every alert the reader delivers, as raw text",
-      "empty = off", dc.raw_alert_webhook_url || ""],
   ];
   html += _section("discord webhooks (take effect after restart)",
     '<div class="set-grid wide">' +
@@ -1733,10 +1727,8 @@ async function saveSettings() {
     discord: {
       notify: document.getElementById("set-notify").checked,
       webhook_url: val("set-discord-webhook_url").trim(),
-      reader_log_webhook_url: val("set-discord-reader_log_webhook_url").trim(),
-      pipeline_log_webhook_url: val("set-discord-pipeline_log_webhook_url").trim(),
+      consumer_log_webhook_url: val("set-discord-consumer_log_webhook_url").trim(),
       update_webhook_url: val("set-discord-update_webhook_url").trim(),
-      raw_alert_webhook_url: val("set-discord-raw_alert_webhook_url").trim(),
     },
     quotes: {
       enabled: document.getElementById("set-quotes-enabled").checked,
@@ -1867,21 +1859,14 @@ let levelsPoll = null;
 
 async function openLevels() {
   document.getElementById("levelsBackdrop").style.display = "flex";
-  // the local copy renders instantly; the server copy (shared
-  // across devices) replaces it when it differs
+  // levels are read-only here: the info server is the source of
+  // truth and pushes them via the feed. the cached copy renders
+  // instantly; the server copy replaces it when it differs
   const saved = localStorage.getItem("spx_levels_raw") || "";
-  document.getElementById("levels-input").value = saved;
-  renderLevelsChart();
+  if (saved) renderLevelsChart();
   try {
     const data = await api("/api/spx");
-    // a consumer whose levels sync from the info server's feed
-    // is read-only - the edit would be overwritten on the next
-    // feed poll
-    const ro = data.editable === false;
-    document.getElementById("levels-editor").style.display = ro ? "none" : "";
-    document.getElementById("levels-readonly").style.display = ro ? "" : "none";
     if (data.text != null && data.text !== "" && data.text !== saved) {
-      document.getElementById("levels-input").value = data.text;
       localStorage.setItem("spx_levels_raw", data.text);
       const parsed = parseLevelsText(data.text);
       if (parsed.levels.length || parsed.pivot != null) {
@@ -1998,29 +1983,6 @@ function parseLevelsText(text) {
   if (out.tickers.SPX) out.levels = out.tickers.SPX;
   else if (out.tickers.SPY) out.levels = out.tickers.SPY;
   return out;
-}
-
-async function parseLevels() {
-  const text = document.getElementById("levels-input").value;
-  const data = parseLevelsText(text);
-  const err = document.getElementById("levels-error");
-  if (!data.levels.length && data.pivot == null) {
-    err.textContent = "no levels found - paste the daily plan with the Pivot/Resistance/Support lines";
-    return;
-  }
-  err.textContent = "";
-  localStorage.setItem("spx_levels_raw", text);
-  localStorage.setItem("spx_levels", JSON.stringify(data));
-  renderLevelsChart();
-  // share across devices: the server copy is what every
-  // browser loads on open
-  try {
-    await fetch("/api/spx-levels", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: text }),
-    });
-  } catch (e) { /* the local copy still works */ }
 }
 
 let levelsView = null;

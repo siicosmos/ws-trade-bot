@@ -69,13 +69,7 @@
   <div id="levelsPanel">
     <div id="levelsHead"><span>SPX Levels</span><button id="levelsClose" class="btn" onclick="closeLevels()">&#215;</button></div>
     <div id="levelsScroll">
-      <div class="set-section" id="levels-editor">
-        <div class="set-title">paste tomorrow's levels</div>
-        <textarea id="levels-input" rows="8" placeholder="paste the daily plan message here..."></textarea>
-        <div style="margin-top:10px"><button onclick="parseLevels()" class="btn">parse &amp; show</button></div>
-        <div class="set-hint" id="levels-error"></div>
-      </div>
-      <div class="set-hint" id="levels-readonly" style="display:none">levels sync from the info server's feed - read-only here</div>
+      <div class="set-hint" id="levels-readonly">levels sync from the info server's feed - read-only here</div>
       <div id="levels-chart"></div>
     </div>
   </div>

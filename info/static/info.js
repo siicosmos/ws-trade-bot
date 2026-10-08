@@ -239,15 +239,12 @@ function renderSettings(s) {
   const au = s.auto_update || {};
   const dc = s.discord || {};
   const hooks = [
-    ["set-discord-webhook_url", "trade alerts",
-      "webhook for parsed alerts and info-server notices",
-      "main alerts channel", dc.webhook_url || ""],
-    ["set-discord-pipeline_log_webhook_url", "pipeline log",
-      "info server log tail; empty = off",
-      "empty = off", dc.pipeline_log_webhook_url || ""],
+    ["set-discord-consumer_log_webhook_url", "info log",
+      "info.log tail; empty = off",
+      "empty = off", dc.consumer_log_webhook_url || ""],
     ["set-discord-update_webhook_url", "update notices",
-      "restart and update notices; empty = the trade alerts channel",
-      "empty = trade alerts channel", dc.update_webhook_url || ""],
+      "restart and update notices; empty = off",
+      "empty = off", dc.update_webhook_url || ""],
   ];
   el.innerHTML =
     '<div class="set-section"><div class="set-title">github code update</div>' +
@@ -303,8 +300,7 @@ async function saveSettings() {
       interval_seconds: parseInt(val("set-au-interval")),
     },
     discord: {
-      webhook_url: val("set-discord-webhook_url"),
-      pipeline_log_webhook_url: val("set-discord-pipeline_log_webhook_url"),
+      consumer_log_webhook_url: val("set-discord-consumer_log_webhook_url"),
       update_webhook_url: val("set-discord-update_webhook_url"),
     },
   };

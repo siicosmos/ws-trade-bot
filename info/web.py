@@ -300,9 +300,8 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
                 "interval_seconds": cfg.auto_update.interval_seconds,
             },
             "discord": {
-                "webhook_url": cfg.discord.webhook_url,
-                "pipeline_log_webhook_url": (
-                    cfg.discord.pipeline_log_webhook_url
+                "consumer_log_webhook_url": (
+                    cfg.discord.consumer_log_webhook_url
                 ),
                 "update_webhook_url": cfg.discord.update_webhook_url,
             },
@@ -333,8 +332,7 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
 
         dc = data.get("discord") or {}
         for field in (
-            "webhook_url",
-            "pipeline_log_webhook_url",
+            "consumer_log_webhook_url",
             "update_webhook_url",
         ):
             if field in dc:
@@ -366,11 +364,12 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
                         cfg.auto_update.interval_seconds
                     )
                 d = raw.setdefault("discord", {})
-                for field in ("webhook_url",
-                              "pipeline_log_webhook_url",
+                for field in ("consumer_log_webhook_url",
                               "update_webhook_url"):
                     if f"discord.{field}" in applied:
                         d[field] = getattr(cfg.discord, field)
+                # the legacy key name is obsolete - drop it on save
+                d.pop("pipeline_log_webhook_url", None)
                 from core.config import dump_yaml_config
 
                 dump_yaml_config(raw, config_path)

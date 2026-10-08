@@ -135,8 +135,8 @@ def get_settings(cfg) -> dict:
                 )
             ),
             "webhook_url": cfg.discord.webhook_url,
-            "pipeline_log_webhook_url": (
-                cfg.discord.pipeline_log_webhook_url
+            "consumer_log_webhook_url": (
+                cfg.discord.consumer_log_webhook_url
             ),
             "update_webhook_url": cfg.discord.update_webhook_url,
         },
@@ -484,7 +484,7 @@ def apply_settings(cfg, payload: dict, config_path=None) -> tuple:
     discord_payload = payload.get("discord") or {}
     for field in (
         "webhook_url",
-        "pipeline_log_webhook_url",
+        "consumer_log_webhook_url",
         "update_webhook_url",
     ):
         if field in discord_payload:
@@ -589,13 +589,15 @@ def _persist(cfg, config_path):
     dc = raw.setdefault("discord", {})
     for field in (
         "webhook_url",
-        "pipeline_log_webhook_url",
+        "consumer_log_webhook_url",
         "update_webhook_url",
     ):
         if field in raw.get("discord", {}) or getattr(
             cfg.discord, field, ""
         ):
             dc[field] = getattr(cfg.discord, field)
+    # the legacy key name is obsolete - drop it on save
+    dc.pop("pipeline_log_webhook_url", None)
 
     ws = raw.setdefault("wealthsimple", {})
     for field in ("positions_refresh_seconds", "values_refresh_seconds"):
@@ -650,13 +652,15 @@ def _persist(cfg, config_path):
     dc = raw.setdefault("discord", {})
     for field in (
         "webhook_url",
-        "pipeline_log_webhook_url",
+        "consumer_log_webhook_url",
         "update_webhook_url",
     ):
         if field in raw.get("discord", {}) or getattr(
             cfg.discord, field, ""
         ):
             dc[field] = getattr(cfg.discord, field)
+    # the legacy key name is obsolete - drop it on save
+    dc.pop("pipeline_log_webhook_url", None)
 
     ws = raw.setdefault("wealthsimple", {})
     ws["accounts"] = [

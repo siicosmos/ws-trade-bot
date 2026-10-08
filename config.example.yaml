@@ -117,13 +117,14 @@ discord:
   # (the settings "notify" checkbox)
   notify: true
   webhook_url: "YOUR_PRIVATE_SERVER_WEBHOOK_URL"  # trade alerts to your phone
-  reader_log_webhook_url: ""    # reader log lines (reader/config.yaml only)
-  pipeline_log_webhook_url: ""  # pipeline log lines (optional)
+  consumer_log_webhook_url: ""  # this app's log tail (consumer.log /
+                                # info.log) posted to discord; empty = off.
+                                # legacy configs call it
+                                # pipeline_log_webhook_url - still read
   update_webhook_url: ""        # server update/restart notices;
                                # empty = use the main webhook channel
-  raw_alert_webhook_url: ""     # raw alert copy-paste feed: every
-                               # alert the reader delivers, as plain
-                               # text (reader/config.yaml only)
+  # the reader's own webhooks (reader log, raw alerts) live in
+  # reader/config.yaml
 
 # ---------------------------------------------------------------------------
 # trading - how alerts are sized, executed, and risk-managed

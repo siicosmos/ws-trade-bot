@@ -311,6 +311,9 @@ def test_mode_endpoint_survives_missing_config(tmp_path):
 
 
 def test_spx_levels_readonly_with_feed(tmp_path):
+    """levels on a consumer are feed-owned: the ladder serves
+    the store copy the feedclient syncs, and there is no write
+    endpoint at all."""
     store = _fresh_store()
     cfg = ConfigStub(TradingConfig(mode="notify"), auth_token="t")
     cfg.feed = FeedConfig(url="http://info:8080", token="x")
@@ -324,36 +327,16 @@ def test_spx_levels_readonly_with_feed(tmp_path):
         cfg, store, risk, PaperExecutor(cfg, store, account), account
     )
     client = app.test_client()
+    # the write endpoint is gone - levels come from the feed
     r = client.post(
         "/api/spx-levels", json={"text": "Pivot 6800"},
         headers=_headers("t"),
     )
-    assert r.status_code == 403
-    # and the ladder payload flags it read-only
+    assert r.status_code == 404
+    # the ladder serves the store copy (what the feed synced)
+    store.meta_set("spx_levels_text", "Pivot 6800")
     r = client.get("/api/spx", headers=_headers("t"))
-    assert r.get_json()["editable"] is False
-
-
-def test_spx_levels_editable_without_feed():
-    store = _fresh_store()
-    cfg = ConfigStub(TradingConfig(mode="notify"), auth_token="t")
-    account = PaperAccount(cfg, store)
-    from consumer.trading.executor import PaperExecutor
-
-    risk = RiskEngine(cfg, store, account)
-    app = __import__(
-        "consumer.web", fromlist=["create_app"]
-    ).create_app(
-        cfg, store, risk, PaperExecutor(cfg, store, account), account
-    )
-    client = app.test_client()
-    r = client.post(
-        "/api/spx-levels", json={"text": "Pivot 6800"},
-        headers=_headers("t"),
-    )
-    assert r.status_code == 200
-    r = client.get("/api/spx", headers=_headers("t"))
-    assert r.get_json()["editable"] is True
+    assert r.get_json()["text"] == "Pivot 6800"
 
 
 def test_get_settings_includes_mode():

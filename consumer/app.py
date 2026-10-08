@@ -79,7 +79,7 @@ def main(cfg, args):
         pass
 
     log_batcher = install_log_webhook(
-        cfg.discord.pipeline_log_webhook_url,
+        cfg.discord.consumer_log_webhook_url,
         log_path=default_log_path("consumer.log"),
     )
 

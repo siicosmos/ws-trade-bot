@@ -26,8 +26,8 @@ class ConfigStub:
             "enabled": False, "provider": "ws",
             "moomoo_host": "", "moomoo_port": 11111})()
         self.discord = type("D", (), {
-            "webhook_url": "", "reader_log_webhook_url": "",
-            "pipeline_log_webhook_url": "",
+            "webhook_url": "",
+            "consumer_log_webhook_url": "",
             "update_webhook_url": "", "notify": True})()
         self.parser = type("P", (), {"custom_patterns": []})()
         self.wealthsimple = WealthsimpleConfig(accounts=accounts or [])
@@ -4478,9 +4478,9 @@ def test_index_quote_reads_us_spx():
 
 
 def test_spx_levels_text_roundtrip():
-    """the pasted levels text is the cross-device source of
-    truth: saved through /api/spx-levels, served back on
-    /api/spx for every device's popup."""
+    """the levels text is feed-owned on a consumer: the
+    feedclient writes the info server's copy into the store and
+    /api/spx serves it to every device's popup."""
     from core.config import (
         AutoUpdateConfig, DiscordConfig, QuotesConfig, ReaderConfig,
         TradingConfig, WealthsimpleConfig,
@@ -4505,10 +4505,8 @@ def test_spx_levels_text_roundtrip():
     hdr = {"X-Auth-Token": "t"}
 
     text = "🔄 Pivot: 7704\n📈 Resistance: 7712 (R1), 7753 (R2)"
-    r = client.post(
-        "/api/spx-levels", json={"text": text}, headers=hdr
-    )
-    assert r.status_code == 200
+    # what the feedclient does after a feed poll with new levels
+    store.meta_set("spx_levels_text", text)
 
     data = client.get("/api/spx", headers=hdr).get_json()
     assert data["text"] == text

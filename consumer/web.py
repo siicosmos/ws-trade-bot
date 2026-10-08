@@ -1661,9 +1661,9 @@ def create_app(cfg, store: Store, risk, executor, account=None,
         # reports an age, ws reports the market status)
         stale = bool(age and age > 120) or status == "CLOSED"
         # the saved levels text rides along: it is the
-        # cross-device source of truth for the ladder. editable
-        # is False when a feed sync owns it (the consumer's copy
-        # is overwritten by the info server on every poll)
+        # cross-device source of truth for the ladder - on a
+        # consumer it is owned by the info server's feed sync
+        # (feedclient writes it into the store)
         return jsonify({
             "price": price, "age": age, "error": error,
             "stale": stale, "status": status,
@@ -1673,28 +1673,8 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                 "positions_refresh_seconds", 30,
             ),
             "text": store.meta_get("spx_levels_text"),
-            "editable": not (
-                getattr(getattr(cfg, "feed", None), "url", "")
-            ),
             "ts": time.time(),
         })
-
-    @app.post("/api/spx-levels")
-    def api_spx_levels():
-        """Save the pasted levels text - every device's popup
-        loads it from here (planned item #17: per-item state in
-        the database). A consumer whose levels sync from the info
-        server's feed is read-only - the edit would be
-        overwritten on the next poll."""
-        if getattr(getattr(cfg, "feed", None), "url", ""):
-            return jsonify(
-                {"error": "levels sync from the info server's feed - "
-                          "edit them on the info dashboard"}
-            ), 403
-        data = request.get_json(silent=True) or {}
-        text = str(data.get("text") or "")[:8000]
-        store.meta_set("spx_levels_text", text)
-        return jsonify({"status": "ok"})
 
     @app.get("/api/history")
     def api_history():
