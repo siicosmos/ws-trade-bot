@@ -891,7 +891,11 @@ def test_size_tier_stop_loss_roundtrip():
             self.quotes = QuotesConfig()
 
     cfg = Stub()
-    cfg_path = tempfile.mkstemp(suffix=".yaml")[1]
+    # close the mkstemp handle: on windows an open handle (no
+    # FILE_SHARE_DELETE) blocks the atomic os.replace in the
+    # settings persist with WinError 5 - forever
+    fd, cfg_path = tempfile.mkstemp(suffix=".yaml")
+    os.close(fd)
     app, errs = apply_settings(cfg, {
         "trading": {
             "back_to_entry_enabled": True,
