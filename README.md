@@ -462,7 +462,8 @@ Reader knobs are edited in `reader/reader.config.yaml` directly — the
 reader watches the file's mtime and restarts to apply an edit.
 
 ### `discord` — webhooks
-`notify` (master switch), `webhook_url` (trade alerts to your phone),
+`notify` (master switch), `trade_alert_webhook_url` (trade alerts to
+your phone; legacy configs' `webhook_url` still reads),
 `consumer_log_webhook_url` (this app's log tail; legacy configs'
 `pipeline_log_webhook_url` still reads), `update_webhook_url`
 (empty = off — no fallback webhook anywhere). The reader's webhooks

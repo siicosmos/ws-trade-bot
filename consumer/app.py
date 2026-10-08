@@ -110,7 +110,7 @@ def main(cfg, args):
             cfg, store, account, None,
             cfg.paper.mirror_interval_seconds,
             cfg.discord.update_webhook_url
-            or cfg.discord.webhook_url,
+            or cfg.discord.trade_alert_webhook_url,
         )
         print(
             "mirroring real fills into the ledgers "
@@ -121,7 +121,7 @@ def main(cfg, args):
         # (notify only) push alerts to the phone. paper mode is
         # the quiet variant - simulated execution without the
         # notifications
-        if mode == "notify" and not cfg.discord.webhook_url:
+        if mode == "notify" and not cfg.discord.trade_alert_webhook_url:
             print(
                 "WARNING: notify mode but discord.webhook_url is not set - "
                 "alerts will not reach your phone"
@@ -150,7 +150,7 @@ def main(cfg, args):
                     cfg, store, account, paper_ledger,
                     cfg.paper.mirror_interval_seconds,
                     cfg.discord.update_webhook_url
-                    or cfg.discord.webhook_url,
+                    or cfg.discord.trade_alert_webhook_url,
                 )
                 print(
                     "mirroring real trades into the paper ledger "
@@ -226,7 +226,7 @@ def main(cfg, args):
         if quote_fn is not None:
             monitor = StopMonitor(
                 cfg, store, executor, quote_fn,
-                cfg.discord.webhook_url,
+                cfg.discord.trade_alert_webhook_url,
             )
             monitor.start()
             trail = (
@@ -267,7 +267,7 @@ def main(cfg, args):
 
             notify_discord(
                 cfg.discord.update_webhook_url
-                or cfg.discord.webhook_url,
+                or cfg.discord.trade_alert_webhook_url,
                 "Consumer app restarting",
                 {"reason": prev_exit, "running": banner},
                 ok=True,
@@ -280,7 +280,7 @@ def main(cfg, args):
         from core.ops.notify import notify_discord
 
         notify_discord(
-            cfg.discord.update_webhook_url or cfg.discord.webhook_url,
+            cfg.discord.update_webhook_url or cfg.discord.trade_alert_webhook_url,
             "Consumer app restarting",
             {"reason": str(reason)[:1000]},
             ok=True,
@@ -294,7 +294,7 @@ def main(cfg, args):
 
     updater = create_updater(
         cfg, ROOT,
-        cfg.discord.update_webhook_url or cfg.discord.webhook_url,
+        cfg.discord.update_webhook_url or cfg.discord.trade_alert_webhook_url,
         restart=_restart,
         restart_files=CONSUMER_RESTART_FILES,
     )
@@ -330,7 +330,7 @@ def main(cfg, args):
         start_feed_client(
             cfg, store, _on_feed_alert,
             cfg.discord.update_webhook_url
-            or cfg.discord.webhook_url,
+            or cfg.discord.trade_alert_webhook_url,
             state=app.feed_state,
         )
         print(f"feed client: pulling alerts from {cfg.feed.url}")
@@ -348,7 +348,7 @@ def main(cfg, args):
     # clean restart if serving dies
     start_health_watchdog(
         f"{scheme}://127.0.0.1:{cfg.pipeline.port}/health",
-        cfg.discord.update_webhook_url or cfg.discord.webhook_url,
+        cfg.discord.update_webhook_url or cfg.discord.trade_alert_webhook_url,
         verify=scheme != "https",   # self-signed local cert
         store=store,
     )

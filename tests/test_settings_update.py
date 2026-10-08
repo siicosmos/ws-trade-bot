@@ -61,7 +61,7 @@ def test_apply_settings_updates_memory_and_file():
     from core.config import load_config
 
     cfg = load_config(cfg_path)
-    assert cfg.discord.webhook_url == "x"
+    assert cfg.discord.trade_alert_webhook_url == "x"  # legacy key fallback
 
     applied, errors = apply_settings(
         cfg, {"trading": {"risk_per_trade_pct": 7}}, cfg_path
@@ -74,7 +74,8 @@ def test_apply_settings_updates_memory_and_file():
 
     reloaded = load_config(cfg_path)
     assert reloaded.trading.risk_per_trade_pct == 7
-    assert reloaded.discord.webhook_url == "x"
+    # the legacy key survives the round-trip through the new name
+    assert reloaded.discord.trade_alert_webhook_url == "x"
     assert reloaded.trading.mode == "paper"
     os.unlink(cfg_path)
 
@@ -685,7 +686,7 @@ def test_all_webhooks_editable(tmp_path):
     cfg = load_config(str(cfg_path))
     s = get_settings(cfg)
     for field in (
-        "webhook_url",
+        "trade_alert_webhook_url",
         "consumer_log_webhook_url",
         "update_webhook_url",
     ):
@@ -710,7 +711,7 @@ def test_all_webhooks_editable(tmp_path):
     assert "webhooks/up" in text
 
     bad, errors2 = apply_settings(
-        cfg, {"discord": {"webhook_url": "ftp://nope"}}, None
+        cfg, {"discord": {"trade_alert_webhook_url": "ftp://nope"}}, None
     )
     assert errors2 and "https" in errors2[0]
 

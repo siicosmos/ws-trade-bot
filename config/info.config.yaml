@@ -30,10 +30,10 @@ info:
 # server; this server's push against their /alert endpoint).
 # push_url empty = pull-only consumer (they long-poll the feed).
 # ---------------------------------------------------------------------------
-# consumers:
-#   - label: owner
-#     token: "GENERATE_A_TOKEN"
-#     push_url: "http://127.0.0.1:8081/alert"
+consumers:
+  - label: owner
+    token: "GENERATE_A_TOKEN"
+    push_url: "http://127.0.0.1:8080/alert"   # the consumer's /alert route
 
 # ---------------------------------------------------------------------------
 # auto_update - the info server is a git checkout: fetch +
@@ -58,8 +58,8 @@ discord:
 # here (the daily prune of recorded signals); everything else stays
 # defaulted
 # ---------------------------------------------------------------------------
-# trading:
-#   history_retention_days: 365
+trading:
+  history_retention_days: 365
 
 # ---------------------------------------------------------------------------
 # parser - extra regex patterns for alert formats the built-in parser misses

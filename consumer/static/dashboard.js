@@ -1761,9 +1761,9 @@ function renderSettings(s) {
 
   // 6. discord webhooks
   const hooks = [
-    ["set-discord-webhook_url", "trade alerts",
+    ["set-discord-trade_alert_webhook_url", "trade alerts",
       "webhook for parsed alerts and execution results",
-      "main alerts channel", dc.webhook_url || ""],
+      "main alerts channel", dc.trade_alert_webhook_url || ""],
     ["set-discord-consumer_log_webhook_url", "consumer log",
       "consumer.log tail; empty = off",
       "empty = off", dc.consumer_log_webhook_url || ""],
@@ -1966,7 +1966,7 @@ async function saveSettings() {
     },
     discord: {
       notify: document.getElementById("set-notify").checked,
-      webhook_url: val("set-discord-webhook_url").trim(),
+      trade_alert_webhook_url: val("set-discord-trade_alert_webhook_url").trim(),
       consumer_log_webhook_url: val("set-discord-consumer_log_webhook_url").trim(),
       update_webhook_url: val("set-discord-update_webhook_url").trim(),
     },

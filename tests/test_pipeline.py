@@ -27,7 +27,7 @@ class ConfigStub:
             "enabled": False, "provider": "ws",
             "moomoo_host": "", "moomoo_port": 11111})()
         self.discord = type("D", (), {
-            "webhook_url": "",
+            "trade_alert_webhook_url": "",
             "consumer_log_webhook_url": "",
             "update_webhook_url": "", "notify": True})()
         self.parser = type("P", (), {"custom_patterns": []})()
@@ -717,7 +717,7 @@ def test_ignored_message_forwarded_plain(monkeypatch):
     monkeypatch.setattr(notify_mod.requests, "post", fake_post)
 
     cfg, store, account, risk = _setup(mode="notify")
-    cfg.discord.webhook_url = "http://hook"
+    cfg.discord.trade_alert_webhook_url = "http://hook"
     res = process_alert(
         "executed 2.15 ^", "", cfg, store, risk, None, account
     )
@@ -737,7 +737,7 @@ def test_repeated_plain_message_notifies_each_time(monkeypatch):
     monkeypatch.setattr(notify_mod.requests, "post", fake_post)
 
     cfg, store, account, risk = _setup(mode="notify")
-    cfg.discord.webhook_url = "http://hook"
+    cfg.discord.trade_alert_webhook_url = "http://hook"
     for _ in range(2):
         res = process_alert(
             "executed 2.15 ^", "", cfg, store, risk, None, account

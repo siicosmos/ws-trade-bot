@@ -109,7 +109,7 @@ def get_settings(cfg) -> dict:
                     getattr(cfg, "discord", None), "notify", True
                 )
             ),
-            "webhook_url": cfg.discord.webhook_url,
+            "trade_alert_webhook_url": cfg.discord.trade_alert_webhook_url,
             "consumer_log_webhook_url": (
                 cfg.discord.consumer_log_webhook_url
             ),
@@ -421,7 +421,7 @@ def apply_settings(cfg, payload: dict, config_path=None) -> tuple:
 
     discord_payload = payload.get("discord") or {}
     for field in (
-        "webhook_url",
+        "trade_alert_webhook_url",
         "consumer_log_webhook_url",
         "update_webhook_url",
     ):
@@ -571,7 +571,7 @@ def _persist(cfg, config_path):
 
     dc = raw.setdefault("discord", {})
     for field in (
-        "webhook_url",
+        "trade_alert_webhook_url",
         "consumer_log_webhook_url",
         "update_webhook_url",
     ):
@@ -579,8 +579,9 @@ def _persist(cfg, config_path):
             cfg.discord, field, ""
         ):
             dc[field] = getattr(cfg.discord, field)
-    # the legacy key name is obsolete - drop it on save
+    # the legacy key names are obsolete - drop them on save
     dc.pop("pipeline_log_webhook_url", None)
+    dc.pop("webhook_url", None)
 
     ws = raw.setdefault("wealthsimple", {})
     ws["accounts"] = [

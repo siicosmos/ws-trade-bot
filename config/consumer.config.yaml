@@ -46,11 +46,11 @@ consumer:
 # feed - where the info server's alert feed lives. the token must
 # match a consumers[] entry on the server.
 # ---------------------------------------------------------------------------
-# feed:
-#   url: "http://127.0.0.1:8080"
-#   token: "THE_MATCHING_TOKEN"
-#   poll_seconds: 1.0
-#   verify_ssl: false       # the info server usually runs a self-signed cert
+feed:
+  url: "http://127.0.0.1:8081"
+  token: "THE_MATCHING_TOKEN"
+  poll_seconds: 1.0
+  verify_ssl: false         # the info server usually runs a self-signed cert
 
 # ---------------------------------------------------------------------------
 # auto_update - the consumer follows the rolling GitHub Release
@@ -83,7 +83,8 @@ discord:
   # master switch for parsed-alert notifications to the webhook
   # (the settings "notify" checkbox)
   notify: true
-  webhook_url: "YOUR_PRIVATE_SERVER_WEBHOOK_URL"  # trade alerts to your phone
+  trade_alert_webhook_url: "YOUR_PRIVATE_SERVER_WEBHOOK_URL"  # trade alerts to your phone
+                                # (legacy configs' webhook_url still reads)
   consumer_log_webhook_url: ""  # this app's log tail (consumer.log) posted
                                 # to discord; empty = off
   update_webhook_url: ""        # app update/restart notices;
@@ -104,24 +105,27 @@ trading:
 
   # size tiers - risk caps by the size word in the alert
   # (any tiers you omit inherit these defaults; you can add custom names)
+  # stop_loss_pct: per-size stop loss override (empty/omitted = the
+  #   global stop_loss_pct applies); back_to_entry: per-size
+  #   0dte back-to-entry override (omitted = the global toggle)
   # percent of account value per size keyword for STOCK buys
   # (separate from the option size tiers); unsized stock
   # alerts default to the medium tier
-  # stock_size_tiers:
-  #   tiny: 2.5
-  #   small: 5
-  #   medium: 10
-  #   large: 20
-  #   full: 50
+  stock_size_tiers:
+    tiny: 2.5
+    small: 5
+    medium: 10
+    large: 20
+    full: 50
   size_tiers:
-    lotto:  { risk_pct_max: 0.5,  contracts_min: 1, contracts_max: 1 }
-    micro:  { risk_pct_max: 0.5,  contracts_min: 1, contracts_max: 1 }
-    tiny:   { risk_pct_max: 1.0,  contracts_min: 1, contracts_max: 1 }
-    small:  { risk_pct_max: 2.0,  contracts_min: 1, contracts_max: 2 }
-    medium: { risk_pct_max: 5.0,  contracts_min: 1, contracts_max: 5 }
-    large:  { risk_pct_max: 10.0, contracts_min: 1, contracts_max: 10 }
-    big:    { risk_pct_max: 10.0, contracts_min: 1, contracts_max: 10 }
-    full:   { risk_pct_max: 10.0, contracts_min: 1, contracts_max: 10 }
+    lotto:  { risk_pct_max: 0.5,  contracts_min: 1, contracts_max: 1,  stop_loss_pct: 50 }
+    micro:  { risk_pct_max: 0.5,  contracts_min: 1, contracts_max: 1,  stop_loss_pct: 50 }
+    tiny:   { risk_pct_max: 1.0,  contracts_min: 1, contracts_max: 1,  stop_loss_pct: 40 }
+    small:  { risk_pct_max: 2.0,  contracts_min: 1, contracts_max: 2,  stop_loss_pct: 30 }
+    medium: { risk_pct_max: 5.0,  contracts_min: 1, contracts_max: 5,  stop_loss_pct: 25 }
+    large:  { risk_pct_max: 10.0, contracts_min: 1, contracts_max: 10, stop_loss_pct: 20 }
+    big:    { risk_pct_max: 10.0, contracts_min: 1, contracts_max: 10, stop_loss_pct: 20 }
+    full:   { risk_pct_max: 10.0, contracts_min: 1, contracts_max: 10, stop_loss_pct: 20 }
 
   max_contracts_per_trade: 10   # global cap regardless of tier
   max_open_risk_pct: 30          # per account: max % of account value in open

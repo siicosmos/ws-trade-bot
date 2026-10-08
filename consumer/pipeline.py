@@ -91,10 +91,10 @@ def process_alert(
     if alert is None:
         if correction:
             if _notify_enabled(cfg):
-                notify_correction(cfg.discord.webhook_url, text)
+                notify_correction(cfg.discord.trade_alert_webhook_url, text)
             return {"status": "correction", "alert": None}
         if _notify_enabled(cfg):
-            notify_plain(cfg.discord.webhook_url, text)
+            notify_plain(cfg.discord.trade_alert_webhook_url, text)
         return {"status": "ignored", "reason": "no actionable signal"}
 
     if cfg.trading.mode == "notify":
@@ -104,7 +104,7 @@ def process_alert(
             else []
         )
         if _notify_enabled(cfg):
-            notify_alert(cfg.discord.webhook_url, alert, sizing,
+            notify_alert(cfg.discord.trade_alert_webhook_url, alert, sizing,
                          correction=correction, mismatch=mismatch)
         # notify mode is the dry-run ledger: record what would have
         # been traded so the trade log stays meaningful
@@ -182,7 +182,7 @@ def process_alert(
     allowed, reason = risk.evaluate(alert)
     if not allowed:
         notify_discord(
-            cfg.discord.webhook_url,
+            cfg.discord.trade_alert_webhook_url,
             f"Signal blocked: {alert.action} {alert.ticker}",
             {"reason": reason, "alert": alert.raw[:200]},
             ok=False,
@@ -197,7 +197,7 @@ def process_alert(
             alert, "error", str(e), key,
         )
         notify_discord(
-            cfg.discord.webhook_url,
+            cfg.discord.trade_alert_webhook_url,
             f"ERROR executing {alert.action} {alert.ticker}",
             {"error": str(e), "alert": alert.raw[:200]},
             ok=False,
@@ -230,7 +230,7 @@ def process_alert(
     if correction:
         extra["note"] = "ADMIN CORRECTION - may supersede the previous alert"
     notify_alert(
-        cfg.discord.webhook_url, alert, sizing=exec_sizing,
+        cfg.discord.trade_alert_webhook_url, alert, sizing=exec_sizing,
         correction=correction, mismatch=mismatch,
         prefix=f"[{executor.mode.upper()}] ", extra_fields=extra,
         # the box color follows the action - sells are red, buys

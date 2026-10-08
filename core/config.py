@@ -21,7 +21,6 @@ class PipelineConfig:
 
 @dataclass
 class DiscordConfig:
-    webhook_url: str = ""
     # this app's log tail (consumer.log / info.log) posted to
     # discord in batches; empty = off. legacy configs call it
     # pipeline_log_webhook_url - still read as a fallback
@@ -29,6 +28,9 @@ class DiscordConfig:
     update_webhook_url: str = ""
     # send parsed alerts to the webhook
     notify: bool = True
+    # trade alerts to your phone (consumer). legacy configs call
+    # it webhook_url - still read as a fallback
+    trade_alert_webhook_url: str = ""
 
 
 
@@ -389,8 +391,11 @@ def load_config(path: str) -> Config:
     )
 
     discord_raw = raw.get("discord") or {}
-    webhook = os.environ.get("DISCORD_WEBHOOK_URL") or str(
-        _get(discord_raw, "webhook_url", "")
+    webhook = (
+        os.environ.get("DISCORD_WEBHOOK_URL")
+        or str(_get(discord_raw, "trade_alert_webhook_url", ""))
+        # legacy key name - still read as a fallback
+        or str(_get(discord_raw, "webhook_url", ""))
     )
 
     mode = str(_get(trading_raw, "mode", "notify")).lower()
@@ -484,8 +489,8 @@ def load_config(path: str) -> Config:
             role=role,
         ),
         discord=DiscordConfig(
-        notify=bool(_get(discord_raw, "notify", True)),
-            webhook_url=webhook,
+            notify=bool(_get(discord_raw, "notify", True)),
+            trade_alert_webhook_url=webhook,
             consumer_log_webhook_url=str(
                 _get(
                     discord_raw,

@@ -18,7 +18,7 @@ class ConfigStub:
     def __init__(self, trading, accounts=None, auth_token=""):
         self.trading = trading
         self.pipeline = type("PI", (), {"auth_token": auth_token})()
-        self.discord = type("D", (), {"webhook_url": ""})()
+        self.discord = type("D", (), {"trade_alert_webhook_url": ""})()
         self.parser = type("P", (), {"custom_patterns": []})()
         self.wealthsimple = WealthsimpleConfig(accounts=accounts or [])
         self.reader = ReaderConfig()
