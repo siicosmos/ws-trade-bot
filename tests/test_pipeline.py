@@ -652,36 +652,17 @@ def test_load_env_tokens_missing_file():
     assert wt.load_env_tokens(path="/nonexistent/ws_tokens.env") is False
 
 
-def test_load_env_tokens_legacy_root_fallback(tmp_path, monkeypatch):
+def test_load_env_tokens_reads_the_consumer_folder(tmp_path, monkeypatch):
     import consumer.ws.ws_tokens as wt
 
-    consumer_dir = tmp_path / "consumer"
-    consumer_dir.mkdir()
-    monkeypatch.setattr(
-        wt, "_TOKEN_PATH", str(consumer_dir / "ws_tokens.env")
-    )
-    monkeypatch.setattr(
-        wt, "_LEGACY_TOKEN_PATH", str(tmp_path / "ws_tokens.env")
-    )
+    token_file = tmp_path / "consumer" / "ws_tokens.env"
+    token_file.parent.mkdir()
+    token_file.write_text("export WS_ACCESS_TOKEN=tok\n")
+    monkeypatch.setattr(wt, "_TOKEN_PATH", str(token_file))
 
-    # no file anywhere -> nothing loaded
     monkeypatch.delenv("WS_ACCESS_TOKEN", raising=False)
-    assert wt.load_env_tokens() is False
-
-    # legacy root file (pre consumer/ installs) is picked up
-    (tmp_path / "ws_tokens.env").write_text(
-        "export WS_ACCESS_TOKEN=legacy-token\n"
-    )
     assert wt.load_env_tokens() is True
-    assert os.environ.get("WS_ACCESS_TOKEN") == "legacy-token"
-    os.environ.pop("WS_ACCESS_TOKEN", None)
-
-    # the consumer/ location wins once it exists
-    (consumer_dir / "ws_tokens.env").write_text(
-        "export WS_ACCESS_TOKEN=new-token\n"
-    )
-    assert wt.load_env_tokens() is True
-    assert os.environ.get("WS_ACCESS_TOKEN") == "new-token"
+    assert os.environ.get("WS_ACCESS_TOKEN") == "tok"
     os.environ.pop("WS_ACCESS_TOKEN", None)
 
 
@@ -2092,7 +2073,7 @@ def test_update_relevance_gating(monkeypatch, tmp_path):
     files = up.git_changed_files(root, "a", "b")
     assert files == ["docs/x.md", "reader/discord_reader.py"]
     assert not up.files_match(files, up.PIPELINE_RESTART_FILES)
-    assert up.files_match(files, up.READER_RESTART_FILES)
+    assert up.files_match(files, ("reader/*", "requirements.txt"))
 
     def fake_git2(r, *args):
         if args[0] == "diff":

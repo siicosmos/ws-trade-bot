@@ -12,9 +12,9 @@ PIPELINE_RESTART_FILES = (
     "trader/*", "core/*", "info/*", "consumer/*",
     "run.py", "requirements.txt",
 )
-READER_RESTART_FILES = ("reader/*", "requirements.txt")
 # per-role globs: each app restarts only when code it executes
-# changed (the shared core moves both)
+# changed (the shared core moves both). the reader runs no
+# updater - it restarts off the info server's pull
 INFO_RESTART_FILES = ("core/*", "info/*", "run.py", "requirements.txt")
 CONSUMER_RESTART_FILES = ("core/*", "consumer/*", "run.py",
                           "requirements.txt")
@@ -76,10 +76,9 @@ RUNTIME_IGNORED = (
     "logs/*", "trades.db*", "*.db",
     "consumer/consumer.trades.db*", "info/info.trades.db*",
     "consumer/trades.db*", "info/trades.db*",
-    ".last_update.json",
-    ".reader_seen.json", "reader/.reader_seen.json",
+    ".last_update.json", "reader/.reader_seen.json",
     ".session_key",
-    "config.yaml", "ws_tokens.env", "consumer/ws_tokens.env",
+    "config.yaml", "consumer/ws_tokens.env",
     "consumer/consumer.config.yaml", "info/info.config.yaml",
     "reader/reader.config.yaml",
     "*.pyc", "__pycache__/*",

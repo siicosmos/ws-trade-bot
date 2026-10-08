@@ -10,7 +10,9 @@ import os
 import sys
 
 from core.ops.loghook import default_log_path, install_log_webhook
-from core.ops.updater import create_updater, startup_banner
+from core.ops.updater import (
+    INFO_RESTART_FILES, create_updater, startup_banner,
+)
 from core.ops.watchdog import start_health_watchdog
 from core.store import Store
 from info.fanout import start_fanout_thread
@@ -99,9 +101,7 @@ def main(cfg, args):
         cfg, ROOT,
         cfg.discord.update_webhook_url or cfg.discord.webhook_url,
         restart=_restart,
-        restart_files=(
-            "core/*", "info/*", "run.py", "requirements.txt",
-        ),
+        restart_files=INFO_RESTART_FILES,
     )
     updater.start()
     if cfg.auto_update.enabled:

@@ -459,59 +459,9 @@ def own_config_path():
     return os.path.join(here, "reader.config.yaml")
 
 
-def legacy_config_path():
-    here = os.path.dirname(os.path.abspath(__file__))
-    return os.path.join(here, "..", "config.yaml")
-
-
-def _migrate_own_config(root_cfg):
-    """One-time migration: flatten the monolith config's reader +
-    discord sections into reader/reader.config.yaml (flat keys).
-    The reader's webhooks (reader log, raw alerts) move here from
-    the discord section - they are reader-domain."""
-    import yaml
-
-    path = own_config_path()
-    reader = root_cfg.get("reader") or {}
-    discord = root_cfg.get("discord") or {}
-    flat = dict(reader)
-    flat["reader_log_webhook_url"] = str(
-        discord.get("reader_log_webhook_url") or "")
-    flat["raw_alert_webhook_url"] = str(
-        discord.get("raw_alert_webhook_url") or "")
-    flat["webhook_url"] = str(discord.get("webhook_url") or "")
-    with open(path, "w", encoding="utf-8") as f:
-        yaml.safe_dump(
-            flat, f, default_flow_style=False, sort_keys=False,
-            allow_unicode=True, width=4096,
-        )
-    log("migrated reader settings to " + path)
-
-
 def find_config_path():
     if os.path.exists(own_config_path()):
         return os.path.abspath(own_config_path())
-    here = os.path.dirname(os.path.abspath(__file__))
-    # one-time rename: the per-role config name
-    old = os.path.join(here, "config.yaml")
-    if os.path.exists(old):
-        try:
-            os.rename(old, own_config_path())
-            log("renamed reader/config.yaml -> reader/reader.config.yaml")
-            return os.path.abspath(own_config_path())
-        except OSError:
-            pass
-    legacy = legacy_config_path()
-    if os.path.exists(legacy):
-        try:
-            import yaml as _yaml
-
-            with open(legacy, "r", encoding="utf-8") as f:
-                root_cfg = _yaml.safe_load(f) or {}
-            _migrate_own_config(root_cfg)
-            return os.path.abspath(own_config_path())
-        except OSError:
-            pass
     return None
 
 
@@ -1109,32 +1059,15 @@ def repo_root():
 
 
 # the seen-set lives in the reader's own folder, next to its
-# config (the repo-root location is legacy - migrated on load)
+# config
 SEEN_FILE = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), ".reader_seen.json"
 )
-LEGACY_SEEN_FILE = os.path.join(repo_root(), ".reader_seen.json")
 SEEN_RETAIN_SECONDS = 48 * 3600
-
-
-def _migrate_seen_file():
-    """One-time rename: .reader_seen.json moved from the repo
-    root into the reader folder - keeping it preserves the
-    seen-set, so old Discord messages do not re-trigger."""
-    if os.path.exists(SEEN_FILE) or not os.path.exists(
-        LEGACY_SEEN_FILE
-    ):
-        return
-    try:
-        os.makedirs(os.path.dirname(SEEN_FILE), exist_ok=True)
-        os.rename(LEGACY_SEEN_FILE, SEEN_FILE)
-    except OSError:
-        pass
 
 
 def load_seen():
     """Messages already delivered, surviving reader restarts."""
-    _migrate_seen_file()
     try:
         with open(SEEN_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)

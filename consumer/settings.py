@@ -628,24 +628,9 @@ def _persist(cfg, config_path):
     for key in EDITABLE_LISTS:
         trading[key] = getattr(cfg.trading, key)
     trading["size_tiers"] = cfg.trading.size_tiers
-    if getattr(cfg.trading, "stock_size_tiers", None):
-        trading["stock_size_tiers"] = cfg.trading.stock_size_tiers
     trading["stock_size_tiers"] = dict(
         getattr(cfg.trading, "stock_size_tiers", {}) or {}
     )
-
-    dc = raw.setdefault("discord", {})
-    for field in (
-        "webhook_url",
-        "consumer_log_webhook_url",
-        "update_webhook_url",
-    ):
-        if field in raw.get("discord", {}) or getattr(
-            cfg.discord, field, ""
-        ):
-            dc[field] = getattr(cfg.discord, field)
-    # the legacy key name is obsolete - drop it on save
-    dc.pop("pipeline_log_webhook_url", None)
 
     ws = raw.setdefault("wealthsimple", {})
     for field in ("positions_refresh_seconds", "values_refresh_seconds"):

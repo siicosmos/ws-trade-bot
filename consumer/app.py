@@ -20,7 +20,9 @@ from consumer.trading.quotes import (
 from consumer.trading.risk import RiskEngine
 from consumer.web import create_app
 from core.ops.loghook import default_log_path, install_log_webhook
-from core.ops.updater import create_updater, startup_banner
+from core.ops.updater import (
+    CONSUMER_RESTART_FILES, create_updater, startup_banner,
+)
 from core.ops.watchdog import start_health_watchdog
 from core.store import Store
 from consumer.ws.account import PaperAccount, WealthsimpleAccount
@@ -255,9 +257,7 @@ def main(cfg, args):
         cfg, ROOT,
         cfg.discord.update_webhook_url or cfg.discord.webhook_url,
         restart=_restart,
-        restart_files=(
-            "core/*", "consumer/*", "run.py", "requirements.txt",
-        ),
+        restart_files=CONSUMER_RESTART_FILES,
     )
     updater.start()
     if cfg.auto_update.enabled:

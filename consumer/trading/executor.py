@@ -249,15 +249,6 @@ def _at_cluster_cap(store, mode, label, value, cfg, alert=None,
     return cluster_risk >= limit
 
 
-def is_lotto_alert(alert) -> bool:
-    """Lotto rules: an explicit lotto size, the "hero or zero"
-    phrasing (parsed as lotto) or a profits-only qualifier."""
-    return (
-        bool(getattr(alert, "size", None) == "lotto")
-        or bool(getattr(alert, "profits_only", False))
-    )
-
-
 def lotto_gain_cap(store, mode, cfg, alert) -> Optional[float]:
     """The max $ a lotto / profits-only buy may spend today: a
     fraction (default 75%) of what was realized selling today.
