@@ -110,8 +110,8 @@ All wrapped by `core/ops/supervise.py` (crash → log + Discord notice
    `X-Auth-Token: <reader.auth_token>` (must match the info server's
    `info.auth_token`). Messages count as seen only after a 2xx;
    failed posts retry from a pending queue.
-4. **Info server ingest** — `pipeline.ingest_alert()`: parse
-   (`trading/parser.py`), dedupe (sha256 message key + reaction-prefix
+4. **Info server ingest** — `info/ingest.py: ingest_alert()`: parse
+   (`core/parser.py`), dedupe (sha256 message key + reaction-prefix
    check), record into `signals`. The fan-out thread then pushes the
    alert to every registered consumer's `/alert` endpoint (bounded
    retries); consumers that miss the push backfill via their pull
@@ -610,7 +610,7 @@ The suite has three modes (pytest markers, see `pytest.ini`) —
 minimum ⊂ essential ⊂ full:
 
 ```bash
-# minimum: smoke - configs load, alerts parse, settings save (~11 tests)
+# minimum: smoke - configs load, alerts parse, settings save (11 tests)
 .venv/bin/python -m pytest tests -q -m minimum
 
 # essential: + parser, settings, reader, stops, users, feed, mirror,

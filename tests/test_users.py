@@ -1,6 +1,7 @@
 """User login and access model: per-user pbkdf2 passwords, two
 roles (admin / viewer), admin user management, role-gated
-writes, first-admin bootstrap and the legacy token fallback."""
+writes; the access token seeds the admin account and is the
+only bootstrap (main refuses to start without it)."""
 
 import os
 import sys

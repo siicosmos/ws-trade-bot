@@ -34,23 +34,21 @@ Windows UIA); it needs `requirements.txt` installed
 **Automated** (`tests/test_config_example.py`)
 
 - `consumer:` / `info:` section keys load; the section key IS the
-  role (no `role:` field needed).
-- Legacy `pipeline:` + `role:` still loads; section key wins over
-  a stale `role:` field.
+  role (no `role:` field needed). A config with neither section
+  defaults to the consumer role with default host/port.
 - Templates parse, load through `load_config`, carry the right
   role/port defaults, ship no secrets.
-- Reader template is flat-key.
+- Reader template is flat-key; the removed keys
+  (`channel_marker`, `discord_server`) stay out of it.
 - Account `type` normalized (`MARGIN` → `margin`, unknown → `""`).
 
 **Manual**
 
-- [ ] M-1.1 Start each role once from its renamed config
+- [ ] M-1.1 Start each role once from its config
       (`consumer/consumer.config.yaml`, `info/info.config.yaml`)
       and confirm the dashboard + role dispatch work.
-- [ ] M-1.2 A config with BOTH `pipeline:` and `consumer:` loads
-      with the `consumer:` section winning (no crash, no dupes).
 
-## 2. Per-role file names + migration
+## 2. Per-role file names
 
 **Automated**
 
@@ -63,9 +61,6 @@ Windows UIA); it needs `requirements.txt` installed
       `consumer/consumer.trades.db` + `info/info.trades.db` exist
       (renamed 2026-10-08), restart via the `.bat`s, and confirm
       the dashboards still show full history (no fresh empty db).
-- [ ] M-2.2 Delete `VERSION`-less edge: rename the consumer db
-      back to `trades.db`, start the consumer, confirm run.py
-      migrates it and prints `migrated ...`.
 
 ## 3. Updater routing (role-based)
 
@@ -159,12 +154,12 @@ by stubs (`test_reader.py` timing tests).
 
 **Manual (Windows box)**
 
-- [ ] M-6.2 Push a `reader/*` commit → info server pulls → the
+- [ ] M-6.1 Push a `reader/*` commit → info server pulls → the
       reader logs `repo updated on disk - restarting reader`,
       posts "Reader restarting", and comes back watching Discord.
-- [ ] M-6.3 Push a docs-only commit → reader logs
+- [ ] M-6.2 Push a docs-only commit → reader logs
       `repo updated (no reader changes) - staying up`.
-- [ ] M-6.4 Edit `reader/reader.config.yaml` while running →
+- [ ] M-6.3 Edit `reader/reader.config.yaml` while running →
       reader restarts to apply it.
 
 ## 7. Accounts (add/remove, margin model)
@@ -241,9 +236,8 @@ by stubs (`test_reader.py` timing tests).
 
 **Manual**
 
-- [ ] M-9.1 `start_consumer.bat` / `start_info.bat`: old
-      `config.yaml` auto-renames on first run; missing config
-      prints the new copy hint and pauses.
+- [ ] M-9.1 `start_consumer.bat` / `start_info.bat`: a missing
+      per-role config prints the copy hint and pauses.
 - [ ] M-9.2 Crash loop: kill the python process — the loop
       restarts in 5s, writes `pipeline_exit.txt`, and the next
       start surfaces "previous run: ...".
@@ -271,6 +265,32 @@ by stubs (`test_reader.py` timing tests).
 - [ ] M-10.2 Notify-mode smoke on the live box: one alert flows
       reader → info → consumer → Discord embed, ledger row
       recorded, dashboard shows it.
+
+---
+
+## 11. Auth model
+
+**Automated** (`tests/test_users.py`, `test_settings_update.py`,
+`test_pipeline.py`, e2e phase D)
+
+- The access token is mandatory: `main()` refuses to start
+  without it on any host (`test_refuses_start_without_token`).
+- First boot seeds the `admin` account from the token
+  (`test_admin_seeded_from_access_token`); login is
+  username+password only — no first-boot claim form, no bare
+  token login (`test_tokenless_install_cannot_claim_or_bare_token_login`).
+- Roles: admin/viewer, self password change requires the current
+  password, viewer read-only (`test_users.py`).
+- 5-fail/15-minute lockout; logout ends the session; the machine
+  token (`X-Auth-Token`) grants owner-level API access
+  (`test_auth_guard`, e2e auth phase).
+
+**Manual**
+
+- [ ] M-11.1 On the live box: log in as the seeded admin (the
+      token as password), change the admin password from the
+      users modal, restart, confirm the new password works and
+      the old one does not.
 
 ---
 

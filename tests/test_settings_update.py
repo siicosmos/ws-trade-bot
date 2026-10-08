@@ -545,7 +545,7 @@ def test_persist_preserves_blank_lines_and_order(tmp_path):
 
     cfg_path = tmp_path / "config.yaml"
     cfg_path.write_text(
-        "pipeline:\n"
+        "consumer:\n"
         "  port: 8080\n"
         "\n"
         "trading:\n"
@@ -568,7 +568,7 @@ def test_persist_preserves_blank_lines_and_order(tmp_path):
     assert not errors, errors
     text = cfg_path.read_text(encoding="utf-8")
 
-    assert text.index("pipeline:") < text.index("trading:") < (
+    assert text.index("consumer:") < text.index("trading:") < (
         text.index("quotes:")
     ) < text.index("reader:"), text
     assert "cooldown_seconds: 99" in text
@@ -652,7 +652,7 @@ def test_update_webhook_setting(tmp_path):
 
     cfg_path = tmp_path / "config.yaml"
     cfg_path.write_text(
-        "discord:\n  webhook_url: \"https://discord.com/api/webhooks/main\"\n"
+        "discord:\n  trade_alert_webhook_url: \"https://discord.com/api/webhooks/main\"\n"
         "trading:\n  mode: notify\n",
         encoding="utf-8",
     )
@@ -686,7 +686,7 @@ def test_all_webhooks_editable(tmp_path):
     cfg_path = tmp_path / "config.yaml"
     cfg_path.write_text(
         "discord:\n"
-        "  webhook_url: \"https://discord.com/api/webhooks/main\"\n"
+        "  trade_alert_webhook_url: \"https://discord.com/api/webhooks/main\"\n"
         "trading:\n  mode: notify\n",
         encoding="utf-8",
     )
@@ -753,7 +753,7 @@ def test_discord_notify_toggle(tmp_path):
     path = tmp_path / "cfg.yaml"
     path.write_text(
         "trading:\n  mode: notify\n"
-        "discord:\n  webhook_url: 'x'\n"
+        "discord:\n  trade_alert_webhook_url: 'x'\n"
     )
     cfg = load_config(str(path))
     assert get_settings(cfg)["discord"]["notify"] is True

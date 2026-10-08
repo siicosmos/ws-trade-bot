@@ -574,7 +574,7 @@ def test_heartbeat_fires_while_channel_quiet(monkeypatch, tmp_path):
             "channels": ["player-alerts"],
             "auth_token": "",
         },
-        "discord": {"webhook_url": ""},
+        "discord": {"update_webhook_url": ""},
     }
 
     class FakeWindow:
@@ -727,7 +727,7 @@ def test_unsent_messages_are_retried(monkeypatch, tmp_path):
             "poll_interval": 0.01,
             "channels": ["player-alerts"],
         },
-        "discord": {"webhook_url": ""},
+        "discord": {"update_webhook_url": ""},
     }
 
     class FakeWindow:

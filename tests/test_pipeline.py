@@ -5254,3 +5254,42 @@ def test_paper_usd_cash_pool_covers_usd_buys():
     assert cad + usd * 1.4 == pytest.approx(
         100.0 + 500.0 * 1.4 - res.qty * 100 * 1.4
     )
+
+
+def test_summary_reader_desired_is_first_allowed_channel():
+    # the dashboard reader line's "desired" is the first entry of
+    # the channels allowlist (the channel the reader sits in)
+    accounts = [
+        WSAccountConfig(account_id="rrsp", label="RRSP", paper_value=50000),
+    ]
+    store = _fresh_store()
+    cfg = ConfigStub(TradingConfig(mode="notify"), accounts=accounts,
+                     auth_token="s3cret")
+    cfg.reader = ReaderConfig(channels=["player-alerts", "test-alerts"])
+    account = PaperAccount(cfg, store)
+    app = __import__(
+        "consumer.web", fromlist=["create_app"]
+    ).create_app(cfg, store, RiskEngine(cfg, store, account),
+                 PaperExecutor(cfg, store, account), account)
+    client = app.test_client()
+    summary = client.get("/api/summary",
+                         headers={"X-Auth-Token": "s3cret"}).get_json()
+    assert summary["reader"]["desired"] == "player-alerts"
+
+
+def test_refuses_start_without_token_info_role(tmp_path):
+    import subprocess
+    import sys
+
+    cfg_path = tmp_path / "info.yaml"
+    cfg_path.write_text(
+        "info:\n  host: \"127.0.0.1\"\n  port: 8081\n  auth_token: \"\"\n"
+        "trading:\n  mode: notify\n"
+    )
+    r = subprocess.run(
+        [sys.executable, "run.py", "-c", str(cfg_path), "--db",
+         str(tmp_path / "x.db")],
+        capture_output=True, text=True, timeout=60,
+    )
+    assert r.returncode != 0
+    assert "auth_token" in (r.stdout + r.stderr)
