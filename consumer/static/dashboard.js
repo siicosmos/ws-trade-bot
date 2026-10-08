@@ -446,7 +446,10 @@ function renderSummary(data) {
   modeEl.textContent = data.mode;
   modeEl.className = "badge " + data.mode;
   const paperBadge = document.getElementById("paper-badge");
-  paperBadge.style.display = data.paper ? "" : "none";
+  // the mode badge already reads "paper" in paper mode - the
+  // second badge is only for paper running alongside notify
+  paperBadge.style.display =
+    data.paper && data.mode !== "paper" ? "" : "none";
   if (data.stops) {
     const s = data.stops;
     const streak = s.consecutive_losses + "/" + s.max_consecutive_losses;
