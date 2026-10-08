@@ -610,8 +610,10 @@ exercises the whole pipeline without real orders.
 
 ## Testing
 
-The suite has three modes (pytest markers, see `pytest.ini`) —
-minimum ⊂ essential ⊂ full:
+Run the tests through pytest from the repo root (`python -m pytest`
+puts the repo root on sys.path; invoking a test file directly does
+not and fails on the imports). The suite has three modes (pytest
+markers, see `pytest.ini`) — minimum ⊂ essential ⊂ full:
 
 ```bash
 # minimum: smoke - configs load, alerts parse, settings save (11 tests)
