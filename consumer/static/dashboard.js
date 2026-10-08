@@ -235,6 +235,7 @@ function openPaperSettings(label) {
     "paper · " + label;
   document.getElementById("paperSettingsBody").innerHTML = html;
   document.getElementById("paperSettingsBackdrop").style.display = "flex";
+  document.getElementById("paperSettingsFloat").style.display = "flex";
   const list = document.getElementById("padj-holdings");
   function holdingRow(h) {
     const isOpt = !!h.right;
@@ -318,6 +319,7 @@ function openPaperSettings(label) {
 
 function closePaperSettings() {
   document.getElementById("paperSettingsBackdrop").style.display = "none";
+  document.getElementById("paperSettingsFloat").style.display = "none";
 }
 
 function _padjHoldingsRowData(row) {
