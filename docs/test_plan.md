@@ -76,6 +76,11 @@ Windows UIA); it needs `requirements.txt` installed
   origin slug) on the first check, then compares releases.
 - `update_status_payload` works for both updater types.
 
+```bash
+.venv/bin/python -m pytest tests/test_release_updater.py -q -k "role or seed or routing"
+.venv/bin/python -m pytest tests/test_roles.py -q -k "updater"
+```
+
 **Manual**
 
 - [ ] M-3.1 Consumer (git checkout, live box): start it, watch
@@ -105,6 +110,11 @@ Windows UIA); it needs `requirements.txt` installed
 - A truncated/wrong artifact (no `core/`/`consumer/` inside) is
   detected and aborted — no staging, no restart.
 
+```bash
+.venv/bin/python -m pytest tests/test_release_updater.py -q
+.venv/bin/python -m pytest tests/test_build_zip.py -q
+```
+
 **Manual (real network + real release)**
 
 - [ ] M-4.1 End-to-end self-update: push a trivial commit to
@@ -125,7 +135,8 @@ Windows UIA); it needs `requirements.txt` installed
 
 ## 5. Git updater (info server) + restart scoping
 
-**Automated** (`tests/test_updater.py`, `test_pipeline.py`)
+**Automated** (`tests/test_updater.py`, `tests/test_pipeline.py`,
+`tests/test_release_updater.py`)
 
 - Fetch + ff-only pull, restart only when role code changed,
   untracked files never block, dirty tracked files block,
@@ -134,13 +145,48 @@ Windows UIA); it needs `requirements.txt` installed
 - Webhook titles are role-branded: `Info server restarting` /
   `Consumer app restarting` / `... updated (no restart)`.
 
-**Manual**
+Run them directly:
+
+```bash
+# the whole updater suite (pull flow, restart scoping, record)
+.venv/bin/python -m pytest tests/test_updater.py tests/test_release_updater.py -q
+
+# just the pull/restart scoping + the update record
+.venv/bin/python -m pytest tests/test_updater.py -q -k "check_once or record or seed"
+
+# the startup banner's "(updated N ago via pull)" annotation
+.venv/bin/python -m pytest tests/test_pipeline.py -q -k "banner"
+
+# the release-client swap (consumer) incl. the record write
+.venv/bin/python -m pytest tests/test_release_updater.py -q -k "apply"
+```
+
+**Manual (live info server)**
 
 - [ ] M-5.1 Push a docs-only commit: info server pulls, posts
-      "Info server updated (no restart)", keeps running.
+      "Info server updated (no restart)", keeps running. Then
+      verify the update record followed the pull:
+
+      ```powershell
+      Get-Content .last_update.json | ConvertFrom-Json
+      # "commit" must equal the current head:
+      git rev-parse --short HEAD
+      # "how" is "auto" and "ts" is within the last interval
+      ```
+
+      (Regression this guards: the no-restart pull path used to
+      skip the record write, leaving the hash pointing at the old
+      commit - `test_check_once_records_no_restart_pull`.)
 - [ ] M-5.2 Push an `info/*` commit: pulls, posts
       "Info server restarting", restarts, banner shows the new
-      commit.
+      commit. Confirm in `logs\info.log`:
+
+      ```powershell
+      Select-String "auto-update|starting" logs\info.log | Select-Object -Last 5
+      # expect: auto-update: updated to <sha>: ... /
+      #         auto-update: restarting pipeline... /
+      #         info server starting - commit <sha> (auto-updated ...)
+      ```
 - [ ] M-5.3 Discord: confirm the embed titles match the role
       (no more "Pipeline restarting") for info + consumer.
 - [ ] M-5.4 Info dashboard write routes are token-guarded
@@ -150,6 +196,10 @@ Windows UIA); it needs `requirements.txt` installed
       reader's token (localStorage, no cookie); a wrong token
       gets a 401, is dropped, and the next save re-prompts. The
       read-only GETs stay open.
+- [ ] M-5.5 Dashboard git badge: open the info dashboard and
+      confirm the badge shows the current head and the
+      `last_pull` timestamp matches the record
+      (`Get-Content .last_update.json`).
 
 ## 6. Reader (rides the info pull)
 
@@ -170,6 +220,11 @@ by stubs (`test_reader.py` timing tests).
 
 **Automated** (`tests/test_settings_update.py`,
 `test_config_example.py`)
+
+```bash
+.venv/bin/python -m pytest tests/test_settings_update.py -q -k "account"
+.venv/bin/python -m pytest tests/test_config_example.py -q -k "account"
+```
 
 - Blank config → add two accounts (margin + non_margin) →
   persisted with types; remove one; flip type back to auto.
@@ -288,6 +343,12 @@ by stubs (`test_reader.py` timing tests).
 - 5-fail/15-minute lockout; logout ends the session; the machine
   token (`X-Auth-Token`) grants owner-level API access
   (`test_auth_guard`, e2e auth phase).
+
+```bash
+.venv/bin/python -m pytest tests/test_users.py -q
+.venv/bin/python -m pytest tests -q -k "auth_guard or refuses_start or login"
+.venv/bin/python tests/scripts/e2e_test.py   # phase D = auth guard
+```
 
 **Manual**
 

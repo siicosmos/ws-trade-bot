@@ -482,6 +482,10 @@ class AutoUpdater:
             # keep the loop's baseline current so the next poll
             # does not mistake our own pull for a local change
             self.start_head = new
+            # record the move: the code on disk is at `new` now -
+            # an unrecorded pull left .last_update.json (and the
+            # dashboard's last_pull) pointing at the old commit
+            self._record_update("auto")
             return False
 
         notify_discord(

@@ -429,3 +429,60 @@ def test_dirty_worktree_diverging_still_skips(tmp_path):
     assert calls == []
     assert "dirty" in up.last_result
     assert (work / "core" / "x.py").read_text() == "local edit"
+
+
+def test_check_once_records_no_restart_pull(tmp_path):
+    """a pull that touches no pipeline files (docs, reader, tests)
+    does not restart - but the code on disk moved, so the update
+    record must follow: a stale record made the banner and the
+    dashboard's last_pull point at the old commit."""
+    import json
+    import subprocess
+
+    from core.ops.updater import UPDATE_RECORD, AutoUpdater, _git
+
+    env = {
+        **os.environ,
+        "GIT_AUTHOR_NAME": "t",
+        "GIT_AUTHOR_EMAIL": "t@t",
+        "GIT_COMMITTER_NAME": "t",
+        "GIT_COMMITTER_EMAIL": "t@t",
+    }
+
+    def git(cwd, *args):
+        subprocess.run(
+            ["git", *args], cwd=cwd, env=env,
+            capture_output=True, check=True,
+        )
+
+    origin = tmp_path / "origin.git"
+    git(tmp_path, "init", "--bare", str(origin))
+
+    work = tmp_path / "work"
+    git(tmp_path, "clone", str(origin), str(work))
+    _write(work, "trader/server.py", "1")
+    git(work, "add", "-A")
+    git(work, "commit", "-m", "initial")
+    git(work, "push", "-u", "origin", "HEAD")
+
+    calls = []
+    up = AutoUpdater(_cfg(interval=600, enabled=True), str(work), "",
+                     restart=lambda *a, **k: calls.append(1))
+    assert up.check_once() is False
+
+    other = tmp_path / "other"
+    git(tmp_path, "clone", str(origin), str(other))
+    _write(other, "README.md", "docs only")
+    git(other, "add", "-A")
+    git(other, "commit", "-m", "docs")
+    git(other, "push")
+
+    # no restart - but the record follows the new head
+    assert up.check_once() is False, up.last_result
+    assert calls == []
+    record = json.loads(
+        (work / UPDATE_RECORD).read_text(encoding="utf-8"))
+    head = _git(str(work), "rev-parse", "HEAD").stdout.strip()
+    assert record["commit"] == head[:8]
+    assert record["how"] == "auto"
+    assert up.last_pull()["commit"] == head[:8]
