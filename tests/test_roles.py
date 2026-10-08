@@ -261,7 +261,7 @@ def test_mode_endpoint_restarts_via_callback(tmp_path):
     config_path = _tmp_config(tmp_path)
     app, store, cfg = _app_with_config(config_path)
     restarted = []
-    app.restart_pipeline = lambda: restarted.append(1)
+    app.restart_pipeline = lambda *a, **k: restarted.append(1)
     client = app.test_client()
     r = client.post(
         "/api/mode", json={"mode": "paper"}, headers=_headers("t")

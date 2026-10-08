@@ -123,7 +123,7 @@ def test_check_once_stages_and_restarts(tmp_path, monkeypatch):
 
     calls = []
     up = ReleaseUpdater(
-        _cfg(), str(tmp_path), "", restart=lambda: calls.append(1)
+        _cfg(), str(tmp_path), "", restart=lambda *a, **k: calls.append(1)
     )
     assert up.check_once() is True
     assert calls == [1]
@@ -156,7 +156,7 @@ def test_checksum_mismatch_aborts(tmp_path, monkeypatch):
 
     calls = []
     up = ReleaseUpdater(
-        _cfg(), str(tmp_path), "", restart=lambda: calls.append(1)
+        _cfg(), str(tmp_path), "", restart=lambda *a, **k: calls.append(1)
     )
     assert up.check_once() is False
     assert calls == []
@@ -296,7 +296,7 @@ def test_incomplete_staged_build_aborts(tmp_path, monkeypatch):
 
     calls = []
     up = ReleaseUpdater(
-        _cfg(), str(tmp_path), "", restart=lambda: calls.append(1)
+        _cfg(), str(tmp_path), "", restart=lambda *a, **k: calls.append(1)
     )
     assert up.check_once() is False
     assert calls == []

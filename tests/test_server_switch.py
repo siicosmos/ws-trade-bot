@@ -67,7 +67,9 @@ def _wire_keyboard(win):
     id_mod.auto = types.SimpleNamespace(
         SendKeys=lambda *a, **k: setattr(win, "_i", win._i + 1)
     )
-    id_mod._time = types.SimpleNamespace(sleep=lambda s: None)
+    id_mod._time = types.SimpleNamespace(
+        sleep=lambda s: None, time=lambda: 1000.0
+    )
 
 
 def test_server_from_title_parses_channel_server():

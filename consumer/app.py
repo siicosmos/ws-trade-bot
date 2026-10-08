@@ -245,7 +245,17 @@ def main(cfg, args):
 
     startup_banner("consumer app", ROOT)
 
-    def _restart():
+    def _restart(reason="restart"):
+        # mirror the info server: every restart posts a notice to
+        # the update webhook (mode switches, release applies)
+        from core.ops.notify import notify_discord
+
+        notify_discord(
+            cfg.discord.update_webhook_url or cfg.discord.webhook_url,
+            "Consumer app restarting",
+            {"reason": str(reason)[:1000]},
+            ok=True,
+        )
         # the update restart exits via os._exit, which bypasses
         # atexit - flush the log batcher so the restart lines
         # reach the webhook

@@ -498,6 +498,9 @@ def server_from_title(title):
     return tail.replace("- Discord", "").strip()
 
 
+_focus_warn_ts = 0.0
+
+
 def _foreground_discord(window, log=print):
     """Bring the discord window to the foreground and verify it
     actually took focus - keyboard input goes wherever the focus
@@ -505,6 +508,7 @@ def _foreground_discord(window, log=print):
     SetForegroundWindow from a background process (SetActive
     attaches to the foreground thread's input queue, which is
     allowed to hand focus over)."""
+    global _focus_warn_ts
     try:
         hwnd = window.NativeWindowHandle
     except UIAError:
@@ -522,7 +526,13 @@ def _foreground_discord(window, log=print):
             log(f"discord focus attempt {attempt + 1} failed: {e}")
         _time.sleep(0.4)
     if fg() != hwnd:
-        log("discord did not take focus - keys would land elsewhere")
+        # the retry loop calls this every poll - the same warning
+        # every few seconds floods the log (and the discord log
+        # webhook); say it at most every 5 minutes
+        now = _time.time()
+        if now - _focus_warn_ts > 300:
+            _focus_warn_ts = now
+            log("discord did not take focus - keys would land elsewhere")
         return False
     return True
 

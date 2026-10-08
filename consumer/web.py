@@ -1908,7 +1908,7 @@ def create_app(cfg, store: Store, risk, executor, account=None,
             # with the new mode
             def _late_exit():
                 time.sleep(1.5)
-                app.restart_pipeline()
+                app.restart_pipeline(f"mode switched to {mode}")
 
             threading.Thread(target=_late_exit, daemon=True).start()
         return jsonify({

@@ -65,7 +65,7 @@ def test_updater_restart_on_local_change(tmp_path):
     _commit(repo, "a")
 
     calls = []
-    up = AutoUpdater(_cfg(), str(repo), "", restart=lambda: calls.append(1))
+    up = AutoUpdater(_cfg(), str(repo), "", restart=lambda *a, **k: calls.append(1))
     _write(repo, "trader/server.py", "y")
     _git_run(repo, "add", "-A")
     _commit(repo, "b")
@@ -115,7 +115,7 @@ def test_check_once_pulls_and_restarts(tmp_path):
 
     calls = []
     up = AutoUpdater(_cfg(interval=600, enabled=True), str(work), "",
-                     restart=lambda: calls.append(1))
+                     restart=lambda *a, **k: calls.append(1))
     assert up.check_once() is False
     assert calls == []
 
@@ -321,7 +321,7 @@ def test_updater_ignores_untracked_files(tmp_path):
 
     calls = []
     up = AutoUpdater(_cfg(interval=600, enabled=True), str(work), "",
-                     restart=lambda: calls.append(1))
+                     restart=lambda *a, **k: calls.append(1))
     assert up.check_once() is True, up.last_result
     assert calls == [1]
 
@@ -371,7 +371,7 @@ def test_dirty_worktree_matching_origin_converges(tmp_path):
     calls = []
     up = AutoUpdater(
         _cfg(interval=600, enabled=True), str(work), "",
-        restart=lambda: calls.append(1),
+        restart=lambda *a, **k: calls.append(1),
     )
     assert up.check_once() is True, up.last_result
     assert calls == [1]
@@ -423,7 +423,7 @@ def test_dirty_worktree_diverging_still_skips(tmp_path):
     calls = []
     up = AutoUpdater(
         _cfg(interval=600, enabled=True), str(work), "",
-        restart=lambda: calls.append(1),
+        restart=lambda *a, **k: calls.append(1),
     )
     assert up.check_once() is False
     assert calls == []

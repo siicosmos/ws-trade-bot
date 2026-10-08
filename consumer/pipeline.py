@@ -210,19 +210,29 @@ def process_alert(
         result.detail, key,
     )
 
-    fields = {
-        "result": result.detail,
-        "qty": result.qty,
-        "entry": alert.entry or "-",
-        "stop": alert.stop_loss or "-",
-        "target": alert.take_profit or "-",
-    }
+    # the execution embed keeps the rich alert format (contract
+    # details + per-account sizing lines) with the mode tag in
+    # the title - the bare one-liner crammed everything into a
+    # single result field
+    exec_sizing = (
+        account_sizing(alert, cfg, account, store)
+        if account and alert.action == "BUY" else []
+    )
+    extra = {"result": result.detail}
+    if result.ok and result.qty:
+        extra["filled"] = f"**{result.qty}**"
+    if alert.entry:
+        extra["entry"] = alert.entry
+    if alert.stop_loss:
+        extra["stop"] = alert.stop_loss
+    if alert.take_profit:
+        extra["target"] = alert.take_profit
     if correction:
-        fields["note"] = "ADMIN CORRECTION - may supersede the previous alert"
-    notify_discord(
-        cfg.discord.webhook_url,
-        f"[{executor.mode.upper()}] {alert.action} {alert.ticker}",
-        fields,
+        extra["note"] = "ADMIN CORRECTION - may supersede the previous alert"
+    notify_alert(
+        cfg.discord.webhook_url, alert, sizing=exec_sizing,
+        correction=correction, mismatch=mismatch,
+        prefix=f"[{executor.mode.upper()}] ", extra_fields=extra,
         ok=result.ok,
     )
 

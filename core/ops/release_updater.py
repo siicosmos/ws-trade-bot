@@ -330,16 +330,12 @@ class ReleaseUpdater:
 
         from core.ops.notify import notify_discord
 
-        notify_discord(
-            self.webhook_url,
-            "Consumer update staged",
-            {
-                "reason": f"new release build {remote} staged - "
-                           "applied on restart",
-            },
-            ok=True,
-        )
+        # the app's restart callable posts the "Consumer app
+        # restarting" notice with this reason - one notice, not two
         print(f"auto-update: staged {remote} - restarting to apply...")
         self.last_result = f"staged {remote}"
-        self._restart()
+        self._restart(
+            f"release {remote} staged - the launcher applies it "
+            "on restart"
+        )
         return True

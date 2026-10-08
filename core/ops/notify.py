@@ -48,14 +48,18 @@ def notify_correction(webhook_url: str, text: str):
 
 
 def notify_alert(webhook_url: str, alert, sizing=None, correction=False,
-                 mismatch=None):
+                 mismatch=None, prefix="", extra_fields=None, ok=None):
+    """The rich alert embed. prefix tags execution embeds
+    (e.g. '[PAPER] '); extra_fields carries execution results
+    (result / qty) alongside the alert fields; ok overrides the
+    green/red embed color (execution outcome vs the action)."""
     if not webhook_url:
         return
 
     if alert.kind == "option":
         emoji = "🟢" if alert.action == "BUY" else "🔴"
         title = (
-            f"{emoji} {alert.action} {alert.underlying} "
+            f"{prefix}{emoji} {alert.action} {alert.underlying} "
             f"{alert.strike:g}{alert.right}"
         )
         if alert.expiry:
@@ -85,7 +89,7 @@ def notify_alert(webhook_url: str, alert, sizing=None, correction=False,
             fields["⚠ mismatch"] = mismatch
     else:
         emoji = "🟢" if alert.action == "BUY" else "🔴"
-        title = f"{emoji} {alert.action} {alert.ticker}"
+        title = f"{prefix}{emoji} {alert.action} {alert.ticker}"
         if alert.entry:
             title += f" @ ${alert.entry:g}"
         if alert.gain_pct is not None:
@@ -131,7 +135,13 @@ def notify_alert(webhook_url: str, alert, sizing=None, correction=False,
         else:
             fields[f"{label} sizing"] = "value unavailable"
 
+    if extra_fields:
+        fields.update(extra_fields)
+
     if alert.raw:
         fields["message"] = alert.raw[:200]
 
-    notify_discord(webhook_url, title, fields, ok=alert.action == "BUY")
+    notify_discord(
+        webhook_url, title, fields,
+        ok=alert.action == "BUY" if ok is None else ok,
+    )
