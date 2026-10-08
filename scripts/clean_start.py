@@ -64,15 +64,21 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    # scope the log sweep to the role being cleaned: the log
+    # files next to the db, plus only that role's files in the
+    # shared logs/ folder (the db's folder name decides). a
+    # foreign db path (a test's tmp dir) must never touch the
+    # real logs
+    db_dir = os.path.dirname(os.path.abspath(args.db))
+    role = os.path.basename(db_dir)
     log_files = []
-    log_roots = [REPO_ROOT, os.path.dirname(os.path.abspath(args.db))]
     for pattern in ("pipeline.log*", "reader.log*",
                     "info.log*", "consumer.log*"):
-        for root in log_roots:
-            log_files.extend(sorted(glob.glob(os.path.join(root, pattern))))
-    # the shared logs/ folder: everything in it is a runtime log
-    log_files.extend(sorted(glob.glob(
-        os.path.join(REPO_ROOT, "logs", "*"))))
+        log_files.extend(sorted(glob.glob(
+            os.path.join(db_dir, pattern))))
+    if role in ("consumer", "info", "reader"):
+        log_files.extend(sorted(glob.glob(
+            os.path.join(REPO_ROOT, "logs", role + ".log*"))))
 
     if not os.path.exists(args.db):
         print(f"database not found: {args.db}")

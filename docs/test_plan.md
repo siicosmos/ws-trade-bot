@@ -237,6 +237,11 @@ by stubs (`test_reader.py` timing tests).
 - `tests/scripts/e2e_test.py` — boots the real server end-to-end
   (config, db, feed, alert flow).
 - `tests/scripts/ui_test.py` — headless-Chrome dashboard smoke.
+- `test_pipeline.py::test_clean_start_script` — the clean-start
+  sweep is scoped to the role being cleaned: log files next to
+  the db + that role's files in the shared `logs/` folder; a
+  foreign (tmp) db never touches the real logs (this used to
+  wipe the live `logs/` folder on every pytest run).
 
 **Manual**
 

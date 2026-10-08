@@ -371,7 +371,9 @@ reused, no automated VACUUM).
 
 Backups: `sqlite3 consumer/consumer.trades.db ".backup backup.db"`
 while running (a raw
-copy can miss WAL contents). Clean slate: `scripts/clean_start.py`.
+copy can miss WAL contents). Clean slate: `scripts/clean_start.py`
+(wipes the db's signals/trades + that role's log files only —
+never the other roles' logs).
 
 ## Configuration reference
 

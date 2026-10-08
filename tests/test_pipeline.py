@@ -3174,6 +3174,17 @@ def test_clean_start_script(tmp_path):
     (tmp / "pipeline.log.1").write_text("old archive\n")
     (tmp / "reader.log").write_text("old reader line\n")
 
+    # the real logs/ folder must survive cleaning a foreign
+    # (tmp) db - this used to wipe the live logs on every
+    # pytest run
+    real_logs = os.path.join(
+        os.path.dirname(os.path.dirname(
+            os.path.abspath(trader_store.__file__))), "logs")
+    os.makedirs(real_logs, exist_ok=True)
+    marker = os.path.join(real_logs, "clean_start_marker.log")
+    with open(marker, "w") as f:
+        f.write("keep me\n")
+
     repo = os.path.dirname(os.path.dirname(
         os.path.abspath(trader_store.__file__)))
     script = os.path.join(repo, "scripts", "clean_start.py")
@@ -3195,6 +3206,10 @@ def test_clean_start_script(tmp_path):
     assert not (tmp / "pipeline.log").exists()
     assert not (tmp / "pipeline.log.1").exists()
     assert not (tmp / "reader.log").exists()
+    assert os.path.exists(marker), (
+        "clean_start deleted the real logs/ folder"
+    )
+    os.remove(marker)
     assert "clean slate" in res.stdout
 
 
