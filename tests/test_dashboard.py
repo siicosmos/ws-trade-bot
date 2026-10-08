@@ -1752,6 +1752,10 @@ def test_settings_save_revert_button_lifecycle():
     # admin-gating of the buttons is a separate concern)
     dirty_fn = js.split("function setSettingsDirty")[1].split("}")[0]
     assert "revert.style.display" not in dirty_fn
+    # renderMe runs on every poll - its admin gating must also
+    # respect the dirty state, or it force-shows the save button
+    # on a clean form and the lifecycle never applies
+    assert "isAdmin() && settingsDirty" in js
     # the float bar shows on open and hides on close
     assert 'settings-float").style.display = "flex"' in js
     # revert re-fetches + re-renders the last saved state

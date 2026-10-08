@@ -2141,10 +2141,14 @@ function renderMe() {
   const ub = document.getElementById("users-btn");
   if (ub) ub.style.display = isAdmin() ? "" : "none";
   // viewer sessions: hide the admin-only actions (server 403s
-  // them anyway - this keeps the ui honest)
+  // them anyway - this keeps the ui honest). the save button
+  // also follows the dirty state - this runs on every poll and
+  // would otherwise force it visible on a clean form
   const save = document.getElementById("settings-save");
   const revert = document.getElementById("settings-revert");
-  if (save) save.style.display = isAdmin() ? "" : "none";
+  if (save) save.style.display = (
+    isAdmin() && settingsDirty
+  ) ? "" : "none";
   if (revert) revert.style.display = isAdmin() ? "" : "none";
 }
 
