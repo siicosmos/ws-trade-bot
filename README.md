@@ -524,8 +524,13 @@ ws-trade-bot/
 6. **Reader**: `scripts/start_reader.bat` (own venv) and
    `scripts/start_discord.bat` (Discord with
    `--force-renderer-accessibility`).
-7. **HTTPS + remote access**: `python scripts/gen_cert.py`; Tailscale
-   for remote dashboards.
+7. **HTTPS + remote access**: Tailscale Serve proxies each
+   dashboard with a valid tailnet cert — no cert management:
+   `tailscale serve --bg http://127.0.0.1:8080` (info) and, on a
+   second port, `tailscale serve --bg --https=8443
+   http://127.0.0.1:8081` (consumer). `scripts/gen_cert.py`
+   provides self-signed certs for the apps' own TLS mode
+   instead.
 8. **moomoo (optional)**: install OpenD on a consumer machine and set
    `quotes.provider: moomoo` there.
 9. **Client releases**: CI (`.github/workflows/release.yml`) rebuilds
