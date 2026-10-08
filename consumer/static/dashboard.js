@@ -1565,6 +1565,8 @@ function renderSettings(s) {
     '</div>' +
     _subsection("paper ledger",
       '<div class="set-checks" style="margin-bottom:10px">' +
+        _check("set-paper-enabled", "paper alongside notify", s.paper && s.paper.enabled,
+          "adds simulated execution to notify mode - the mode slider above is the primary switch") +
         _check("set-paper-mirror", "mirror real fills", s.paper && s.paper.mirror,
           "copy real wealthsimple fills into the paper ledger") +
       '</div>' +

@@ -1794,3 +1794,41 @@ def test_dashboard_assets_are_cache_busted():
     assert re.search(
         r'src="/static/info\.js\?v=\d+"', ihtml
     ), "info script src is not versioned"
+
+
+def test_settings_save_ids_all_exist_in_the_form():
+    # saveSettings dereferences every form element it collects -
+    # one missing id (set-paper-enabled went missing in the role
+    # split) made the whole save die silently on a null deref:
+    # no POST, no alert, the button just did nothing
+    import re
+
+    import consumer.dashboard as dash
+
+    js = dash.DASHBOARD_JS
+    save = js.split("async function saveSettings")[1].split(
+        'const res = await fetch("/api/settings"')[0]
+    render = js.split("function renderSettings")[1].split(
+        "async function saveSettings")[0]
+
+    save_ids = set(re.findall(
+        r'["\']((?:set-|tier-|padj-)[a-z0-9_-]+)["\']', save))
+    # dynamic loops: accounts (set-acct-i-*), tiers (tier-name-*),
+    # stock tiers (set-stocktier-name-*) - prefix checks
+    render_ids = set(re.findall(r'"((?:set-|tier-)[a-z0-9_-]+)"', render))
+    prefixes = ("set-acct-", "tier-", "set-stocktier-")
+    missing = sorted(
+        i for i in save_ids
+        if i not in render_ids
+        and not i.startswith(prefixes)
+        and not i.endswith(("-underlying", "-expiry", "-strike",
+                            "-qty", "-avg", "-label", "-enabled",
+                            "-remove", "-type", "-id", "-max",
+                            "-risk", "-orisk", "-paper"))
+    )
+    assert missing == [], missing
+
+    # the paper toggle the save reads must be rendered
+    assert 'id="set-paper-enabled"' in render or (
+        '"set-paper-enabled"' in render
+    )
