@@ -74,12 +74,15 @@ def main(cfg, args):
     exit_file = os.path.join(
         os.path.dirname(os.path.abspath(args.db)), "pipeline_exit.txt"
     )
+    prev_exit = ""
     try:
         with open(exit_file) as f:
-            print("previous run: " + f.read().strip())
+            prev_exit = f.read().strip()
         os.remove(exit_file)
     except OSError:
         pass
+    if prev_exit:
+        print("previous run: " + prev_exit)
 
     log_batcher = install_log_webhook(
         cfg.discord.consumer_log_webhook_url,
@@ -243,7 +246,33 @@ def main(cfg, args):
                 "protection (enable quotes in the settings)"
             )
 
-    startup_banner("consumer app", ROOT)
+    banner = startup_banner("consumer app", ROOT)
+
+    # a restart the process could not announce itself (crash,
+    # watchdog hang, external kill) surfaces here: the previous
+    # run's exit says why. deliberate restarts (exit 77 - update
+    # or mode switch) already posted their notice on the way
+    # down. crash loops throttle to one notice a minute
+    import time as _time
+
+    if prev_exit and "code 77" not in prev_exit:
+        last_notice = store.meta_get("restart_notice_ts") or 0
+        try:
+            due = _time.time() - float(last_notice) > 60
+        except (TypeError, ValueError):
+            due = True
+        if due:
+            store.meta_set("restart_notice_ts", _time.time())
+            from core.ops.notify import notify_discord
+
+            notify_discord(
+                cfg.discord.update_webhook_url
+                or cfg.discord.webhook_url,
+                "Consumer app restarting",
+                {"reason": prev_exit, "running": banner},
+                ok=True,
+            )
+            print("restart notice posted to the update webhook")
 
     def _restart(reason="restart"):
         # mirror the info server: every restart posts a notice to

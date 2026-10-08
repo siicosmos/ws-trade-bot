@@ -1385,6 +1385,8 @@ def main():
                     notify_restart(
                         update_webhook_url,
                         "reader config changed",
+                        commits=git_commit_line(repo_root(), git_head(
+                            repo_root())),
                     )
                     if _log_hook is not None:
                         _log_hook.flush_now()
