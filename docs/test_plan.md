@@ -62,51 +62,51 @@ Conventions for every manual step below:
 
 **Manual**
 
-- [ ] M-1.1 Start each role once from its config
-      (`consumer/consumer.config.yaml`, `info/info.config.yaml`)
-      and confirm the dashboard + role dispatch work.
+#### M-1.1 — Start each role once from its config (`consumer/consumer.config.yaml`, `info/info.config.yaml`) and confirm the dashboard + role dispatch work.
 
-      **Steps:**
+- [ ] Start each role once from its config (`consumer/consumer.config.yaml`, `info/info.config.yaml`) and confirm the dashboard + role dispatch work.
 
-      1. Start the info server: `scripts\start_info.bat`.
-      2. Role dispatch picked info — `logs\info.log` opens with
-         `info server starting - commit <sha>` (NOT "consumer app"):
-         ```powershell
-         Get-Content logs\info.log -Tail 3
-         ```
-      3. The lean info dashboard serves (consumer health table,
-         reader line, levels editor — no mode slider, no account
-         cards): open `http://127.0.0.1:8081/`.
-      4. Liveness + open reads:
-         ```powershell
-         curl.exe -s http://127.0.0.1:8081/health
-         # -> {"status":"ok"}
-         curl.exe -s http://127.0.0.1:8081/api/feed-status
-         # -> per-consumer health JSON (open GET)
-         ```
-      5. No trading wiring on the info role — the trading routes
-         do not exist here:
-         ```powershell
-         curl.exe -s -o NUL -w "%{http_code}" http://127.0.0.1:8081/api/positions
-         # -> 404
-         ```
-      6. Start the consumer: `scripts\start_consumer.bat`.
-      7. Role dispatch picked consumer — `logs\consumer.log`
-         opens with `consumer app starting - commit <sha>` and the
-         mode line (`running in PAPER mode on ...`).
-      8. The full trading dashboard serves (mode slider, account
-         cards, trade log): open `http://127.0.0.1:8080/` — it
-         redirects to `/login`; log in as `admin` with the
-         consumer's `auth_token` (the token seeded the admin).
-      9. Machine-token API access:
-         ```powershell
-         curl.exe -s -H "X-Auth-Token: <consumer-token>" http://127.0.0.1:8080/api/summary
-         # -> JSON with mode / accounts[] / reader
-         ```
-      10. The dispatch did not cross wires: `http://127.0.0.1:8081/`
-          shows no trading UI, and
-          `curl.exe -s -o NUL -w "%{http_code}" http://127.0.0.1:8080/api/feed-status`
-          → 404 (that route is info-only).
+**Steps:**
+
+1. Start the info server: `scripts\start_info.bat`.
+2. Role dispatch picked info — `logs\info.log` opens with
+   `info server starting - commit <sha>` (NOT "consumer app"):
+   ```powershell
+   Get-Content logs\info.log -Tail 3
+   ```
+3. The lean info dashboard serves (consumer health table,
+   reader line, levels editor — no mode slider, no account
+   cards): open `http://127.0.0.1:8081/`.
+4. Liveness + open reads:
+   ```powershell
+   curl.exe -s http://127.0.0.1:8081/health
+   # -> {"status":"ok"}
+   curl.exe -s http://127.0.0.1:8081/api/feed-status
+   # -> per-consumer health JSON (open GET)
+   ```
+5. No trading wiring on the info role — the trading routes
+   do not exist here:
+   ```powershell
+   curl.exe -s -o NUL -w "%{http_code}" http://127.0.0.1:8081/api/positions
+   # -> 404
+   ```
+6. Start the consumer: `scripts\start_consumer.bat`.
+7. Role dispatch picked consumer — `logs\consumer.log`
+   opens with `consumer app starting - commit <sha>` and the
+   mode line (`running in PAPER mode on ...`).
+8. The full trading dashboard serves (mode slider, account
+   cards, trade log): open `http://127.0.0.1:8080/` — it
+   redirects to `/login`; log in as `admin` with the
+   consumer's `auth_token` (the token seeded the admin).
+9. Machine-token API access:
+   ```powershell
+   curl.exe -s -H "X-Auth-Token: <consumer-token>" http://127.0.0.1:8080/api/summary
+   # -> JSON with mode / accounts[] / reader
+   ```
+10. The dispatch did not cross wires: `http://127.0.0.1:8081/`
+    shows no trading UI, and
+    `curl.exe -s -o NUL -w "%{http_code}" http://127.0.0.1:8080/api/feed-status`
+    → 404 (that route is info-only).
 
 ## 2. Per-role file names
 
@@ -121,27 +121,27 @@ Conventions for every manual step below:
 
 **Manual**
 
-- [ ] M-2.1 On the live box: stop both apps, confirm the
-      per-role dbs exist, restart via the `.bat`s, and confirm
-      the dashboards still show full history (no fresh empty db).
+#### M-2.1 — On the live box: stop both apps, confirm the per-role dbs exist, restart via the `.bat`s, and confirm the dashboards still show full history (no fresh empty db).
 
-      **Steps:**
+- [ ] On the live box: stop both apps, confirm the per-role dbs exist, restart via the `.bat`s, and confirm the dashboards still show full history (no fresh empty db).
 
-      1. Stop both apps (close the launcher windows or
-         `taskkill /F /IM python.exe` — kills both roles).
-      2. The per-role dbs exist at the role paths:
-         ```powershell
-         Get-ChildItem consumer\consumer.trades.db, info\info.trades.db
-         ```
-      3. Restart via `scripts\start_info.bat` +
-         `scripts\start_consumer.bat`.
-      4. History survived: log into
-         `http://127.0.0.1:8080/` — the trade log / recent alerts
-         show the pre-restart rows (a fresh db would show none).
-         Row counts straight from sqlite:
-         ```powershell
-         & .venv\Scripts\python -c "import sqlite3; print(sqlite3.connect(r'consumer\consumer.trades.db').execute('select count(*) from trades').fetchone())"
-         ```
+**Steps:**
+
+1. Stop both apps (close the launcher windows or
+   `taskkill /F /IM python.exe` — kills both roles).
+2. The per-role dbs exist at the role paths:
+   ```powershell
+   Get-ChildItem consumer\consumer.trades.db, info\info.trades.db
+   ```
+3. Restart via `scripts\start_info.bat` +
+   `scripts\start_consumer.bat`.
+4. History survived: log into
+   `http://127.0.0.1:8080/` — the trade log / recent alerts
+   show the pre-restart rows (a fresh db would show none).
+   Row counts straight from sqlite:
+   ```powershell
+   & .venv\Scripts\python -c "import sqlite3; print(sqlite3.connect(r'consumer\consumer.trades.db').execute('select count(*) from trades').fetchone())"
+   ```
 
 ## 3. Updater routing (role-based)
 
@@ -160,37 +160,38 @@ Conventions for every manual step below:
 
 **Manual**
 
-- [ ] M-3.1 Consumer (git checkout, live box): start it, watch
-      `consumer.log` for the release seeding and the absence of
-      git operations.
+#### M-3.1 — Consumer (git checkout, live box): start it, watch `consumer.log` for the release seeding and the absence of git operations.
 
-      **Steps:**
+- [ ] Consumer (git checkout, live box): start it, watch `consumer.log` for the release seeding and the absence of git operations.
 
-      1. `scripts\start_consumer.bat`.
-      2. ```powershell
-         Select-String "release channel|up to date|git fetch" logs\consumer.log | Select-Object -Last 5
-         ```
-         Expect `release channel seeded from the git checkout
-         (<sha>)` then `up to date` — and NO `git fetch` /
-         dirty-tree lines (a git-checkout consumer must not run
-         git itself).
-      3. The seeded marker matches the checkout:
-         ```powershell
-         Get-Content consumer\VERSION
-         git rev-parse --short HEAD
-         ```
+**Steps:**
 
-- [ ] M-3.2 Info server: confirm it still logs the git-poll
-      cycle and pulls on a new push to main.
+1. `scripts\start_consumer.bat`.
+2. ```powershell
+   Select-String "release channel|up to date|git fetch" logs\consumer.log | Select-Object -Last 5
+   ```
+   Expect `release channel seeded from the git checkout
+   (<sha>)` then `up to date` — and NO `git fetch` /
+   dirty-tree lines (a git-checkout consumer must not run
+   git itself).
+3. The seeded marker matches the checkout:
+   ```powershell
+   Get-Content consumer\VERSION
+   git rev-parse --short HEAD
+   ```
 
-      **Steps:**
+#### M-3.2 — Info server: confirm it still logs the git-poll cycle and pulls on a new push to main.
 
-      1. `scripts\start_info.bat`, then push any commit to main.
-      2. ```powershell
-         Select-String "auto-update" logs\info.log | Select-Object -Last 5
-         ```
-         Expect `auto-update: updated to <sha>:` followed by the
-         commit list (or `up to date` before the push lands).
+- [ ] Info server: confirm it still logs the git-poll cycle and pulls on a new push to main.
+
+**Steps:**
+
+1. `scripts\start_info.bat`, then push any commit to main.
+2. ```powershell
+   Select-String "auto-update" logs\info.log | Select-Object -Last 5
+   ```
+   Expect `auto-update: updated to <sha>:` followed by the
+   commit list (or `up to date` before the push lands).
 
 ## 4. Release updater (consumer client)
 
@@ -219,65 +220,66 @@ Conventions for every manual step below:
 
 **Manual (real network + real release)**
 
-- [ ] M-4.1 End-to-end self-update: push a trivial commit to
-      main → CI publishes `consumer-latest` → the consumer
-      self-updates. Confirm config/db/webhooks survived.
+#### M-4.1 — End-to-end self-update: push a trivial commit to main → CI publishes `consumer-latest` → the consumer self-updates. Confirm config/db/webhooks survived.
 
-      **Steps:**
+- [ ] End-to-end self-update: push a trivial commit to main → CI publishes `consumer-latest` → the consumer self-updates. Confirm config/db/webhooks survived.
 
-      1. Push a trivial commit (`touch docs/x.md`) to main and
-         wait for the CI release workflow to go green.
-      2. On the consumer box, within `auto_update.interval_seconds`:
-         ```powershell
-         Select-String "staged|restarting to apply|applied" logs\consumer.log | Select-Object -Last 5
-         # expect: auto-update: staged <sha> - restarting to apply...
-         #         apply_update: applied <sha>
-         ```
-      3. The swap preserved the state:
-         ```powershell
-         Get-ChildItem consumer\consumer.config.yaml, consumer\ws_tokens.env, consumer\consumer.trades.db
-         Get-Content consumer\VERSION          # -> the new sha
-         Get-Content .last_update.json | ConvertFrom-Json
-         ```
-      4. The dashboard still works (M-1.1 steps 8-9) and the
-         trade log still shows history (M-2.1 step 4).
+**Steps:**
 
-- [ ] M-4.2 Checksum tamper: confirm the published zip matches
-      its SHA256SUMS (the tamper-abort path itself is automated).
+1. Push a trivial commit (`touch docs/x.md`) to main and
+   wait for the CI release workflow to go green.
+2. On the consumer box, within `auto_update.interval_seconds`:
+   ```powershell
+   Select-String "staged|restarting to apply|applied" logs\consumer.log | Select-Object -Last 5
+   # expect: auto-update: staged <sha> - restarting to apply...
+   #         apply_update: applied <sha>
+   ```
+3. The swap preserved the state:
+   ```powershell
+   Get-ChildItem consumer\consumer.config.yaml, consumer\ws_tokens.env, consumer\consumer.trades.db
+   Get-Content consumer\VERSION          # -> the new sha
+   Get-Content .last_update.json | ConvertFrom-Json
+   ```
+4. The dashboard still works (M-1.1 steps 8-9) and the
+   trade log still shows history (M-2.1 step 4).
 
-      **Steps:**
+#### M-4.2 — Checksum tamper: confirm the published zip matches its SHA256SUMS (the tamper-abort path itself is automated).
 
-      1. Download `consumer-<sha>.zip` + `SHA256SUMS` from the
-         GitHub release.
-      2. ```powershell
-         Get-FileHash consumer-<sha>.zip -Algorithm SHA256
-         # compare against the hash line in SHA256SUMS
-         ```
+- [ ] Checksum tamper: confirm the published zip matches its SHA256SUMS (the tamper-abort path itself is automated).
 
-- [ ] M-4.3 Private-repo token: with `github_token` unset, the
-      poll fails gracefully; with a read-only token set it
-      succeeds.
+**Steps:**
 
-      **Steps:**
+1. Download `consumer-<sha>.zip` + `SHA256SUMS` from the
+   GitHub release.
+2. ```powershell
+   Get-FileHash consumer-<sha>.zip -Algorithm SHA256
+   # compare against the hash line in SHA256SUMS
+   ```
 
-      1. Comment out `auto_update.github_token` in
-         `consumer/consumer.config.yaml`, restart.
-      2. ```powershell
-         Select-String "release check failed" logs\consumer.log | Select-Object -Last 2
-         # expect: release check failed: 401 / 404 - and the app keeps running
-         ```
-      3. Restore the token, restart, confirm `up to date`.
+#### M-4.3 — Private-repo token: with `github_token` unset, the poll fails gracefully; with a read-only token set it succeeds.
 
-- [ ] M-4.4 Poll-during-publish race: while CI recreates the
-      release, a poll may see a 404 — confirm it logs and retries
-      next cycle without restarting.
+- [ ] Private-repo token: with `github_token` unset, the poll fails gracefully; with a read-only token set it succeeds.
 
-      **Steps:**
+**Steps:**
 
-      1. Push a commit and watch `logs\consumer.log` during the
-         CI window.
-      2. A transient `release check failed: 404` line must be
-         followed by a normal cycle (no restart, no crash).
+1. Comment out `auto_update.github_token` in
+   `consumer/consumer.config.yaml`, restart.
+2. ```powershell
+   Select-String "release check failed" logs\consumer.log | Select-Object -Last 2
+   # expect: release check failed: 401 / 404 - and the app keeps running
+   ```
+3. Restore the token, restart, confirm `up to date`.
+
+#### M-4.4 — Poll-during-publish race: while CI recreates the release, a poll may see a 404 — confirm it logs and retries next cycle without restarting.
+
+- [ ] Poll-during-publish race: while CI recreates the release, a poll may see a 404 — confirm it logs and retries next cycle without restarting.
+
+**Steps:**
+
+1. Push a commit and watch `logs\consumer.log` during the
+   CI window.
+2. A transient `release check failed: 404` line must be
+   followed by a normal cycle (no restart, no crash).
 
 ## 5. Git updater (info server) + restart scoping
 
@@ -309,65 +311,70 @@ Run them directly:
 
 **Manual (live info server)**
 
-- [ ] M-5.1 Push a docs-only commit: info server pulls, posts
-      "Info server updated (no restart)", keeps running. Then
-      verify the update record followed the pull:
+#### M-5.1 — Push a docs-only commit: info server pulls, posts "Info server updated (no restart)", keeps running. Then verify the update record followed the pull:
 
-      ```powershell
-      Get-Content .last_update.json | ConvertFrom-Json
-      # "commit" must equal the current head:
-      git rev-parse --short HEAD
-      # "how" is "auto" and "ts" is within the last interval
-      ```
+- [ ] Push a docs-only commit: info server pulls, posts "Info server updated (no restart)", keeps running. Then verify the update record followed the pull:
 
-      (Regression this guards: the no-restart pull path used to
-      skip the record write, leaving the hash pointing at the old
-      commit - `test_check_once_records_no_restart_pull`.)
-- [ ] M-5.2 Push an `info/*` commit: pulls, posts
-      "Info server restarting", restarts, banner shows the new
-      commit. Confirm in `logs\info.log`:
+```powershell
+Get-Content .last_update.json | ConvertFrom-Json
+# "commit" must equal the current head:
+git rev-parse --short HEAD
+# "how" is "auto" and "ts" is within the last interval
+```
 
-      ```powershell
-      Select-String "auto-update|starting" logs\info.log | Select-Object -Last 5
-      # expect: auto-update: updated to <sha>: ... /
-      #         auto-update: restarting pipeline... /
-      #         info server starting - commit <sha> (auto-updated ...)
-      ```
-- [ ] M-5.3 Discord: confirm the embed titles match the role
-      (no more "Pipeline restarting") for info + consumer.
+(Regression this guards: the no-restart pull path used to
+skip the record write, leaving the hash pointing at the old
+commit - `test_check_once_records_no_restart_pull`.)
 
-      **Steps:**
+#### M-5.2 — Push an `info/*` commit: pulls, posts "Info server restarting", restarts, banner shows the new commit. Confirm in `logs\info.log`:
 
-      1. Push a docs-only commit → the Discord webhook channel
-         shows `Info server updated (no restart)`.
-      2. Push an `info/*` commit → `Info server restarting`.
-      3. Push a `consumer/*` commit → the consumer's webhook
-         shows `Consumer app restarting` (mode slider restarts
-         also post there).
-- [ ] M-5.4 Info dashboard write routes are token-guarded
-      (automated in
-      `test_roles.py::test_info_write_routes_are_token_guarded`).
+- [ ] Push an `info/*` commit: pulls, posts "Info server restarting", restarts, banner shows the new commit. Confirm in `logs\info.log`:
 
-      **Steps:**
+```powershell
+Select-String "auto-update|starting" logs\info.log | Select-Object -Last 5
+# expect: auto-update: updated to <sha>: ... /
+#         auto-update: restarting pipeline... /
+#         info server starting - commit <sha> (auto-updated ...)
+```
 
-      1. Negative (no token):
-         ```powershell
-         curl.exe -s -o NUL -w "%{http_code}" -X POST http://127.0.0.1:8081/api/spx-levels -H "Content-Type: application/json" -d "{\"text\":\"x\"}"
-         # -> 401
-         ```
-      2. Positive (reader token):
-         ```powershell
-         curl.exe -s -X POST http://127.0.0.1:8081/api/spx-levels -H "X-Auth-Token: <info-token>" -H "Content-Type: application/json" -d "{\"text\":\"SPX 6000/6050 credit spread\"}"
-         # -> {"status":"ok"} - and the ladder text shows on every consumer
-         ```
-      3. In the browser: the levels editor prompts once for the
-         token (localStorage, no cookie); a wrong token gets a
-         401, is dropped, and the next save re-prompts. The
-         read-only GETs stay open.
-- [ ] M-5.5 Dashboard git badge: open the info dashboard and
-      confirm the badge shows the current head and the
-      `last_pull` timestamp matches the record
-      (`Get-Content .last_update.json`).
+#### M-5.3 — Discord: confirm the embed titles match the role (no more "Pipeline restarting") for info + consumer.
+
+- [ ] Discord: confirm the embed titles match the role (no more "Pipeline restarting") for info + consumer.
+
+**Steps:**
+
+1. Push a docs-only commit → the Discord webhook channel
+   shows `Info server updated (no restart)`.
+2. Push an `info/*` commit → `Info server restarting`.
+3. Push a `consumer/*` commit → the consumer's webhook
+   shows `Consumer app restarting` (mode slider restarts
+   also post there).
+
+#### M-5.4 — Info dashboard write routes are token-guarded (automated in `test_roles.py::test_info_write_routes_are_token_guarded`).
+
+- [ ] Info dashboard write routes are token-guarded (automated in `test_roles.py::test_info_write_routes_are_token_guarded`).
+
+**Steps:**
+
+1. Negative (no token):
+   ```powershell
+   curl.exe -s -o NUL -w "%{http_code}" -X POST http://127.0.0.1:8081/api/spx-levels -H "Content-Type: application/json" -d "{\"text\":\"x\"}"
+   # -> 401
+   ```
+2. Positive (reader token):
+   ```powershell
+   curl.exe -s -X POST http://127.0.0.1:8081/api/spx-levels -H "X-Auth-Token: <info-token>" -H "Content-Type: application/json" -d "{\"text\":\"SPX 6000/6050 credit spread\"}"
+   # -> {"status":"ok"} - and the ladder text shows on every consumer
+   ```
+3. In the browser: the levels editor prompts once for the
+   token (localStorage, no cookie); a wrong token gets a
+   401, is dropped, and the next save re-prompts. The
+   read-only GETs stay open.
+
+#### M-5.5 — Dashboard git badge: open the info dashboard and confirm the badge shows the current head and the `last_pull` timestamp matches the record (`Get-Content .last_update.json`).
+
+- [ ] Dashboard git badge: open the info dashboard and confirm the badge shows the current head and the `last_pull` timestamp matches the record (`Get-Content .last_update.json`).
+
 
 ## 6. Reader (rides the info pull)
 
@@ -381,44 +388,48 @@ by stubs (`test_reader.py` timing tests).
 
 **Manual (Windows box)**
 
-- [ ] M-6.1 Push a `reader/*` commit → info server pulls → the
-      reader restarts into the new code.
+#### M-6.1 — Push a `reader/*` commit → info server pulls → the reader restarts into the new code.
 
-      **Steps:**
+- [ ] Push a `reader/*` commit → info server pulls → the reader restarts into the new code.
 
-      1. Push a `reader/*` commit; wait for the info server's
-         pull cycle.
-      2. ```powershell
-         Select-String "repo updated|Reader restarting" logs\reader.log | Select-Object -Last 3
-         # expect: repo updated on disk - restarting reader for ...
-         #         Reader restarting (webhook embed)
-         ```
-      3. The reader comes back watching Discord:
-         `watching channel: '...'` reappears, and the info
-         dashboard's reader line goes green.
+**Steps:**
 
-- [ ] M-6.2 Push a docs-only commit → the reader stays up.
+1. Push a `reader/*` commit; wait for the info server's
+   pull cycle.
+2. ```powershell
+   Select-String "repo updated|Reader restarting" logs\reader.log | Select-Object -Last 3
+   # expect: repo updated on disk - restarting reader for ...
+   #         Reader restarting (webhook embed)
+   ```
+3. The reader comes back watching Discord:
+   `watching channel: '...'` reappears, and the info
+   dashboard's reader line goes green.
 
-      **Steps:**
+#### M-6.2 — Push a docs-only commit → the reader stays up.
 
-      1. Push a docs-only commit; wait one reader cycle.
-      2. ```powershell
-         Select-String "repo updated" logs\reader.log | Select-Object -Last 2
-         # expect: repo updated (no reader changes) - staying up
-         ```
+- [ ] Push a docs-only commit → the reader stays up.
 
-- [ ] M-6.3 Edit `reader/reader.config.yaml` while running →
-      reader restarts to apply it.
+**Steps:**
 
-      **Steps:**
+1. Push a docs-only commit; wait one reader cycle.
+2. ```powershell
+   Select-String "repo updated" logs\reader.log | Select-Object -Last 2
+   # expect: repo updated (no reader changes) - staying up
+   ```
 
-      1. Edit any value (e.g. `poll_interval: 0.6`) and save.
-      2. ```powershell
-         Select-String "changed - restarting" logs\reader.log | Select-Object -Last 2
-         # expect: reader.config.yaml changed - restarting to apply
-         ```
-      3. The startup banner re-logs the new value
-         (`poll every 0.6s`).
+#### M-6.3 — Edit `reader/reader.config.yaml` while running → reader restarts to apply it.
+
+- [ ] Edit `reader/reader.config.yaml` while running → reader restarts to apply it.
+
+**Steps:**
+
+1. Edit any value (e.g. `poll_interval: 0.6`) and save.
+2. ```powershell
+   Select-String "changed - restarting" logs\reader.log | Select-Object -Last 2
+   # expect: reader.config.yaml changed - restarting to apply
+   ```
+3. The startup banner re-logs the new value
+   (`poll every 0.6s`).
 
 ## 7. Accounts (add/remove, margin model)
 
@@ -453,88 +464,84 @@ settings POST replaces the whole `accounts[]` list, so do NOT
 hand-craft partial account POSTs against the live box. Use curl
 only for the read-only checks shown.
 
-- [ ] M-7.1 Settings modal: add an account row (label, id,
-      type=non_margin), save, restart, confirm the account card
-      appears and sizing uses it.
+#### M-7.1 — Settings modal: add an account row (label, id, type=non_margin), save, restart, confirm the account card appears and sizing uses it.
 
-      **Steps:**
+- [ ] Settings modal: add an account row (label, id, type=non_margin), save, restart, confirm the account card appears and sizing uses it.
 
-      1. Dashboard → settings → accounts → + add: label, account
-         id (from `scripts\ws_login.py` output), type
-         `non_margin`. Save (persists to
-         `consumer/consumer.config.yaml`).
-      2. Restart the consumer (`scripts\start_consumer.bat`).
-      3. The card appears:
-         ```powershell
-         curl.exe -s -H "X-Auth-Token: <consumer-token>" http://127.0.0.1:8080/api/summary
-         # accounts[] carries the new label
-         ```
-      4. The config gained the row:
-         ```powershell
-         Select-String "account_id" consumer\consumer.config.yaml
-         ```
+**Steps:**
 
-- [ ] M-7.2 Remove an account, save, restart — card gone,
-      ledger rows still in the db.
+1. Dashboard → settings → accounts → + add: label, account
+   id (from `scripts\ws_login.py` output), type
+   `non_margin`. Save (persists to
+   `consumer/consumer.config.yaml`).
+2. Restart the consumer (`scripts\start_consumer.bat`).
+3. The card appears:
+   ```powershell
+   curl.exe -s -H "X-Auth-Token: <consumer-token>" http://127.0.0.1:8080/api/summary
+   # accounts[] carries the new label
+   ```
+4. The config gained the row:
+   ```powershell
+   Select-String "account_id" consumer\consumer.config.yaml
+   ```
 
-      **Steps:**
+#### M-7.2 — Remove an account, save, restart — card gone, ledger rows still in the db.
 
-      1. Settings → remove the test account → save → restart.
-      2. `GET /api/summary` no longer lists it.
-      3. The ledger rows survive:
-         ```powershell
-         & .venv\Scripts\python -c "import sqlite3; print(sqlite3.connect(r'consumer\consumer.trades.db').execute('select distinct account from positions').fetchall())"
-         ```
+- [ ] Remove an account, save, restart — card gone, ledger rows still in the db.
 
-- [ ] M-7.3 Margin behavior: the margin account shows a real
-      margin breakdown; the RRSP (non_margin) suppresses it —
-      also confirm an explicit `type` overrides what the WS API
-      reports (set RRSP to `margin` temporarily and watch the
-      card flip, then set it back).
+**Steps:**
 
-      **Steps:**
+1. Settings → remove the test account → save → restart.
+2. `GET /api/summary` no longer lists it.
+3. The ledger rows survive:
+   ```powershell
+   & .venv\Scripts\python -c "import sqlite3; print(sqlite3.connect(r'consumer\consumer.trades.db').execute('select distinct account from positions').fetchall())"
+   ```
 
-      1. `GET /api/summary` → the margin account carries
-         `margin_requirement` + `margin_breakdown`; the
-         non_margin one carries `null`.
-      2. Settings: flip the RRSP's type to `margin`, save,
-         restart → the RRSP card now shows a margin requirement.
-         Flip it back.
+#### M-7.3 — Margin behavior: the margin account shows a real margin breakdown; the RRSP (non_margin) suppresses it — also confirm an explicit `type` overrides what the WS API reports (set RRSP to `margin` temporarily and watch the card flip, then set it back).
 
-- [ ] M-7.4 Label immutability: existing accounts show no label
-      field in settings (ledgers key on label); only new rows
-      accept one.
+- [ ] Margin behavior: the margin account shows a real margin breakdown; the RRSP (non_margin) suppresses it — also confirm an explicit `type` overrides what the WS API reports (set RRSP to `margin` temporarily and watch the card flip, then set it back).
 
-      **Steps:** open the settings modal — existing rows expose
-      id/type/enabled but no label input; a new row has one.
+**Steps:**
 
-- [ ] M-7.5 Paper ⚙ settings: the reset + resize confirm flows
-      still work from the popup; the adjust editor loads the
-      current cash pools + holdings, edits apply (card value
-      moves), a removed holding disappears, an added option row
-      (symbol/expiry/strike/right/qty/avg) prices on the next
-      poll.
+1. `GET /api/summary` → the margin account carries
+   `margin_requirement` + `margin_breakdown`; the
+   non_margin one carries `null`.
+2. Settings: flip the RRSP's type to `margin`, save,
+   restart → the RRSP card now shows a margin requirement.
+   Flip it back.
 
-      **Steps:**
+#### M-7.4 — Label immutability: existing accounts show no label field in settings (ledgers key on label); only new rows accept one.
 
-      1. Paper card → ⚙ → reset → confirm → the card re-seeds
-         from the live value.
-      2. ⚙ → adjust → the editor shows the current cash pools +
-         holdings; change a qty, save → the card value moves on
-         the next poll.
-      3. Remove a holding, save → gone from the positions table.
-      4. Add an option row (real symbol/expiry/strike), save →
-         it prices within one `positions_refresh_seconds` poll.
+- [ ] Label immutability: existing accounts show no label field in settings (ledgers key on label); only new rows accept one.
 
-- [ ] M-7.6 Add a real account in settings, restart the
-      consumer, confirm the new paper account is seeded
-      (automated in test_pipeline; verify the live flow once).
+**Steps:** open the settings modal — existing rows expose
+id/type/enabled but no label input; a new row has one.
 
-      **Steps:**
+#### M-7.5 — Paper ⚙ settings: the reset + resize confirm flows still work from the popup; the adjust editor loads the current cash pools + holdings, edits apply (card value moves), a removed holding disappears, an added option row (symbol/expiry/strike/right/qty/avg) prices on the next poll.
 
-      1. Add a real account (M-7.1), restart.
-      2. A paper card for the new label appears, seeded from the
-         live value; the pre-existing paper cards are untouched.
+- [ ] Paper ⚙ settings: the reset + resize confirm flows still work from the popup; the adjust editor loads the current cash pools + holdings, edits apply (card value moves), a removed holding disappears, an added option row (symbol/expiry/strike/right/qty/avg) prices on the next poll.
+
+**Steps:**
+
+1. Paper card → ⚙ → reset → confirm → the card re-seeds
+   from the live value.
+2. ⚙ → adjust → the editor shows the current cash pools +
+   holdings; change a qty, save → the card value moves on
+   the next poll.
+3. Remove a holding, save → gone from the positions table.
+4. Add an option row (real symbol/expiry/strike), save →
+   it prices within one `positions_refresh_seconds` poll.
+
+#### M-7.6 — Add a real account in settings, restart the consumer, confirm the new paper account is seeded (automated in test_pipeline; verify the live flow once).
+
+- [ ] Add a real account in settings, restart the consumer, confirm the new paper account is seeded (automated in test_pipeline; verify the live flow once).
+
+**Steps:**
+
+1. Add a real account (M-7.1), restart.
+2. A paper card for the new label appears, seeded from the
+   live value; the pre-existing paper cards are untouched.
 
 ## 8. Build + release pipeline (CI)
 
@@ -555,93 +562,92 @@ only for the read-only checks shown.
 
 **Manual**
 
-- [ ] M-8.1 After each push: the `consumer-latest` tag moves to
-      the new sha, the release has exactly one
-      `consumer-<sha>.zip` + `SHA256SUMS`, and the zip passes
-      the checksum.
+#### M-8.1 — After each push: the `consumer-latest` tag moves to the new sha, the release has exactly one `consumer-<sha>.zip` + `SHA256SUMS`, and the zip passes the checksum.
 
-      **Steps:**
+- [ ] After each push: the `consumer-latest` tag moves to the new sha, the release has exactly one `consumer-<sha>.zip` + `SHA256SUMS`, and the zip passes the checksum.
 
-      1. ```powershell
-         git ls-remote origin refs/tags/consumer-latest
-         # the tagged object points at the pushed head
-         ```
-      2. GitHub → Releases → `consumer-latest`: exactly one zip +
-         SHA256SUMS, both for the new sha.
-      3. Download both and verify:
-         ```powershell
-         Get-FileHash consumer-<sha>.zip -Algorithm SHA256
-         # matches the hash line in SHA256SUMS
-         ```
+**Steps:**
 
-- [ ] M-8.2 Unzip a fresh artifact into a temp dir and run
-      `install_consumer.bat` on a clean Windows box (or a new
-      folder): venv created, `consumer/consumer.config.yaml`
-      seeded, app starts against the info server.
+1. ```powershell
+   git ls-remote origin refs/tags/consumer-latest
+   # the tagged object points at the pushed head
+   ```
+2. GitHub → Releases → `consumer-latest`: exactly one zip +
+   SHA256SUMS, both for the new sha.
+3. Download both and verify:
+   ```powershell
+   Get-FileHash consumer-<sha>.zip -Algorithm SHA256
+   # matches the hash line in SHA256SUMS
+   ```
 
-      **Steps:**
+#### M-8.2 — Unzip a fresh artifact into a temp dir and run `install_consumer.bat` on a clean Windows box (or a new folder): venv created, `consumer/consumer.config.yaml` seeded, app starts against the info server.
 
-      1. Unzip to a fresh folder; run
-         `scripts\install_consumer.bat` (creates the venv,
-         installs requirements, seeds
-         `consumer\consumer.config.yaml` from the example).
-      2. Edit `consumer\consumer.config.yaml`: a local
-         `auth_token`, the `feed:` section (info server URL +
-         their consumer token), their
-         `wealthsimple.accounts[]`.
-      3. `scripts\start_consumer.bat` — the dashboard comes up
-         and pulls the feed from the info server.
+- [ ] Unzip a fresh artifact into a temp dir and run `install_consumer.bat` on a clean Windows box (or a new folder): venv created, `consumer/consumer.config.yaml` seeded, app starts against the info server.
+
+**Steps:**
+
+1. Unzip to a fresh folder; run
+   `scripts\install_consumer.bat` (creates the venv,
+   installs requirements, seeds
+   `consumer\consumer.config.yaml` from the example).
+2. Edit `consumer\consumer.config.yaml`: a local
+   `auth_token`, the `feed:` section (info server URL +
+   their consumer token), their
+   `wealthsimple.accounts[]`.
+3. `scripts\start_consumer.bat` — the dashboard comes up
+   and pulls the feed from the info server.
 
 ## 9. Launchers (Windows)
 
 **Manual**
 
-- [ ] M-9.1 `start_consumer.bat` / `start_info.bat`: a missing
-      per-role config prints the copy hint and pauses.
+#### M-9.1 — `start_consumer.bat` / `start_info.bat`: a missing per-role config prints the copy hint and pauses.
 
-      **Steps:**
+- [ ] `start_consumer.bat` / `start_info.bat`: a missing per-role config prints the copy hint and pauses.
 
-      1. ```powershell
-         Rename-Item consumer\consumer.config.yaml consumer.config.yaml.bak
-         scripts\start_consumer.bat
-         # expect: consumer.config.yaml missing - copy ..\config\consumer.config.yaml here
-         ```
-      2. Restore: `Rename-Item consumer.config.yaml.bak consumer.config.yaml`
-         and start normally.
+**Steps:**
 
-- [ ] M-9.2 Crash loop: kill the python process — the loop
-      restarts in 5s, writes `pipeline_exit.txt`, and the next
-      start surfaces "previous run: ...".
+1. ```powershell
+   Rename-Item consumer\consumer.config.yaml consumer.config.yaml.bak
+   scripts\start_consumer.bat
+   # expect: consumer.config.yaml missing - copy ..\config\consumer.config.yaml here
+   ```
+2. Restore: `Rename-Item consumer.config.yaml.bak consumer.config.yaml`
+   and start normally.
 
-      **Steps:**
+#### M-9.2 — Crash loop: kill the python process — the loop restarts in 5s, writes `pipeline_exit.txt`, and the next start surfaces "previous run: ...".
 
-      1. Find the consumer's python (not the info server's):
-         ```powershell
-         Get-CimInstance Win32_Process -Filter "Name='python.exe'" |
-           Where-Object CommandLine -match "consumer.config.yaml" |
-           Select-Object ProcessId
-         ```
-      2. `taskkill /F /PID <pid>` — the launcher window restarts
-         it within 5s.
-      3. ```powershell
-         Get-Content consumer\pipeline_exit.txt
-         # -> consumer app exited with code <n>
-         Get-Content logs\consumer.log -Tail 2
-         # -> previous run: consumer app exited with code <n>
-         ```
+- [ ] Crash loop: kill the python process — the loop restarts in 5s, writes `pipeline_exit.txt`, and the next start surfaces "previous run: ...".
 
-- [ ] M-9.3 With a staged update pending, the launcher runs
-      `apply_update.py` before relaunching and the app comes up
-      on the new release (overlaps M-4.1).
+**Steps:**
 
-      **Steps:**
+1. Find the consumer's python (not the info server's):
+   ```powershell
+   Get-CimInstance Win32_Process -Filter "Name='python.exe'" |
+     Where-Object CommandLine -match "consumer.config.yaml" |
+     Select-Object ProcessId
+   ```
+2. `taskkill /F /PID <pid>` — the launcher window restarts
+   it within 5s.
+3. ```powershell
+   Get-Content consumer\pipeline_exit.txt
+   # -> consumer app exited with code <n>
+   Get-Content logs\consumer.log -Tail 2
+   # -> previous run: consumer app exited with code <n>
+   ```
 
-      1. During M-4.1, if the app is stopped between staging and
-         the self-restart, `consumer\.update_pending.json`
-         exists.
-      2. `scripts\start_consumer.bat` — the launcher window
-         prints `apply_update: applied <sha>` before starting
-         python, and the banner shows the new release sha.
+#### M-9.3 — With a staged update pending, the launcher runs `apply_update.py` before relaunching and the app comes up on the new release (overlaps M-4.1).
+
+- [ ] With a staged update pending, the launcher runs `apply_update.py` before relaunching and the app comes up on the new release (overlaps M-4.1).
+
+**Steps:**
+
+1. During M-4.1, if the app is stopped between staging and
+   the self-restart, `consumer\.update_pending.json`
+   exists.
+2. `scripts\start_consumer.bat` — the launcher window
+   prints `apply_update: applied <sha>` before starting
+   python, and the banner shows the new release sha.
 
 ## 10. Full-stack regression
 
@@ -665,37 +671,38 @@ only for the read-only checks shown.
 
 **Manual**
 
-- [ ] M-10.1 Run both scripts after any updater/config/accounts
-      change.
+#### M-10.1 — Run both scripts after any updater/config/accounts change.
 
-      **Steps:**
+- [ ] Run both scripts after any updater/config/accounts change.
 
-      1. ```powershell
-         .venv\Scripts\python tests\scripts\e2e_test.py
-         .venv\Scripts\python tests\scripts\ui_test.py
-         ```
-         Expect `RESULT: 64 passed, 0 failed` and
-         `UI RESULT: 31 passed, 0 failed`.
+**Steps:**
 
-- [ ] M-10.2 Notify-mode smoke on the live box: one alert flows
-      reader → info → consumer → Discord embed, ledger row
-      recorded, dashboard shows it.
+1. ```powershell
+   .venv\Scripts\python tests\scripts\e2e_test.py
+   .venv\Scripts\python tests\scripts\ui_test.py
+   ```
+   Expect `RESULT: 64 passed, 0 failed` and
+   `UI RESULT: 31 passed, 0 failed`.
 
-      **Steps:**
+#### M-10.2 — Notify-mode smoke on the live box: one alert flows reader → info → consumer → Discord embed, ledger row recorded, dashboard shows it.
 
-      1. Inject a synthetic alert straight into the info server
-         (the same route the reader posts to):
-         ```powershell
-         curl.exe -s -X POST http://127.0.0.1:8081/alert -H "X-Auth-Token: <info-token>" -H "Content-Type: application/json" -d "{\"text\":\"BOUGHT 0DTE SPX 6000c @ 1.50 small size\",\"author\":\"smoke-test\"}"
-         # -> {"status":"ok", ...}
-         ```
-      2. Within a second: the info dashboard's recent-alert feed
-         shows it (parsed), and the consumer's dashboard shows
-         the alert + a sizing/notify row (push or 1s pull).
-      3. The consumer's Discord webhook received the embed; the
-         trade log records the row.
-      4. Dedupe: post the exact same text again — it is ignored
-         (same message key inside the dedupe window).
+- [ ] Notify-mode smoke on the live box: one alert flows reader → info → consumer → Discord embed, ledger row recorded, dashboard shows it.
+
+**Steps:**
+
+1. Inject a synthetic alert straight into the info server
+   (the same route the reader posts to):
+   ```powershell
+   curl.exe -s -X POST http://127.0.0.1:8081/alert -H "X-Auth-Token: <info-token>" -H "Content-Type: application/json" -d "{\"text\":\"BOUGHT 0DTE SPX 6000c @ 1.50 small size\",\"author\":\"smoke-test\"}"
+   # -> {"status":"ok", ...}
+   ```
+2. Within a second: the info dashboard's recent-alert feed
+   shows it (parsed), and the consumer's dashboard shows
+   the alert + a sizing/notify row (push or 1s pull).
+3. The consumer's Discord webhook received the embed; the
+   trade log records the row.
+4. Dedupe: post the exact same text again — it is ignored
+   (same message key inside the dedupe window).
 
 ## 11. Auth model
 
@@ -722,30 +729,29 @@ only for the read-only checks shown.
 
 **Manual**
 
-- [ ] M-11.1 On the live box: log in as the seeded admin (the
-      token as password), change the admin password from the
-      users modal, restart, confirm the new password works and
-      the old one does not.
+#### M-11.1 — On the live box: log in as the seeded admin (the token as password), change the admin password from the users modal, restart, confirm the new password works and the old one does not.
 
-      **Steps:**
+- [ ] On the live box: log in as the seeded admin (the token as password), change the admin password from the users modal, restart, confirm the new password works and the old one does not.
 
-      1. `http://127.0.0.1:8080/` → log in as `admin` /
-         `<consumer-token>`.
-      2. Users panel → change the admin's password (current
-         password required).
-      3. Logout → the old password (the token) is rejected; the
-         new one logs in.
-      4. The machine token still opens the API (it is the
-         reader's credential, independent of the password):
-         ```powershell
-         curl.exe -s -o NUL -w "%{http_code}" -H "X-Auth-Token: <consumer-token>" http://127.0.0.1:8080/api/summary
-         # -> 200
-         ```
-      5. Wrong-token negative:
-         ```powershell
-         curl.exe -s -o NUL -w "%{http_code}" -H "X-Auth-Token: wrong" http://127.0.0.1:8080/api/summary
-         # -> 401
-         ```
+**Steps:**
+
+1. `http://127.0.0.1:8080/` → log in as `admin` /
+   `<consumer-token>`.
+2. Users panel → change the admin's password (current
+   password required).
+3. Logout → the old password (the token) is rejected; the
+   new one logs in.
+4. The machine token still opens the API (it is the
+   reader's credential, independent of the password):
+   ```powershell
+   curl.exe -s -o NUL -w "%{http_code}" -H "X-Auth-Token: <consumer-token>" http://127.0.0.1:8080/api/summary
+   # -> 200
+   ```
+5. Wrong-token negative:
+   ```powershell
+   curl.exe -s -o NUL -w "%{http_code}" -H "X-Auth-Token: wrong" http://127.0.0.1:8080/api/summary
+   # -> 401
+   ```
 
 ---
 
