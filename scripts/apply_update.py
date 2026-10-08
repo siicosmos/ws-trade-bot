@@ -94,7 +94,9 @@ def apply(root):
             shutil.copy2(ver, os.path.join(root, "VERSION"))
     except Exception:
         # put the state files back before giving up - the old
-        # code dirs are gone but the data must survive
+        # code dirs are gone but the data must survive (the
+        # swap may have died before consumer/ was recreated)
+        os.makedirs(consumer, exist_ok=True)
         for name in saved:
             src = os.path.join(backup, name)
             if os.path.exists(src) and not os.path.exists(

@@ -3,6 +3,8 @@ import json
 import os
 import zipfile
 
+import pytest
+
 import core.ops.release_updater as ru
 from core.ops.release_updater import ReleaseUpdater, read_version
 from core.ops.updater import AutoUpdater, create_updater
@@ -234,6 +236,75 @@ def test_apply_update_swaps_and_preserves_state(tmp_path):
 def test_apply_update_noop_without_pending(tmp_path):
     mod = _load_apply_update()
     assert mod.apply(str(tmp_path)) is False
+
+
+def test_apply_update_failure_restores_state(tmp_path, monkeypatch):
+    # a swap that dies mid-way must put the state files back -
+    # the code dirs may be gone but the data has to survive
+    root = str(tmp_path)
+    _write(root, "consumer/consumer.config.yaml", "role: consumer\n")
+    _write(root, "consumer/consumer.trades.db", "db-bytes")
+    _write(root, "core/old.py", "old\n")
+    staging = os.path.join(root, ".update_staging")
+    os.makedirs(staging)
+    _make_zip(os.path.join(staging, "x.zip"), "bbb")
+    with zipfile.ZipFile(os.path.join(staging, "x.zip")) as z:
+        z.extractall(staging)
+    os.remove(os.path.join(staging, "x.zip"))
+    _write(root, ".update_pending.json", json.dumps(
+        {"staging": ".update_staging", "commit": "bbb", "ts": 1}))
+
+    mod = _load_apply_update()
+    real_copytree = mod.shutil.copytree
+
+    def flaky_copytree(src, dst, *a, **k):
+        if os.path.basename(os.path.normpath(dst)) == "consumer":
+            raise OSError("injected copy failure")
+        return real_copytree(src, dst, *a, **k)
+
+    monkeypatch.setattr(mod.shutil, "copytree", flaky_copytree)
+
+    with pytest.raises(OSError):
+        mod.apply(root)
+
+    # the state files are back (consumer/ recreated if needed)
+    with open(os.path.join(root, "consumer", "consumer.config.yaml")) as f:
+        assert f.read() == "role: consumer\n"
+    with open(os.path.join(root, "consumer", "consumer.trades.db")) as f:
+        assert f.read() == "db-bytes"
+    # the marker + staging stay - the next launcher pass retries
+    assert os.path.exists(os.path.join(root, ".update_pending.json"))
+    assert os.path.isdir(staging)
+
+
+def test_incomplete_staged_build_aborts(tmp_path, monkeypatch):
+    # a truncated or wrong artifact must not replace the tree
+    _write(tmp_path, "VERSION", json.dumps(
+        {"commit": "aaa", "repo": "o/r"}))
+    release = _release("bbb")
+
+    def download(url, token, dest, timeout=300):
+        if url.endswith(".zip"):
+            with zipfile.ZipFile(dest, "w") as z:
+                z.writestr("run.py", "print('hi')\n")   # no core/ consumer/
+        else:
+            with open(dest, "w") as f:
+                f.write("placeholder\n")
+
+    monkeypatch.setattr(ru, "latest_release", lambda *a, **k: release)
+    monkeypatch.setattr(ru, "download_file", download)
+
+    calls = []
+    up = ReleaseUpdater(
+        _cfg(), str(tmp_path), "", restart=lambda: calls.append(1)
+    )
+    assert up.check_once() is False
+    assert calls == []
+    assert "incomplete" in up.last_result
+    assert not os.path.exists(os.path.join(str(tmp_path),
+                                           ".update_pending.json"))
+    assert not os.path.exists(os.path.join(str(tmp_path),
+                                           ".update_staging"))
 
 
 def test_create_updater_routes_by_role(tmp_path):

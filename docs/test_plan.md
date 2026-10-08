@@ -93,14 +93,11 @@ Known env-dependent failures (not regressions):
   (`consumer.config.yaml`, `ws_tokens.env`, `consumer.trades.db*`)
   preserved, `VERSION` + `.last_update.json` written, staging +
   marker cleaned, `.bat` files never swapped.
-
-**Gap worth automating**
-
-- G-4.1 `apply_update` failure path: inject a copytree failure
-  mid-swap and assert the state files are restored from
-  `.update_backup` (the restore branch is currently untested).
-- G-4.2 Release asset with a missing `core/` dir → "staged build
-  incomplete - aborted" (the guard exists; no test hits it).
+- `apply_update` failure path: a swap that dies mid-way restores
+  the state files (consumer/ recreated if needed) and leaves the
+  pending marker + staging for the launcher to retry.
+- A truncated/wrong artifact (no `core/`/`consumer/` inside) is
+  detected and aborted — no staging, no restart.
 
 **Manual (real network + real release)**
 
@@ -197,16 +194,16 @@ by stubs (`test_reader.py` timing tests).
 
 ## 8. Build + release pipeline (CI)
 
-**Automated**: `build_consumer_zip.py` output shape is asserted
-only indirectly; the workflow itself is not tested.
+**Automated** (`tests/test_build_zip.py`)
 
-**Gap worth automating**
-
-- G-8.1 A test that runs `build_consumer_zip.py` into tmp and
-  asserts: no `config.yaml`/`ws_tokens.env`/`trades.db*`, has
-  `config/consumer.config.yaml` + `VERSION` + `SHA256SUMS`
-  matching the zip hash, `.bat` files present, `__pycache__`
-  excluded.
+- Builds the real artifact into a temp dir and asserts: naming
+  (`consumer-<8char>.zip`), `SHA256SUMS` matches the zip bytes,
+  every client-install file present (`install_consumer.bat`,
+  `start_consumer.bat`, `ws_login.py`, `apply_update.py`,
+  `gen_cert.py`, `config/consumer.config.yaml`, `VERSION`, ...),
+  no secrets/runtime files (`ws_tokens.env`, `*.db`,
+  `__pycache__`), and the shipped template is the aligned one
+  (blank accounts, `consumer:` section key, no token in it).
 
 **Manual**
 

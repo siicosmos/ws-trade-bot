@@ -610,7 +610,9 @@ Key suites: `test_pipeline.py` (end-to-end alert processing),
 invariants), `test_stops.py`, `test_mirror.py`,
 `test_live_executor.py` (every live path against a fake ws client,
 incl. the kill switch), `test_settings_update.py`, `test_users.py`,
-`test_updater.py`, `test_store_migration.py`.
+`test_updater.py` (git-pull flow), `test_release_updater.py` +
+`test_build_zip.py` (the release client + its artifact),
+`test_store_migration.py`.
 
 ## Operations
 
