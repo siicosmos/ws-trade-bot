@@ -86,10 +86,10 @@ All wrapped by `core/ops/supervise.py` (crash → log + Discord notice
 
 | thread | module | runs on | job |
 |---|---|---|---|
-| alert fan-out | `ops/fanout.py` | info | pushes every new signal to each consumer's `/alert` endpoint (bounded retries; pull backfills) |
+| alert fan-out | `info/fanout.py` | info | pushes every new signal to each consumer's `/alert` endpoint (bounded retries; pull backfills) |
 | stop monitor | `trading/stops.py` | consumer | quote-driven protection for open positions (see [Safety systems](#safety-systems)) |
 | trade mirror | `trading/mirror.py` | consumer | books real fills from the WS activity feed, reconciles estimated live bookings, sweeps stale pending orders |
-| feed client | `ops/feedclient.py` | consumer | long-polls the info server's feed, feeds `process_alert`, syncs the SPX levels text |
+| feed client | `consumer/feedclient.py` | consumer | long-polls the info server's feed, feeds `process_alert`, syncs the SPX levels text |
 | auto-updater | `ops/updater.py` + `ops/release_updater.py` | info + consumer | info server: fetch + ff-only pull every interval, restart only when its code changed (the reader restarts off the same pull); consumer: poll the rolling GitHub Release, verify + stage the newer build |
 | health watchdog | `ops/watchdog.py` | both | self-fetches `/health`; exits 1 after 5 min of failure → restart loop recovers |
 | webhook batcher | `ops/loghook.py` | both | tees stdout/stderr log lines to Discord in 3s batches |
@@ -296,14 +296,20 @@ consumer health table (feed last-seen, cursor, push stats), the
 recent alert feed, the reader line, and the SPX levels editor (the
 cross-device source of truth). **No login** — it serves no session
 cookie (so it can't fight the consumer app's cookie on the same
-host); the one guarded route is `POST /alert` (the reader's token —
-a fake alert would make consumers trade).
+host). The write routes are token-guarded with the reader's
+`X-Auth-Token` (no cookie): `POST /alert` (a fake alert would make
+consumers trade) and the levels + settings POSTs (a fake levels
+text reaches every consumer's ladder and informs trades just the
+same) — the dashboard prompts once for the token and keeps it in
+localStorage.
 
 ## HTTP API reference
 
 All API paths require auth (browser session or `X-Auth-Token` header)
-except `/health`, `/favicon.ico`, and `/login`. Admin-gated routes
-check the session role.
+except `/health`, `/favicon.ico`, and `/login`, plus the info role's
+open read-only GETs (`/api/feed-status`, `/api/levels`,
+`/api/reader_status`, `/api/settings`, `/api/signals` — the info
+dashboard has no login). Admin-gated routes check the session role.
 
 | method | path | auth | purpose |
 |---|---|---|---|
@@ -335,6 +341,8 @@ check the session role.
 | GET | `/api/users` | admin | list users (no hashes) |
 | POST | `/api/users` | admin | create/delete/set_password (self-change needs current password; cannot delete self or last admin) |
 | POST | `/alert` | token | **alert ingest** — JSON `{text, author, ts, parsed_ts, channel}`; runs `process_alert` (consumer) / `ingest_alert` (info) |
+| GET | `/api/levels` | open | **info role** — the current SPX levels text (read-only) |
+| POST | `/api/spx-levels` | token | **info role** — save the levels text (consumers render it read-only on their ladder) |
 
 The seven trading routes (`/api/positions`, `/api/paper-*`,
 `/api/position-*`) return 404 on an info server — trading runs on
@@ -584,7 +592,7 @@ true` on 127.0.0.1 exercises the whole pipeline without real orders.
 ## Testing
 
 ```bash
-# unit/integration suite (~400 tests, stubs for the reader's UIA)
+# unit/integration suite (~470 tests, stubs for the reader's UIA)
 .venv/bin/python -m pytest tests -q --ignore=tests/scripts
 
 # full-stack black-box E2E (boots the real server on a temp config/db)

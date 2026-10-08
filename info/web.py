@@ -9,9 +9,13 @@ feed.
 
 No login: the dashboard is open (read-only data - signals,
 levels, consumer health), so a session cookie here can never
-fight with the consumer app's cookie on the same host. The one
-protected route is POST /alert - a fake alert would make every
-consumer app trade - it requires the reader's token.
+fight with the consumer app's cookie on the same host. The
+write routes are token-guarded (X-Auth-Token, the reader's
+pipeline token): POST /alert - a fake alert would make every
+consumer app trade - and the levels editor + settings POSTs - a
+fake levels text reaches every consumer's ladder and informs
+trades just the same. The dashboard prompts once for the token
+and keeps it in localStorage (no cookie).
 """
 
 import hmac
@@ -57,11 +61,20 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
     logging.getLogger("werkzeug").setLevel(logging.ERROR)
 
     def _reader_token_ok():
-        """POST /alert is the one guarded route: a fake alert
-        would make every consumer app trade."""
+        """The shared write guard: the reader's pipeline token
+        (dashboard password)."""
         token = cfg.pipeline.auth_token
         supplied = request.headers.get("X-Auth-Token", "")
         return bool(token) and hmac.compare_digest(supplied, token)
+
+    def _write_guard():
+        """The other write routes guard the same way: a fake
+        levels text reaches every consumer's ladder, and a fake
+        settings POST redirects this app's log webhooks or
+        disables its auto-update."""
+        if not _reader_token_ok():
+            return jsonify({"error": "unauthorized"}), 401
+        return None
 
     install_gzip(app)
 
@@ -276,6 +289,9 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
     def api_spx_levels():
         """Save the pasted levels text - consumers receive it via
         the feed and render it read-only on their ladder."""
+        denied = _write_guard()
+        if denied is not None:
+            return denied
         data = request.get_json(silent=True) or {}
         text = str(data.get("text") or "")[:8000]
         store.meta_set("spx_levels_text", text)
@@ -309,6 +325,9 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
 
     @app.post("/api/settings")
     def api_settings_post():
+        denied = _write_guard()
+        if denied is not None:
+            return denied
         data = request.get_json(silent=True) or {}
         errors = []
         applied = {}

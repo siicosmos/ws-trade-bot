@@ -6,6 +6,40 @@
 
 let lastRefresh = null;
 
+// the write routes (levels editor, settings) are token-guarded -
+// no session cookie here (it would fight the consumer app's
+// cookie on the same host). the token is prompted once and kept
+// in localStorage; it is the reader's pipeline token
+function writeToken() {
+  let t = localStorage.getItem("info_write_token") || "";
+  if (!t) {
+    t = (prompt("write token (the reader's pipeline.auth_token):") || "")
+      .trim();
+    if (t) localStorage.setItem("info_write_token", t);
+  }
+  return t;
+}
+
+function forgetWriteToken() {
+  localStorage.removeItem("info_write_token");
+}
+
+async function jpost(url, payload) {
+  const r = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Auth-Token": writeToken(),
+    },
+    body: JSON.stringify(payload),
+  });
+  if (r.status === 401) {
+    // a wrong token sticks otherwise - drop it and retry next time
+    forgetWriteToken();
+  }
+  return r;
+}
+
 async function jget(url) {
   const r = await fetch(url);
   if (r.status === 401) { location.href = "/login"; throw new Error("auth"); }
@@ -304,11 +338,7 @@ async function saveSettings() {
       update_webhook_url: val("set-discord-update_webhook_url"),
     },
   };
-  const r = await fetch("/api/settings", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+  const r = await jpost("/api/settings", payload);
   const d = await r.json().catch(() => ({}));
   if (r.ok && d.status === "ok") {
     lastSettings = d;
@@ -318,6 +348,8 @@ async function saveSettings() {
     setTimeout(function () {
       if (msg) msg.textContent = "";
     }, 1500);
+  } else if (r.status === 401) {
+    alert("unauthorized - the write token was wrong or missing");
   } else {
     alert((d.errors || ["save failed"]).join("\n"));
   }
@@ -328,14 +360,14 @@ document.getElementById("levels-save").onclick = async function () {
   const status = document.getElementById("levels-status");
   btn.disabled = true;
   try {
-    const r = await fetch("/api/spx-levels", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        text: document.getElementById("levels-input").value,
-      }),
+    const r = await jpost("/api/spx-levels", {
+      text: document.getElementById("levels-input").value,
     });
-    status.textContent = r.ok ? "saved" : "save failed (" + r.status + ")";
+    if (r.status === 401) {
+      status.textContent = "unauthorized - wrong write token";
+    } else {
+      status.textContent = r.ok ? "saved" : "save failed (" + r.status + ")";
+    }
   } catch (e) {
     status.textContent = "save failed";
   }

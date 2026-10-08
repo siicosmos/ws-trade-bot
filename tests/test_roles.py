@@ -375,3 +375,32 @@ def test_session_cookies_never_collide_between_apps():
             names.append(app.config["SESSION_COOKIE_NAME"])
     assert names == ["ws_session_8081", "ws_session_8082"]
     assert len(set(names)) == 2
+
+
+def test_info_write_routes_are_token_guarded():
+    # a fake levels text reaches every consumer's ladder and a
+    # fake settings POST redirects this app's webhooks - both
+    # guard with the reader's token, like POST /alert
+    app, store = _make_info_app(auth_token="t")
+    client = app.test_client()
+
+    for path, payload in (
+        ("/api/spx-levels", {"text": "fake levels"}),
+        ("/api/settings", {"auto_update": {"enabled": False}}),
+    ):
+        r = client.post(path, json=payload)
+        assert r.status_code == 401, path
+        r = client.post(path, json=payload, headers=_headers("wrong"))
+        assert r.status_code == 401, path
+        r = client.post(path, json=payload, headers=_headers("t"))
+        assert r.status_code == 200, path
+
+    # the levels text actually saved
+    assert store.meta_get("spx_levels_text") == "fake levels"
+
+    # an info server without a token configured: the guard stays
+    # closed (a guarded route must never turn open by misconfig)
+    app2, _ = _make_info_app(auth_token="")
+    client2 = app2.test_client()
+    r = client2.post("/api/spx-levels", json={"text": "x"})
+    assert r.status_code == 401

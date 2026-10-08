@@ -140,6 +140,13 @@ Known env-dependent failures (not regressions):
       commit.
 - [ ] M-5.3 Discord: confirm the embed titles match the role
       (no more "Pipeline restarting") for info + consumer.
+- [ ] M-5.4 Info dashboard write routes are token-guarded
+      (`POST /api/spx-levels`, `POST /api/settings` — automated in
+      `test_roles.py::test_info_write_routes_are_token_guarded`):
+      in the browser, the levels editor prompts once for the
+      reader's token (localStorage, no cookie); a wrong token
+      gets a 401, is dropped, and the next save re-prompts. The
+      read-only GETs stay open.
 
 ## 6. Reader (rides the info pull)
 
