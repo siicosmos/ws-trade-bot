@@ -708,6 +708,7 @@ certs/                     # self-signed TLS (gitignored)
 | `docs/runtime.png` | processes and threads at runtime, restart chain |
 | `docs/db_schema.png` | trades.db schema |
 | `docs/live_readiness_plan.md` | live-trading safety-system reference, go-live checklist, suggested starting settings |
+| `docs/test_plan.md` | test plan: automated coverage map + manual/E2E procedures for the updater, release client, file naming, and accounts |
 
 Re-render the diagrams after editing the `.dot` sources:
 

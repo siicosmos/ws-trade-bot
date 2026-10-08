@@ -9,7 +9,7 @@
 <g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(4 1146)">
 <title>db_schema</title>
 <polygon fill="white" stroke="transparent" points="-4,4 -4,-1146 1167,-1146 1167,4 -4,4"/>
-<text text-anchor="middle" x="581.5" y="-1125.2" font-family="Helvetica,sans-Serif" font-size="16.00">trades.db — generated from trader/store.py</text>
+<text text-anchor="middle" x="581.5" y="-1125.2" font-family="Helvetica,sans-Serif" font-size="16.00">&lt;role&gt;.trades.db (info.trades.db / consumer.trades.db) — generated from core/store.py</text>
 <!-- signals -->
 <g id="node1" class="node">
 <title>signals</title>

@@ -1,8 +1,8 @@
-// ws-trade-bot trades.db schema - render with:
+// ws-trade-bot per-role trades db schema - render with:
 //   dot -Tpng -o docs/db_schema.png docs/db_schema.dot
 digraph db_schema {
   rankdir=LR;
-  graph [fontname="Helvetica", label="trades.db — generated from core/store.py", labelloc=t, fontsize=16];
+  graph [fontname="Helvetica", label="<role>.trades.db (info.trades.db / consumer.trades.db) — generated from core/store.py", labelloc=t, fontsize=16];
   node [shape=plaintext, fontname="Helvetica", fontsize=11];
   edge [color="#57606a", fontname="Helvetica", fontsize=9];
 

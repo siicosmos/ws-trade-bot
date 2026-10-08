@@ -9,8 +9,9 @@ digraph runtime {
   // -------------------------------------------------- restart loops
   bat_pipeline [label=<
     <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" BGCOLOR="white">
-      <TR><TD BGCOLOR="#8957e5" COLSPAN="2"><FONT COLOR="white"><B>start_pipeline.bat</B></FONT></TD></TR>
+      <TR><TD BGCOLOR="#8957e5" COLSPAN="2"><FONT COLOR="white"><B>start_info.bat / start_consumer.bat</B></FONT></TD></TR>
       <TR><TD ALIGN="LEFT">cmd loop</TD><TD ALIGN="LEFT">any nonzero exit → relaunch after 5s</TD></TR>
+      <TR><TD ALIGN="LEFT" COLSPAN="2">applies a staged release update before relaunching (consumer)</TD></TR>
     </TABLE>>];
 
   bat_reader [label=<
@@ -21,7 +22,7 @@ digraph runtime {
 
   // -------------------------------------------------- pipeline process
   subgraph cluster_pipeline {
-    label="pipeline — python run.py (Windows)";
+    label="run.py — the info server / the consumer app (Windows)";
     fontsize=13;
     color="#1f6feb";
 
@@ -39,8 +40,9 @@ digraph runtime {
 
     updater [label=<
       <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" BGCOLOR="white">
-        <TR><TD BGCOLOR="#238636" COLSPAN="2"><FONT COLOR="white"><B>auto-updater</B></FONT></TD></TR>
-        <TR><TD ALIGN="LEFT">GitHub check / interval</TD><TD ALIGN="LEFT">exit 77 when its code changes</TD></TR>
+        <TR><TD BGCOLOR="#238636" COLSPAN="2"><FONT COLOR="white"><B>auto-updater (role-based)</B></FONT></TD></TR>
+        <TR><TD ALIGN="LEFT">info: git fetch + ff-only pull</TD><TD ALIGN="LEFT">exit 77 when its code changes</TD></TR>
+        <TR><TD ALIGN="LEFT" COLSPAN="2">consumer: polls the rolling GitHub Release, verifies + stages the swap</TD></TR>
       </TABLE>>];
 
     mirror [label=<
@@ -78,6 +80,7 @@ digraph runtime {
       <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" BGCOLOR="white">
         <TR><TD BGCOLOR="#1f6feb" COLSPAN="2"><FONT COLOR="white"><B>main thread</B> — UIA poll loop</FONT></TD></TR>
         <TR><TD ALIGN="LEFT">reads the Discord window</TD><TD ALIGN="LEFT">POST /alert + heartbeat</TD></TR>
+        <TR><TD ALIGN="LEFT" COLSPAN="2">no updater of its own — restarts off the info server's pull</TD></TR>
       </TABLE>>];
 
     reader_webhook [label=<
@@ -105,7 +108,7 @@ digraph runtime {
   supervise -> watchdog [label="wraps", style=dotted, arrowhead=none];
 
   watchdog -> main [label="hang detected:\nexit 1 → restart loop", color="#f85149", style=dashed];
-  updater -> bat_pipeline [label="code update:\nexit 77", color="#d29922", style=dashed];
+  updater -> bat_pipeline [label="update:\nexit 77\n(consumer: the launcher\napplies the staged release)", color="#d29922", style=dashed];
 
   bat_reader -> reader_main [label="spawn"];
   reader_main -> bat_reader [label="crash: nonzero exit\n(relevance-gated restarts)", color="#f85149", style=dashed];

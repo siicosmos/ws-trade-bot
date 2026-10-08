@@ -17,6 +17,7 @@ digraph architecture {
     <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" BGCOLOR="white">
       <TR><TD BGCOLOR="#1f6feb" COLSPAN="2"><FONT COLOR="white"><B>GitHub</B></FONT></TD></TR>
       <TR><TD ALIGN="LEFT">siicosmos/ws-trade-bot</TD><TD ALIGN="LEFT">private repo</TD></TR>
+      <TR><TD ALIGN="LEFT" COLSPAN="2">CI: rolling consumer-latest Release on every push</TD></TR>
     </TABLE>>];
 
   ws [label=<
@@ -105,7 +106,13 @@ digraph architecture {
       cdash [label=<
         <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" BGCOLOR="white">
           <TR><TD BGCOLOR="#8957e5" COLSPAN="2"><FONT COLOR="white"><B>own dashboard</B> — localhost</FONT></TD></TR>
-          <TR><TD ALIGN="LEFT">cards · positions · trade log</TD><TD ALIGN="LEFT">settings · mode slider</TD></TR>
+          <TR><TD ALIGN="LEFT">cards · positions · trade log</TD><TD ALIGN="LEFT">settings · mode slider · accounts editor</TD></TR>
+        </TABLE>>];
+
+      cupd [label=<
+        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" BGCOLOR="white">
+          <TR><TD BGCOLOR="#238636" COLSPAN="2"><FONT COLOR="white"><B>auto-updater — release channel</B></FONT></TD></TR>
+          <TR><TD ALIGN="LEFT">polls consumer-latest</TD><TD ALIGN="LEFT">verify + stage → launcher applies</TD></TR>
         </TABLE>>];
     }
   }
@@ -131,4 +138,10 @@ digraph architecture {
   cexec -> ws [label="positions · values\norders (live)", style=dashed];
   cexec -> moomoo [label="option/index quotes\n(stop monitor · ladder)", style=dashed, color="#238636"];
   phone -> ws [style=invis];
+
+  // updates: info pulls git (the reader rides that pull), the
+  // consumer follows the rolling release
+  github -> iweb [label="git pull\n(info server)", style=dashed, color="#1f6feb"];
+  github -> cupd [label="consumer-<sha>.zip\n+ SHA256SUMS", style=dashed, color="#238636"];
+  cupd -> cproc [label="staged swap\non restart", style=dashed, color="#d29922"];
 }
