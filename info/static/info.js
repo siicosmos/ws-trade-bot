@@ -308,19 +308,23 @@ function renderSettings(s) {
 
 function setSettingsDirty(v) {
   settingsDirty = v;
+  // the save button follows the dirty state; revert stays ready
+  // to restore the last saved state at any time
   const save = document.getElementById("settings-save");
-  const revert = document.getElementById("settings-revert");
   if (save) save.style.display = v ? "" : "none";
-  if (revert) revert.style.display = v ? "" : "none";
 }
 
 function openSettings() {
   document.getElementById("settingsBackdrop").style.display = "flex";
+  const f = document.getElementById("settings-float");
+  if (f) f.style.display = "flex";
   loadSettings();
 }
 
 function closeSettings() {
   document.getElementById("settingsBackdrop").style.display = "none";
+  const f = document.getElementById("settings-float");
+  if (f) f.style.display = "none";
 }
 
 function loadSettings() {

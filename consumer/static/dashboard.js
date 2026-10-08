@@ -1008,11 +1008,15 @@ function renderPositionsInto(elId, rows, emptyText, monMode) {
 
 function openSettings() {
   document.getElementById("settingsBackdrop").style.display = "flex";
+  document.getElementById("settings-float").style.display = "flex";
+  const save = document.getElementById("settings-save");
+  if (save) save.style.display = settingsDirty ? "" : "none";
   document.querySelectorAll("#settings textarea").forEach(autoGrow);
 }
 
 function closeSettings() {
   document.getElementById("settingsBackdrop").style.display = "none";
+  document.getElementById("settings-float").style.display = "none";
 }
 
 function requestCloseSettings() {
@@ -1372,12 +1376,19 @@ let settingsDirty = false;
 
 function setSettingsDirty(v) {
   settingsDirty = v;
-  document.getElementById("settings-float").style.display = v ? "flex" : "none";
+  // the save button follows the dirty state; revert stays ready
+  // to restore the last saved state at any time
+  const save = document.getElementById("settings-save");
+  if (save) save.style.display = v ? "" : "none";
 }
 
 function revertSettings() {
+  // back to the last saved state: re-fetch + re-render (the
+  // poll-driven re-render is skipped while the modal is open)
   setSettingsDirty(false);
-  load();
+  load().then(function() {
+    renderSettings((lastPayload && lastPayload.settings) || lastSettings);
+  });
 }
 
 document.getElementById("settings-save").onclick = saveSettings;

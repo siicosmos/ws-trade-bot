@@ -1738,3 +1738,34 @@ def test_settings_save_refreshes_form_and_touch_guard():
     assert "loadSettings();" in ijs.split("async function saveSettings")[1]
     assert "backdropTouchMoved" in ijs
     assert "!backdropTouchMoved" in ihtml
+
+
+def test_settings_save_revert_button_lifecycle():
+    # save shows only when dirty; revert stays ready to restore
+    # the last saved state; the float bar lives while the modal
+    # is open (both servers)
+    import consumer.dashboard as dash
+
+    js = dash.DASHBOARD_JS
+    assert 'save.style.display = v ? "" : "none"' in js
+    # the dirty-state toggle never hides revert (renderMe's
+    # admin-gating of the buttons is a separate concern)
+    dirty_fn = js.split("function setSettingsDirty")[1].split("}")[0]
+    assert "revert" not in dirty_fn
+    # the float bar shows on open and hides on close
+    assert 'settings-float").style.display = "flex"' in js
+    # revert re-fetches + re-renders the last saved state
+    assert "function revertSettings" in js and (
+        "renderSettings((lastPayload && lastPayload.settings)" in
+        js.split("function revertSettings")[1].split("}")[0]
+    )
+
+    info_root = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "info", "static",
+    )
+    ijs = open(os.path.join(info_root, "info.js")).read()
+    assert 'save.style.display = v ? "" : "none"' in ijs
+    dirty_fn = ijs.split("function setSettingsDirty")[1].split("}")[0]
+    assert "revert" not in dirty_fn
+    assert 'settings-float").style.display = "flex"' in ijs
