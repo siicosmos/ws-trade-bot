@@ -317,7 +317,10 @@ class PaperLedger:
             self.store.set_paper_equity(cash, label)
         quotes = self._quotes()
         fx = self.fx()
-        total = cash
+        # the adjust editor's usd cash pool (converted like the
+        # usd holdings)
+        cash_usd = self.store.paper_cash_usd(label) or 0.0
+        total = cash + cash_usd * fx
         for pos in self.store.list_positions("paper", label):
             quote = quotes.get(_position_key(pos)) or quotes.get(
                 pos["contract_key"]
@@ -370,6 +373,9 @@ class PaperLedger:
                 {
                     "contract_key": pos["contract_key"],
                     "underlying": pos.get("underlying"),
+                    "expiry": pos.get("expiry"),
+                    "strike": pos.get("strike"),
+                    "right": pos.get("right"),
                     "kind": "option" if is_option else "stock",
                     "usd": bool(usd),
                     "qty": pos["qty"],

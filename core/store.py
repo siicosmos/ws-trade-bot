@@ -1025,11 +1025,63 @@ class Store:
             )
             for key in (
                 f"paper_seed:{label}", f"paper_initial:{label}",
-                f"paper_equity:{label}",
+                f"paper_equity:{label}", f"paper_cash_usd:{label}",
                 f"mirror:{label}:since", f"mirror:{label}:ids",
             ):
                 self._conn.execute(
                     "DELETE FROM meta WHERE key = ?", (key,)
+                )
+
+    def paper_cash_usd(self, label: str = "default"):
+        """The account's USD cash pool (the adjust editor); the
+        main paper_equity pool is CAD."""
+        with self._conn:
+            row = self._conn.execute(
+                "SELECT value FROM meta WHERE key = ?",
+                (f"paper_cash_usd:{label}",),
+            ).fetchone()
+            return float(row[0]) if row else None
+
+    def set_paper_cash_usd(self, value: float, label: str = "default"):
+        self._touch()
+        with self._write_lock, self._conn:
+            self._conn.execute(
+                "INSERT INTO meta (key, value) VALUES (?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (f"paper_cash_usd:{label}", str(value)),
+            )
+
+    def set_paper_holdings(self, label: str, rows):
+        """Replace a paper account's holdings (the adjust
+        editor): each row is (contract_key, underlying, expiry,
+        strike, right, qty, avg_premium)."""
+        self._touch()
+        self._positions_version += 1
+        self._positions_cache.clear()
+        with self._write_lock, self._conn:
+            self._conn.execute(
+                "DELETE FROM positions WHERE mode = 'paper' "
+                "AND account = ?", (label,)
+            )
+            for row in rows:
+                (
+                    contract_key, underlying, expiry, strike,
+                    right, qty, avg_premium,
+                ) = row
+                self._conn.execute(
+                    "INSERT INTO positions (mode, account, "
+                    "contract_key, underlying, expiry, strike, "
+                    "right, qty, updated_ts, avg_premium, "
+                    "realized, peak_bid) "
+                    "VALUES ('paper', ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0) "
+                    "ON CONFLICT(mode, account, contract_key) DO UPDATE SET "
+                    "qty = excluded.qty, avg_premium = excluded.avg_premium, "
+                    "updated_ts = excluded.updated_ts",
+                    (
+                        label, contract_key, underlying, expiry,
+                        strike, right, int(qty), self._now(),
+                        avg_premium,
+                    ),
                 )
 
     def paper_equity(self, label: str = "default"):

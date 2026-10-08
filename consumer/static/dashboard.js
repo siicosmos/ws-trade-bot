@@ -191,12 +191,194 @@ function closeModal() {
 async function resizePaper(label) {
   openModal(
     "Resize paper stock trades",
-    "Re-size " + label + "'s past stock trades to the tier "
-      + "sizing (the original alert's size keyword applies; "
-      + "unsized alerts use medium)?",
+    "Bring past paper stock trades up to the tier " +
+      "sizing (the original alert's size keyword applies; " +
+      "unsized alerts use medium)?",
     "resize",
     async function() { await doPaperResize(label); }
   );
+}
+
+function openPaperSettings(label) {
+  // the paper account's settings: reset, resize, and the
+  // adjust editor (cash pools + holdings)
+  const acct = ((typeof lastPayload === "object" && lastPayload
+    ? lastPayload.accounts : []) || []).find(
+    (a) => a.label === label
+  ) || {};
+  const rows = (paperPositions || {})[label] || [];
+
+  let html =
+    '<div class="set-section"><div class="set-title">maintenance</div>' +
+    '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+    '<button type="button" class="mini-toggle" id="padj-reset">reset ledger</button>' +
+    '<button type="button" class="mini-toggle" id="padj-resize" title="bring past stock trades up to the tier sizing">resize stock trades</button>' +
+    '</div>' +
+    '<div class="field-help">reset drops the ledger and re-seeds it from the live account; resize brings past stock trades up to tier sizing</div></div>';
+
+  html += '<div class="set-section"><div class="set-title">adjust account</div>' +
+    '<div class="acct-grid">' +
+    _numField("padj-cash-cad", "cash cad",
+      acct.paper_cash_cad != null ? acct.paper_cash_cad : "",
+      "the cad cash pool", "") +
+    _numField("padj-cash-usd", "cash usd",
+      acct.paper_cash_usd != null ? acct.paper_cash_usd : "",
+      "the usd cash pool (converted at the live fx)", "") +
+    '</div>' +
+    '<div class="set-title" style="margin-top:10px">holdings</div>' +
+    '<div id="padj-holdings"></div>' +
+    '<button type="button" class="mini-toggle" id="padj-add">+ add holding</button>' +
+    '<div class="field-help">edit qty / avg, remove rows, or add new ones - applied on apply</div></div>' +
+    '<div id="padj-msg" style="color:var(--red);font-size:12px"></div>';
+
+  document.getElementById("paperSettingsTitle").textContent =
+    "paper · " + label;
+  document.getElementById("paperSettingsBody").innerHTML = html;
+  document.getElementById("paperSettingsBackdrop").style.display = "flex";
+  const list = document.getElementById("padj-holdings");
+  function holdingRow(h) {
+    const isOpt = !!h.right;
+    const div = document.createElement("div");
+    div.className = "acct-card";
+    div.innerHTML =
+      '<div class="acct-head"><span style="font-weight:600">' +
+      esc(h.contract_key || h.underlying || "new holding") + '</span>' +
+      '<button type="button" class="mini-toggle" data-remove="1">remove</button></div>' +
+      '<div class="acct-grid">' +
+      (isOpt
+        ? _txtField("padj-h-underlying", "underlying", h.underlying || "", "", "", true) +
+          _txtField("padj-h-expiry", "expiry (yyyy-mm-dd)", h.expiry || "", "", "", true) +
+          _numField("padj-h-strike", "strike", h.strike, "", "") +
+          '<div class="set-field"><label>right</label><select class="padj-h-right">' +
+          '<option value="C"' + (h.right === "C" ? " selected" : "") + '>call</option>' +
+          '<option value="P"' + (h.right === "P" ? " selected" : "") + '>put</option>' +
+          '</select></div>'
+        : _txtField("padj-h-underlying", "symbol", h.underlying || "", "", "", true)) +
+      _numField("padj-h-qty", "qty", h.qty, "", "") +
+      _numField("padj-h-avg", "avg price", h.avg, "", "") +
+      '</div>';
+    div.querySelector("[data-remove]").onclick = function() { div.remove(); };
+    return div;
+  }
+  rows.forEach(function(h) { list.appendChild(holdingRow(h)); });
+
+  document.getElementById("padj-add").onclick = function() {
+    const row = holdingRow({
+      underlying: "", expiry: "", strike: null,
+      right: "C", qty: 1, avg: null,
+      contract_key: "new holding",
+    });
+    // a new row starts as an option; unticking converts it to a
+    // stock holding (symbol + qty + avg only)
+    const sel = row.querySelector(".padj-h-right");
+    const optToggle = document.createElement("label");
+    optToggle.style.cssText =
+      "display:flex;gap:6px;align-items:center;font-size:12px;color:var(--muted)";
+    optToggle.innerHTML =
+      '<input type="checkbox" class="padj-h-isopt" checked> option';
+    sel.parentElement.insertBefore(optToggle, sel);
+    optToggle.querySelector("input").onchange = function() {
+      const h2 = {
+        underlying: (row.querySelector("[id$='-underlying']") || {}).value || "",
+        expiry: (row.querySelector("[id$='-expiry']") || {}).value || "",
+        strike: parseFloat((row.querySelector("[id$='-strike']") || {}).value) || null,
+        qty: parseInt((row.querySelector("[id$='-qty']") || {}).value) || 1,
+        avg: parseFloat((row.querySelector("[id$='-avg']") || {}).value) || null,
+        right: this.checked ? "C" : null,
+        contract_key: this.checked ? "new option" : "new stock",
+      };
+      row.remove();
+      list.appendChild(holdingRow(h2));
+      const rebuilt = list.lastElementChild;
+      if (!this.checked) {
+        const s2 = rebuilt.querySelector(".padj-h-right");
+        const t2 = document.createElement("label");
+        t2.style.cssText = optToggle.style.cssText;
+        t2.innerHTML = '<input type="checkbox" class="padj-h-isopt"> option';
+        s2.parentElement.insertBefore(t2, s2);
+        t2.querySelector("input").onchange = this.onchange;
+      }
+    };
+    list.appendChild(row);
+  };
+
+  document.getElementById("padj-reset").onclick = function() {
+    closePaperSettings();
+    resetPaper(label);
+  };
+  document.getElementById("padj-resize").onclick = function() {
+    closePaperSettings();
+    resizePaper(label);
+  };
+  document.getElementById("paperSettingsDismiss").onclick =
+    closePaperSettings;
+  document.getElementById("paperSettingsApply").onclick =
+    async function() { await doPaperAdjust(label); };
+}
+
+function closePaperSettings() {
+  document.getElementById("paperSettingsBackdrop").style.display = "none";
+}
+
+function _padjHoldingsRowData(row) {
+  const get = (suffix) => {
+    const el = row.querySelector("[id$='-" + suffix + "']");
+    return el ? el.value : "";
+  };
+  const isOpt = row.querySelector(".padj-h-isopt")
+    ? row.querySelector(".padj-h-isopt").checked
+    : !!row.querySelector(".padj-h-right");
+  const rightSel = row.querySelector(".padj-h-right");
+  const h = {
+    underlying: (get("underlying") || "").trim().toUpperCase(),
+    qty: parseInt(get("qty")),
+    avg: parseFloat(get("avg")) || 0,
+  };
+  if (isOpt) {
+    h.expiry = (get("expiry") || "").trim();
+    h.strike = parseFloat(get("strike"));
+    h.right = rightSel ? rightSel.value : "C";
+  }
+  return h;
+}
+
+async function doPaperAdjust(label) {
+  const msg = document.getElementById("padj-msg");
+  const holdings = Array.from(
+    document.querySelectorAll("#padj-holdings .acct-card")
+  ).map(_padjHoldingsRowData).filter((h) => h.underlying);
+  const numOrNull = (id) => {
+    const el = document.getElementById(id);
+    if (!el || el.value === "") return null;
+    const v = parseFloat(el.value);
+    return isNaN(v) ? null : v;
+  };
+  try {
+    const res = await fetch("/api/paper-adjust", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        label: label,
+        cash_cad: numOrNull("padj-cash-cad"),
+        cash_usd: numOrNull("padj-cash-usd"),
+        holdings: holdings,
+      }),
+    });
+    if (res.status === 401) { location.href = "/login"; return; }
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 200 && data.status === "ok") {
+      closePaperSettings();
+    } else {
+      msg.textContent = (data.errors || ["adjust failed"]).join("\n");
+      return;
+    }
+  } catch (e) {
+    msg.textContent = "adjust failed";
+    return;
+  }
+  try { localStorage.removeItem("dash_last_payload"); } catch (e) {}
+  paperPositions = null;
+  load();
 }
 
 async function doPaperResize(label) {
@@ -570,8 +752,7 @@ function renderSummary(data) {
         '<span style="display:flex;gap:4px;flex-shrink:0;align-items:center">' +
         '<button class="mini-toggle" title="flip paper value currency" onclick="flipPaperCurrency(\'' + esc(a.label) + '\')">' + pcur.toUpperCase() + ' ⇄</button> ' +
         '<button class="mini-toggle" onclick="togglePaper(\'' + esc(a.label) + '\')">' + "holdings " + (open ? "▼" : "▲") + '</button> ' +
-        (isAdmin() ? '<button class="mini-toggle" onclick="resetPaper(\'' + esc(a.label) + '\')">reset</button> ' : '') +
-        (isAdmin() ? '<button class="mini-toggle" title="bring past stock trades up to the tier sizing" onclick="resizePaper(\'' + esc(a.label) + '\')">resize</button> ' : '') +
+        (isAdmin() ? '<button class="mini-toggle" title="paper account settings: reset, resize, adjust cash + holdings" onclick="openPaperSettings(\'' + esc(a.label) + '\')">⚙</button> ' : '') +
         '<button class="mini-toggle" title="' + (phidden ? "show paper value" : "hide paper value") + '" onclick="togglePaperHidden(\'' + esc(a.label) + '\')">' + (phidden ? EYE_OFF_SVG : EYE_SVG) + '</button></span></div>' +
         '<div class="value" style="font-size:20px">' + (phidden? "••••••" : pshowUsd ? fmtMoney(a.paper_usd_value) + " USD" : fmtMoney(a.paper_value) + " CAD") +
         (!phidden && !pshowUsd && a.paper_usd_value ? ' <span style="font-size:12px;color:var(--muted)">$' + a.paper_usd_value.toLocaleString("en-CA", {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' USD</span>' : '') +

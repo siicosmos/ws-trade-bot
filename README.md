@@ -278,6 +278,10 @@ the legacy `X-Auth-Token` machine token for scripts and the reader.
 - **open positions table** (options) with per-row tp/trailing guard
   button and a manual sell button (live: real order through the
   executor; greyed out outside live mode); **stock holdings** toggle.
+- **paper account ⚙ settings**: reset (drop + re-seed from live),
+  resize (past stock trades up to tier sizing), and **adjust** — set
+  the cash pools (cad + usd) and edit/remove/add holdings to match
+  reality (e.g. after manual trades on the real account).
 - **recent alerts** (with ignored-chatter filter) and **trade log**.
 - **history search**: merged alert/trade stream, ticker/action/status/
   mode/date filters, free text.
@@ -326,6 +330,7 @@ dashboard has no login). Admin-gated routes check the session role.
 | POST | `/api/paper-reset` | admin | reset a paper account's ledger and re-seed from live |
 | POST | `/api/paper-resize` | admin | bring past paper STOCK positions up to tier sizing |
 | POST | `/api/paper-sell` | admin | manual close of a paper position at its live price (whole or given qty) |
+| POST | `/api/paper-adjust` | admin | the paper account's adjust editor: set the cash pools (cad + usd) and replace the holdings (edit qty/avg, remove, add) |
 | POST | `/api/position-sell` | admin | live mode: manual REAL sell of a tracked live position at the current bid (stop-monitor path) |
 | POST | `/api/position-tp` | admin | set/clear per-position take-profit (`tp_gain_pct`) and trailing (`trail_pct`) guards |
 | GET | `/api/signals?limit=` | any | recent recorded signals |

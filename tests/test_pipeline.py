@@ -4876,3 +4876,45 @@ def test_position_sell_live_guards_and_places_order():
         json={"label": "Personal", "contract_key": "NOPE"},
     )
     assert r3.status_code == 404
+
+
+def test_new_real_account_gets_a_paper_account():
+    # add a real account to the config -> on the next app start
+    # seed_paper_accounts gives it a paper account seeded from
+    # its live value; existing accounts are untouched (their
+    # paper_seed marker guards them)
+    from consumer.ws.account import seed_paper_accounts
+
+    class Acct:
+        labels = ["T"]
+
+        def values(self):
+            return {label: 3360.0 for label in self.labels}
+
+        def _resolve(self):
+            return [(label, f"id-{label}") for label in self.labels]
+
+        def _positions_raw(self):
+            return {label: [] for label in self.labels}
+
+    cfg = type("C", (), {
+        "paper": type("P", (), {"mirror": True})(),
+    })()
+    acct = Acct()
+    store = _fresh_store()
+
+    seeded = seed_paper_accounts(cfg, store, acct)
+    assert seeded == ["T"]
+    assert store.paper_equity("T") == 3360.0
+
+    # a new real account appears in the config (the accounts
+    # editor) - the next start seeds it, T stays untouched
+    acct.labels = ["T", "N"]
+    seeded = seed_paper_accounts(cfg, store, acct)
+    assert seeded == ["N"]
+    assert store.paper_equity("N") == 3360.0
+    assert store.paper_equity("T") == 3360.0
+    # both paper accounts now report values
+    assert set(acct.values()) == {"T", "N"}
+    # re-running is a no-op (the seed markers guard)
+    assert seed_paper_accounts(cfg, store, acct) == []

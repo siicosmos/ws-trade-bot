@@ -818,6 +818,10 @@ def _account_summary(ctx, snap, label, value):
         ),
         "paper_value": paper_values.get(label),
         "paper_initial": paper_initials.get(label),
+        # the adjust editor's cash pools (the ledger's cad cash
+        # + the usd pool the editor manages)
+        "paper_cash_cad": store.paper_equity(label),
+        "paper_cash_usd": store.paper_cash_usd(label),
         # prefer wealthsimple's own conversion for
         # the real account (works with no open
         # positions, unlike the positions-derived fx
@@ -1267,6 +1271,117 @@ def create_app(cfg, store: Store, risk, executor, account=None,
         return jsonify({
             "status": "ok", "label": label,
             "reseeded": label in seeded,
+        })
+
+    @app.post("/api/paper-adjust")
+    def api_paper_adjust():
+        """The paper account's adjust editor: set the cash
+        pools (CAD + USD) and replace the holdings (edit qty /
+        avg, remove, add new rows)."""
+        denied = _require_admin()
+        if denied:
+            return denied
+        if not getattr(
+            getattr(cfg, "paper", None), "enabled", False
+        ) and ctx.mode != "paper":
+            return jsonify(
+                {"error": "paper trading is not active"}
+            ), 400
+        payload = request.get_json(silent=True) or {}
+        label = str(payload.get("label") or "").strip()
+        if not label:
+            return jsonify({"error": "label required"}), 400
+
+        errors = []
+        if payload.get("cash_cad") is not None:
+            try:
+                cash_cad = round(float(payload["cash_cad"]), 2)
+                store.set_paper_equity(max(0.0, cash_cad), label)
+            except (TypeError, ValueError):
+                errors.append("cash_cad: not a number")
+        if payload.get("cash_usd") is not None:
+            try:
+                cash_usd = round(float(payload["cash_usd"]), 2)
+                store.set_paper_cash_usd(max(0.0, cash_usd), label)
+            except (TypeError, ValueError):
+                errors.append("cash_usd: not a number")
+
+        holdings = payload.get("holdings")
+        if holdings is not None:
+            if not isinstance(holdings, list):
+                errors.append("holdings: expected a list")
+            else:
+                rows = []
+                for i, h in enumerate(holdings):
+                    if not isinstance(h, dict):
+                        errors.append(f"holdings[{i}]: expected a mapping")
+                        continue
+                    underlying = str(
+                        h.get("underlying") or ""
+                    ).strip().upper()[:20]
+                    qty = h.get("qty")
+                    avg = h.get("avg") or 0.0
+                    try:
+                        qty = int(float(qty))
+                    except (TypeError, ValueError):
+                        errors.append(
+                            f"holdings[{i}].qty: not a number"
+                        )
+                        continue
+                    try:
+                        avg = round(float(avg), 6)
+                    except (TypeError, ValueError):
+                        errors.append(
+                            f"holdings[{i}].avg: not a number"
+                        )
+                        continue
+                    right = str(h.get("right") or "").strip().upper()[:1]
+                    if right not in ("C", "P"):
+                        # stock holding: the key is the symbol
+                        if not underlying:
+                            errors.append(
+                                f"holdings[{i}]: underlying required"
+                            )
+                            continue
+                        rows.append(
+                            (underlying, underlying, None, None,
+                             None, qty, avg)
+                        )
+                        continue
+                    expiry = str(h.get("expiry") or "").strip()[:10]
+                    try:
+                        strike = float(h.get("strike"))
+                    except (TypeError, ValueError):
+                        errors.append(
+                            f"holdings[{i}].strike: not a number"
+                        )
+                        continue
+                    if not underlying or not expiry or qty <= 0:
+                        errors.append(
+                            f"holdings[{i}]: underlying, expiry "
+                            "and a positive qty are required"
+                        )
+                        continue
+                    rows.append((
+                        f"{underlying}-{expiry}-{strike:g}-{right}",
+                        underlying, expiry, strike, right, qty, avg,
+                    ))
+                if not errors:
+                    store.set_paper_holdings(label, rows)
+
+        if errors:
+            return jsonify({"status": "error", "errors": errors}), 400
+        ctx.summary_cache["ts"] = 0.0
+        _section_cache.pop("paper", None)
+        _section_cache.pop("summary", None)
+        ledger = getattr(executor, "account", None)
+        return jsonify({
+            "status": "ok", "label": label,
+            "value": (
+                round(ledger.value(label), 2)
+                if ledger is not None and hasattr(ledger, "value")
+                else None
+            ),
         })
 
     @app.get("/api/paper-positions")

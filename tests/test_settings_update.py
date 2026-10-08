@@ -477,6 +477,9 @@ def test_account_settings_apply_and_persist():
             WSAccountConfig(account_id="p1", label="Personal"),
         ],
     )
+    # the real app loads cfg from this file - mirror the file's
+    # exchange_hint so the full-key persist writes it back
+    cfg.wealthsimple.exchange_hint = "NASDAQ"
 
     applied, errors = apply_settings(
         cfg,
@@ -1278,3 +1281,62 @@ def test_account_add_validation():
     )
     assert errors == []
     assert cfg.wealthsimple.accounts[0].account_id == "y"
+
+
+def test_paper_adjust_endpoint():
+    # the adjust editor: set both cash pools and replace the
+    # holdings (edit, remove, add)
+    import json as _json
+
+    store = _fresh_store()
+    cfg = ConfigStub(TradingConfig(mode="paper"), auth_token="t")
+    account = PaperAccount(cfg, store)
+    from consumer.trading.executor import PaperExecutor
+
+    executor = PaperExecutor(cfg, store, account)
+    app = __import__(
+        "consumer.web", fromlist=["create_app"]
+    ).create_app(cfg, store, RiskEngine(cfg, store, account),
+                 executor, account)
+    client = app.test_client()
+    # legacy token login claims the admin session
+    login = client.post("/login", data={
+        "username": "", "password": "t"}, follow_redirects=False)
+    assert login.status_code == 302
+
+    r = client.post("/api/paper-adjust", json={
+        "label": "T",
+        "cash_cad": 5000,
+        "cash_usd": 1000,
+        "holdings": [
+            {"underlying": "COIN", "qty": 10, "avg": 55.5},
+            {"underlying": "SPX", "expiry": "2026-10-16",
+             "strike": 7620, "right": "C", "qty": 2, "avg": 1.25},
+        ],
+    })
+    assert r.status_code == 200, r.get_data()
+    assert r.get_json()["status"] == "ok"
+
+    # the cash pools landed
+    assert store.paper_equity("T") == 5000.0
+    assert store.paper_cash_usd("T") == 1000.0
+    # the holdings replaced: one stock + one option row
+    rows = store.list_positions("paper", "T")
+    keys = [p["contract_key"] for p in rows]
+    assert keys == ["COIN", "SPX-2026-10-16-7620-C"]
+    opt = rows[1]
+    assert opt["qty"] == 2 and float(opt["avg_premium"]) == 1.25
+
+    # removing everything: send an empty holdings list
+    r = client.post("/api/paper-adjust", json={
+        "label": "T", "holdings": []})
+    assert r.status_code == 200
+    assert store.list_positions("paper", "T") == []
+
+    # validation: bad numbers are reported, nothing crashes
+    r = client.post("/api/paper-adjust", json={
+        "label": "T", "cash_cad": "abc",
+        "holdings": [{"underlying": "SPX", "qty": "x"}]})
+    assert r.status_code == 400
+    assert any("cash_cad" in e for e in r.get_json()["errors"])
+    assert any("qty" in e for e in r.get_json()["errors"])

@@ -633,12 +633,16 @@ def _persist(cfg, config_path):
     )
 
     ws = raw.setdefault("wealthsimple", {})
+    # every documented key is written - even when empty or at
+    # its default - so the saved config converges to the
+    # template's shape over time
+    ws["exchange_hint"] = getattr(cfg.wealthsimple, "exchange_hint", "")
     for field in ("positions_refresh_seconds", "values_refresh_seconds"):
         ws[field] = getattr(cfg.wealthsimple, field)
-    if "stock_margin_rate" in ws or getattr(
-        cfg.wealthsimple, "stock_margin_rate", None
-    ) not in (None, 0.30):
-        ws["stock_margin_rate"] = cfg.wealthsimple.stock_margin_rate
+    ws["stock_margin_rate"] = cfg.wealthsimple.stock_margin_rate
+    ws["margin_rate_overrides"] = dict(
+        getattr(cfg.wealthsimple, "margin_rate_overrides", {}) or {}
+    )
 
     au = raw.setdefault("auto_update", {})
     au["enabled"] = cfg.auto_update.enabled
@@ -659,19 +663,14 @@ def _persist(cfg, config_path):
         paper = raw.setdefault("paper", {})
         paper["enabled"] = paper_cfg.enabled
         paper["mirror"] = paper_cfg.mirror
-        if getattr(paper_cfg, "mirror", False):
-            paper["mirror_interval_seconds"] = (
-                paper_cfg.mirror_interval_seconds
-            )
+        paper["mirror_interval_seconds"] = getattr(
+            paper_cfg, "mirror_interval_seconds", 60
+        )
     discord_cfg = getattr(cfg, "discord", None)
-    if discord_cfg is not None and "notify" in (
-        raw.get("discord") or {}
-    ):
-        raw["discord"]["notify"] = discord_cfg.notify
-    elif discord_cfg is not None and getattr(
-        discord_cfg, "notify", True
-    ) is False:
-        raw.setdefault("discord", {})["notify"] = False
+    if discord_cfg is not None:
+        raw.setdefault("discord", {})["notify"] = getattr(
+            discord_cfg, "notify", True
+        )
 
     reader = raw.setdefault("reader", {})
     for key in EDITABLE_READER:
@@ -679,8 +678,15 @@ def _persist(cfg, config_path):
     for key in EDITABLE_READER_LISTS:
         reader[key] = getattr(cfg.reader, key)
     reader["auto_scroll"] = cfg.reader.auto_scroll
-    if getattr(cfg.reader, "channel_servers", None):
-        reader["channel_servers"] = cfg.reader.channel_servers
+    reader["channel_servers"] = dict(
+        getattr(cfg.reader, "channel_servers", {}) or {}
+    )
+    parser = raw.setdefault("parser", {})
+    parser["custom_patterns"] = list(
+        getattr(
+            getattr(cfg, "parser", None), "custom_patterns", []
+        ) or []
+    )
 
     dc = raw.setdefault("discord", {})
     for field in (

@@ -173,6 +173,14 @@ by stubs (`test_reader.py` timing tests).
   unknown label = add, known label = update.
 - `account_is_non_margin`: explicit type wins over API type and
   label keywords; API type next; label keyword last.
+- **new accounts get paper accounts**: adding a real account and
+  re-running the seed gives the new label a paper account seeded
+  from its live value; existing accounts' ledgers are untouched
+  (the paper_seed marker guards them).
+- **paper adjust**: the `/api/paper-adjust` endpoint sets both
+  cash pools (cad + usd) and replaces the holdings (stock +
+  option rows); bad numbers are reported without crashing; the
+  ledger's valuation includes the usd cash pool.
 - Consumer example ships `accounts: []`.
 
 **Manual (dashboard + real WS)**
@@ -190,6 +198,15 @@ by stubs (`test_reader.py` timing tests).
 - [ ] M-7.4 Label immutability: existing accounts show no label
       field in settings (ledgers key on label); only new rows
       accept one.
+- [ ] M-7.5 Paper ⚙ settings: the reset + resize confirm flows
+      still work from the popup; the adjust editor loads the
+      current cash pools + holdings, edits apply (card value
+      moves), a removed holding disappears, an added option row
+      (symbol/expiry/strike/right/qty/avg) prices on the next
+      poll.
+- [ ] M-7.6 Add a real account in settings, restart the
+      consumer, confirm the new paper account is seeded
+      (automated in test_pipeline; verify the live flow once).
 
 ## 8. Build + release pipeline (CI)
 
