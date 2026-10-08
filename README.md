@@ -451,12 +451,13 @@ real fills into the paper ledger at actual prices),
 
 ### `reader` — the Windows Discord watcher
 `pipeline_url`, `poll_interval` (0.5), `auth_token` (**must match
-the info server's `info.auth_token`**), `channel_marker`,
+the info server's `info.auth_token`**),
 `max_items` (40),
 `auto_scroll`, `auto_start_discord`, `auto_switch_channel`,
-`discord_server`, `channel_servers` map, `discord_reopen_seconds`
+`channel_servers` map, `discord_reopen_seconds`
 (15), `discord_restart_seconds` (90), `discord_start_command`,
-`channels` allowlist (**never** include your webhook output channel).
+`channels` allowlist (**never** include your webhook output channel;
+the first entry is the channel the reader sits in).
 Reader knobs are edited in `reader/reader.config.yaml` directly — the
 reader watches the file's mtime and restarts to apply an edit.
 

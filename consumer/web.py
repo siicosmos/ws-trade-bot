@@ -1057,7 +1057,9 @@ def _summary_payload(ctx):
     else:
         last_seen = ctx.reader_state.get("last_seen")
         reader = dict(ctx.reader_state)
-        reader["desired"] = cfg.reader.channel_marker
+        reader["desired"] = (
+            cfg.reader.channels[0] if cfg.reader.channels else ""
+        )
         reader["age_seconds"] = (
             round(time.time() - last_seen, 1) if last_seen else None
         )

@@ -27,12 +27,9 @@ auto_start_discord: true
 # click into the wanted channel when discord opens elsewhere
 # (e.g. the friends page after an update)
 auto_switch_channel: true
-channel_marker: ""         # pin to one channel by name; empty = follow
-                           # whatever channel is open in Discord
-# the server to select when the wanted channel is not visible
-# (a server's channels only appear once it is selected)
-discord_server: ""
-# per-channel server mapping for auto navigation
+# per-channel server mapping for auto navigation: the channel's
+# server must be selected before its channels appear in discord's
+# ui tree (a channel not listed here cannot be auto-navigated)
 # channel_servers:
 #   player-alerts: "SPX Plays"
 # how fast the reader restarts discord

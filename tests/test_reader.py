@@ -150,7 +150,7 @@ def test_find_message_container_title_bonus(monkeypatch):
         dr.auto, "WalkControl", lambda *a, **k: [(other, 1), (msgs, 2)]
     )
     monkeypatch.setattr(dr, "item_text", lambda it: it.text)
-    assert dr.find_message_container(object(), "", "test-message") is msgs
+    assert dr.find_message_container(object(), "test-message") is msgs
 
 
 def test_find_message_container_rejects_all_chrome(monkeypatch):
@@ -293,7 +293,7 @@ def test_find_message_container_title_match_beats_score(monkeypatch):
         dr.auto, "WalkControl", lambda *a, **k: [(rail, 1), (pane, 4)]
     )
     monkeypatch.setattr(dr, "item_text", lambda it: it.text)
-    assert dr.find_message_container(object(), "", "trade-alerts") is pane
+    assert dr.find_message_container(object(), "trade-alerts") is pane
 
 
 def test_parse_message_time_with_date():
@@ -333,25 +333,24 @@ def test_is_recent_message():
 
 def test_channel_allowed():
     channels = ["test-alerts", "player-alerts"]
-    assert dr.channel_allowed("#test-alerts", channels, "")
-    assert dr.channel_allowed("test-alerts", channels, "")
-    assert not dr.channel_allowed("trade-alerts", channels, "")
-    assert dr.channel_allowed("anything", channels, "player-alerts")
-    assert dr.channel_allowed("anything", [], "")
-    assert dr.channel_allowed("", channels, "")
+    assert dr.channel_allowed("#test-alerts", channels)
+    assert dr.channel_allowed("test-alerts", channels)
+    assert not dr.channel_allowed("trade-alerts", channels)
+    assert dr.channel_allowed("anything", [])
+    assert dr.channel_allowed("", channels)
 
 
 def test_merged_config_channels():
     resp = {"channels": ["Player-Alerts", " test-alerts ", ""]}
-    (marker, poll, items, channels, servers, reopen, restart,
+    (poll, items, channels, servers, reopen, restart,
      auto_switch, auto_scroll, changed) = dr.merged_config(
-        resp, "", 0.5, 40, ["test-alerts"]
+        resp, 0.5, 40, ["test-alerts"]
     )
     assert changed
     assert channels == ["player-alerts", "test-alerts"]
     # no change on repeat
     unchanged = dr.merged_config(
-        {"channels": ["test-alerts"]}, "", 0.5, 40, ["test-alerts"]
+        {"channels": ["test-alerts"]}, 0.5, 40, ["test-alerts"]
     )
     assert not unchanged[-1]
 
@@ -362,25 +361,25 @@ def test_merged_config_channel_servers():
         "discord_reopen_seconds": 20,
         "discord_restart_seconds": 120,
     }
-    (marker, poll, items, channels, servers, reopen, restart,
+    (poll, items, channels, servers, reopen, restart,
      auto_switch, auto_scroll, changed) = dr.merged_config(
-        resp, "", 0.5, 40, ["test-alerts"], {}, 15, 90
+        resp, 0.5, 40, ["test-alerts"], {}, 15, 90
     )
     assert changed
     assert servers == {"player-alerts": "SPX Plays"}
     assert reopen == 20 and restart == 120
     # no change on repeat
     assert not dr.merged_config(
-        resp, "", 0.5, 40, ["test-alerts"], servers, 20, 120
+        resp, 0.5, 40, ["test-alerts"], servers, 20, 120
     )[-1]
 
 
 def test_channel_allowed_substring_match():
     channels = ["test-alerts", "player-alerts"]
-    assert dr.channel_allowed("#🚨│player-alerts", channels, "")
-    assert dr.channel_allowed("🚨│player-alerts", channels, "")
-    assert not dr.channel_allowed("#trade-alerts", channels, "")
-    assert not dr.channel_allowed("general", channels, "")
+    assert dr.channel_allowed("#🚨│player-alerts", channels)
+    assert dr.channel_allowed("🚨│player-alerts", channels)
+    assert not dr.channel_allowed("#trade-alerts", channels)
+    assert not dr.channel_allowed("general", channels)
 
 
 def test_find_message_container_strict_title(monkeypatch):

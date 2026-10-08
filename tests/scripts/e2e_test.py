@@ -462,7 +462,7 @@ def run_reader_status_phase():
         cfg_raw = _yaml.safe_load(f)
     cfg_raw["pipeline"]["role"] = "info"
     cfg_raw["pipeline"]["auth_token"] = "info-token"
-    cfg_raw["reader"]["channel_marker"] = "player-alerts"
+    cfg_raw["reader"]["channels"] = ["player-alerts"]
     cfg_raw["consumers"] = []
     with open(cfg_path, "w") as f:
         _yaml.safe_dump(cfg_raw, f)

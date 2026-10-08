@@ -194,7 +194,6 @@ class ParserConfig:
 class ReaderConfig:
     pipeline_url: str = "http://localhost:8080/alert"
     poll_interval: float = 0.5
-    channel_marker: str = ""
     max_items: int = 40
     auth_token: str = ""
     channels: list = field(default_factory=list)
@@ -546,9 +545,6 @@ def load_config(path: str) -> Config:
             ),
             poll_interval=float(
                 _get(raw.get("reader") or {}, "poll_interval", 0.5)
-            ),
-            channel_marker=str(
-                _get(raw.get("reader") or {}, "channel_marker", "")
             ),
             max_items=int(_get(raw.get("reader") or {}, "max_items", 40)),
             auth_token=str(_get(raw.get("reader") or {}, "auth_token", "")),

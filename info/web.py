@@ -41,7 +41,7 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
 
     # the reader's heartbeat state (dashboard reader line).
     # reader settings live in the reader's own yaml - read the
-    # desired channel marker from there for the "waiting for"
+    # first allowed channel from there for the "waiting for"
     # display (best effort; the reader and this app share the box)
     app.reader_state = {"channel": None, "ok": False, "last_seen": None}
     app.reader_desired = ""
@@ -57,7 +57,12 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
             with open(rpath, encoding="utf-8") as f:
                 rcfg = _yaml.safe_load(f) or {}
             flat = rcfg.get("reader") or rcfg
-            app.reader_desired = str(flat.get("channel_marker") or "")
+            channels = [
+                str(c).strip().lower()
+                for c in flat.get("channels") or []
+                if str(c).strip()
+            ]
+            app.reader_desired = channels[0] if channels else ""
     except Exception:
         pass
 

@@ -119,7 +119,6 @@ LOG_PASTE_RE = re.compile(
             r"\bUIA error\b",
             r"\bchannel switched\b",
             r"\bwatching channel\b",
-            r"\bchannel marker\b",
             r"\bwatching window\b",
             r"\bpoll every\b",
             r"\bchecking dependencies\b",
@@ -610,8 +609,8 @@ def child_texts(ctrl, sample=10):
     return texts
 
 
-def find_message_container(window, marker, title_channel="", diag=None,
-                            strict_title=False):
+def find_message_container(window, title_channel="", diag=None,
+                           strict_title=False):
     candidates = []
     after_title_match = 0
     try:
@@ -630,14 +629,13 @@ def find_message_container(window, marker, title_channel="", diag=None,
                 ):
                     continue
                 name = ctrl.Name or ""
-                if not marker or marker.lower() in name.lower():
-                    candidates.append(ctrl)
-                    if title_channel and name_matches_title(
-                        name, title_channel
-                    ):
-                        after_title_match += 1
-                        if after_title_match > 6:
-                            break
+                candidates.append(ctrl)
+                if title_channel and name_matches_title(
+                    name, title_channel
+                ):
+                    after_title_match += 1
+                    if after_title_match > 6:
+                        break
             except UIAError:
                 continue
     except UIAError:
@@ -966,21 +964,19 @@ def sync_with_server(base_url, auth_token, channel, ok, verify=True):
     return None
 
 
-def channel_allowed(title_channel, channels, marker):
-    if marker:
-        return True
+def channel_allowed(title_channel, channels):
     if not channels or not title_channel:
         return True
     name = title_channel.lstrip("#").lower()
     return any(entry in name for entry in channels)
 
 
-def merged_config(resp, marker, poll_interval, max_items, channels,
+def merged_config(resp, poll_interval, max_items, channels,
                   channel_servers=None, reopen_seconds=15,
                   restart_after=90, auto_switch=True, auto_scroll=True):
     changed = False
     if resp is None:
-        return (marker, poll_interval, max_items, channels,
+        return (poll_interval, max_items, channels,
                 channel_servers, reopen_seconds, restart_after,
                 auto_switch, auto_scroll, False)
     if "auto_switch" in resp:
@@ -1013,11 +1009,6 @@ def merged_config(resp, marker, poll_interval, max_items, channels,
     except (TypeError, ValueError):
         pass
     new_channels = resp.get("channels")
-    new_marker = resp.get("channel_marker")
-    if isinstance(new_marker, str) and new_marker != marker:
-        marker = new_marker
-        changed = True
-    new_channels = resp.get("channels")
     if isinstance(new_channels, list):
         normalized = sorted(
             {
@@ -1047,7 +1038,7 @@ def merged_config(resp, marker, poll_interval, max_items, channels,
             auto_scroll = want_scroll
             changed = True
     return (
-        marker, poll_interval, max_items, channels, channel_servers,
+        poll_interval, max_items, channels, channel_servers,
         reopen_seconds, restart_after, auto_switch, auto_scroll,
         changed,
     )
@@ -1249,12 +1240,10 @@ def main():
         str(discord_cfg.get("update_webhook_url") or "") or webhook_url
     )
     pipeline_url = cfg.get("pipeline_url", "http://localhost:8080/alert")
-    marker = str(cfg.get("channel_marker", ""))
     auto_scroll = bool(cfg.get("auto_scroll", True))
     auto_start_discord = bool(cfg.get("auto_start_discord", True))
     discord_start_command = cfg.get("discord_start_command") or None
     auto_switch = bool(cfg.get("auto_switch_channel", True))
-    discord_server = str(cfg.get("discord_server") or "").strip()
     channel_servers = {
         str(k).strip().lower(): str(v).strip()
         for k, v in (cfg.get("channel_servers") or {}).items()
@@ -1335,10 +1324,6 @@ def main():
             time.sleep(2)
 
     log(f"watching window {window.Name!r} (poll every {poll_interval}s)")
-    if marker:
-        log(f"channel marker: {marker!r}")
-    else:
-        log("channel marker empty - following whatever channel is open")
     if channels:
         log(f"allowed channels: {channels}")
     if channel_servers:
@@ -1452,10 +1437,9 @@ def main():
                 title_channel = ""
             if not title_channel:
                 title_channel = last_title_channel or ""
-            allowed = channel_allowed(title_channel, channels, marker)
+            allowed = channel_allowed(title_channel, channels)
             if (
-                not marker
-                and allowed
+                allowed
                 and title_channel
                 and last_title_channel is not None
                 and title_channel != last_title_channel
@@ -1489,13 +1473,11 @@ def main():
             # no channel at all
             if (
                 auto_switch
-                and (channels or marker)
+                and channels
                 and (not title_channel or not allowed)
             ):
-                target = channels[0] if channels else (marker or "")
-                server = channel_servers.get(
-                    target.lower()
-                ) or discord_server
+                target = channels[0]
+                server = channel_servers.get(target.lower())
                 ctrl = find_channel_control(window, [target])
                 if ctrl is not None:
                     if not click_channel_control(
@@ -1530,10 +1512,8 @@ def main():
                 diag = []
                 if allowed:
                     container = find_message_container(
-                        window, marker,
-                        "" if marker else title_channel,
-                        diag,
-                        strict_title=bool(channels) and not marker,
+                        window, title_channel, diag,
+                        strict_title=bool(channels),
                     )
                 # attach-time verification: the window title goes
                 # stale on full-page views (the discovery page
@@ -1544,7 +1524,6 @@ def main():
                 # the reader
                 if (
                     container is not None
-                    and not marker
                     and title_channel
                 ):
                     bare = next(
@@ -1634,16 +1613,16 @@ def main():
                         *heartbeat_status(allowed, title_channel),
                         verify_tls,
                     )
-                    (marker, poll_interval, max_items, channels,
+                    (poll_interval, max_items, channels,
                      channel_servers, reopen_seconds, restart_after,
                      auto_switch, auto_scroll, changed) = merged_config(
-                        resp, marker, poll_interval, max_items, channels,
+                        resp, poll_interval, max_items, channels,
                         channel_servers, reopen_seconds, restart_after,
                         auto_switch, auto_scroll,
                     )
                     if changed:
                         log(
-                            f"channel config -> marker={marker!r} "
+                            f"channel config -> "
                             f"channels={channels} "
                             f"servers={channel_servers}"
                         )
@@ -1679,15 +1658,14 @@ def main():
                     base_url, auth_token, current_channel,
                     container is not None, verify_tls,
                 )
-                (new_marker, new_poll, new_max, new_channels,
+                (new_poll, new_max, new_channels,
                  new_servers, new_reopen, new_restart, new_switch,
                  new_scroll, changed) = merged_config(
-                    resp, marker, poll_interval, max_items, channels,
+                    resp, poll_interval, max_items, channels,
                     channel_servers, reopen_seconds, restart_after,
                     auto_switch, auto_scroll,
                 )
                 if changed:
-                    marker = new_marker
                     channels = new_channels
                     channel_servers = new_servers
                     poll_interval = new_poll
@@ -1698,7 +1676,7 @@ def main():
                     auto_scroll = new_scroll
                     container = None
                     log(
-                        f"channel config -> marker={marker!r} "
+                        f"channel config -> "
                         f"channels={channels} "
                         f"servers={channel_servers}"
                     )
@@ -1718,7 +1696,7 @@ def main():
             # ui lists score like message containers and their
             # strings would be posted as alerts - read nothing
             # until a real channel is open
-            if not title_channel and not marker:
+            if not title_channel:
                 container = None
                 time.sleep(poll_interval)
                 continue

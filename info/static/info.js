@@ -46,10 +46,30 @@ async function jpost(url, payload) {
   return r;
 }
 
+function showReconnect(on) {
+  // network down / server restarting - the orange banner instead
+  // of raw fetch errors (consumer dashboard parity)
+  const el = document.getElementById("reconnect");
+  if (el) el.style.display = on ? "block" : "none";
+}
+
 async function jget(url) {
-  const r = await fetch(url);
+  let r;
+  try {
+    r = await fetch(url);
+  } catch (e) {
+    showReconnect(true);
+    throw e;
+  }
   if (r.status === 401) { location.href = "/login"; throw new Error("auth"); }
-  return r.json();
+  try {
+    const data = await r.json();
+    showReconnect(false);
+    return data;
+  } catch (e) {
+    showReconnect(true);
+    throw e;
+  }
 }
 
 function esc(s) {
