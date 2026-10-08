@@ -262,8 +262,8 @@ WS-only regardless; moomoo is read-only pricing.
 Two dashboards from per-app static asset sets (`consumer/static/`,
 `info/static/`),
 served by Flask. Auth: username+password sessions (`users` table,
-pbkdf2, first boot claims the admin account from the access token) or
-the legacy `X-Auth-Token` machine token for scripts and the reader.
+pbkdf2; first boot seeds the admin account from the access token) or
+the `X-Auth-Token` machine token for scripts and the reader.
 5-fail/15-minute login lockout.
 
 **Consumer dashboard** (`role: consumer`) — the full trading UI:
@@ -317,7 +317,7 @@ dashboard has no login). Admin-gated routes check the session role.
 
 | method | path | auth | purpose |
 |---|---|---|---|
-| GET/POST | `/login` | none | login page / credential check; first boot claims admin; 5-fail/15-min lockout |
+| GET/POST | `/login` | none | login page / credential check; 5-fail/15-min lockout |
 | GET | `/logout` | session | clear session, redirect |
 | GET | `/` | session | dashboard page (lean info page when `role: info`) |
 | GET | `/health` | none | liveness `{"status":"ok"}` (watchdog target) |
@@ -392,9 +392,9 @@ the role's config; the rest needs a restart.
 The web-server section is named for the role (`consumer:` in the
 consumer config, `info:` in the info config — the section key IS
 the role; a config with neither defaults to consumer):
-`host` (0.0.0.0), `port` (8080 default), `auth_token` (**required**
-when binding non-localhost — the server refuses to start otherwise;
-the dashboard password and the reader's credential),
+`host` (0.0.0.0), `port` (8080 default), `auth_token` (**required** —
+the server refuses to start without it; it seeds the admin account
+and authenticates the reader and scripts),
 `tls_cert`/`tls_key` (empty = plain HTTP).
 
 ### `consumers` — info role: who may read the feed

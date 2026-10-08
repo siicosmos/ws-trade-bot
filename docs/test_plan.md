@@ -54,11 +54,8 @@ Windows UIA); it needs `requirements.txt` installed
 
 **Automated**
 
-- `test_config_example.py::test_run_db_migration` — trades.db →
-  `<role>.trades.db` rename incl. `-wal`/`-shm`, idempotent,
-  untouched when the old file is missing.
 - `test_release_updater.py` apply test — state files survive the
-  release swap (new + legacy names).
+  release swap.
 
 **Manual**
 
@@ -162,9 +159,6 @@ by stubs (`test_reader.py` timing tests).
 
 **Manual (Windows box)**
 
-- [ ] M-6.1 Legacy rename: with `reader/config.yaml` present and
-      `reader.config.yaml` absent, start the reader — confirm it
-      renames, logs it, and loads the old settings/webhooks.
 - [ ] M-6.2 Push a `reader/*` commit → info server pulls → the
       reader logs `repo updated on disk - restarting reader`,
       posts "Reader restarting", and comes back watching Discord.

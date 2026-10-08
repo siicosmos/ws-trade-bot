@@ -21,7 +21,7 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("-c", "--config", default="config.yaml")
+    ap.add_argument("-c", "--config", required=True)
     ap.add_argument("--db", default="")
     args = ap.parse_args()
 

@@ -199,9 +199,12 @@ def test_self_password_change_requires_current():
     assert s.verify_user("liam", "ownerpw") is not None
 
 
-def test_first_admin_bootstrap_and_token_fallback():
+def test_tokenless_install_cannot_claim_or_bare_token_login():
+    """the token is the bootstrap (it seeds the admin at first
+    boot and main() refuses to start without it) - a tokenless
+    app (a test-only state) has no claim form and the bare token
+    is not a password."""
     s = _fresh_store()
-    # a config without a token: no seeding, first-visit claim
     from core.config import (
         AutoUpdateConfig, DiscordConfig, QuotesConfig, ReaderConfig,
     )
@@ -225,16 +228,16 @@ def test_first_admin_bootstrap_and_token_fallback():
     r = client.post("/login", data={
         "username": "liam", "password": "bootstr1",
     }, follow_redirects=False)
-    assert r.status_code == 302
-    assert s.verify_user("liam", "bootstr1")["role"] == "admin"
-    assert s.user_count() == 1
+    # no claim path - the login is just wrong
+    assert r.status_code == 200
+    assert s.user_count() == 0
 
-    # a config WITH a token also accepts the bare token as a
-    # legacy owner login
+    # the bare token is not an owner login either
     s2 = _fresh_store()
     app2 = create_app(Stub("legacytoken"), s2, None, None, None)
     c2 = app2.test_client()
     r = c2.post("/login", data={
         "username": "", "password": "legacytoken",
     }, follow_redirects=False)
-    assert r.status_code == 302
+    assert r.status_code == 200   # login rejected, form re-rendered
+    assert c2.get("/api/settings").status_code == 401

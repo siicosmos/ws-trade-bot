@@ -17,8 +17,7 @@ info:
   host: "0.0.0.0"            # what to bind to; 127.0.0.1 = this PC only
   port: 8081                 # the reader posts here (reader.pipeline_url); the consumer owns 8080
   auth_token: ""             # the reader's credential + dashboard password.
-                             # REQUIRED if host is not localhost (server
-                             # refuses to start otherwise).
+                             # REQUIRED (the server refuses to start without it).
                              # generate: python -c "import secrets; print(secrets.token_urlsafe(24))"
   tls_cert: ""               # HTTPS: paths from scripts/gen_cert.py, e.g.
   tls_key: ""                # "certs/dashboard.crt" / "certs/dashboard.key".

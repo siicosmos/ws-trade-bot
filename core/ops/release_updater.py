@@ -26,14 +26,12 @@ STAGING_DIR = ".update_staging"
 # state files that must survive an update swap - they live inside
 # consumer/, whose code dirs are replaced wholesale. everything at
 # the repo root (logs/, certs/, .last_update.json, ...) is never
-# touched by the swap. the legacy names (config.yaml, trades.db)
-# are kept for installs that predate the per-role naming
+# touched by the swap
 STATE_FILES = (
-    "consumer.config.yaml", "config.yaml",
+    "consumer.config.yaml",
     "ws_tokens.env",
     "consumer.trades.db", "consumer.trades.db-shm",
     "consumer.trades.db-wal",
-    "trades.db", "trades.db-shm", "trades.db-wal",
     "pipeline_exit.txt",
 )
 

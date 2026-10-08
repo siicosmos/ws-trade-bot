@@ -174,6 +174,10 @@ def test_settings_endpoint_roundtrip():
         cfg, store, risk, None, account, config_path=cfg_path
     )
     client = app.test_client()
+    with client.session_transaction() as sess:
+        sess["auth"] = True
+        sess["user"] = {"username": "admin",
+                        "role": "admin"}
 
     resp = client.get("/api/settings")
     assert resp.status_code == 200
@@ -1201,9 +1205,9 @@ def test_paper_adjust_endpoint():
     ).create_app(cfg, store, RiskEngine(cfg, store, account),
                  executor, account)
     client = app.test_client()
-    # legacy token login claims the admin session
+    # the token seeded the admin - log in as it
     login = client.post("/login", data={
-        "username": "", "password": "t"}, follow_redirects=False)
+        "username": "admin", "password": "t"}, follow_redirects=False)
     assert login.status_code == 302
 
     r = client.post("/api/paper-adjust", json={
@@ -1295,7 +1299,7 @@ def test_paper_adjust_switches_holding_type():
                  executor, account)
     client = app.test_client()
     client.post("/login", data={
-        "username": "", "password": "t"}, follow_redirects=False)
+        "username": "admin", "password": "t"}, follow_redirects=False)
 
     r = client.post("/api/paper-adjust", json={
         "label": "T",

@@ -37,13 +37,10 @@ def pick_wsgi(ssl_context, waitress_ok):
 
 
 def main(cfg, args):
-    if (
-        not cfg.pipeline.auth_token
-        and cfg.pipeline.host not in ("127.0.0.1", "localhost", "::1")
-    ):
+    if not cfg.pipeline.auth_token:
         print(
-            "REFUSING to start: auth_token is empty while binding "
-            f"to {cfg.pipeline.host} (reachable by other machines)."
+            "REFUSING to start: auth_token is empty - it guards the "
+            "reader ingest and the write routes."
         )
         print('generate one with:  python -c "import secrets; '
               'print(secrets.token_urlsafe(24))"')

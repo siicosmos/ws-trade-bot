@@ -1168,8 +1168,9 @@ def create_app(cfg, store: Store, risk, executor, account=None,
     app.feed_state = ctx.feed_state
     app._summary_cache = ctx.summary_cache
 
-    # first boot: the access token becomes the admin password so
-    # the existing workflow keeps working
+    # first boot: the access token becomes the admin password -
+    # the token is the bootstrap (it is mandatory, see the
+    # refusal check in app.main)
     if store.user_count() == 0 and cfg.pipeline.auth_token:
         store.create_user("admin", cfg.pipeline.auth_token, "admin")
 
@@ -1231,18 +1232,11 @@ def create_app(cfg, store: Store, risk, executor, account=None,
         return session.get("user")
 
     def _is_admin() -> bool:
-        # a legacy open install (no token, no users yet) is the
-        # owner's single-user setup - full access until an
-        # admin account is claimed
-        if not cfg.pipeline.auth_token and store.user_count() == 0:
-            return True
         if getattr(g, "admin", False):
+            # the machine token (reader, scripts) acts as the owner
             return True
         user = session.get("user")
-        if user:
-            return user.get("role") == "admin"
-        # legacy sessions (pre-users) were the owner's
-        return bool(session.get("auth"))
+        return bool(user) and user.get("role") == "admin"
 
     def _require_admin():
         if not _is_admin():
@@ -2055,10 +2049,6 @@ def create_app(cfg, store: Store, risk, executor, account=None,
     @app.post("/api/users")
     def api_users_post():
         me = _me()
-        if me is None:
-            # legacy token sessions act as the owner
-            me = {"username": "admin", "role": "admin"} \
-                if _is_admin() else None
         if me is None:
             return jsonify({"error": "unauthorized"}), 401
         admin = me.get("role") == "admin"

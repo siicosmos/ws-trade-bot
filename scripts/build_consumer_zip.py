@@ -20,13 +20,11 @@ from datetime import datetime, timezone
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # consumer/ files that belong to the user, never to the artifact
-# (both the per-role names and the legacy ones)
 CONSUMER_EXCLUDE = (
-    "consumer.config.yaml", "config.yaml", "ws_tokens.env",
+    "consumer.config.yaml", "ws_tokens.env",
     "pipeline_exit.txt",
     "consumer.trades.db", "consumer.trades.db-shm",
     "consumer.trades.db-wal",
-    "trades.db", "trades.db-shm", "trades.db-wal",
 )
 EXCLUDE_DIRS = {"__pycache__", ".update_staging", ".update_backup"}
 EXCLUDE_EXT = (".pyc", ".pyo")

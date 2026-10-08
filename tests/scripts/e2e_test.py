@@ -36,9 +36,18 @@ def check(name, condition, detail=""):
         print(f"  FAIL  {name}  {detail}")
 
 
+_current_token = ""
+
+
 def write_config(path, mode, auth_token="", role="consumer", **trading):
     global _phase_seq
     _phase_seq += 1
+    # the token is mandatory (it seeds the admin) - generate one
+    # when the caller leaves it empty
+    global _current_token
+    if not auth_token:
+        auth_token = f"e2e-token-{_phase_seq}"
+    _current_token = auth_token
     cfg = {
         role: {
             "host": "127.0.0.1",
@@ -71,6 +80,9 @@ def write_config(path, mode, auth_token="", role="consumer", **trading):
         yaml.safe_dump(cfg, f)
 
 
+AUTH = requests.Session()
+
+
 def start_pipeline(config_path, db_path):
     base = _current_base()
     err = tempfile.NamedTemporaryFile(
@@ -84,8 +96,11 @@ def start_pipeline(config_path, db_path):
     )
     for _ in range(60):
         try:
-            r = requests.get(f"{base}/health", timeout=1)
+            r = AUTH.get(f"{base}/health", timeout=1)
             if r.status_code == 200:
+                # every later call in the phase rides the machine
+                # token (the seeded admin's credential)
+                AUTH.headers["X-Auth-Token"] = _current_token
                 return proc, r.json()
         except requests.RequestException:
             pass
@@ -117,7 +132,7 @@ def stop(proc):
     base = _current_base()
     for _ in range(40):
         try:
-            requests.get(f"{base}/health", timeout=1)
+            AUTH.get(f"{base}/health", timeout=1)
         except requests.RequestException:
             return
         time.sleep(0.25)
@@ -128,7 +143,7 @@ def post_alert(text, headers=None, channel=""):
     payload = {"text": text, "author": "e2e"}
     if channel:
         payload["channel"] = channel
-    r = requests.post(
+    r = AUTH.post(
         f"{_current_base()}/alert", json=payload, timeout=10,
         headers=headers or {},
     )
@@ -151,13 +166,13 @@ def run_notify_phase():
     write_config(cfg_path, "notify")
     proc, health = start_pipeline(cfg_path, db_path)
     try:
-        summary = requests.get(f"{_current_base()}/api/summary", timeout=5).json()
+        summary = AUTH.get(f"{_current_base()}/api/summary", timeout=5).json()
         check("summary reports notify mode", summary.get("mode") == "notify")
 
-        page = requests.get(f"{_current_base()}/", timeout=5)
+        page = AUTH.get(f"{_current_base()}/", timeout=5)
         check("dashboard page serves", page.status_code == 200 and "WS Trade Bot" in page.text)
 
-        summary = requests.get(f"{_current_base()}/api/summary", timeout=5).json()
+        summary = AUTH.get(f"{_current_base()}/api/summary", timeout=5).json()
         labels = {a["label"] for a in summary["accounts"]}
         check("summary lists both accounts", labels == {"RRSP", "Personal"})
         values = {a["label"]: a["value"] for a in summary["accounts"]}
@@ -172,7 +187,7 @@ def run_notify_phase():
             "BOUGHT 0DTE SPY 758c @ 1.5 @everyone small size",
             channel="test-alerts",
         )
-        sig = requests.get(f"{_current_base()}/api/signals", timeout=5).json()
+        sig = AUTH.get(f"{_current_base()}/api/signals", timeout=5).json()
         row = [s for s in sig if s.get("channel") == "test-alerts"]
         check("test channel recorded on signal", bool(row), str(sig[:2]))
         rrsp = sizing_of(resp, "RRSP")
@@ -195,7 +210,7 @@ def run_notify_phase():
         code, resp = post_alert("executed 2.15 ^")
         check("fill confirmation ignored", resp["status"] == "ignored")
 
-        upd = requests.get(f"{_current_base()}/api/update_status", timeout=5).json()
+        upd = AUTH.get(f"{_current_base()}/api/update_status", timeout=5).json()
         check(
             "update status on portal",
             # the consumer follows the release channel: the head
@@ -210,7 +225,7 @@ def run_notify_phase():
         code, resp = post_alert("Typo on the last alert, it was 760c not 759c")
         check("correction forwarded without trading", code == 200 and resp["status"] == "correction", str(resp))
 
-        signals = requests.get(f"{_current_base()}/api/signals", timeout=5).json()
+        signals = AUTH.get(f"{_current_base()}/api/signals", timeout=5).json()
         corr = [s for s in signals if s.get("correction")]
         check("signals flag correction rows", len(corr) == 1 and corr[0]["parsed"] == 0, str(signals[:2]))
 
@@ -220,13 +235,13 @@ def run_notify_phase():
         code, resp = post_alert("BOUGHT 0DTE SPY 759c @ 1.5 @everyone small size")
         check("duplicate message ignored", resp["status"] == "ignored")
 
-        trades = requests.get(f"{_current_base()}/api/trades", timeout=5).json()
+        trades = AUTH.get(f"{_current_base()}/api/trades", timeout=5).json()
         check(
             "notify mode records a notified trade",
             bool(trades) and trades[0]["status"] == "notified"
             and trades[0]["mode"] == "notify",
         )
-        positions = requests.get(f"{_current_base()}/api/positions", timeout=5).json()
+        positions = AUTH.get(f"{_current_base()}/api/positions", timeout=5).json()
         check("notify mode opens no positions", positions == [])
     finally:
         stop(proc)
@@ -239,7 +254,7 @@ def run_paper_cycle_phase():
     write_config(cfg_path, "paper")
     proc, health = start_pipeline(cfg_path, db_path)
     try:
-        summary = requests.get(f"{_current_base()}/api/summary", timeout=5).json()
+        summary = AUTH.get(f"{_current_base()}/api/summary", timeout=5).json()
         check("summary reports paper mode", summary.get("mode") == "paper")
 
         code, resp = post_alert("BOUGHT 0DTE SPY 759c @ 1.5 @everyone medium size")
@@ -247,7 +262,7 @@ def run_paper_cycle_phase():
         check("RRSP bought 5 tier-capped", "RRSP: 5x @ 1.5 (tier max 5" in resp["detail"], resp["detail"])
         check("Personal skipped for budget", "Personal: 0 (budget" in resp["detail"], resp["detail"])
 
-        positions = requests.get(f"{_current_base()}/api/positions", timeout=5).json()
+        positions = AUTH.get(f"{_current_base()}/api/positions", timeout=5).json()
         by_acct = {p["account"]: p for p in positions}
         check("ledger shows RRSP 5 contracts", by_acct.get("RRSP", {}).get("qty") == 5, str(positions))
         check("Personal has no position", "Personal" not in by_acct, str(positions))
@@ -258,15 +273,15 @@ def run_paper_cycle_phase():
         code, resp = post_alert("ALL OUT 0DTE SPY 759c @ 1.5 @everyone out rest BE")
         check("all out closes 4", resp["status"] == "executed" and "RRSP: 4/4x @ 1.5" in resp["detail"], resp.get("detail"))
 
-        positions = requests.get(f"{_current_base()}/api/positions", timeout=5).json()
+        positions = AUTH.get(f"{_current_base()}/api/positions", timeout=5).json()
         check("position closed", positions == [], str(positions))
 
-        summary = requests.get(f"{_current_base()}/api/summary", timeout=5).json()
+        summary = AUTH.get(f"{_current_base()}/api/summary", timeout=5).json()
         rrsp_value = [a for a in summary["accounts"] if a["label"] == "RRSP"][0]["value"]
         expected = 50000 - 5 * 150 + 1 * 195 + 4 * 150
         check("paper equity tracks realized P/L", rrsp_value == expected, f"{rrsp_value} != {expected}")
 
-        trades = requests.get(f"{_current_base()}/api/trades", timeout=5).json()
+        trades = AUTH.get(f"{_current_base()}/api/trades", timeout=5).json()
         check("trade log has 3 executed rows", len([t for t in trades if t["status"] == "executed"]) == 3, str(len(trades)))
     finally:
         stop(proc)
@@ -305,7 +320,7 @@ def run_risk_gate_phase():
         post_alert("BOUGHT 0DTE SPY 759c @ 1.5 @everyone medium size")
         code, resp = post_alert("BOUGHT 0DTE SPY 760c @ 1.5 @everyone medium size")
         check("open risk cap blocks new buys", resp["status"] == "skipped" and "open risk" in resp["detail"], str(resp))
-        trades = requests.get(f"{_current_base()}/api/trades", timeout=5).json()
+        trades = AUTH.get(f"{_current_base()}/api/trades", timeout=5).json()
         check(
             "first buy still executed",
             any(t["status"] == "executed" for t in trades),
@@ -321,6 +336,9 @@ def run_auth_phase():
     db_path = os.path.join(tempfile.mkdtemp(), "trades.db")
     write_config(cfg_path, "notify", auth_token="e2e-secret")
     proc, _ = start_pipeline(cfg_path, db_path)
+    # this phase tests raw access - drop the machine-token header
+    # that start_pipeline armed
+    AUTH.headers.pop("X-Auth-Token", None)
     try:
         resp = requests.get(f"{_current_base()}/", timeout=5, allow_redirects=False)
         check(
@@ -387,14 +405,14 @@ def run_settings_phase():
     proc, health = start_pipeline(cfg_path, db_path)
     try:
         base = _current_base()
-        settings = requests.get(f"{base}/api/settings", timeout=5).json()
+        settings = AUTH.get(f"{base}/api/settings", timeout=5).json()
         check("settings readable", settings["trading"]["stop_loss_pct"] == 25)
 
         code, resp = post_alert("BOUGHT 0DTE SPY 759c @ 1.5 @everyone medium size")
         rrsp = sizing_of(resp, "RRSP")
         check("baseline medium tier caps at 5", rrsp.get("contracts") == 5 and rrsp.get("risk_pct") == 5.0, str(rrsp))
 
-        r = requests.post(
+        r = AUTH.post(
             f"{base}/api/settings",
             json={"trading": {"size_tiers": {
                 "medium": {"risk_pct_max": 3, "contracts_min": 1,
@@ -416,21 +434,21 @@ def run_settings_phase():
             content = f.read()
         check("settings persisted to config.yaml", "risk_pct_max: 3" in content)
 
-        r = requests.post(
+        r = AUTH.post(
             f"{base}/api/settings",
             json={"trading": {"stop_loss_pct": 999}},
             timeout=5,
         )
         check("invalid settings rejected", r.status_code == 400)
 
-        update = requests.get(f"{base}/api/update_status", timeout=5).json()
+        update = AUTH.get(f"{base}/api/update_status", timeout=5).json()
         check("update status endpoint", "status" in update, str(update))
 
         code, resp = post_alert("BOUGHT 0DTE SPY 761c @ 1.5 @everyone big size")
         rrsp = sizing_of(resp, "RRSP")
         check("account cap 20 allows big tier", rrsp.get("contracts") == 10, str(rrsp))
 
-        r = requests.post(
+        r = AUTH.post(
             f"{base}/api/settings",
             json={"accounts": [
                 {"label": "RRSP", "max_contracts_per_trade": 2},
@@ -468,7 +486,7 @@ def run_reader_status_phase():
     try:
         base = _current_base()
         hdr = {"X-Auth-Token": "info-token"}
-        r = requests.post(
+        r = AUTH.post(
             f"{base}/api/reader_status",
             json={"channel": "test-channel", "ok": True},
             headers=hdr, timeout=5,
@@ -478,7 +496,7 @@ def run_reader_status_phase():
         # overridden on every poll) - it acknowledges with {}
         check("reader heartbeat acknowledges", r == {}, str(r))
 
-        status = requests.get(
+        status = AUTH.get(
             f"{base}/api/reader_status", headers=hdr, timeout=5,
         ).json()
         check("reader status shows the channel",
@@ -491,11 +509,11 @@ def run_reader_status_phase():
               status["age_seconds"] is not None, str(status))
 
         # the info app has no trading routes
-        r = requests.get(f"{base}/api/positions", timeout=5)
+        r = AUTH.get(f"{base}/api/positions", timeout=5)
         check("info app has no trading routes", r.status_code == 404, str(r.status_code))
 
         # the feed answers a token-authed head-only poll
-        r = requests.get(
+        r = AUTH.get(
             f"{base}/api/feed",
             headers={"X-Auth-Token": "nope"}, timeout=5,
         )

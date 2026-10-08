@@ -437,6 +437,18 @@ def test_dashboard_and_api_endpoints():
     store.record_signal("k1", "", "BOUGHT 0DTE SPY 759c @ 1.5", True)
 
     client = app.test_client()
+    # the app is tokenless (a test-only state) - act as the
+    # seeded admin via the session
+    with client.session_transaction() as sess:
+        sess["auth"] = True
+        sess["user"] = {"username": "admin",
+                        "role": "admin"}
+    # the app is tokenless (a test-only state) - act as the
+    # seeded admin via the session
+    with client.session_transaction() as sess:
+        sess["auth"] = True
+        sess["user"] = {"username": "admin",
+                        "role": "admin"}
 
     page = client.get("/")
     assert page.status_code == 200
@@ -778,19 +790,12 @@ def test_login_logout_flow():
     assert bad.status_code == 200
     assert "wrong username or password" in bad.get_data(as_text=True)
 
-    # the access token seeded the admin account - the token
-    # itself still works as a legacy owner login
-    ok = client.post("/login", data={"username": "",
+    # the access token seeded the admin account - log in as it
+    ok = client.post("/login", data={"username": "admin",
                                      "password": "s3cret"})
     assert ok.status_code == 302
     assert client.get("/").status_code == 200
     assert client.get("/api/summary").status_code == 200
-
-    # and the named admin account logs in with its password
-    client.get("/logout")
-    ok2 = client.post("/login", data={"username": "admin",
-                                      "password": "s3cret"})
-    assert ok2.status_code == 302
     assert client.get("/api/dashboard").get_json()["me"]["role"] == "admin"
 
     # logout clears the session
@@ -804,7 +809,8 @@ def test_login_logout_flow():
 def test_no_store_headers():
     app, store, account = _make_app(auth_token="s3cret")
     client = app.test_client()
-    client.post("/login", data={"password": "s3cret"})
+    client.post("/login", data={"username": "admin",
+                                "password": "s3cret"})
     resp = client.get("/")
     assert resp.headers["Cache-Control"] == "no-store"
     api_resp = client.get("/api/summary")
@@ -839,13 +845,27 @@ def test_health_discloses_nothing():
     assert set(resp.get_json().keys()) == {"status"}
 
 
-def test_refuses_non_localhost_without_token(tmp_path):
+def test_refuses_start_without_token(tmp_path):
     import subprocess
     import sys
 
     cfg_path = tmp_path / "open.yaml"
     cfg_path.write_text(
-        "pipeline:\n  host: \"0.0.0.0\"\n  port: 8080\n  auth_token: \"\"\n"
+        "consumer:\n  host: \"0.0.0.0\"\n  port: 8080\n  auth_token: \"\"\n"
+        "trading:\n  mode: notify\n"
+    )
+    r = subprocess.run(
+        [sys.executable, "run.py", "-c", str(cfg_path), "--db",
+         str(tmp_path / "x.db")],
+        capture_output=True, text=True, timeout=60,
+    )
+    assert r.returncode != 0
+    assert "auth_token" in (r.stdout + r.stderr)
+
+    # even a localhost bind refuses - the token seeds the admin
+    cfg_path.write_text(
+        "consumer:\n  host: \"127.0.0.1\"\n  port: 8080\n"
+        "  auth_token: \"\"\n"
         "trading:\n  mode: notify\n"
     )
     r = subprocess.run(
@@ -1014,6 +1034,12 @@ def test_open_option_positions_filters_and_maps(monkeypatch, tmp_path):
 def test_positions_endpoint_merges_live(monkeypatch):
     app, store, account = _make_app(mode="paper")
     client = app.test_client()
+    # the app is tokenless (a test-only state) - act as the
+    # seeded admin via the session
+    with client.session_transaction() as sess:
+        sess["auth"] = True
+        sess["user"] = {"username": "admin",
+                        "role": "admin"}
     account.open_option_positions = lambda: {
         "RRSP": {
             "positions": [
@@ -1092,6 +1118,12 @@ def test_usd_values_from_financials(monkeypatch):
 def test_summary_prefers_ws_usd_value(monkeypatch):
     app, store, account = _make_app(mode="paper")
     client = app.test_client()
+    # the app is tokenless (a test-only state) - act as the
+    # seeded admin via the session
+    with client.session_transaction() as sess:
+        sess["auth"] = True
+        sess["user"] = {"username": "admin",
+                        "role": "admin"}
     account.usd_values = lambda: {"RRSP": 16000.5}
     account.open_option_positions = lambda: {
         "RRSP": {"positions": [], "fx": 1.3636, "usd_cash": None},
@@ -1313,6 +1345,12 @@ def test_notify_mode_records_trade_log(monkeypatch):
     store._conn.execute("DELETE FROM trades")
     store._conn.commit()
     client = app.test_client()
+    # the app is tokenless (a test-only state) - act as the
+    # seeded admin via the session
+    with client.session_transaction() as sess:
+        sess["auth"] = True
+        sess["user"] = {"username": "admin",
+                        "role": "admin"}
     monkeypatch.setattr(
         "core.ops.notify.requests.post",
         lambda *a, **k: type("R", (), {"status_code": 200})(),
@@ -1332,6 +1370,12 @@ def test_notify_mode_records_trade_log(monkeypatch):
 def test_summary_includes_cash_balances(monkeypatch):
     app, store, account = _make_app(mode="paper")
     client = app.test_client()
+    # the app is tokenless (a test-only state) - act as the
+    # seeded admin via the session
+    with client.session_transaction() as sess:
+        sess["auth"] = True
+        sess["user"] = {"username": "admin",
+                        "role": "admin"}
     account.funding_balances = lambda: {
         "RRSP": [
             {"currency": "CAD", "amount": 1500.0},
@@ -1506,6 +1550,12 @@ def test_stock_holdings_mapping(monkeypatch):
 def test_positions_include_stocks(monkeypatch):
     app, store, account = _make_app(mode="paper")
     client = app.test_client()
+    # the app is tokenless (a test-only state) - act as the
+    # seeded admin via the session
+    with client.session_transaction() as sess:
+        sess["auth"] = True
+        sess["user"] = {"username": "admin",
+                        "role": "admin"}
     account.open_option_positions = lambda: {
         "RRSP": {"positions": [], "fx": 1.36, "usd_cash": None},
     }
@@ -1554,6 +1604,18 @@ def test_positions_via_real_init(monkeypatch):
 def test_summary_allocation_values():
     app, store, account = _make_app()
     client = app.test_client()
+    # the app is tokenless (a test-only state) - act as the
+    # seeded admin via the session
+    with client.session_transaction() as sess:
+        sess["auth"] = True
+        sess["user"] = {"username": "admin",
+                        "role": "admin"}
+    # the app is tokenless (a test-only state) - act as the
+    # seeded admin via the session
+    with client.session_transaction() as sess:
+        sess["auth"] = True
+        sess["user"] = {"username": "admin",
+                        "role": "admin"}
     account.open_option_positions = lambda: {
         "Personal": {
             "positions": [
@@ -1714,6 +1776,18 @@ def test_app_document_positions_and_margin():
 def test_summary_margin_requirement():
     app, store, account = _make_app()
     client = app.test_client()
+    # the app is tokenless (a test-only state) - act as the
+    # seeded admin via the session
+    with client.session_transaction() as sess:
+        sess["auth"] = True
+        sess["user"] = {"username": "admin",
+                        "role": "admin"}
+    # the app is tokenless (a test-only state) - act as the
+    # seeded admin via the session
+    with client.session_transaction() as sess:
+        sess["auth"] = True
+        sess["user"] = {"username": "admin",
+                        "role": "admin"}
     account.open_option_positions = lambda: {
         "Personal": {"positions": [], "fx": 1.25, "usd_cash": None},
     }
@@ -1752,6 +1826,18 @@ def test_summary_margin_requirement():
 def test_registered_account_no_margin(monkeypatch):
     app, store, account = _make_app()
     client = app.test_client()
+    # the app is tokenless (a test-only state) - act as the
+    # seeded admin via the session
+    with client.session_transaction() as sess:
+        sess["auth"] = True
+        sess["user"] = {"username": "admin",
+                        "role": "admin"}
+    # the app is tokenless (a test-only state) - act as the
+    # seeded admin via the session
+    with client.session_transaction() as sess:
+        sess["auth"] = True
+        sess["user"] = {"username": "admin",
+                        "role": "admin"}
     account.open_option_positions = lambda: {
         "Personal": {
             "positions": [
@@ -1810,6 +1896,18 @@ def test_account_type_map_cached():
 def test_registered_label_suppresses_margin():
     app, store, account = _make_app()
     client = app.test_client()
+    # the app is tokenless (a test-only state) - act as the
+    # seeded admin via the session
+    with client.session_transaction() as sess:
+        sess["auth"] = True
+        sess["user"] = {"username": "admin",
+                        "role": "admin"}
+    # the app is tokenless (a test-only state) - act as the
+    # seeded admin via the session
+    with client.session_transaction() as sess:
+        sess["auth"] = True
+        sess["user"] = {"username": "admin",
+                        "role": "admin"}
     account.open_option_positions = lambda: {"RRSP": None}
     account.stock_holdings = lambda: {
         "RRSP": [
@@ -1866,6 +1964,18 @@ def test_security_margin_rate_from_api():
 def test_requirement_uses_api_rate():
     app, store, account = _make_app()
     client = app.test_client()
+    # the app is tokenless (a test-only state) - act as the
+    # seeded admin via the session
+    with client.session_transaction() as sess:
+        sess["auth"] = True
+        sess["user"] = {"username": "admin",
+                        "role": "admin"}
+    # the app is tokenless (a test-only state) - act as the
+    # seeded admin via the session
+    with client.session_transaction() as sess:
+        sess["auth"] = True
+        sess["user"] = {"username": "admin",
+                        "role": "admin"}
     account.open_option_positions = lambda: {
         "Personal": {"positions": [], "fx": 1.25, "usd_cash": None},
     }
@@ -1988,6 +2098,18 @@ def test_expired_credit_spread_full_return(monkeypatch):
 def test_margin_requirement_breakdown():
     app, store, account = _make_app()
     client = app.test_client()
+    # the app is tokenless (a test-only state) - act as the
+    # seeded admin via the session
+    with client.session_transaction() as sess:
+        sess["auth"] = True
+        sess["user"] = {"username": "admin",
+                        "role": "admin"}
+    # the app is tokenless (a test-only state) - act as the
+    # seeded admin via the session
+    with client.session_transaction() as sess:
+        sess["auth"] = True
+        sess["user"] = {"username": "admin",
+                        "role": "admin"}
     account.open_option_positions = lambda: {
         "Personal": {"positions": [], "fx": 1.25, "usd_cash": None},
     }
@@ -2017,6 +2139,18 @@ def test_margin_requirement_breakdown():
 def test_spread_requirement_uses_full_width():
     app, store, account = _make_app()
     client = app.test_client()
+    # the app is tokenless (a test-only state) - act as the
+    # seeded admin via the session
+    with client.session_transaction() as sess:
+        sess["auth"] = True
+        sess["user"] = {"username": "admin",
+                        "role": "admin"}
+    # the app is tokenless (a test-only state) - act as the
+    # seeded admin via the session
+    with client.session_transaction() as sess:
+        sess["auth"] = True
+        sess["user"] = {"username": "admin",
+                        "role": "admin"}
     account.open_option_positions = lambda: {
         "Personal": {
             "positions": [
@@ -2135,6 +2269,18 @@ def test_sell_strike_mismatch_detected():
 def test_allocation_base_is_gross_assets():
     app, store, account = _make_app()
     client = app.test_client()
+    # the app is tokenless (a test-only state) - act as the
+    # seeded admin via the session
+    with client.session_transaction() as sess:
+        sess["auth"] = True
+        sess["user"] = {"username": "admin",
+                        "role": "admin"}
+    # the app is tokenless (a test-only state) - act as the
+    # seeded admin via the session
+    with client.session_transaction() as sess:
+        sess["auth"] = True
+        sess["user"] = {"username": "admin",
+                        "role": "admin"}
     account.open_option_positions = lambda: {
         "Personal": {
             "positions": [
@@ -2500,6 +2646,18 @@ def test_positions_mapping_cached_per_raw_generation(monkeypatch):
 def test_summary_cache_serves_repeated_polls():
     app, store, account = _make_app()
     client = app.test_client()
+    # the app is tokenless (a test-only state) - act as the
+    # seeded admin via the session
+    with client.session_transaction() as sess:
+        sess["auth"] = True
+        sess["user"] = {"username": "admin",
+                        "role": "admin"}
+    # the app is tokenless (a test-only state) - act as the
+    # seeded admin via the session
+    with client.session_transaction() as sess:
+        sess["auth"] = True
+        sess["user"] = {"username": "admin",
+                        "role": "admin"}
     calls = []
     orig = account.values
     account.values = lambda: (calls.append(1), orig())[1]
@@ -2697,6 +2855,12 @@ def test_summary_includes_paper_when_enabled():
         cfg, store, risk, FakePaperExecutor(), account
     )
     client = app.test_client()
+    # the app is tokenless (a test-only state) - act as the
+    # seeded admin via the session
+    with client.session_transaction() as sess:
+        sess["auth"] = True
+        sess["user"] = {"username": "admin",
+                        "role": "admin"}
     summary = client.get("/api/summary").get_json()
     rows = {a["label"]: a for a in summary["accounts"]}
     assert rows["RRSP"]["paper_value"] == 50000.0
@@ -2797,6 +2961,10 @@ def test_paper_positions_endpoint():
         "consumer.web", fromlist=["create_app"]
     ).create_app(cfg, store, risk, FakePaperExecutor(), account)
     client = app.test_client()
+    with client.session_transaction() as sess:
+        sess["auth"] = True
+        sess["user"] = {"username": "admin",
+                        "role": "admin"}
     data = client.get("/api/paper-positions").get_json()
     assert data["Personal"][0]["contract_key"] == (
         "SPX-2026-09-25-6000-C"
@@ -2840,7 +3008,12 @@ def test_summary_paper_flag_in_paper_mode():
         "consumer.web", fromlist=["create_app"]
     ).create_app(cfg, store, risk, PaperExecutor(cfg, store, account),
                  account)
-    summary = app.test_client().get("/api/summary").get_json()
+    client = app.test_client()
+    with client.session_transaction() as sess:
+        sess["auth"] = True
+        sess["user"] = {"username": "admin",
+                        "role": "admin"}
+    summary = client.get("/api/summary").get_json()
     # paper badge shows in paper mode even without paper.enabled
     assert summary["paper"] is True
 
@@ -2916,6 +3089,10 @@ def test_paper_reset_endpoint():
         "consumer.web", fromlist=["create_app"]
     ).create_app(cfg, store, risk, None, account)
     client = app.test_client()
+    with client.session_transaction() as sess:
+        sess["auth"] = True
+        sess["user"] = {"username": "admin",
+                        "role": "admin"}
 
     # seed once
     from consumer.ws.account import seed_paper_accounts
@@ -3281,7 +3458,12 @@ def test_paper_card_margin_metrics():
         cfg, store, risk,
         SimpleNamespace(account=ledger), FakeWS(),
     )
-    res = app.test_client().get("/api/summary")
+    client = app.test_client()
+    with client.session_transaction() as sess:
+        sess["auth"] = True
+        sess["user"] = {"username": "admin",
+                        "role": "admin"}
+    res = client.get("/api/summary")
     assert res.status_code == 200
     accs = {
         a["label"]: a for a in res.get_json()["accounts"]
@@ -3570,7 +3752,12 @@ def test_margin_breakdown_currencies():
         cfg, store, risk, SimpleNamespace(account=ledger),
         FakeWS(),
     )
-    m = app.test_client().get(
+    client = app.test_client()
+    with client.session_transaction() as sess:
+        sess["auth"] = True
+        sess["user"] = {"username": "admin",
+                        "role": "admin"}
+    m = client.get(
         "/api/summary"
     ).get_json()["accounts"][0]
     lines = m["paper_margin_breakdown"]
@@ -3645,7 +3832,12 @@ def test_paper_margin_used_currency_split():
         cfg, store, risk, SimpleNamespace(account=ledger),
         FakeWS(),
     )
-    m = app.test_client().get(
+    client = app.test_client()
+    with client.session_transaction() as sess:
+        sess["auth"] = True
+        sess["user"] = {"username": "admin",
+                        "role": "admin"}
+    m = client.get(
         "/api/summary"
     ).get_json()["accounts"][0]
     # the loan backs the usd holding first (700 cad = ~510.95
@@ -4223,6 +4415,18 @@ def test_credit_spread_margin_full_width_and_used_bar():
     utilization bar is the loan against available."""
     app, store, account = _make_app()
     client = app.test_client()
+    # the app is tokenless (a test-only state) - act as the
+    # seeded admin via the session
+    with client.session_transaction() as sess:
+        sess["auth"] = True
+        sess["user"] = {"username": "admin",
+                        "role": "admin"}
+    # the app is tokenless (a test-only state) - act as the
+    # seeded admin via the session
+    with client.session_transaction() as sess:
+        sess["auth"] = True
+        sess["user"] = {"username": "admin",
+                        "role": "admin"}
     # 5-wide credit spread sold at 2.60, expired worthless
     account.open_option_positions = lambda: {
         "Personal": {
@@ -4260,6 +4464,18 @@ def test_margin_available_credits_short_market_value():
     portfolio stay untouched."""
     app, store, account = _make_app()
     client = app.test_client()
+    # the app is tokenless (a test-only state) - act as the
+    # seeded admin via the session
+    with client.session_transaction() as sess:
+        sess["auth"] = True
+        sess["user"] = {"username": "admin",
+                        "role": "admin"}
+    # the app is tokenless (a test-only state) - act as the
+    # seeded admin via the session
+    with client.session_transaction() as sess:
+        sess["auth"] = True
+        sess["user"] = {"username": "admin",
+                        "role": "admin"}
     account.open_option_positions = lambda: {
         "Personal": {
             "positions": [
@@ -4788,6 +5004,18 @@ def test_position_tp_resolves_ws_key_by_parts():
     holding into the ledger when the bot never traded it)."""
     app, store, account = _make_app()
     client = app.test_client()
+    # the app is tokenless (a test-only state) - act as the
+    # seeded admin via the session
+    with client.session_transaction() as sess:
+        sess["auth"] = True
+        sess["user"] = {"username": "admin",
+                        "role": "admin"}
+    # the app is tokenless (a test-only state) - act as the
+    # seeded admin via the session
+    with client.session_transaction() as sess:
+        sess["auth"] = True
+        sess["user"] = {"username": "admin",
+                        "role": "admin"}
     hdr = {"X-Auth-Token": ""}
 
     # the ws feed reports the holding under its display key with

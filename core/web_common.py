@@ -10,7 +10,6 @@ import gzip
 import hmac
 import logging
 import os
-import re
 import secrets
 import time
 
@@ -107,13 +106,10 @@ def load_secret_key(config_path):
     return key
 
 
-def LOGIN_HTML(error=None, first=False):
+def LOGIN_HTML(error=None):
     import html
 
-    intro = (
-        "<p>create the first admin account to secure this "
-        "dashboard</p>" if first else "<p>log in to continue</p>"
-    )
+    intro = "<p>log in to continue</p>"
 
     message = (
         f'<p style="color:#f85149;margin:0 0 14px">{html.escape(str(error))}</p>'
@@ -160,7 +156,7 @@ def LOGIN_HTML(error=None, first=False):
   <form method="post" action="/login">
     <input type="text" name="username" placeholder="username" autocomplete="username" autofocus>
     <input type="password" name="password" placeholder="password" autocomplete="current-password">
-    <button type="submit">{'Create admin account' if first else 'Log in'}</button>
+    <button type="submit">Log in</button>
   </form>
 </div>
 </body>
@@ -202,11 +198,9 @@ def install_gzip(app):
 
 
 def install_auth(app, cfg, store, login_html, exempt_paths=()):
-    """Session + machine-token auth: the before_request guard,
-    the login route (first-boot admin claim, legacy token
-    session, lockout) and logout. exempt_paths skip the guard
-    (they do their own auth - the info server's consumer-token
-    feed)."""
+    """Session + machine-token auth: the before_request guard, the
+    login route and logout. exempt_paths skip the guard (they do
+    their own auth - the info server's consumer-token feed)."""
     exempt = set(exempt_paths)
 
     @app.before_request
@@ -215,11 +209,6 @@ def install_auth(app, cfg, store, login_html, exempt_paths=()):
         if request.path in ("/health", "/favicon.ico", "/login"):
             return None
         if request.path in exempt:
-            return None
-        if not token and store.user_count() == 0:
-            # legacy install (no token, no users): open access,
-            # exactly as before user accounts existed; /login
-            # remains reachable to bootstrap the first admin
             return None
         if session.get("auth"):
             return None
@@ -235,16 +224,13 @@ def install_auth(app, cfg, store, login_html, exempt_paths=()):
 
     @app.route("/login", methods=["GET", "POST"])
     def login():
-        token = cfg.pipeline.auth_token
-        first = store.user_count() == 0
         ip = request.remote_addr or "?"
         now = time.time()
         _purge_login_fails(now)
         entry = _LOGIN_FAILS.get(ip)
         if entry and entry.get("locked_until", 0) > now:
             return Response(
-                login_html("too many attempts - try again later",
-                           first=first),
+                login_html("too many attempts - try again later"),
                 403,
                 mimetype="text/html",
                 headers={"Cache-Control": "no-store"},
@@ -271,41 +257,16 @@ def install_auth(app, cfg, store, login_html, exempt_paths=()):
                     error = label
                 time.sleep(1)
 
-            if first:
-                # claim the first admin account
-                if not re.fullmatch(r"[A-Za-z0-9_-]{1,32}", username):
-                    _fail("pick a username (letters, digits, - _)")
-                elif len(supplied) < 6:
-                    _fail("password must be at least 6 characters")
-                else:
-                    store.create_user(username, supplied, "admin")
-                    _LOGIN_FAILS.pop(ip, None)
-                    session.permanent = True
-                    session["auth"] = True
-                    session["user"] = {
-                        "username": username, "role": "admin",
-                    }
-                    return redirect("/")
-            elif not username and token and hmac.compare_digest(
-                supplied, token
-            ):
-                # legacy: the bare access token still opens an
-                # owner session (scripts, old bookmarks)
+            user = store.verify_user(username, supplied)
+            if user is not None:
                 _LOGIN_FAILS.pop(ip, None)
                 session.permanent = True
                 session["auth"] = True
+                session["user"] = user
                 return redirect("/")
-            else:
-                user = store.verify_user(username, supplied)
-                if user is not None:
-                    _LOGIN_FAILS.pop(ip, None)
-                    session.permanent = True
-                    session["auth"] = True
-                    session["user"] = user
-                    return redirect("/")
-                _fail("wrong username or password")
+            _fail("wrong username or password")
         return Response(
-            login_html(error, first=first), mimetype="text/html",
+            login_html(error), mimetype="text/html",
             headers={"Cache-Control": "no-store"},
         )
 
