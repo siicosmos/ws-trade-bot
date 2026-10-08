@@ -1,0 +1,63 @@
+# ---------------------------------------------------------------------------
+# info server example config - copy to info/info.config.yaml and edit
+#
+# the alert source: the reader posts Discord messages here, this
+# server parses + records them and serves the alert feed that
+# consumer apps pull from. No trading wiring - no executors, no
+# stop monitor, no quotes. Sections that do not apply to this role
+# are omitted - they get safe defaults.
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# info - this app's web server: reader ingest + alert feed + the
+# admin dashboard. the section name IS the role (legacy configs
+# use pipeline: with an explicit role: field - both load)
+# ---------------------------------------------------------------------------
+info:
+  host: "0.0.0.0"            # what to bind to; 127.0.0.1 = this PC only
+  port: 8080                 # the reader posts here (reader.pipeline_url)
+  auth_token: ""             # the reader's credential + dashboard password.
+                             # REQUIRED if host is not localhost (server
+                             # refuses to start otherwise).
+                             # generate: python -c "import secrets; print(secrets.token_urlsafe(24))"
+  tls_cert: ""               # HTTPS: paths from scripts/gen_cert.py, e.g.
+  tls_key: ""                # "certs/dashboard.crt" / "certs/dashboard.key".
+                             # empty = plain HTTP
+
+# ---------------------------------------------------------------------------
+# consumers - apps allowed to read the alert feed. token
+# authenticates both directions (their feed client against this
+# server; this server's push against their /alert endpoint).
+# push_url empty = pull-only consumer (they long-poll the feed).
+# ---------------------------------------------------------------------------
+# consumers:
+#   - label: owner
+#     token: "GENERATE_A_TOKEN"
+#     push_url: "http://127.0.0.1:8081/alert"
+
+# ---------------------------------------------------------------------------
+# auto_update - the info server is a git checkout: fetch +
+# ff-only pull every interval, restart when its code changed.
+# the pull updates the whole repo on disk - the reader (which
+# runs no updater of its own) notices and restarts itself
+# ---------------------------------------------------------------------------
+auto_update:
+  enabled: true
+  interval_seconds: 600      # how often to check GitHub for updates
+
+# ---------------------------------------------------------------------------
+# discord - webhooks that send notifications to your private server
+# ---------------------------------------------------------------------------
+discord:
+  notify: true               # master switch for parsed-alert notifications
+  webhook_url: "YOUR_PRIVATE_SERVER_WEBHOOK_URL"  # raw-alert feed channel
+  consumer_log_webhook_url: ""  # this app's log tail (info.log) posted to
+                                # discord; empty = off
+  update_webhook_url: ""        # server update/restart notices;
+                                # empty = use the main webhook channel
+
+# ---------------------------------------------------------------------------
+# parser - extra regex patterns for alert formats the built-in parser misses
+# ---------------------------------------------------------------------------
+parser:
+  custom_patterns: []

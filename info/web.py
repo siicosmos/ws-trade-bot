@@ -44,7 +44,7 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
         rpath = os.path.join(
             os.path.dirname(os.path.dirname(
                 os.path.abspath(__file__))),
-            "reader", "config.yaml",
+            "reader", "reader.config.yaml",
         )
         if os.path.exists(rpath):
             with open(rpath, encoding="utf-8") as f:
@@ -240,7 +240,7 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
 
     # --------------------------------------------------------
     # reader heartbeat: the reader posts channel/ok. Reader
-    # settings live in the reader's own yaml (reader/config.yaml)
+    # settings live in the reader's own yaml (reader/reader.config.yaml)
     # - the heartbeat no longer pushes settings, it would
     # override the yaml on every poll
     # --------------------------------------------------------

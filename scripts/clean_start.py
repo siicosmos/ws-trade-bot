@@ -53,8 +53,10 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--db",
-        default=os.path.join(REPO_ROOT, "trades.db"),
-        help="path to trades.db (default: trades.db in repo root)",
+        default=os.path.join(REPO_ROOT, "consumer",
+                             "consumer.trades.db"),
+        help="path to the role's trades db "
+             "(default: consumer/consumer.trades.db)",
     )
     parser.add_argument(
         "--yes", "-y", action="store_true",

@@ -83,6 +83,7 @@ def get_settings(cfg) -> dict:
         {
             "account_id": a.account_id,
             "label": a.label,
+            "type": a.type,
             "risk_per_trade_pct": a.risk_per_trade_pct,
             "max_contracts_per_trade": a.max_contracts_per_trade,
             "max_open_risk_pct": a.max_open_risk_pct,
@@ -373,15 +374,49 @@ def apply_settings(cfg, payload: dict, config_path=None) -> tuple:
     accounts_payload = payload.get("accounts")
     if isinstance(accounts_payload, list):
         existing = {a.label: a for a in cfg.wealthsimple.accounts}
+
+        # removal first: entries flagged remove=true drop the
+        # account (new labels flagged remove are ignored)
+        removed = []
+        kept_entries = []
         for entry in accounts_payload:
+            if isinstance(entry, dict) and entry.get("remove"):
+                label = str(entry.get("label") or "").strip()
+                if label in existing:
+                    removed.append(label)
+                continue
+            kept_entries.append(entry)
+        for label in removed:
+            cfg.wealthsimple.accounts = [
+                a for a in cfg.wealthsimple.accounts
+                if a.label != label
+            ]
+            applied[f"accounts.{label}.removed"] = True
+        if removed:
+            existing = {
+                a.label: a for a in cfg.wealthsimple.accounts
+            }
+
+        for entry in kept_entries:
             if not isinstance(entry, dict):
                 errors.append("accounts: expected mappings")
                 continue
             label = str(entry.get("label") or "").strip()
-            if not label or label not in existing:
-                errors.append(f"accounts: unknown account label {label!r}")
+            if not label:
+                errors.append("accounts: label is required")
                 continue
-            acct = existing[label]
+
+            acct = existing.get(label)
+            if acct is None:
+                # add: a new account (an unknown label in the
+                # payload is an add - the dashboard sends the
+                # full list including new rows)
+                from core.config import WSAccountConfig
+
+                acct = WSAccountConfig(label=label)
+                cfg.wealthsimple.accounts.append(acct)
+                existing[label] = acct
+                applied[f"accounts.{label}.added"] = True
 
             new_id = entry.get("account_id")
             if new_id is not None:
@@ -389,6 +424,19 @@ def apply_settings(cfg, payload: dict, config_path=None) -> tuple:
                 if new_id != acct.account_id:
                     acct.account_id = new_id
                     applied[f"accounts.{label}.account_id"] = new_id
+
+            if "type" in entry:
+                new_type = str(entry.get("type") or "").strip().lower()
+                if new_type not in ("", "margin", "non_margin"):
+                    errors.append(
+                        f"accounts.{label}.type: must be margin, "
+                        "non_margin or empty (auto-detect)"
+                    )
+                elif new_type != acct.type:
+                    acct.type = new_type
+                    applied[f"accounts.{label}.type"] = (
+                        new_type or "auto"
+                    )
 
             for field, (lo, hi) in EDITABLE_ACCOUNT_NUMERIC.items():
                 if field not in entry:
@@ -667,6 +715,7 @@ def _persist(cfg, config_path):
         {
             "account_id": a.account_id,
             "label": a.label,
+            "type": a.type,
             "risk_per_trade_pct": a.risk_per_trade_pct,
             "max_contracts_per_trade": a.max_contracts_per_trade,
             "max_open_risk_pct": a.max_open_risk_pct,

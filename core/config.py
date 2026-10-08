@@ -85,6 +85,10 @@ def _norm_tier(d: dict) -> dict:
 class WSAccountConfig:
     account_id: str = ""
     label: str = ""
+    # margin | non_margin - "" = auto-detect from the Wealthsimple
+    # API's unifiedAccountType (registered plans RRSP/TFSA/FHSA/...
+    # never carry margin; they model as non_margin)
+    type: str = ""
     risk_per_trade_pct: Optional[float] = None
     max_contracts_per_trade: Optional[int] = None
     # per-account open-risk cap: a small account may need a much
@@ -312,10 +316,14 @@ def _load_accounts(ws_raw: dict) -> List[WSAccountConfig]:
         if isinstance(entry, str):
             accounts.append(WSAccountConfig(account_id=entry))
             continue
+        acct_type = str(entry.get("type", "") or "").strip().lower()
+        if acct_type not in ("", "margin", "non_margin"):
+            acct_type = ""
         accounts.append(
             WSAccountConfig(
                 account_id=str(entry.get("account_id", "")),
                 label=str(entry.get("label", "")),
+                type=acct_type,
                 risk_per_trade_pct=_opt_float(entry, "risk_per_trade_pct"),
                 max_contracts_per_trade=_opt_int(
                     entry, "max_contracts_per_trade"
@@ -336,7 +344,19 @@ def load_config(path: str) -> Config:
     with open(path, "r") as f:
         raw = yaml.safe_load(f) or {}
 
-    pipeline_raw = raw.get("pipeline") or {}
+    # new-style configs name the web-server section for the role
+    # (consumer: / info: - the section key IS the role); legacy
+    # configs use pipeline: with an explicit role: field
+    pipeline_raw = None
+    role = None
+    for key, section_role in (("info", "info"), ("consumer", "consumer")):
+        section = raw.get(key)
+        if isinstance(section, dict) and section:
+            pipeline_raw = section
+            role = section_role
+            break
+    if pipeline_raw is None:
+        pipeline_raw = raw.get("pipeline") or {}
     trading_raw = raw.get("trading") or {}
     ws_raw = raw.get("wealthsimple") or {}
     parser_raw = raw.get("parser") or {}
@@ -344,7 +364,8 @@ def load_config(path: str) -> Config:
     # role: consumer = the trading app (default - an existing
     # config keeps today's behavior); info = the alert source
     # server (reader ingest + feed, no trading)
-    role = str(_get(pipeline_raw, "role", "consumer")).lower()
+    if role is None:
+        role = str(_get(pipeline_raw, "role", "consumer")).lower()
     if role not in ("info", "consumer"):
         role = "consumer"
 

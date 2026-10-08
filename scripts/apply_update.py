@@ -31,8 +31,9 @@ from core.ops.updater import UPDATE_RECORD  # noqa: E402
 
 # code dirs replaced wholesale on an update
 CODE_DIRS = ("core", "consumer")
-# root files shipped in the zip
-CODE_FILES = ("run.py", "requirements.txt", "config.example.yaml")
+# root files shipped in the zip (subpaths allowed)
+CODE_FILES = ("run.py", "requirements.txt",
+              os.path.join("config", "consumer.config.yaml"))
 
 
 def apply(root):
@@ -74,7 +75,9 @@ def apply(root):
         for name in CODE_FILES:
             src = os.path.join(staging, name)
             if os.path.exists(src):
-                shutil.copy2(src, os.path.join(root, name))
+                dst = os.path.join(root, name)
+                os.makedirs(os.path.dirname(dst), exist_ok=True)
+                shutil.copy2(src, dst)
         # launcher .bat files are skipped: cmd re-reads the
         # running batch file, replacing it mid-loop is undefined
         scripts_src = os.path.join(staging, "scripts")

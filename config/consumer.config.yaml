@@ -1,4 +1,15 @@
 # ---------------------------------------------------------------------------
+# consumer app example config - copy to consumer/consumer.config.yaml
+# and edit
+#
+# the trading app: pulls the alert feed from the info server, runs
+# the risk gates + sizing, and executes in the trading.mode below
+# (notify / paper / live) against your own Wealthsimple login.
+# sections that do not apply to this role are omitted - they get
+# safe defaults.
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
 # Execution model - two axes:
 #   trading.mode: notify (no execution, alerts to your phone) |
 #                 paper (simulated execution, quiet) | live (real orders)
@@ -17,17 +28,13 @@ paper:
   mirror_interval_seconds: 60
 
 # ---------------------------------------------------------------------------
-# pipeline - the web server that runs the dashboard and receives alerts
+# consumer - this app's web server: the dashboard + the /alert route.
+# the section name IS the role (legacy configs use pipeline: with an
+# explicit role: field - both load)
 # ---------------------------------------------------------------------------
-pipeline:
-  # consumer = the trading app (default: alerts in, sizing,
-  # paper/live execution, dashboard). info = the alert source
-  # server: reader ingest + alert feed for consumer apps, no
-  # trading. copy this file once per role folder (info/ and
-  # consumer/) and set the role in each.
-  role: consumer
+consumer:
   host: "0.0.0.0"            # what to bind to; 127.0.0.1 = this PC only
-  port: 8080
+  port: 8081                 # the info server owns 8080 - use 8081 here
   auth_token: ""             # dashboard + alert password. REQUIRED if host is
                              # not localhost (server refuses to start otherwise).
                              # generate: python -c "import secrets; print(secrets.token_urlsafe(24))"
@@ -36,19 +43,8 @@ pipeline:
                              # empty = plain HTTP
 
 # ---------------------------------------------------------------------------
-# consumers - info role only: apps allowed to read the alert feed.
-# token authenticates both directions (their feed client against
-# this server; this server's push against their /alert endpoint).
-# push_url empty = pull-only consumer (they long-poll the feed).
-# ---------------------------------------------------------------------------
-# consumers:
-#   - label: owner
-#     token: "GENERATE_A_TOKEN"
-#     push_url: "http://127.0.0.1:8081/alert"
-
-# ---------------------------------------------------------------------------
-# feed - consumer role only: where the info server's alert feed
-# lives. the token must match a consumers[] entry on the server.
+# feed - where the info server's alert feed lives. the token must
+# match a consumers[] entry on the server.
 # ---------------------------------------------------------------------------
 # feed:
 #   url: "http://127.0.0.1:8080"
@@ -57,14 +53,11 @@ pipeline:
 #   verify_ssl: false       # the info server usually runs a self-signed cert
 
 # ---------------------------------------------------------------------------
-# auto_update - pull code changes from GitHub and restart automatically
+# auto_update - the consumer follows the rolling GitHub Release
+# (no git needed): the updater polls the release below, downloads
+# a newer asset, verifies its checksum and stages the swap for
+# the launcher to apply on restart
 # ---------------------------------------------------------------------------
-# two install types are auto-detected:
-#   git install  (a .git folder exists)  - git pull, as before
-#   release install (a VERSION file exists) - the client zip shipped
-#     through GitHub Releases; the updater polls the release below,
-#     downloads a newer asset, verifies its checksum and stages the
-#     swap for the launcher to apply on restart
 auto_update:
   enabled: true
   interval_seconds: 600      # how often to check GitHub for updates
@@ -84,42 +77,6 @@ quotes:
   moomoo_port: 11111
 
 # ---------------------------------------------------------------------------
-# reader - the Windows app that watches the official Discord client
-# ---------------------------------------------------------------------------
-reader:
-  pipeline_url: "http://localhost:8080/alert"   # use https:// if TLS is on
-  poll_interval: 0.5         # seconds between message checks
-  channel_marker: ""         # pin to one channel by name; empty = follow
-                             # whatever channel is open in Discord
-  max_items: 40              # how many on-screen messages to read per pass
-  auth_token: ""             # MUST match pipeline.auth_token
-  auto_scroll: true
-  # start (or foreground) discord when no window is available -
-  # the updater command also opens a tray-minimized instance
-  auto_start_discord: true
-  # click into the wanted channel when discord opens elsewhere
-  # (e.g. the friends page after an update)
-  auto_switch_channel: true
-  # the server to select when the wanted channel is not visible
-  # (a server's channels only appear once it is selected)
-  discord_server: ""
-  # per-channel server mapping for auto navigation
-  # channel_servers:
-  #   player-alerts: "SPX Plays"
-  # how fast the reader restarts discord
-  discord_reopen_seconds: 15
-  discord_restart_seconds: 90
-  # custom launch command; the default is
-  #   %LocalAppData%\Discord\Update.exe --processStart Discord.exe
-  # discord_start_command: ""           # snap the Discord message pane to the
-                             # bottom so live alerts stay readable
-                             # (Discord only exposes the scrolled-in
-                             # messages to the reader)
-  channels:                  # allowlist: only these channels are read
-    - test-alerts            # (substring match, empty list = any channel)
-    - player-alerts          # NEVER include your webhook output channel
-
-# ---------------------------------------------------------------------------
 # discord - webhooks that send notifications to your private server
 # ---------------------------------------------------------------------------
 discord:
@@ -127,14 +84,10 @@ discord:
   # (the settings "notify" checkbox)
   notify: true
   webhook_url: "YOUR_PRIVATE_SERVER_WEBHOOK_URL"  # trade alerts to your phone
-  consumer_log_webhook_url: ""  # this app's log tail (consumer.log /
-                                # info.log) posted to discord; empty = off.
-                                # legacy configs call it
-                                # pipeline_log_webhook_url - still read
-  update_webhook_url: ""        # server update/restart notices;
-                               # empty = use the main webhook channel
-  # the reader's own webhooks (reader log, raw alerts) live in
-  # reader/config.yaml
+  consumer_log_webhook_url: ""  # this app's log tail (consumer.log) posted
+                                # to discord; empty = off
+  update_webhook_url: ""        # app update/restart notices;
+                                # empty = use the main webhook channel
 
 # ---------------------------------------------------------------------------
 # trading - how alerts are sized, executed, and risk-managed
@@ -209,35 +162,45 @@ trading:
                              # (toggle it live from the dashboard settings)
 
 # ---------------------------------------------------------------------------
-# wealthsimple - your accounts (get IDs from scripts/ws_login.py)
+# wealthsimple - your accounts. blank by default: add them from the
+# dashboard's settings (or here). get IDs from scripts/ws_login.py.
+# type models how the account trades:
+#   margin      - borrows against holdings (the margin requirement
+#                 is real, shown on the account card)
+#   non_margin  - registered plans: RRSP, TFSA, FHSA (cash covers
+#                 the position - no borrowing, margin exempt)
+#   ""          - auto-detect from the Wealthsimple account type
 # ---------------------------------------------------------------------------
 wealthsimple:
-  accounts:
-    - account_id: "YOUR_RRSP_ACCOUNT_ID"
-      label: "RRSP"                    # name shown in the dashboard
-      enabled: true                    # include this account in trading
-      risk_per_trade_pct: null         # null = use the global 5
-      max_contracts_per_trade: 20      # override for this account
-      max_open_risk_pct: null          # per-account open-risk cap; null = use
-                                       # the global 30. a small account may need
-                                       # a high share of its own value (e.g. 60)
-                                       # without raising the cap elsewhere
-      paper_value: 50000.0             # sizing value in paper mode
-    - account_id: "YOUR_PERSONAL_ACCOUNT_ID"
-      label: "Personal"
-      enabled: true
-      risk_per_trade_pct: null
-      max_contracts_per_trade: 5
-      max_open_risk_pct: 60            # small margin account: a high share of a
-                                       # small value is still a small $ exposure
-      paper_value: 2000.0
+  accounts: []
+  # accounts:
+  #   - account_id: "YOUR_MARGIN_ACCOUNT_ID"
+  #     label: "Margin"                  # name shown in the dashboard
+  #     type: margin                     # margin | non_margin | "" (auto)
+  #     enabled: true                    # include this account in trading
+  #     risk_per_trade_pct: null         # null = use the global 5
+  #     max_contracts_per_trade: 20      # override for this account
+  #     max_open_risk_pct: null          # per-account open-risk cap; null = use
+  #                                      # the global 30. a small account may need
+  #                                      # a high share of its own value (e.g. 60)
+  #                                      # without raising the cap elsewhere
+  #     paper_value: 50000.0             # sizing value in paper mode
+  #   - account_id: "YOUR_RRSP_ACCOUNT_ID"
+  #     label: "RRSP"
+  #     type: non_margin                 # registered plan - no borrowing
+  #     enabled: true
+  #     risk_per_trade_pct: null
+  #     max_contracts_per_trade: 5
+  #     max_open_risk_pct: 60            # small account: a high share of a
+  #                                      # small value is still a small $ exposure
+  #     paper_value: 2000.0
   exchange_hint: ""           # e.g. "SPX" to force an exchange on order placement
   stock_margin_rate: 0.30     # maintenance margin rate for stock holdings
                               # in margin accounts (WS uses 30% for most
                               # listings); registered plans are exempt
   margin_rate_overrides: {}   # e.g. {RDDT: 0.50} per-symbol rates
   positions_refresh_seconds: 30   # dashboard: how often live option
-                                 # positions (price + return) refresh
+                                  # positions (price + return) refresh
   values_refresh_seconds: 60     # dashboard: how often account values
                                  # (net-liquidation) refresh
 

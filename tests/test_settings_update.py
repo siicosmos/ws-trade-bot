@@ -528,7 +528,11 @@ def test_account_settings_validation():
     applied, errors = apply_settings(
         cfg, {"accounts": [{"label": "Nope", "max_contracts_per_trade": 5}]}
     )
-    assert errors and "unknown account" in errors[0]
+    # an unknown label is now an add (the dashboard sends the
+    # full list including new rows)
+    assert errors == []
+    nope = [a for a in cfg.wealthsimple.accounts if a.label == "Nope"][0]
+    assert nope.max_contracts_per_trade == 5
 
     applied, errors = apply_settings(
         cfg, {"accounts": [{"label": "RRSP", "risk_per_trade_pct": 900}]}
@@ -1197,3 +1201,73 @@ def test_trading_paused_kill_switch_roundtrip():
     })
     assert ok and not errors
     assert cfg.trading.trading_paused is False
+
+
+def test_account_add_remove_and_type():
+    # blank config: add a margin + a non_margin account, then
+    # remove one and flip the other back to auto-detect
+    fd, cfg_path = tempfile.mkstemp(suffix=".yaml")
+    os.close(fd)
+    with open(cfg_path, "w") as f:
+        f.write("wealthsimple:\n  accounts: []\n")
+    cfg = ConfigStub(TradingConfig(mode="notify"), accounts=[])
+
+    applied, errors = apply_settings(
+        cfg,
+        {"accounts": [
+            {"label": "Margin", "account_id": "m1", "type": "margin",
+             "enabled": True},
+            {"label": "RRSP", "account_id": "r1",
+             "type": "non_margin", "enabled": True},
+        ]},
+        cfg_path,
+    )
+    assert errors == [], errors
+    assert [a.label for a in cfg.wealthsimple.accounts] == [
+        "Margin", "RRSP"]
+    assert cfg.wealthsimple.accounts[0].type == "margin"
+    assert cfg.wealthsimple.accounts[1].type == "non_margin"
+
+    from core.config import load_config
+
+    reloaded = load_config(cfg_path)
+    assert [a.type for a in reloaded.wealthsimple.accounts] == [
+        "margin", "non_margin"]
+
+    applied, errors = apply_settings(
+        cfg,
+        {"accounts": [
+            {"label": "Margin", "remove": True},
+            {"label": "RRSP", "type": ""},
+        ]},
+        cfg_path,
+    )
+    assert errors == [], errors
+    assert [a.label for a in cfg.wealthsimple.accounts] == ["RRSP"]
+    assert cfg.wealthsimple.accounts[0].type == ""
+    reloaded = load_config(cfg_path)
+    assert [a.label for a in reloaded.wealthsimple.accounts] == ["RRSP"]
+    os.unlink(cfg_path)
+
+
+def test_account_add_validation():
+    cfg = ConfigStub(TradingConfig(mode="notify"), accounts=[])
+    applied, errors = apply_settings(
+        cfg,
+        {"accounts": [
+            {"label": "A", "type": "bogus"},
+            {"label": "", "account_id": "x"},
+        ]},
+    )
+    assert any(".type" in e for e in errors)
+    assert any("label is required" in e for e in errors)
+# the valid-label account was still added (bad type reported)
+    assert [a.label for a in cfg.wealthsimple.accounts] == ["A"]
+    assert cfg.wealthsimple.accounts[0].type == ""
+
+    # a known label routes to update, not a duplicate error
+    applied, errors = apply_settings(
+        cfg, {"accounts": [{"label": "A", "account_id": "y"}]}
+    )
+    assert errors == []
+    assert cfg.wealthsimple.accounts[0].account_id == "y"

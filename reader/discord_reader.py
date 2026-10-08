@@ -456,7 +456,7 @@ def own_config_path():
     source of truth for reader settings and the reader's
     webhooks (reader log, raw alerts)."""
     here = os.path.dirname(os.path.abspath(__file__))
-    return os.path.join(here, "config.yaml")
+    return os.path.join(here, "reader.config.yaml")
 
 
 def legacy_config_path():
@@ -466,8 +466,8 @@ def legacy_config_path():
 
 def _migrate_own_config(root_cfg):
     """One-time migration: flatten the monolith config's reader +
-    discord sections into reader/config.yaml (flat keys). The
-    reader's webhooks (reader log, raw alerts) move here from
+    discord sections into reader/reader.config.yaml (flat keys).
+    The reader's webhooks (reader log, raw alerts) move here from
     the discord section - they are reader-domain."""
     import yaml
 
@@ -491,6 +491,16 @@ def _migrate_own_config(root_cfg):
 def find_config_path():
     if os.path.exists(own_config_path()):
         return os.path.abspath(own_config_path())
+    here = os.path.dirname(os.path.abspath(__file__))
+    # one-time rename: the per-role config name
+    old = os.path.join(here, "config.yaml")
+    if os.path.exists(old):
+        try:
+            os.rename(old, own_config_path())
+            log("renamed reader/config.yaml -> reader/reader.config.yaml")
+            return os.path.abspath(own_config_path())
+        except OSError:
+            pass
     legacy = legacy_config_path()
     if os.path.exists(legacy):
         try:
@@ -510,8 +520,8 @@ def load_config():
 
     path = find_config_path()
     if path is None:
-        log("reader/config.yaml not found - copy "
-            "reader/config.example.yaml to reader/config.yaml")
+        log("reader/reader.config.yaml not found - copy "
+            "config/reader.config.yaml to reader/reader.config.yaml")
         sys.exit(1)
     with open(path, "r", encoding="utf-8") as f:
         return yaml.safe_load(f) or {}
@@ -1408,7 +1418,7 @@ def main():
 
         if time.time() - last_head_check > 10:
             last_head_check = time.time()
-            # an edited reader/config.yaml applies on restart -
+            # an edited reader/reader.config.yaml applies on restart -
             # the .bat loop brings the reader back in 5s
             if config_path:
                 try:
@@ -1416,7 +1426,7 @@ def main():
                 except OSError:
                     mtime = None
                 if config_mtime and mtime and mtime != config_mtime:
-                    log("reader/config.yaml changed - restarting "
+                    log("reader/reader.config.yaml changed - restarting "
                         "reader to apply it")
                     notify_restart(
                         update_webhook_url,

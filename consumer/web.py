@@ -411,7 +411,16 @@ def _bounded(fn, *args, **kwargs):
     return box.get("r")
 
 
-def _registered_plan(account, label):
+def _registered_plan(account, label, acct=None):
+    """Non-margin check: an explicit config type wins, then the
+    WS API's unifiedAccountType, then label keywords."""
+    from consumer.ws.account_types import account_is_non_margin
+
+    if acct is not None and str(
+        getattr(acct, "type", "") or ""
+    ).strip().lower() in ("margin", "non_margin"):
+        return account_is_non_margin(acct)
+
     type_map_fn = getattr(account, "account_type_map", None)
     resolve_fn = getattr(account, "_resolve", None)
     if callable(type_map_fn) and callable(resolve_fn):
@@ -745,7 +754,9 @@ def _account_summary(ctx, snap, label, value):
             + pos_cash, 2
         )
 
-    registered = _registered_plan(account, label)
+    registered = _registered_plan(
+        account, label, _acct_by_label(ctx.cfg, label)
+    )
     # computed per the WS margin page: requirement is the
     # maintenance rate over holdings (rate per symbol, long
     # options get no loan value, shorts count their defined

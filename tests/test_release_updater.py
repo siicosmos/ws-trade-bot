@@ -8,15 +8,18 @@ from core.ops.release_updater import ReleaseUpdater, read_version
 from core.ops.updater import AutoUpdater, create_updater
 
 
-def _cfg(enabled=True, token=""):
+def _cfg(enabled=True, token="", role="consumer"):
     return type(
-        "C", (), {"auto_update": type(
-            "A", (), {
-                "interval_seconds": 600, "enabled": enabled,
-                "github_token": token,
-                "release_tag": "consumer-latest",
-            }
-        )()},
+        "C", (), {
+            "auto_update": type(
+                "A", (), {
+                    "interval_seconds": 600, "enabled": enabled,
+                    "github_token": token,
+                    "release_tag": "consumer-latest",
+                }
+            )(),
+            "pipeline": type("P", (), {"role": role})(),
+        },
     )()
 
 
@@ -183,9 +186,9 @@ def test_check_once_disabled_and_pending(tmp_path, monkeypatch):
 def test_apply_update_swaps_and_preserves_state(tmp_path):
     root = str(tmp_path)
     # the old install
-    _write(root, "consumer/config.yaml", "role: consumer\n")
+    _write(root, "consumer/consumer.config.yaml", "role: consumer\n")
     _write(root, "consumer/ws_tokens.env", "T=1\n")
-    _write(root, "consumer/trades.db", "db-bytes")
+    _write(root, "consumer/consumer.trades.db", "db-bytes")
     _write(root, "core/old.py", "old\n")
     _write(root, "run.py", "old run\n")
     # the staged build
@@ -210,9 +213,9 @@ def test_apply_update_swaps_and_preserves_state(tmp_path):
     with open(os.path.join(root, "run.py")) as f:
         assert f.read() == "print('hi')\n"
     # state preserved
-    with open(os.path.join(root, "consumer", "config.yaml")) as f:
+    with open(os.path.join(root, "consumer", "consumer.config.yaml")) as f:
         assert f.read() == "role: consumer\n"
-    with open(os.path.join(root, "consumer", "trades.db")) as f:
+    with open(os.path.join(root, "consumer", "consumer.trades.db")) as f:
         assert f.read() == "db-bytes"
     # VERSION + record + cleanup
     assert read_version(root)["commit"] == "bbb"
@@ -233,15 +236,62 @@ def test_apply_update_noop_without_pending(tmp_path):
     assert mod.apply(str(tmp_path)) is False
 
 
-def test_create_updater_autodetect(tmp_path):
-    os.makedirs(os.path.join(str(tmp_path), "a", ".git"))
+def test_create_updater_routes_by_role(tmp_path):
+    # the consumer follows the release channel even in a git
+    # checkout (VERSION is seeded from git on the first check);
+    # the info server keeps the git-pull updater
+    a = os.path.join(str(tmp_path), "a")
+    os.makedirs(os.path.join(a, ".git"))
     assert type(
-        create_updater(_cfg(), os.path.join(str(tmp_path), "a"), "")
-    ) is AutoUpdater
+        create_updater(_cfg(role="consumer"), a, "")
+    ) is ReleaseUpdater
 
     b = os.path.join(str(tmp_path), "b")
     _write(b, "VERSION", json.dumps({"commit": "aaa", "repo": "o/r"}))
-    assert type(create_updater(_cfg(), b, "")) is ReleaseUpdater
+    assert type(
+        create_updater(_cfg(role="info"), b, "")
+    ) is AutoUpdater
+
+
+def test_release_updater_seeds_version_from_git(tmp_path, monkeypatch):
+    import subprocess
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    env = {
+        **os.environ,
+        "GIT_AUTHOR_NAME": "t",
+        "GIT_AUTHOR_EMAIL": "t@t",
+        "GIT_COMMITTER_NAME": "t",
+        "GIT_COMMITTER_EMAIL": "t@t",
+    }
+    subprocess.run(
+        ["git", "init"], cwd=repo, env=env, capture_output=True, check=True
+    )
+    subprocess.run(
+        ["git", "commit", "--allow-empty", "-m", "a"],
+        cwd=repo, env=env, capture_output=True, check=True,
+    )
+    subprocess.run(
+        ["git", "remote", "add", "origin",
+         "git@github.com:siicosmos/ws-trade-bot.git"],
+        cwd=repo, env=env, capture_output=True, check=True,
+    )
+
+    monkeypatch.setattr(ru, "latest_release", lambda *a, **k: None)
+    up = ReleaseUpdater(_cfg(), str(repo), "")
+    assert up.check_once() is False
+    # the first check seeded VERSION from the checkout instead
+    assert read_version(str(repo))["repo"] == "siicosmos/ws-trade-bot"
+    assert up.last_result == "no release published yet"
+
+    # the next check polls with the seeded identity
+    monkeypatch.setattr(
+        ru, "latest_release", lambda *a, **k: _release(
+            read_version(str(repo))["commit"])
+    )
+    assert up.check_once() is False
+    assert up.last_result == "up to date"
 
 
 def test_status_payload_compatible(tmp_path):

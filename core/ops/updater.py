@@ -74,9 +74,25 @@ def _clear_stale_lock(root):
 RUNTIME_IGNORED = (
     "pipeline.log*", "reader.log*", "info.log*", "consumer.log*",
     "logs/*", "trades.db*", "*.db",
+    "consumer/consumer.trades.db*", "info/info.trades.db*",
+    "consumer/trades.db*", "info/trades.db*",
     ".last_update.json", ".reader_seen.json", ".session_key",
-    "config.yaml", "ws_tokens.env", "*.pyc", "__pycache__/*",
+    "config.yaml", "ws_tokens.env",
+    "consumer/consumer.config.yaml", "info/info.config.yaml",
+    "reader/reader.config.yaml",
+    "*.pyc", "__pycache__/*",
 )
+
+
+def app_name(cfg):
+    """Discord title prefix for this process's role: the info
+    server and the consumer app share the updater, the reader
+    has its own."""
+    role = str(
+        getattr(getattr(cfg, "pipeline", None), "role", "")
+        or "consumer"
+    )
+    return "Info server" if role == "info" else "Consumer app"
 
 
 def _is_ignored_runtime_file(root, path):
@@ -146,6 +162,7 @@ class AutoUpdater:
         self.cfg = cfg
         self.root = root
         self.webhook_url = webhook_url
+        self.name = app_name(cfg)
         self.restart_files = restart_files or PIPELINE_RESTART_FILES
         self._restart = restart or (lambda: os._exit(77))
         self._thread = None
@@ -288,7 +305,7 @@ class AutoUpdater:
             pass
         notify_discord(
             self.webhook_url,
-            "Pipeline restarting",
+            f"{self.name} restarting",
             {
                 "reason": f"code updated to {new[:8] if new else '?'}",
                 "commits": commit[:1000] or "-",
@@ -422,7 +439,7 @@ class AutoUpdater:
             # anything this process executes
             notify_discord(
                 self.webhook_url,
-                "Pipeline updated (no restart)",
+                f"{self.name} updated (no restart)",
                 {
                     "reason": f"code updated to {new[:8]} - no "
                                "pipeline files changed",
@@ -438,7 +455,7 @@ class AutoUpdater:
 
         notify_discord(
             self.webhook_url,
-            "Pipeline restarting",
+            f"{self.name} restarting",
             {
                 "reason": f"code updated to {new[:8]}",
                 "commits": commits[:1000] or "-",
@@ -454,13 +471,19 @@ class AutoUpdater:
 
 def create_updater(cfg, root, webhook_url="", restart=None,
                    restart_files=None):
-    """Auto-detect the install type: a git checkout updates via
-    git pull; a release install (VERSION file, no .git) updates
-    through GitHub Releases."""
-    if (
-        os.path.exists(os.path.join(root, "VERSION"))
-        and not os.path.exists(os.path.join(root, ".git"))
-    ):
+    """Role-based updater selection:
+
+    - consumer app (the shipped client) follows the rolling
+      GitHub Release - no git operations, no dirty-tree skips;
+    - info server is a git checkout: fetch + ff-only pull;
+    - the reader runs no updater of its own - the info server's
+      pull updates the whole repo on disk and the reader restarts
+      itself when its code changed (discord_reader.py)."""
+    role = str(
+        getattr(getattr(cfg, "pipeline", None), "role", "")
+        or "consumer"
+    )
+    if role == "consumer":
         from core.ops.release_updater import ReleaseUpdater
 
         return ReleaseUpdater(

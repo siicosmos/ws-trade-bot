@@ -3331,6 +3331,7 @@ def test_updater_heals_dirty_ignored_runtime_file(tmp_path):
     updater.cfg = Cfg()
     updater.root = str(work)
     updater.webhook_url = ""
+    updater.name = "Consumer app"
     updater._restart = lambda: (_ for _ in ()).throw(
         AssertionError("should not restart")
     )

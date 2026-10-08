@@ -18,8 +18,11 @@ if errorlevel 1 (
   )
 )
 
-if not exist ..\config.yaml (
-  echo config.yaml not found in repo root - copy config.example.yaml to config.yaml
+rem one-time rename: the per-role config name
+if not exist reader.config.yaml if exist config.yaml ren config.yaml reader.config.yaml
+
+if not exist reader.config.yaml (
+  echo reader\reader.config.yaml not found - copy config\reader.config.yaml to reader\reader.config.yaml
   pause
   exit /b 1
 )

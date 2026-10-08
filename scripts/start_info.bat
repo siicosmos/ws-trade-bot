@@ -1,7 +1,7 @@
 @echo off
 rem info server: reader ingest + alert feed, no trading.
 rem everything this role needs lives in the info folder:
-rem   config.yaml (role: info) · trades.db · info.log
+rem   info.config.yaml · info.trades.db · info.log
 rem this launcher lives in scripts\ - it cds into ..\info
 cd /d %~dp0..\info
 
@@ -21,14 +21,18 @@ if errorlevel 1 (
   )
 )
 
-if not exist config.yaml (
-  echo config.yaml missing - copy ..\config.example.yaml here and set role: info
+rem one-time rename: the per-role config name
+if not exist info.config.yaml if exist config.yaml ren config.yaml info.config.yaml
+
+if not exist info.config.yaml (
+  echo info.config.yaml missing - copy ..\config\info.config.yaml here
   pause
   exit /b 1
 )
 
 :start
-..\.venv\Scripts\python.exe ..\run.py -c config.yaml --db trades.db
+rem the db name (info.trades.db) is derived from the role in run.py
+..\.venv\Scripts\python.exe ..\run.py -c info.config.yaml
 set EXITCODE=%errorlevel%
 if %EXITCODE% == 0 (
   echo info server stopped cleanly

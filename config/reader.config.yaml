@@ -1,0 +1,54 @@
+# ---------------------------------------------------------------------------
+# reader example config - copy to reader/reader.config.yaml and edit
+#
+# the Windows app that watches the official Discord client via UI
+# Automation and posts every new message to the info server. Flat
+# keys (no nesting). The reader's own webhooks live here too.
+# ---------------------------------------------------------------------------
+
+# where the info server's ingest endpoint lives (its pipeline.port)
+pipeline_url: "http://localhost:8080/alert"   # use https:// if TLS is on
+
+# --- delivery ---
+auth_token: ""             # MUST match the info server's pipeline.auth_token
+poll_interval: 0.5         # seconds between message checks
+max_items: 40              # how many on-screen messages to read per pass
+channels:                  # allowlist: only these channels are read
+  - test-alerts            # (substring match, empty list = any channel)
+  - player-alerts          # NEVER include your webhook output channel
+
+# --- discord window handling ---
+auto_scroll: true          # snap the Discord message pane to the bottom so
+                           # live alerts stay readable (Discord only exposes
+                           # the scrolled-in messages to the reader)
+# start (or foreground) discord when no window is available -
+# the updater command also opens a tray-minimized instance
+auto_start_discord: true
+# click into the wanted channel when discord opens elsewhere
+# (e.g. the friends page after an update)
+auto_switch_channel: true
+channel_marker: ""         # pin to one channel by name; empty = follow
+                           # whatever channel is open in Discord
+# the server to select when the wanted channel is not visible
+# (a server's channels only appear once it is selected)
+discord_server: ""
+# per-channel server mapping for auto navigation
+# channel_servers:
+#   player-alerts: "SPX Plays"
+# how fast the reader restarts discord
+discord_reopen_seconds: 15
+discord_restart_seconds: 90
+# custom launch command; the default is
+#   %LocalAppData%\Discord\Update.exe --processStart Discord.exe
+# discord_start_command: ""
+
+# --- webhooks (the reader's own, to your private server) ---
+webhook_url: ""            # fallback for the webhooks below; empty = off
+reader_log_webhook_url: "" # the reader's log tail (reader.log)
+raw_alert_webhook_url: ""  # every raw message as read, before parsing
+update_webhook_url: ""     # reader update/restart notices;
+                           # empty = use webhook_url
+
+# updates: the reader runs no updater of its own - the info
+# server's git pull updates the whole repo on disk and this
+# reader restarts itself when its code changed

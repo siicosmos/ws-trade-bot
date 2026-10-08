@@ -1606,42 +1606,109 @@ function renderSettings(s) {
       '<textarea id="' + h[0] + '" rows="2" title="' + esc(h[2]) + '" placeholder="' + esc(h[3]) + '">' + esc(h[4]) + '</textarea></div>'
     ).join("") + '</div>');
 
-  // 7. accounts: per-account overrides (empty = inherit global) -
-  // last: the longest section, rarely touched
-  if (s.accounts && s.accounts.length) {
-    let accts = "";
-    s.accounts.forEach((a, i) => {
-      accts += '<div class="acct-card">' +
-        '<div class="acct-head"><span' +
-        ' title="per-account overrides; empty fields inherit the global settings"' +
-        '>' + esc(a.label) + '</span>' +
-        '<span>' + _check("set-acct-" + i + "-enabled", "on", a.enabled,
-          "include this account in sizing and paper trading") + '</span></div>' +
-        '<div class="acct-grid">' +
-        _txtField("set-acct-" + i + "-id", "account id", a.account_id, "",
-          "wealthsimple account id") +
-        _numField("set-acct-" + i + "-max", "max contracts", a.max_contracts_per_trade,
-          "per-account contract cap; empty = inherit global") +
-        _numField("set-acct-" + i + "-risk", "risk %", a.risk_per_trade_pct,
-          "per-account risk override; empty = inherit global") +
-        _numField("set-acct-" + i + "-orisk", "open risk cap %", a.max_open_risk_pct,
-          "per-account open-risk cap - a small account may deploy a high share of its own value without raising the cap for the others; empty = inherit global") +
-        _numField("set-acct-" + i + "-paper", "paper value $", a.paper_value,
-          "fallback paper equity when live values are unavailable") +
-        '</div></div>';
-    });
-    html += _section("accounts", accts);
-  }
+  // 7. accounts: add / remove / per-account overrides (empty =
+  // inherit global) - last: the longest section, rarely touched.
+  // always rendered so a blank config can add its first account
+  renderSettings.newCount = 0;
+  let accts = '<div id="set-accounts-list">';
+  (s.accounts || []).forEach((a, i) => { accts += _acctCard(a, i, false); });
+  accts += '</div>';
+  html += _section("accounts (take effect after restart)", accts +
+    '<button type="button" id="set-acct-add" class="btn">+ add account</button>',
+    "accounts size and execute alerts; empty override fields inherit the global settings");
 
   el.innerHTML = html;
   el.querySelectorAll("textarea").forEach(function(t) {
     autoGrow(t);
     t.addEventListener("input", function() { autoGrow(t); });
   });
-  el.querySelectorAll("input,select,textarea").forEach(function(i) {
+  _wireSettingsFields(el);
+
+  // add account: append a blank editable card (existing labels
+  // key the ledgers, so only new rows get a label field)
+  const addBtn = document.getElementById("set-acct-add");
+  if (addBtn) addBtn.addEventListener("click", function() {
+    const list = document.getElementById("set-accounts-list");
+    if (!list) return;
+    const base = (lastSettings.accounts || []).length;
+    const idx = base + (renderSettings.newCount = (
+      (renderSettings.newCount || 0) + 1));
+    const card = _acctCard(
+      {label: "", account_id: "", type: "", enabled: true},
+      idx, true
+    );
+    list.insertAdjacentHTML("beforeend", card);
+    const node = list.lastElementChild;
+    node.querySelectorAll("textarea").forEach(function(t) {
+      autoGrow(t);
+      t.addEventListener("input", function() { autoGrow(t); });
+    });
+    _wireSettingsFields(node);
+    const labelInput = document.getElementById(
+      "set-acct-" + idx + "-label"
+    );
+    if (labelInput) labelInput.focus();
+  });
+}
+
+function _wireSettingsFields(container) {
+  container.querySelectorAll("input,select,textarea").forEach(function(i) {
     i.addEventListener("input", function() { setSettingsDirty(true); });
     i.addEventListener("change", function() { setSettingsDirty(true); });
   });
+}
+
+function _acctCard(a, i, isNew) {
+  // existing labels key the ledgers - they are fixed; only new
+  // rows get an editable label
+  const head = isNew
+    ? '<div class="acct-head"><span>' +
+      _txtField("set-acct-" + i + "-label", "label", a.label || "",
+        "e.g. TFSA", "unique name shown in the dashboard - it keys "
+        + "the account ledger, choose it once", true) + '</span>' +
+      '<span>' + _check("set-acct-" + i + "-enabled", "on",
+        a.enabled !== false,
+        "include this account in sizing and paper trading") +
+      '</span></div>'
+    : '<div class="acct-head"><span' +
+      ' title="per-account overrides; empty fields inherit the global settings"' +
+      '>' + esc(a.label) + '</span>' +
+      '<span>' + _check("set-acct-" + i + "-enabled", "on", a.enabled,
+        "include this account in sizing and paper trading") + '</span>' +
+      '<span>' + _check("set-acct-" + i + "-remove", "remove", false,
+        "delete this account from the config on save (its ledger "
+        + "rows stay in the database)") + '</span></div>';
+  const typeTip = "margin accounts borrow against holdings (the "
+    + "margin requirement is real); non_margin covers registered "
+    + "plans - RRSP, TFSA, FHSA model as non_margin (cash covers "
+    + "the position, no borrowing); auto-detect reads the type "
+    + "from Wealthsimple";
+  const typeSel = '<div class="set-field"><label title="' + esc(typeTip) +
+    '">account type</label><select id="set-acct-' + i + '-type"' +
+    ' title="' + esc(typeTip) + '">' +
+    [["", "auto-detect"], ["margin", "margin"],
+     ["non_margin", "non-margin (registered)"]].map(function(o) {
+      return '<option value="' + o[0] + '"' +
+        ((a.type || "") === o[0] ? " selected" : "") + '>' +
+        esc(o[1]) + '</option>';
+    }).join("") + '</select>' + _fieldHelp(typeTip) + '</div>';
+  return '<div class="acct-card" data-acct="' + i + '"' +
+    (isNew ? ' data-new="1"' : '') + '>' + head +
+    '<div class="acct-grid">' +
+    _txtField("set-acct-" + i + "-id", "account id", a.account_id || "",
+      "", "wealthsimple account id (from scripts/ws_login.py)") +
+    typeSel +
+    _numField("set-acct-" + i + "-max", "max contracts",
+      a.max_contracts_per_trade,
+      "per-account contract cap; empty = inherit global") +
+    _numField("set-acct-" + i + "-risk", "risk %", a.risk_per_trade_pct,
+      "per-account risk override; empty = inherit global") +
+    _numField("set-acct-" + i + "-orisk", "open risk cap %",
+      a.max_open_risk_pct,
+      "per-account open-risk cap - a small account may deploy a high share of its own value without raising the cap for the others; empty = inherit global") +
+    _numField("set-acct-" + i + "-paper", "paper value $", a.paper_value,
+      "fallback paper equity when live values are unavailable") +
+    '</div></div>';
 }
 
 async function saveSettings() {
@@ -1681,21 +1748,41 @@ async function saveSettings() {
     });
     return map;
   })();
-  const accounts = (lastSettings.accounts || []).map((a, i) => {
+  const accounts = Array.from(
+    document.querySelectorAll("#set-accounts-list .acct-card")
+  ).map((card) => {
+    const i = card.dataset.acct;
+    const isNew = card.dataset.new === "1";
+    const g = (id) => {
+      const el = document.getElementById(id);
+      return el ? el.value : "";
+    };
     const numOrNull = (id) => {
-      const v = val(id);
+      const v = g(id);
       return v === "" ? null : parseFloat(v);
     };
-    return {
-      label: a.label,
-      account_id: val("set-acct-" + i + "-id"),
-      max_contracts_per_trade: val("set-acct-" + i + "-max") === "" ? null : parseInt(val("set-acct-" + i + "-max")),
+    const entry = {
+      label: isNew
+        ? g("set-acct-" + i + "-label").trim()
+        : (lastSettings.accounts || [])[Number(i)]?.label,
+      account_id: g("set-acct-" + i + "-id"),
+      type: g("set-acct-" + i + "-type"),
+      max_contracts_per_trade: g("set-acct-" + i + "-max") === ""
+        ? null : parseInt(g("set-acct-" + i + "-max")),
       risk_per_trade_pct: numOrNull("set-acct-" + i + "-risk"),
       max_open_risk_pct: numOrNull("set-acct-" + i + "-orisk"),
       paper_value: numOrNull("set-acct-" + i + "-paper"),
-      enabled: document.getElementById("set-acct-" + i + "-enabled").checked,
+      enabled: (document.getElementById(
+        "set-acct-" + i + "-enabled"
+      ) || {checked: true}).checked,
     };
-  });
+    if (!isNew) {
+      entry.remove = (document.getElementById(
+        "set-acct-" + i + "-remove"
+      ) || {checked: false}).checked;
+    }
+    return entry;
+  }).filter((e) => e.label);
   const payload = {
     trading,
     accounts,

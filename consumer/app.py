@@ -49,12 +49,13 @@ def main(cfg, args):
         and cfg.pipeline.host not in ("127.0.0.1", "localhost", "::1")
     ):
         print(
-            "REFUSING to start: pipeline.auth_token is empty while binding "
+            "REFUSING to start: auth_token is empty while binding "
             f"to {cfg.pipeline.host} (reachable by other machines)."
         )
         print('generate one with:  python -c "import secrets; '
               'print(secrets.token_urlsafe(24))"')
-        print("then set it under pipeline: in config.yaml and restart")
+        print("then set it under consumer: in consumer.config.yaml "
+              "and restart")
         sys.exit(1)
 
     store = Store(

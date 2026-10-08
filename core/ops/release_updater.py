@@ -26,10 +26,15 @@ STAGING_DIR = ".update_staging"
 # state files that must survive an update swap - they live inside
 # consumer/, whose code dirs are replaced wholesale. everything at
 # the repo root (logs/, certs/, .last_update.json, ...) is never
-# touched by the swap
+# touched by the swap. the legacy names (config.yaml, trades.db)
+# are kept for installs that predate the per-role naming
 STATE_FILES = (
-    "config.yaml", "ws_tokens.env", "trades.db",
-    "trades.db-shm", "trades.db-wal", "pipeline_exit.txt",
+    "consumer.config.yaml", "config.yaml",
+    "ws_tokens.env",
+    "consumer.trades.db", "consumer.trades.db-shm",
+    "consumer.trades.db-wal",
+    "trades.db", "trades.db-shm", "trades.db-wal",
+    "pipeline_exit.txt",
 )
 
 
@@ -171,6 +176,45 @@ class ReleaseUpdater:
             or ""
         )
 
+    def _seed_version_from_git(self):
+        """A git-install consumer switching to the release
+        channel: write the VERSION marker from the checkout's
+        head + origin so the release comparison starts from the
+        code actually running. Best effort - a checkout without
+        a GitHub origin cannot follow releases."""
+        from core.ops.updater import _git
+
+        head = _git(self.root, "rev-parse", "HEAD")
+        if head.returncode != 0:
+            return False
+        remote = _git(self.root, "remote", "get-url", "origin")
+        url = remote.stdout.strip() if remote.returncode == 0 else ""
+        if ":" in url:
+            url = url.split(":", 1)[1]
+        elif "github.com/" in url:
+            url = url.split("github.com/", 1)[1]
+        slug = url.removesuffix(".git").strip()
+        if not slug:
+            return False
+        ver = {
+            "tag": "consumer-latest",
+            "commit": head.stdout.strip()[:8],
+            "built": "",
+            "repo": slug,
+        }
+        try:
+            with open(os.path.join(self.root, VERSION_FILE), "w") as f:
+                json.dump(ver, f, indent=2)
+        except OSError:
+            return False
+        self.version = ver
+        self.start_head = str(ver.get("commit") or "")
+        print(
+            "auto-update: release channel seeded from the git "
+            f"checkout ({ver['commit']})"
+        )
+        return True
+
     def check_once(self) -> bool:
         self.last_check = time.time()
         if not self.cfg.auto_update.enabled:
@@ -183,10 +227,15 @@ class ReleaseUpdater:
             self.last_result = "staged update pending restart"
             return False
 
+        if not self.version:
+            self._seed_version_from_git()
         local = str(self.version.get("commit") or "")
         repo = str(self.version.get("repo") or "")
         if not repo:
-            self.last_result = "VERSION file has no repo"
+            self.last_result = (
+                "no VERSION file and no git origin - cannot "
+                "follow releases"
+            )
             return False
 
         try:

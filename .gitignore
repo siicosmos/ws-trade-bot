@@ -2,6 +2,9 @@ __pycache__/
 *.pyc
 .venv/
 config.yaml
+/consumer/consumer.config.yaml
+/info/info.config.yaml
+/reader/reader.config.yaml
 trades.db
 reader/discord_tree.txt
 *.db

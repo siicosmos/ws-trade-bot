@@ -143,7 +143,7 @@ NameError when a stock tier was configured) is fixed to
 
 ### Paper expectancy report
 
-`scripts/expectancy.py [--db trades.db] [--mode paper]`: closes round
+`scripts/expectancy.py [--db consumer/consumer.trades.db] [--mode paper]`: closes round
 trips from the positions ledger and reports per account + size tier -
 trade count, win rate, avg win, avg loss, expectancy per trade,
 realized total - plus a best-effort slippage section (alert premium vs
@@ -203,12 +203,14 @@ trading:
     full:   { risk_pct_max: 10.0, contracts_min: 1, contracts_max: 8, stop_loss_pct: 25 }
 
 wealthsimple:
-  accounts:
+  accounts:                     # add these from the dashboard settings
     - label: RRSP
+      type: non_margin          # registered plan - no borrowing
       risk_per_trade_pct: 5        # 850 budget/trade: 1-8 contracts by premium
       max_contracts_per_trade: 8
       max_open_risk_pct: 30        # ~5.1k deployed max
     - label: Margin
+      type: margin
       risk_per_trade_pct: 15       # 150 budget: covers 1 contract up to ~1.50
       max_contracts_per_trade: 1
       max_open_risk_pct: 60        # 600 deployed max on a 1k account

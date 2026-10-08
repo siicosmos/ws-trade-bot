@@ -2,8 +2,9 @@
 
 The artifact contains everything a release install needs to run:
 core/, consumer/ (code only - config, tokens and the db are the
-user's), scripts/, run.py, requirements.txt, config.example.yaml
-and a VERSION marker the client updater compares against.
+user's), scripts/, run.py, requirements.txt,
+config/consumer.config.yaml and a VERSION marker the client
+updater compares against.
 
 usage: python scripts/build_consumer_zip.py [output_dir]
 """
@@ -19,8 +20,12 @@ from datetime import datetime, timezone
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # consumer/ files that belong to the user, never to the artifact
+# (both the per-role names and the legacy ones)
 CONSUMER_EXCLUDE = (
-    "config.yaml", "ws_tokens.env", "pipeline_exit.txt",
+    "consumer.config.yaml", "config.yaml", "ws_tokens.env",
+    "pipeline_exit.txt",
+    "consumer.trades.db", "consumer.trades.db-shm",
+    "consumer.trades.db-wal",
     "trades.db", "trades.db-shm", "trades.db-wal",
 )
 EXCLUDE_DIRS = {"__pycache__", ".update_staging", ".update_backup"}
@@ -40,8 +45,8 @@ def short_sha():
     sha = os.environ.get("GITHUB_SHA", "")
     if sha:
         return sha[:8]
-    r = _git("rev-parse", "--short", "HEAD")
-    return r.stdout.strip() if r.returncode == 0 else "unknown"
+    r = _git("rev-parse", "HEAD")
+    return r.stdout.strip()[:8] if r.returncode == 0 else "unknown"
 
 
 def repo_slug():
@@ -86,10 +91,12 @@ def collect():
                 rel = os.path.relpath(full, ROOT).replace(os.sep, "/")
                 if include_file(rel):
                     files.append((full, rel))
-    for name in ("run.py", "requirements.txt", "config.example.yaml"):
+    for name in ("run.py", "requirements.txt",
+                 os.path.join("config", "consumer.config.yaml")):
         full = os.path.join(ROOT, name)
         if os.path.exists(full):
-            files.append((full, name))
+            rel = name.replace(os.sep, "/")
+            files.append((full, rel))
     return files
 
 

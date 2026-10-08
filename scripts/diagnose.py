@@ -42,7 +42,7 @@ def main():
     config_path = os.path.join(ROOT, "config.yaml")
     if not os.path.exists(config_path):
         result(FAIL, "config.yaml exists",
-               "run: copy config.example.yaml config.yaml")
+               "run: copy config/consumer.config.yaml config.yaml")
         print("\ncreate config.yaml first, then rerun")
         sys.exit(1)
 
@@ -60,15 +60,16 @@ def main():
         result(FAIL, "config.yaml loads", f"{type(e).__name__}: {e}")
         sys.exit(1)
 
-    db_path = os.path.join(ROOT, "trades.db")
+    db_path = os.path.join(ROOT, "consumer", "consumer.trades.db")
     try:
         from core.store import Store
 
         Store(db_path)
-        result(OK, "trades.db opens (schema/migrations ok)")
+        result(OK, "consumer.trades.db opens (schema/migrations ok)")
     except Exception as e:
         exit_code = 1
-        result(FAIL, "trades.db opens", f"{type(e).__name__}: {e}")
+        result(FAIL, "consumer.trades.db opens",
+               f"{type(e).__name__}: {e}")
 
     port = cfg.pipeline.port
     host = "127.0.0.1"

@@ -1483,7 +1483,7 @@ def test_settings_layout_mirror_and_automation():
     assert "set-paper-mirror" in js[a_start:a_end]
     assert "set-mirror-interval" in js[a_start:a_end]
     # accounts: the last section in the form
-    assert js.index('_section("accounts"') > js.index(
+    assert js.index('_section("accounts') > js.index(
         '_section("discord webhooks'
     )
 
