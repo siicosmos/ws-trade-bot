@@ -328,10 +328,22 @@ function closeSettings() {
 }
 
 function loadSettings() {
-  jget("/api/settings").then(function (s) {
+  return jget("/api/settings").then(function (s) {
     lastSettings = s;
     renderSettings(s);
     setSettingsDirty(false);
+  });
+}
+
+function revertSettings() {
+  // back to the last saved state: re-fetch + re-render, then
+  // flash the confirmation beside the X (consumer parity)
+  loadSettings().then(function () {
+    const msg = document.getElementById("settings-msg");
+    if (msg) {
+      msg.textContent = "Reverted";
+      setTimeout(function () { msg.textContent = ""; }, 1500);
+    }
   });
 }
 

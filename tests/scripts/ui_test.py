@@ -18,13 +18,15 @@ Needs:  chrome/chromium on PATH (or CHROME_BIN=...). Skips
 with a note when no browser is available.
 """
 
+import http.server
 import json
 import os
 import re
 import shutil
 import subprocess
 import sys
-import tempfile
+import threading
+import time
 
 ROOT = os.path.abspath(
     os.path.join(
@@ -148,12 +150,32 @@ PAPER_POSITIONS = {
 HARNESS = r"""
 <script>
 window.__out = [];
+// the output element is created up-front and refreshed on every
+// result - a hang mid-harness still leaves the partial results
+// in the dumped dom
+window.__flush = function() {
+  let pre = document.getElementById("uitest-out");
+  if (!pre) {
+    pre = document.createElement("pre");
+    pre.id = "uitest-out";
+    document.body.appendChild(pre);
+  }
+  pre.textContent = (window.__out || []).join("\n");
+};
 window.__t = function(name, ok, detail) {
   if (detail != null) detail = String(detail)
     .replace(/[\r\n]+/g, " | ");
   window.__out.push(name + "\t" + (ok ? "PASS" : "FAIL") +
     (detail ? "\t" + detail : ""));
+  window.__flush();
+  // progress marker in the title - the dumped dom truncates the
+  // body, the head (and its title) always survives
+  document.title = "uitest[" + window.__out.length + "]:"
+    + name + (ok ? "+ok" : "+FAIL");
 };
+window.addEventListener("error", function(e) {
+  window.__t("window-error", false, e.message);
+});
 (async function() {
   try {
     await load();
@@ -290,14 +312,68 @@ window.__t = function(name, ok, detail) {
     clone.querySelectorAll("script, style").forEach(n => n.remove());
     const page = clone.textContent;
     __t("no-negative-zero", page.indexOf("$-") < 0, "found $-");
+
+    // 10. settings save/revert lifecycle: edit -> dirty -> revert
+    // restores the saved values + shows Reverted; save posts,
+    // re-renders and shows Saved (saveSettings posts with the
+    // raw fetch - stub just that route)
+    const realFetch = window.fetch;
+    window.fetch = function(url, opts) {
+      if (url === "/api/settings" && opts && opts.method === "POST") {
+        return Promise.resolve(new Response(
+          JSON.stringify({status: "ok"}),
+          {status: 200, headers: {"Content-Type": "application/json"}}));
+      }
+      return realFetch.apply(this, arguments);
+    };
+    openSettings();
+    const msg = () => document.getElementById("settings-msg").textContent;
+    // the order-type select carries a valid canned value (the
+    // hostile risk value is rejected by its number input - the
+    // browser blanks it - so it cannot drive an edit cycle)
+    const sel0 = document.getElementById("set-order_type");
+    const original = sel0.value;
+    __t("settings-open-renders",
+        !!sel0 && (original === "market" || original === "limit"),
+        "value=[" + original + "]");
+    __t("hostile-risk-input-blanked",
+        document.getElementById("set-risk_per_trade_pct").value === "",
+        "hostile string must not survive a number input");
+    sel0.value = "limit";
+    sel0.dispatchEvent(new Event("change", {bubbles: true}));
+    __t("settings-edit-dirty",
+        document.getElementById("settings-save").style.display !== "none");
+    document.getElementById("settings-revert").click();
+    await new Promise(r => setTimeout(r, 300));
+    const sel1 = document.getElementById("set-order_type");
+    __t("settings-revert-restores", sel1.value === original,
+        "value=[" + sel1.value + "] want=[" + original + "]");
+    __t("settings-revert-msg", msg() === "Reverted", "msg=" + msg());
+    __t("settings-revert-clears-dirty",
+        document.getElementById("settings-save").style.display === "none");
+    sel1.value = "limit";
+    sel1.dispatchEvent(new Event("change", {bubbles: true}));
+    document.getElementById("settings-save").click();
+    await new Promise(r => setTimeout(r, 400));
+    const sel2 = document.getElementById("set-order_type");
+    __t("settings-save-rerenders", sel2.value === original,
+        "value=[" + sel2.value + "] want=[" + original + "]");
+    __t("settings-save-msg", msg() === "Saved", "msg=" + msg());
   } catch (e) {
     __t("harness-error", false, e.message + " | " + e.stack);
   }
 
-  const pre = document.createElement("pre");
-  pre.id = "uitest-out";
-  pre.textContent = (window.__out || []).join("\n");
-  document.body.appendChild(pre);
+  window.__flush();
+  // the dumped dom truncates on a long page - the reliable
+  // result channel is a POST back to the harness server
+  try {
+    await fetch("/results", {
+      method: "POST",
+      body: JSON.stringify(window.__out),
+    });
+    __t("results-posted", true);
+    window.__flush();
+  } catch (e) { /* the dumped dom is the fallback */ }
 })();
 </script>
 """
@@ -385,14 +461,65 @@ def build_page():
         '<link rel="stylesheet" href="/static/dashboard.css">',
         "<style>\n" + DASHBOARD_CSS + "\n</style>",
     ).replace(
-        '<script src="/static/dashboard.js"></script>',
+        '<script src="/static/dashboard.js" defer></script>',
         "<script>\n" + js + "\n</script>",
     )
-    if '<script src="/static/dashboard.js">' in html:
+    if '<script src="/static/dashboard.js"' in html:
         raise RuntimeError("static script tag not inlined")
     if '"mode": "notify"' not in html:
         raise RuntimeError("canned data missing from page")
     return html.replace("</body>", HARNESS + "</body>")
+
+
+def _wsl():
+    try:
+        with open("/proc/version", encoding="utf-8") as f:
+            return "microsoft" in f.read().lower()
+    except OSError:
+        return False
+
+
+def _file_url(path):
+    # a windows chrome.exe (wsl) cannot open a wsl /tmp path -
+    # translate a /mnt/<drive>/... path to a drive-letter url
+    if _wsl() and path.startswith("/mnt/"):
+        drive, rest = path[5], path[6:]
+        return "file:///{}/:{}".format(drive.upper(), rest)
+    return "file://" + path
+
+
+def _win_temp():
+    # the windows %TEMP% path (and its /mnt view) - empty when the
+    # windows side cannot be reached
+    p = subprocess.run(
+        ["powershell.exe", "-NoProfile", "-Command",
+         "[IO.Path]::GetTempPath()"],
+        capture_output=True, text=True, timeout=60,
+    )
+    win = p.stdout.strip().rstrip("\\")
+    if not win or not win[1:2] == ":":
+        return "", None
+    drive, rest = win[0].lower(), win[3:].replace("\\", "/")
+    return win, "/mnt/{}/{}".format(drive, rest)
+
+
+def _write_win_file(win_path, data):
+    # the page must be written BY a windows process: a file created
+    # from wsl on a /mnt mount races the 9p metadata sync and the
+    # windows chrome intermittently fails it with
+    # ERR_FILE_NOT_FOUND. the payload travels base64 (pure ascii -
+    # a raw utf-8 stdin gets mojibake'd by the console decoder,
+    # which swallows bytes inside js strings and breaks the page)
+    import base64
+    p = subprocess.run(
+        ["powershell.exe", "-NoProfile", "-Command",
+         '$b64 = [Console]::In.ReadToEnd();'
+         '[IO.File]::WriteAllBytes(\'' + win_path + '\','
+         '[Convert]::FromBase64String($b64))'],
+        input=base64.b64encode(data).decode("ascii"),
+        capture_output=True, text=True, timeout=120,
+    )
+    return p.returncode == 0
 
 
 def main():
@@ -402,37 +529,92 @@ def main():
         return 0
 
     page = build_page()
-    tmp = tempfile.NamedTemporaryFile(
-        "w", suffix=".html", delete=False, encoding="utf-8"
+    page_bytes = page.encode("utf-8")
+    # served over loopback http - the page runs as it does in
+    # production. the harness posts its results back to /results:
+    # the dumped dom truncates on a page this size and is only
+    # the fallback
+    collected = []
+    server_errors = []
+
+    def do_POST(self):
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+            body = self.rfile.read(length).decode("utf-8")
+            collected.append(body)
+            self.send_response(200)
+            self.send_header("Content-Length", "2")
+            self.end_headers()
+            self.wfile.write(b"ok")
+        except Exception as e:   # surfaced in the diagnostics
+            server_errors.append(str(e))
+
+    handler = type(
+        "H", (http.server.BaseHTTPRequestHandler,),
+        {
+            "do_GET": lambda self: (
+                self.send_response(200),
+                self.send_header("Content-Type", "text/html"),
+                # byte length - a char length truncates the utf-8
+                # body and the harness script at its end never runs
+                self.send_header("Content-Length", str(len(page_bytes))),
+                self.end_headers(),
+                self.wfile.write(page_bytes),
+            ),
+            "do_POST": do_POST,
+            "log_message": lambda self, *a: None,
+        },
     )
-    tmp.write(page)
-    tmp.close()
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    port = server.server_address[1]
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
 
     try:
-        proc = subprocess.run(
-            [
-                chrome, "--headless=new", "--disable-gpu",
-                "--no-sandbox", "--virtual-time-budget=8000",
-                "--dump-dom", "file://" + tmp.name,
-            ],
-            capture_output=True, text=True, timeout=120,
-        )
+        # the wsl->windows loopback forward for a freshly bound
+        # port takes a moment to come up - retry before giving up
+        for attempt in range(6):
+            collected.clear()
+            proc = subprocess.run(
+                [
+                    chrome, "--headless=new", "--disable-gpu",
+                    "--no-sandbox", "--virtual-time-budget=8000",
+                    "--dump-dom", f"http://127.0.0.1:{port}/",
+                ],
+                capture_output=True, text=True, timeout=120,
+            )
+            if collected or 'id="uitest-out">' in proc.stdout:
+                break
+            time.sleep(1)
     finally:
-        os.unlink(tmp.name)
+        server.shutdown()
 
-    m = re.search(
-        r'<pre id="uitest-out">(.*?)</pre>', proc.stdout, re.S
-    )
-    if not m:
-        print("FAIL: harness output missing")
-        print(proc.stdout[-2000:])
-        print(proc.stderr[-2000:])
-        return 1
+    raw = None
+    if collected:
+        try:
+            raw = json.loads(collected[-1])
+        except ValueError:
+            raw = None
+    if raw is None:
+        m = re.search(
+            r'<pre id="uitest-out">(.*?)</pre>', proc.stdout, re.S
+        )
+        if not m:
+            print("FAIL: harness output missing")
+            if server_errors:
+                print("server errors:", server_errors[-3:])
+            print(proc.stdout[-1500:])
+            print(proc.stderr[-500:])
+            return 1
+        raw = m.group(1)
 
+    lines = raw if isinstance(raw, list) else raw.splitlines()
     failures = 0
-    for line in m.group(1).strip().splitlines():
-        if not line.strip():
+    for line in lines:
+        if not isinstance(line, str) or not line.strip():
             continue
+        if line.startswith("results-posted"):
+            continue   # harness plumbing, not a test
         parts = line.split("\t")
         if len(parts) < 2:
             continue   # stray continuation text, not a result
@@ -444,7 +626,7 @@ def main():
             failures += 1
             print(f"  FAIL  {name}  {detail}")
 
-    total = m.group(1).strip().count("\n") + 1
+    total = len(lines)
     print(f"\nUI RESULT: {total - failures} passed, {failures} failed")
     return 1 if failures else 0
 
