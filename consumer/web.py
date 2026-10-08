@@ -13,7 +13,7 @@ from flask import Flask, Response, g, jsonify, redirect, request, session
 
 from consumer.ws.account_types import REGISTERED_ACCOUNT_TYPES
 from consumer.dashboard import (
-    LOGIN_HTML, DASHBOARD_CSS, DASHBOARD_HTML,
+    LOGIN_HTML, DASHBOARD_CSS, dashboard_html,
 )
 from consumer.pipeline import process_alert
 from core.store import Store
@@ -1172,17 +1172,18 @@ def create_app(cfg, store: Store, risk, executor, account=None,
         # fewer on the critical path and the layout (the reserved
         # trade-log block especially) is painted before the js
         # pulls data - the load-time layout shift shrinks to the
-        # first-paint frame. composed once per process; an update
-        # restarts the pipeline, which recomposes it
+        # first-paint frame. re-read when the file changed on
+        # disk so a code update never serves an old page with
+        # new js
         html = _dashboard_cache["html"]
-        if not html:
-            html = DASHBOARD_HTML.replace(
-                '<link rel="stylesheet" href="/static/dashboard.css">',
-                "<style>\n" + DASHBOARD_CSS + "\n</style>",
-                1,
-            )
-            _dashboard_cache["html"] = html
-        return app.response_class(html, mimetype="text/html")
+        current = dashboard_html().replace(
+            '<link rel="stylesheet" href="/static/dashboard.css">',
+            "<style>\n" + DASHBOARD_CSS + "\n</style>",
+            1,
+        )
+        if html != current:
+            _dashboard_cache["html"] = current
+        return app.response_class(current, mimetype="text/html")
 
     @app.get("/static/dashboard.css")
     def shared_css():

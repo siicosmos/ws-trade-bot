@@ -24,6 +24,25 @@ def _read(name, root=None):
 
 DASHBOARD_HTML = _read("dashboard.html")
 DASHBOARD_CSS = _read("dashboard.css", _CORE_STATIC)
+
+_html_mtime = None
+
+
+def dashboard_html():
+    """The dashboard html, re-read when the file changed on
+    disk - a release swap (or a git pull on a shared checkout)
+    must not leave the served page older than the js it ships
+    with (the old page lacks the new markup and the new js
+    errors against it)."""
+    global _html_mtime, DASHBOARD_HTML
+    try:
+        mtime = os.path.getmtime(os.path.join(_STATIC, "dashboard.html"))
+    except OSError:
+        mtime = None
+    if _html_mtime != mtime:
+        _html_mtime = mtime
+        DASHBOARD_HTML = _read("dashboard.html")
+    return DASHBOARD_HTML
 DASHBOARD_JS = _read("dashboard.js")
 
 # the login page is shared with the info server (core.web_common)

@@ -27,7 +27,7 @@ from flask import Flask, Response, jsonify, request
 
 from core.store import Store
 from core.web_common import install_gzip, install_quiet_filter
-from .dashboard import INFO_CSS, INFO_HTML
+from .dashboard import INFO_CSS, info_html
 from .ingest import ingest_alert
 
 
@@ -83,16 +83,17 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
     @app.get("/")
     def info_page():
         # the stylesheet is inlined into the head (same pattern
-        # as the consumer dashboard)
-        html = _page_cache["html"]
-        if not html:
-            html = INFO_HTML.replace(
-                '<link rel="stylesheet" href="/static/dashboard.css">',
-                "<style>\n" + INFO_CSS + "\n</style>",
-                1,
-            )
-            _page_cache["html"] = html
-        return app.response_class(html, mimetype="text/html")
+        # as the consumer dashboard); the html re-reads when the
+        # file changed on disk so an update never serves an old
+        # page with new js
+        current = info_html().replace(
+            '<link rel="stylesheet" href="/static/dashboard.css">',
+            "<style>\n" + INFO_CSS + "\n</style>",
+            1,
+        )
+        if _page_cache["html"] != current:
+            _page_cache["html"] = current
+        return app.response_class(current, mimetype="text/html")
 
     @app.get("/static/dashboard.css")
     def shared_css():
