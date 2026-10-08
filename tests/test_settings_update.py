@@ -1376,3 +1376,54 @@ def test_paper_card_metrics_include_usd_cash():
     store.reset_paper_account("T")
     assert store.paper_cash_usd("T") is None
     assert store.paper_equity("T") is None
+
+
+def test_paper_adjust_switches_holding_type():
+    # the adjust editor replaces the holdings wholesale - a row
+    # can switch between option and stock between applies
+    store = _fresh_store()
+    cfg = ConfigStub(TradingConfig(mode="paper"), auth_token="t")
+    account = PaperAccount(cfg, store)
+    from consumer.trading.executor import PaperExecutor
+
+    executor = PaperExecutor(cfg, store, account)
+    app = __import__(
+        "consumer.web", fromlist=["create_app"]
+    ).create_app(cfg, store, RiskEngine(cfg, store, account),
+                 executor, account)
+    client = app.test_client()
+    client.post("/login", data={
+        "username": "", "password": "t"}, follow_redirects=False)
+
+    r = client.post("/api/paper-adjust", json={
+        "label": "T",
+        "holdings": [{"underlying": "SPX", "expiry": "2026-10-16",
+                      "strike": 7620, "right": "C", "qty": 2,
+                      "avg": 1.25}],
+    })
+    assert r.status_code == 200
+    assert [p["contract_key"] for p in
+            store.list_positions("paper", "T")] == [
+        "SPX-2026-10-16-7620-C"]
+
+    # the same holding switched to a stock row (symbol + qty)
+    r = client.post("/api/paper-adjust", json={
+        "label": "T",
+        "holdings": [{"underlying": "SPX", "qty": 2, "avg": 1.25}],
+    })
+    assert r.status_code == 200
+    rows = store.list_positions("paper", "T")
+    assert [p["contract_key"] for p in rows] == ["SPX"]
+    assert rows[0]["right"] in (None, "", "?")
+
+    # and back to an option (a put this time)
+    r = client.post("/api/paper-adjust", json={
+        "label": "T",
+        "holdings": [{"underlying": "SPX", "expiry": "2026-10-16",
+                      "strike": 7620, "right": "P", "qty": 2,
+                      "avg": 1.25}],
+    })
+    assert r.status_code == 200
+    assert [p["contract_key"] for p in
+            store.list_positions("paper", "T")] == [
+        "SPX-2026-10-16-7620-P"]

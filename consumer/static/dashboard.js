@@ -246,6 +246,8 @@ function openPaperSettings(label) {
       esc(h.contract_key || h.underlying || "new holding") + '</span>' +
       '<button type="button" class="mini-toggle" data-remove="1">remove</button></div>' +
       '<div class="acct-grid">' +
+      '<div class="set-field"><label>type</label><label style="display:flex;gap:6px;align-items:center;font-size:12px;color:var(--muted)">' +
+      '<input type="checkbox" class="padj-h-isopt"' + (isOpt ? " checked" : "") + '> option</label></div>' +
       (isOpt
         ? _txtField("padj-h-underlying", "underlying", h.underlying || "", "", "", true) +
           _txtField("padj-h-expiry", "expiry (yyyy-mm-dd)", h.expiry || "", "", "", true) +
@@ -259,48 +261,34 @@ function openPaperSettings(label) {
       _numField("padj-h-avg", "avg price", h.avg, "", "") +
       '</div>';
     div.querySelector("[data-remove]").onclick = function() { div.remove(); };
+    // the type switch rebuilds the row in place (same position,
+    // handlers re-wired) keeping the typed values
+    div.querySelector(".padj-h-isopt").onchange = function() {
+      const get = (sfx) => {
+        const el = div.querySelector("[id$='-" + sfx + "']");
+        return el ? el.value : "";
+      };
+      const h2 = {
+        underlying: (get("underlying") || "").trim().toUpperCase(),
+        expiry: get("expiry") || "",
+        strike: parseFloat(get("strike")) || null,
+        qty: parseInt(get("qty")) || 1,
+        avg: parseFloat(get("avg")) || null,
+        right: this.checked ? (h.right || "C") : null,
+        contract_key: this.checked ? "new option" : "new stock",
+      };
+      div.replaceWith(holdingRow(h2));
+    };
     return div;
   }
   rows.forEach(function(h) { list.appendChild(holdingRow(h)); });
 
   document.getElementById("padj-add").onclick = function() {
-    const row = holdingRow({
+    list.appendChild(holdingRow({
       underlying: "", expiry: "", strike: null,
       right: "C", qty: 1, avg: null,
       contract_key: "new holding",
-    });
-    // a new row starts as an option; unticking converts it to a
-    // stock holding (symbol + qty + avg only)
-    const sel = row.querySelector(".padj-h-right");
-    const optToggle = document.createElement("label");
-    optToggle.style.cssText =
-      "display:flex;gap:6px;align-items:center;font-size:12px;color:var(--muted)";
-    optToggle.innerHTML =
-      '<input type="checkbox" class="padj-h-isopt" checked> option';
-    sel.parentElement.insertBefore(optToggle, sel);
-    optToggle.querySelector("input").onchange = function() {
-      const h2 = {
-        underlying: (row.querySelector("[id$='-underlying']") || {}).value || "",
-        expiry: (row.querySelector("[id$='-expiry']") || {}).value || "",
-        strike: parseFloat((row.querySelector("[id$='-strike']") || {}).value) || null,
-        qty: parseInt((row.querySelector("[id$='-qty']") || {}).value) || 1,
-        avg: parseFloat((row.querySelector("[id$='-avg']") || {}).value) || null,
-        right: this.checked ? "C" : null,
-        contract_key: this.checked ? "new option" : "new stock",
-      };
-      row.remove();
-      list.appendChild(holdingRow(h2));
-      const rebuilt = list.lastElementChild;
-      if (!this.checked) {
-        const s2 = rebuilt.querySelector(".padj-h-right");
-        const t2 = document.createElement("label");
-        t2.style.cssText = optToggle.style.cssText;
-        t2.innerHTML = '<input type="checkbox" class="padj-h-isopt"> option';
-        s2.parentElement.insertBefore(t2, s2);
-        t2.querySelector("input").onchange = this.onchange;
-      }
-    };
-    list.appendChild(row);
+    }));
   };
 
   document.getElementById("padj-reset").onclick = function() {

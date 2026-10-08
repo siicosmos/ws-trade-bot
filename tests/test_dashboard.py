@@ -1694,3 +1694,21 @@ def test_position_tp_endpoint():
     )
     assert r_clear.status_code == 200
     assert store.list_positions("paper")[0]["tp_gain_pct"] is None
+
+
+def test_paper_adjust_type_switch_and_cash_pools():
+    import consumer.dashboard as dash
+
+    js = dash.DASHBOARD_JS
+    # the option/stock toggle lives in the row renderer itself and
+    # rebuilds the row in place - the old inline re-wiring lost
+    # the toggle state after the first switch
+    assert 'class="padj-h-isopt"' in js
+    assert "div.replaceWith(holdingRow(h2))" in js
+    assert "optToggle" not in js
+    # the row-data reader handles both types (option fields only
+    # when the toggle is checked)
+    assert "padj-h-isopt" in js.split("_padjHoldingsRowData")[1]
+    # the card's cash line renders both pools natively
+    assert "a.paper_cash_usd" in js
+    assert 'fmtMoney(Math.max(0, a.paper_cash_usd)) + " usd"' in js
