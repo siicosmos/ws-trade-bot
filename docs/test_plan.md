@@ -64,8 +64,6 @@ Conventions for every manual step below:
 
 #### M-1.1 — Start each role once from its config (`consumer/consumer.config.yaml`, `info/info.config.yaml`) and confirm the dashboard + role dispatch work.
 
-- [ ] done
-
 **Steps:**
 
 1. Start the info server: `scripts\start_info.bat`.
@@ -123,8 +121,6 @@ Conventions for every manual step below:
 
 #### M-2.1 — On the live box: stop both apps, confirm the per-role dbs exist, restart via the `.bat`s, and confirm the dashboards still show full history (no fresh empty db).
 
-- [ ] done
-
 **Steps:**
 
 1. Stop both apps (close the launcher windows or
@@ -162,8 +158,6 @@ Conventions for every manual step below:
 
 #### M-3.1 — Consumer (git checkout, live box): start it, watch `consumer.log` for the release seeding and the absence of git operations.
 
-- [ ] done
-
 **Steps:**
 
 1. `scripts\start_consumer.bat`.
@@ -181,8 +175,6 @@ Conventions for every manual step below:
    ```
 
 #### M-3.2 — Info server: confirm it still logs the git-poll cycle and pulls on a new push to main.
-
-- [ ] done
 
 **Steps:**
 
@@ -222,8 +214,6 @@ Conventions for every manual step below:
 
 #### M-4.1 — End-to-end self-update: push a trivial commit to main → CI publishes `consumer-latest` → the consumer self-updates. Confirm config/db/webhooks survived.
 
-- [ ] done
-
 **Steps:**
 
 1. Push a trivial commit (`touch docs/x.md`) to main and
@@ -245,8 +235,6 @@ Conventions for every manual step below:
 
 #### M-4.2 — Checksum tamper: confirm the published zip matches its SHA256SUMS (the tamper-abort path itself is automated).
 
-- [ ] done
-
 **Steps:**
 
 1. Download `consumer-<sha>.zip` + `SHA256SUMS` from the
@@ -257,8 +245,6 @@ Conventions for every manual step below:
    ```
 
 #### M-4.3 — Private-repo token: with `github_token` unset, the poll fails gracefully; with a read-only token set it succeeds.
-
-- [ ] done
 
 **Steps:**
 
@@ -271,8 +257,6 @@ Conventions for every manual step below:
 3. Restore the token, restart, confirm `up to date`.
 
 #### M-4.4 — Poll-during-publish race: while CI recreates the release, a poll may see a 404 — confirm it logs and retries next cycle without restarting.
-
-- [ ] done
 
 **Steps:**
 
@@ -313,7 +297,6 @@ Run them directly:
 
 #### M-5.1 — Push a docs-only commit: info server pulls, posts "Info server updated (no restart)", keeps running. Then verify the update record followed the pull:
 
-- [ ] done
 
 ```powershell
 Get-Content .last_update.json | ConvertFrom-Json
@@ -328,7 +311,6 @@ commit - `test_check_once_records_no_restart_pull`.)
 
 #### M-5.2 — Push an `info/*` commit: pulls, posts "Info server restarting", restarts, banner shows the new commit. Confirm in `logs\info.log`:
 
-- [ ] done
 
 ```powershell
 Select-String "auto-update|starting" logs\info.log | Select-Object -Last 5
@@ -338,8 +320,6 @@ Select-String "auto-update|starting" logs\info.log | Select-Object -Last 5
 ```
 
 #### M-5.3 — Discord: confirm the embed titles match the role (no more "Pipeline restarting") for info + consumer.
-
-- [ ] done
 
 **Steps:**
 
@@ -351,8 +331,6 @@ Select-String "auto-update|starting" logs\info.log | Select-Object -Last 5
    also post there).
 
 #### M-5.4 — Info dashboard write routes are token-guarded (automated in `test_roles.py::test_info_write_routes_are_token_guarded`).
-
-- [ ] done
 
 **Steps:**
 
@@ -373,7 +351,6 @@ Select-String "auto-update|starting" logs\info.log | Select-Object -Last 5
 
 #### M-5.5 — Dashboard git badge: open the info dashboard and confirm the badge shows the current head and the `last_pull` timestamp matches the record (`Get-Content .last_update.json`).
 
-- [ ] done
 
 
 ## 6. Reader (rides the info pull)
@@ -390,8 +367,6 @@ by stubs (`test_reader.py` timing tests).
 
 #### M-6.1 — Push a `reader/*` commit → info server pulls → the reader restarts into the new code.
 
-- [ ] done
-
 **Steps:**
 
 1. Push a `reader/*` commit; wait for the info server's
@@ -407,8 +382,6 @@ by stubs (`test_reader.py` timing tests).
 
 #### M-6.2 — Push a docs-only commit → the reader stays up.
 
-- [ ] done
-
 **Steps:**
 
 1. Push a docs-only commit; wait one reader cycle.
@@ -418,8 +391,6 @@ by stubs (`test_reader.py` timing tests).
    ```
 
 #### M-6.3 — Edit `reader/reader.config.yaml` while running → reader restarts to apply it.
-
-- [ ] done
 
 **Steps:**
 
@@ -466,8 +437,6 @@ only for the read-only checks shown.
 
 #### M-7.1 — Settings modal: add an account row (label, id, type=non_margin), save, restart, confirm the account card appears and sizing uses it.
 
-- [ ] done
-
 **Steps:**
 
 1. Dashboard → settings → accounts → + add: label, account
@@ -487,8 +456,6 @@ only for the read-only checks shown.
 
 #### M-7.2 — Remove an account, save, restart — card gone, ledger rows still in the db.
 
-- [ ] done
-
 **Steps:**
 
 1. Settings → remove the test account → save → restart.
@@ -499,8 +466,6 @@ only for the read-only checks shown.
    ```
 
 #### M-7.3 — Margin behavior: the margin account shows a real margin breakdown; the RRSP (non_margin) suppresses it — also confirm an explicit `type` overrides what the WS API reports (set RRSP to `margin` temporarily and watch the card flip, then set it back).
-
-- [ ] done
 
 **Steps:**
 
@@ -513,14 +478,10 @@ only for the read-only checks shown.
 
 #### M-7.4 — Label immutability: existing accounts show no label field in settings (ledgers key on label); only new rows accept one.
 
-- [ ] done
-
 **Steps:** open the settings modal — existing rows expose
 id/type/enabled but no label input; a new row has one.
 
 #### M-7.5 — Paper ⚙ settings: the reset + resize confirm flows still work from the popup; the adjust editor loads the current cash pools + holdings, edits apply (card value moves), a removed holding disappears, an added option row (symbol/expiry/strike/right/qty/avg) prices on the next poll.
-
-- [ ] done
 
 **Steps:**
 
@@ -534,8 +495,6 @@ id/type/enabled but no label input; a new row has one.
    it prices within one `positions_refresh_seconds` poll.
 
 #### M-7.6 — Add a real account in settings, restart the consumer, confirm the new paper account is seeded (automated in test_pipeline; verify the live flow once).
-
-- [ ] done
 
 **Steps:**
 
@@ -564,8 +523,6 @@ id/type/enabled but no label input; a new row has one.
 
 #### M-8.1 — After each push: the `consumer-latest` tag moves to the new sha, the release has exactly one `consumer-<sha>.zip` + `SHA256SUMS`, and the zip passes the checksum.
 
-- [ ] done
-
 **Steps:**
 
 1. ```powershell
@@ -581,8 +538,6 @@ id/type/enabled but no label input; a new row has one.
    ```
 
 #### M-8.2 — Unzip a fresh artifact into a temp dir and run `install_consumer.bat` on a clean Windows box (or a new folder): venv created, `consumer/consumer.config.yaml` seeded, app starts against the info server.
-
-- [ ] done
 
 **Steps:**
 
@@ -603,8 +558,6 @@ id/type/enabled but no label input; a new row has one.
 
 #### M-9.1 — `start_consumer.bat` / `start_info.bat`: a missing per-role config prints the copy hint and pauses.
 
-- [ ] done
-
 **Steps:**
 
 1. ```powershell
@@ -616,8 +569,6 @@ id/type/enabled but no label input; a new row has one.
    and start normally.
 
 #### M-9.2 — Crash loop: kill the python process — the loop restarts in 5s, writes `pipeline_exit.txt`, and the next start surfaces "previous run: ...".
-
-- [ ] done
 
 **Steps:**
 
@@ -637,8 +588,6 @@ id/type/enabled but no label input; a new row has one.
    ```
 
 #### M-9.3 — With a staged update pending, the launcher runs `apply_update.py` before relaunching and the app comes up on the new release (overlaps M-4.1).
-
-- [ ] done
 
 **Steps:**
 
@@ -673,8 +622,6 @@ id/type/enabled but no label input; a new row has one.
 
 #### M-10.1 — Run both scripts after any updater/config/accounts change.
 
-- [ ] done
-
 **Steps:**
 
 1. ```powershell
@@ -685,8 +632,6 @@ id/type/enabled but no label input; a new row has one.
    `UI RESULT: 31 passed, 0 failed`.
 
 #### M-10.2 — Notify-mode smoke on the live box: one alert flows reader → info → consumer → Discord embed, ledger row recorded, dashboard shows it.
-
-- [ ] done
 
 **Steps:**
 
@@ -730,8 +675,6 @@ id/type/enabled but no label input; a new row has one.
 **Manual**
 
 #### M-11.1 — On the live box: log in as the seeded admin (the token as password), change the admin password from the users modal, restart, confirm the new password works and the old one does not.
-
-- [ ] done
 
 **Steps:**
 
