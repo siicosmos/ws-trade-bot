@@ -2035,7 +2035,15 @@ function applyDashboard(data) {
   renderPositions(data.positions || []);
   renderSignals(data.signals || []);
   renderTrades(data.trades || []);
-  renderSettings(data.settings || {});
+  // the settings form re-renders on open only - a poll-driven
+  // re-render while the modal is open wipes unsaved edits and
+  // freshly added account rows (they vanish seconds after the
+  // + add click)
+  if (
+    document.getElementById("settingsBackdrop").style.display !== "flex"
+  ) {
+    renderSettings(data.settings || {});
+  }
   gitStatus = data.update_status || null;
   renderGitStatus(gitStatus);
   lastRefresh = Date.now();

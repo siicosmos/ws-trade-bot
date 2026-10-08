@@ -23,7 +23,7 @@ def test_consumer_example_role_and_defaults():
     cfg = _load("consumer.config.yaml")
     # the section key IS the role - no explicit role: field needed
     assert cfg.pipeline.role == "consumer"
-    assert cfg.pipeline.port == 8081
+    assert cfg.pipeline.port == 8080
     assert cfg.quotes.enabled is False
     assert cfg.trading.skip_underlyings == []
     assert cfg.auto_update.enabled is True
@@ -59,7 +59,7 @@ def test_consumer_example_ships_no_secrets():
 def test_info_example_role_and_no_trading_sections():
     cfg = _load("info.config.yaml")
     assert cfg.pipeline.role == "info"
-    assert cfg.pipeline.port == 8080
+    assert cfg.pipeline.port == 8081
     # sections that do not apply to the info role stay defaulted
     assert cfg.trading.mode == "notify"
     assert cfg.wealthsimple.accounts == []

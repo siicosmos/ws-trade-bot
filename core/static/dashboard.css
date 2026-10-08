@@ -174,6 +174,12 @@
   }
   .pos { font-size: 12px; min-width: 620px; }
   .pos th, .pos td { padding: 6px 5px; white-space: nowrap; }
+  /* wide tables scroll inside their card instead of pushing the
+     page past the screen edge (the info dashboard's consumer
+     section on a phone) */
+  .pos-scroll {
+    overflow-x: auto; -webkit-overflow-scrolling: touch;
+  }
   /* the account and contract columns are the ones allowed to
      wrap - labels, keys and strategy tags grow long; the rest
      stay on one line */

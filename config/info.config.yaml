@@ -15,7 +15,7 @@
 # ---------------------------------------------------------------------------
 info:
   host: "0.0.0.0"            # what to bind to; 127.0.0.1 = this PC only
-  port: 8080                 # the reader posts here (reader.pipeline_url)
+  port: 8081                 # the reader posts here (reader.pipeline_url); the consumer owns 8080
   auth_token: ""             # the reader's credential + dashboard password.
                              # REQUIRED if host is not localhost (server
                              # refuses to start otherwise).

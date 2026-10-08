@@ -105,7 +105,7 @@ All wrapped by `core/ops/supervise.py` (crash → log + Discord notice
    (`.reader_seen.json` in the reader folder) + reaction-prefix detection, filters by the
    `reader.channels` allowlist.
 3. **Delivery to the info server** — each new message is POSTed to
-   `reader.pipeline_url` (default `http://localhost:8080/alert`) as
+   `reader.pipeline_url` (default `http://localhost:8081/alert`) as
    JSON `{text, author, ts, parsed_ts, channel}` with header
    `X-Auth-Token: <reader.auth_token>` (must match the info server's
    `info.auth_token`). Messages count as seen only after a 2xx;
@@ -392,7 +392,7 @@ the role's config; the rest needs a restart.
 The web-server section is named for the role (`consumer:` in the
 consumer config, `info:` in the info config — legacy configs use
 `pipeline:` with an explicit `role:` field, still loaded):
-`host` (0.0.0.0), `port` (8080), `auth_token` (**required**
+`host` (0.0.0.0), `port` (8080 default), `auth_token` (**required**
 when binding non-localhost — the server refuses to start otherwise;
 the dashboard password and the reader's credential),
 `tls_cert`/`tls_key` (empty = plain HTTP).
@@ -507,16 +507,16 @@ ws-trade-bot/
    pulls — consumer-only machines don't need it, they follow the
    GitHub release channel with a token instead).
 2. **Role configs** (once): copy `config/info.config.yaml` to
-   `info/info.config.yaml` (port 8080 is already set — add an
+   `info/info.config.yaml` (port 8081 is already set — add an
    `auth_token` and register consumers under `consumers[]`) and
    `config/consumer.config.yaml` to `consumer/consumer.config.yaml`
-   (port 8081 is already set — add an `auth_token`, a `feed:`
+   (port 8080 is already set — add an `auth_token`, a `feed:`
    section pointing at the info server, and your
    `wealthsimple.accounts[]`).
 3. **Info server**: `scripts\start_info.bat` — the reader keeps posting to
-   `:8080` unchanged.
+   `:8081` unchanged.
 4. **Your consumer app**: `scripts\start_consumer.bat` — dashboard on
-   `http://127.0.0.1:8081` (expose via Tailscale for phone access).
+   `http://127.0.0.1:8080` (expose via Tailscale for phone access).
 5. **Wealthsimple login** (consumer): `python scripts/ws_login.py` —
    stores tokens in the Windows keyring (primary) plus a gitignored
    `consumer/ws_tokens.env` fallback, and prints account IDs for
@@ -526,9 +526,9 @@ ws-trade-bot/
    `--force-renderer-accessibility`).
 7. **HTTPS + remote access**: Tailscale Serve proxies each
    dashboard with a valid tailnet cert — no cert management:
-   `tailscale serve --bg http://127.0.0.1:8081` (consumer, on
+   `tailscale serve --bg http://127.0.0.1:8080` (consumer, on
    443) and, on a second port, `tailscale serve --bg
-   --https=8443 http://127.0.0.1:8080` (info). 
+   --https=8443 http://127.0.0.1:8081` (info). 
    `scripts/gen_cert.py` provides self-signed certs for the
    apps' own TLS mode instead.
 8. **moomoo (optional)**: install OpenD on a consumer machine and set

@@ -34,7 +34,7 @@ paper:
 # ---------------------------------------------------------------------------
 consumer:
   host: "0.0.0.0"            # what to bind to; 127.0.0.1 = this PC only
-  port: 8081                 # the info server owns 8080 - use 8081 here
+  port: 8080                 # the info server runs on 8081
   auth_token: ""             # dashboard + alert password. REQUIRED if host is
                              # not localhost (server refuses to start otherwise).
                              # generate: python -c "import secrets; print(secrets.token_urlsafe(24))"
