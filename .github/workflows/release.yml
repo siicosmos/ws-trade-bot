@@ -1,0 +1,33 @@
+name: release-consumer
+
+# rolling consumer client release: rebuilt on every push to main,
+# the client updater polls /releases/latest for the new asset
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build consumer zip
+        run: python scripts/build_consumer_zip.py dist
+
+      - name: Publish rolling release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # recreate the release so /releases/latest always has
+          # exactly the newest asset (a client polling during the
+          # gap sees a 404 and retries next cycle)
+          gh release delete consumer-latest --cleanup-tag -y || true
+          gh release create consumer-latest \
+            --title "consumer-latest" \
+            --notes "Automated consumer client build of ${GITHUB_SHA::8}" \
+            --target "$GITHUB_SHA" \
+            dist/consumer-*.zip dist/SHA256SUMS

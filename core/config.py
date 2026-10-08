@@ -208,6 +208,12 @@ class ReaderConfig:
 class AutoUpdateConfig:
     enabled: bool = True
     interval_seconds: int = 600
+    # release-install clients (no .git) download the consumer zip
+    # from GitHub Releases; a private repo needs a read-only token
+    # here (or the GITHUB_TOKEN env var). git installs ignore it
+    github_token: str = ""
+    # the rolling release tag the client polls
+    release_tag: str = "consumer-latest"
 
 
 @dataclass
@@ -503,6 +509,13 @@ def load_config(path: str) -> Config:
             enabled=bool(_get(raw.get("auto_update") or {}, "enabled", True)),
             interval_seconds=int(
                 _get(raw.get("auto_update") or {}, "interval_seconds", 600)
+            ),
+            github_token=str(
+                _get(raw.get("auto_update") or {}, "github_token", "")
+            ),
+            release_tag=str(
+                _get(raw.get("auto_update") or {}, "release_tag",
+                     "consumer-latest")
             ),
         ),
         reader=ReaderConfig(

@@ -1,0 +1,296 @@
+"""Release-install updater: the client zip shipped through
+GitHub Releases.
+
+A release install has no .git - it ships as a zip asset on a
+rolling release (default tag consumer-latest, rebuilt on every
+push to main). The updater polls the release, downloads a newer
+asset, verifies its sha256 and stages the swap; the actual file
+swap happens after the process exits (scripts/apply_update.py,
+called by the launcher before relaunching) because a live
+process holds open handles (sqlite wal, log files) on Windows.
+"""
+
+import hashlib
+import json
+import os
+import shutil
+import time
+import zipfile
+
+import requests
+
+VERSION_FILE = "VERSION"
+PENDING_FILE = ".update_pending.json"
+STAGING_DIR = ".update_staging"
+
+# state files that must survive an update swap - they live inside
+# consumer/, whose code dirs are replaced wholesale. everything at
+# the repo root (logs/, certs/, .last_update.json, ...) is never
+# touched by the swap
+STATE_FILES = (
+    "config.yaml", "ws_tokens.env", "trades.db",
+    "trades.db-shm", "trades.db-wal", "pipeline_exit.txt",
+)
+
+
+def read_version(root):
+    """The VERSION file the build writes; None when missing or
+    malformed (a git install has none)."""
+    try:
+        with open(os.path.join(root, VERSION_FILE)) as f:
+            data = json.load(f)
+        if isinstance(data, dict) and data.get("commit"):
+            return data
+    except (OSError, ValueError):
+        pass
+    return None
+
+
+def _headers(token):
+    h = {"Accept": "application/vnd.github+json"}
+    if token:
+        h["Authorization"] = f"Bearer {token}"
+    return h
+
+
+def latest_release(repo, token, timeout=30):
+    """The latest published release, None when none exists."""
+    url = f"https://api.github.com/repos/{repo}/releases/latest"
+    r = requests.get(url, headers=_headers(token), timeout=timeout)
+    if r.status_code == 404:
+        return None
+    r.raise_for_status()
+    return r.json()
+
+
+def find_asset(release):
+    """The consumer zip asset: consumer-<commit>.zip."""
+    for a in release.get("assets") or []:
+        name = a.get("name") or ""
+        if name.startswith("consumer-") and name.endswith(".zip"):
+            return a
+    return None
+
+
+def asset_commit(asset):
+    name = asset.get("name") or ""
+    inner = name[len("consumer-"):-len(".zip")]
+    return inner or None
+
+
+def find_checksum_asset(release):
+    for a in release.get("assets") or []:
+        if (a.get("name") or "") == "SHA256SUMS":
+            return a
+    return None
+
+
+def parse_checksums(text):
+    out = {}
+    for line in text.splitlines():
+        parts = line.split(None, 1)
+        if len(parts) == 2:
+            out[parts[1].strip().lstrip("*")] = parts[0].strip().lower()
+    return out
+
+
+def download_file(url, token, dest, timeout=300):
+    h = _headers(token)
+    h["Accept"] = "application/octet-stream"
+    with requests.get(
+        url, headers=h, stream=True, timeout=timeout
+    ) as r:
+        r.raise_for_status()
+        with open(dest, "wb") as f:
+            for chunk in r.iter_content(chunk_size=1 << 20):
+                f.write(chunk)
+
+
+def sha256_file(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+class ReleaseUpdater:
+    """Polls GitHub Releases and stages a swap for the launcher.
+
+    Same surface as AutoUpdater (start / check_once / last_pull /
+    last_check / last_result / errors) so the dashboards and the
+    app wiring need no special cases."""
+
+    def __init__(self, cfg, root, webhook_url="", restart=None,
+                 restart_files=None):
+        self.cfg = cfg
+        self.root = root
+        self.webhook_url = webhook_url
+        self.restart_files = restart_files or ()
+        self._restart = restart or (lambda: os._exit(77))
+        self._thread = None
+        self.last_check = None
+        self.last_result = "not checked yet"
+        self.errors = 0
+        self.version = read_version(root) or {}
+        self.start_head = str(self.version.get("commit") or "")
+        self.branch = "release"
+
+    def start(self):
+        if self._thread is None or not self._thread.is_alive():
+            from core.ops.supervise import supervised
+
+            self._thread, _ = supervised(
+                "auto-update", self._run, self.webhook_url
+            )
+
+    def last_pull(self):
+        try:
+            with open(os.path.join(self.root, ".last_update.json")) as f:
+                data = json.load(f)
+            if isinstance(data, dict) and data.get("ts"):
+                return data
+        except (OSError, ValueError):
+            pass
+        return None
+
+    def _run(self):
+        while True:
+            time.sleep(max(30, int(self.cfg.auto_update.interval_seconds)))
+            try:
+                self.check_once()
+            except Exception as e:
+                self.errors += 1
+                self.last_result = f"error: {e}"
+                print(f"auto-update error: {e}")
+
+    def _token(self):
+        return (
+            getattr(self.cfg.auto_update, "github_token", "")
+            or os.environ.get("GITHUB_TOKEN")
+            or ""
+        )
+
+    def check_once(self) -> bool:
+        self.last_check = time.time()
+        if not self.cfg.auto_update.enabled:
+            self.last_result = "disabled"
+            return False
+
+        if os.path.exists(os.path.join(self.root, PENDING_FILE)):
+            # a staged update waits for the launcher to apply it -
+            # restarting again would not help
+            self.last_result = "staged update pending restart"
+            return False
+
+        local = str(self.version.get("commit") or "")
+        repo = str(self.version.get("repo") or "")
+        if not repo:
+            self.last_result = "VERSION file has no repo"
+            return False
+
+        try:
+            release = latest_release(repo, self._token())
+        except requests.RequestException as e:
+            self.errors += 1
+            self.last_result = f"release check failed: {e}"[:120]
+            print(f"auto-update: {self.last_result}")
+            return False
+        if release is None:
+            self.last_result = "no release published yet"
+            return False
+
+        asset = find_asset(release)
+        if asset is None:
+            self.last_result = "release has no consumer zip"
+            return False
+        remote = asset_commit(asset) or ""
+        if not remote or remote == local:
+            self.last_result = "up to date"
+            return False
+
+        return self._stage(release, asset, remote)
+
+    def _stage(self, release, asset, remote) -> bool:
+        staging = os.path.join(self.root, STAGING_DIR)
+        shutil.rmtree(staging, ignore_errors=True)
+        os.makedirs(staging, exist_ok=True)
+
+        token = self._token()
+        zip_path = os.path.join(staging, "download.zip")
+        try:
+            download_file(asset["url"], token, zip_path)
+        except requests.RequestException as e:
+            self.errors += 1
+            self.last_result = f"download failed: {e}"[:120]
+            print(f"auto-update: {self.last_result}")
+            shutil.rmtree(staging, ignore_errors=True)
+            return False
+
+        checksum_asset = find_checksum_asset(release)
+        if checksum_asset is not None:
+            sums_path = os.path.join(staging, "SHA256SUMS")
+            try:
+                download_file(checksum_asset["url"], token, sums_path)
+                with open(sums_path) as f:
+                    sums = parse_checksums(f.read())
+            except requests.RequestException as e:
+                self.errors += 1
+                self.last_result = f"checksum download failed: {e}"[:120]
+                print(f"auto-update: {self.last_result}")
+                shutil.rmtree(staging, ignore_errors=True)
+                return False
+            expected = sums.get(asset["name"])
+            if expected and expected != sha256_file(zip_path):
+                self.errors += 1
+                self.last_result = f"checksum mismatch for {remote}"
+                print(f"auto-update: {self.last_result} - not staging")
+                shutil.rmtree(staging, ignore_errors=True)
+                return False
+
+        try:
+            with zipfile.ZipFile(zip_path) as z:
+                z.extractall(staging)
+        except (OSError, zipfile.BadZipFile) as e:
+            self.errors += 1
+            self.last_result = f"extract failed: {e}"[:120]
+            print(f"auto-update: {self.last_result}")
+            shutil.rmtree(staging, ignore_errors=True)
+            return False
+        os.remove(zip_path)
+
+        # a truncated or wrong artifact must not replace the tree
+        if not os.path.isdir(os.path.join(staging, "core")) or not (
+            os.path.isdir(os.path.join(staging, "consumer"))
+        ):
+            self.errors += 1
+            self.last_result = "staged build incomplete - aborted"
+            print(f"auto-update: {self.last_result}")
+            shutil.rmtree(staging, ignore_errors=True)
+            return False
+
+        with open(os.path.join(self.root, PENDING_FILE), "w") as f:
+            json.dump(
+                {
+                    "staging": STAGING_DIR,
+                    "commit": remote,
+                    "ts": time.time(),
+                },
+                f,
+            )
+
+        from core.ops.notify import notify_discord
+
+        notify_discord(
+            self.webhook_url,
+            "Consumer update staged",
+            {
+                "reason": f"new release build {remote} staged - "
+                           "applied on restart",
+            },
+            ok=True,
+        )
+        print(f"auto-update: staged {remote} - restarting to apply...")
+        self.last_result = f"staged {remote}"
+        self._restart()
+        return True

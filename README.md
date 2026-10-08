@@ -74,7 +74,9 @@ External services:
   never go here.
 - **Discord webhooks**: per-consumer trade notifications, alert
   embeds, log lines, update notices, raw-alert feed (info server).
-- **GitHub**: the private repo; the auto-updater pulls and restarts.
+- **GitHub**: the private repo; git installs auto-update via pull,
+  release installs via the rolling `consumer-latest` Release
+  (rebuilt by CI on every push to `main`).
 
 ### Supervised background threads
 
@@ -87,7 +89,7 @@ All wrapped by `core/ops/supervise.py` (crash → log + Discord notice
 | stop monitor | `trading/stops.py` | consumer | quote-driven protection for open positions (see [Safety systems](#safety-systems)) |
 | trade mirror | `trading/mirror.py` | consumer | books real fills from the WS activity feed, reconciles estimated live bookings, sweeps stale pending orders |
 | feed client | `ops/feedclient.py` | consumer | long-polls the info server's feed, feeds `process_alert`, syncs the SPX levels text |
-| auto-updater | `ops/updater.py` | both | git fetch + ff-only pull every interval; restarts only when server code changed |
+| auto-updater | `ops/updater.py` + `ops/release_updater.py` | both | git installs: fetch + ff-only pull every interval, restart only when server code changed; release installs: poll the rolling GitHub Release and stage the newer build |
 | health watchdog | `ops/watchdog.py` | both | self-fetches `/health`; exits 1 after 5 min of failure → restart loop recovers |
 | webhook batcher | `ops/loghook.py` | both | tees stdout/stderr log lines to Discord in 3s batches |
 
@@ -436,9 +438,16 @@ The reader's webhooks (`reader_log_webhook_url`, `raw_alert_webhook_url`)
 live in `reader/config.yaml`.
 
 ### `auto_update`
-`enabled` (true), `interval_seconds` (600). Restarts (exit 77) only
-when code it executes changed (`core/*` + its role folder,
-`run.py`, or `requirements.txt`).
+`enabled` (true), `interval_seconds` (600). The install type is
+auto-detected: a **git checkout** (a `.git` folder exists) does
+`git fetch` + ff-only pull and restarts (exit 77) only when code it
+executes changed (`core/*` + its role folder, `run.py`, or
+`requirements.txt`); a **release install** (a `VERSION` file, no
+`.git`) polls the rolling GitHub Release (`release_tag`,
+`consumer-latest`), downloads a newer `consumer-<commit>.zip` asset,
+verifies its SHA256 and stages the swap — the launcher applies it on
+the next restart. Private repos need `github_token` (a read-only
+token) or the `GITHUB_TOKEN` env var.
 
 ### `parser`
 `custom_patterns` ([]) — extra regexes for alert formats the built-in
@@ -483,21 +492,53 @@ ws-trade-bot/
    for remote dashboards.
 8. **moomoo (optional)**: install OpenD on a consumer machine and set
    `quotes.provider: moomoo` there.
+9. **Client releases**: CI (`.github/workflows/release.yml`) rebuilds
+   the rolling `consumer-latest` Release on every push to `main` —
+   the `consumer-<commit>.zip` + `SHA256SUMS` assets other users'
+   release installs self-update from. Build one locally with
+   `python scripts/build_consumer_zip.py`.
 
 ### Another user's consumer app (any machine)
 
-1. Install the repo + `pip install -r requirements.txt` (or run
+Two install types — both auto-update:
+
+**Release install (recommended for other users)** — no git needed:
+
+1. Download the newest `consumer-<commit>.zip` from the repo's
+   GitHub Releases (`consumer-latest`) and unzip it to a folder.
+2. Run `scripts\install_consumer.bat` once — creates the venv,
+   installs dependencies, seeds `consumer/config.yaml` from the
+   example.
+3. Edit `consumer/config.yaml`: `pipeline.role: consumer`, a local
+   `pipeline.auth_token`, the `feed:` section (the info server's URL
+   + their consumer token), and their `wealthsimple.accounts[]`.
+   While the repo is private also set
+   `auto_update.github_token` (a read-only token) — the client uses
+   it to poll and download new release assets.
+4. `python scripts/ws_login.py` with THEIR Wealthsimple login.
+5. Run `scripts\start_consumer.bat` — they get the full dashboard,
+   their own paper/live trading, their own webhook alerts. From then
+   on the app self-updates: the updater polls the release every
+   `auto_update.interval_seconds`, stages a newer build, and the
+   launcher applies it on restart (config, tokens, db, logs and
+   certs survive every update; the artifact ships no secrets).
+
+**Git install** (like the owner's box): clone the repo, then:
+
+1. `pip install -r requirements.txt` (or run
    `scripts\start_consumer.bat`, which does it).
 2. Copy `config.example.yaml` → `consumer/config.yaml`; set
    `pipeline.role: consumer`, a local `pipeline.auth_token`, the
    `feed:` section (the info server's URL + their consumer token),
    and their `wealthsimple.accounts[]`.
 3. `python scripts/ws_login.py` with THEIR Wealthsimple login.
-4. Run `scripts\start_consumer.bat` — they get the full dashboard, their own
-   paper/live trading, their own webhook alerts.
-5. The owner adds a matching `consumers[]` entry (label + token) on
-   the info server; add a `push_url` too if the consumer is
-   reachable (e.g. both on Tailscale).
+4. Run `scripts\start_consumer.bat` — they get the full dashboard,
+   their own paper/live trading, their own webhook alerts. Updates
+   ride `git pull` (needs the repo accessible from that machine).
+
+Either way, the owner adds a matching `consumers[]` entry (label +
+token) on the info server; add a `push_url` too if the consumer is
+reachable (e.g. both on Tailscale).
 
 ### Mode switching
 
@@ -552,10 +593,12 @@ incl. the kill switch), `test_settings_update.py`, `test_users.py`,
 - **logs**: one shared folder - `logs/info.log`,
   `logs/consumer.log`, `logs/reader.log` - each optionally
   teed to Discord in 3s batches (`install_log_webhook`).
-- **updates**: `git fetch` + ff-only pull every
-  `auto_update.interval_seconds`; dirty runtime files are healed;
-  `.last_update.json` records the last pull; the dashboard shows the
-  running commit. Both roles auto-update from the same repo.
+- **updates**: install type auto-detected. Git installs: `git fetch`
+  + ff-only pull every `auto_update.interval_seconds`; dirty runtime
+  files are healed. Release installs (the client zip): poll the
+  rolling GitHub Release, verify + stage the newer build, the
+  launcher applies it on restart. `.last_update.json` records the
+  last update; the dashboard shows the running commit/release.
 - **known-exit codes**: 77 = code update or mode-switch restart, 1 =
   watchdog hang detection, anything else = crash (restart loop
   catches it).
@@ -582,7 +625,10 @@ consumer/                  # the consumer app's runtime folder (one per trader)
   trades.db                # full trading state (gitignored)
 scripts/
   start_info.bat           # info launcher + restart loop
-  start_consumer.bat       # consumer launcher + restart loop
+  start_consumer.bat       # consumer launcher + restart loop (+ applies staged release updates)
+  install_consumer.bat     # first-time release-install setup
+  apply_update.py          # applies a staged release update (called by the launcher)
+  build_consumer_zip.py    # builds the consumer release artifact
 reader/
   discord_reader.py        # UIA Discord watcher (standalone, Windows)
   inspect_discord.py       # Discord window utilities + CLI diagnostic
@@ -595,6 +641,7 @@ core/                      # shared foundation (both apps execute this)
   web_common.py            # session auth, login page, gzip, log quieting
   ops/
     notify.py loghook.py processes.py supervise.py updater.py watchdog.py
+    release_updater.py     # release-install updater (GitHub Releases)
 info/                      # the alert source app (code + runtime + launcher)
   server.py                # wiring: store, fan-out, updater, watchdog, wsgi
   web.py                   # Flask app: ingest, feed, reader heartbeat, levels

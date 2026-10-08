@@ -10,7 +10,7 @@ import os
 import sys
 
 from core.ops.loghook import default_log_path, install_log_webhook
-from core.ops.updater import AutoUpdater, startup_banner
+from core.ops.updater import create_updater, startup_banner
 from core.ops.watchdog import start_health_watchdog
 from core.store import Store
 from info.fanout import start_fanout_thread
@@ -95,7 +95,7 @@ def main(cfg, args):
             log_batcher.flush_now()
         os._exit(77)
 
-    updater = AutoUpdater(
+    updater = create_updater(
         cfg, ROOT,
         cfg.discord.update_webhook_url or cfg.discord.webhook_url,
         restart=_restart,

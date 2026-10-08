@@ -17,3 +17,7 @@ reader.log*
 logs/
 *_exit.txt
 *.log
+dist/
+.update_staging/
+.update_backup/
+.update_pending.json

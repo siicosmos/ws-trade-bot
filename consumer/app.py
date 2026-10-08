@@ -20,7 +20,7 @@ from consumer.trading.quotes import (
 from consumer.trading.risk import RiskEngine
 from consumer.web import create_app
 from core.ops.loghook import default_log_path, install_log_webhook
-from core.ops.updater import AutoUpdater, startup_banner
+from core.ops.updater import create_updater, startup_banner
 from core.ops.watchdog import start_health_watchdog
 from core.store import Store
 from consumer.ws.account import PaperAccount, WealthsimpleAccount
@@ -250,7 +250,7 @@ def main(cfg, args):
             log_batcher.flush_now()
         os._exit(77)
 
-    updater = AutoUpdater(
+    updater = create_updater(
         cfg, ROOT,
         cfg.discord.update_webhook_url or cfg.discord.webhook_url,
         restart=_restart,

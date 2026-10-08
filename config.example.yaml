@@ -59,9 +59,19 @@ pipeline:
 # ---------------------------------------------------------------------------
 # auto_update - pull code changes from GitHub and restart automatically
 # ---------------------------------------------------------------------------
+# two install types are auto-detected:
+#   git install  (a .git folder exists)  - git pull, as before
+#   release install (a VERSION file exists) - the client zip shipped
+#     through GitHub Releases; the updater polls the release below,
+#     downloads a newer asset, verifies its checksum and stages the
+#     swap for the launcher to apply on restart
 auto_update:
   enabled: true
   interval_seconds: 600      # how often to check GitHub for updates
+  # github_token: ""         # release installs on a private repo need a
+                             # read-only token (contents:read) - or set
+                             # the GITHUB_TOKEN env var instead
+  # release_tag: "consumer-latest"   # the rolling release tag to poll
 
 # ---------------------------------------------------------------------------
 # quotes - live option prices (used by the stop-loss monitor)

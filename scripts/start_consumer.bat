@@ -28,6 +28,11 @@ if not exist config.yaml (
 )
 
 :start
+rem apply a staged release update (no-op without .update_pending.json)
+..\.venv\Scripts\python.exe ..\scripts\apply_update.py ..
+if errorlevel 1 (
+  echo warning: apply_update failed - running the existing code
+)
 ..\.venv\Scripts\python.exe ..\run.py -c config.yaml --db trades.db
 set EXITCODE=%errorlevel%
 if %EXITCODE% == 0 (

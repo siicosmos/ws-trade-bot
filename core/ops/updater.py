@@ -93,12 +93,23 @@ def _is_ignored_runtime_file(root, path):
 def startup_banner(name, root):
     """Startup line for the logs: the commit being run and how it
     got there (auto-update / manual pull)."""
-    head = _git(root, "rev-parse", "--short", "HEAD")
-    commit = head.stdout.strip() if head.returncode == 0 else ""
-    subject = _git(root, "log", "-1", "--pretty=%s")
-    line = f"{name} starting - commit {commit or '?'}"
-    if subject.returncode == 0 and subject.stdout.strip():
-        line += f' "{subject.stdout.strip()}"'
+    from core.ops.release_updater import read_version
+
+    ver = read_version(root)
+    if ver:
+        # release install - no git history to read
+        commit = str(ver.get("commit") or "?")
+        line = f"{name} starting - release {commit}"
+        built = str(ver.get("built") or "")
+        if built:
+            line += f" (built {built})"
+    else:
+        head = _git(root, "rev-parse", "--short", "HEAD")
+        commit = head.stdout.strip() if head.returncode == 0 else ""
+        subject = _git(root, "log", "-1", "--pretty=%s")
+        line = f"{name} starting - commit {commit or '?'}"
+        if subject.returncode == 0 and subject.stdout.strip():
+            line += f' "{subject.stdout.strip()}"'
     try:
         with open(os.path.join(root, UPDATE_RECORD)) as f:
             rec = json.load(f)
@@ -439,6 +450,23 @@ class AutoUpdater:
         self._record_update("auto")
         self._restart()
         return True
+
+
+def create_updater(cfg, root, webhook_url="", restart=None,
+                   restart_files=None):
+    """Auto-detect the install type: a git checkout updates via
+    git pull; a release install (VERSION file, no .git) updates
+    through GitHub Releases."""
+    if (
+        os.path.exists(os.path.join(root, "VERSION"))
+        and not os.path.exists(os.path.join(root, ".git"))
+    ):
+        from core.ops.release_updater import ReleaseUpdater
+
+        return ReleaseUpdater(
+            cfg, root, webhook_url, restart, restart_files
+        )
+    return AutoUpdater(cfg, root, webhook_url, restart, restart_files)
 
 
 def update_status_payload(app):
