@@ -51,7 +51,7 @@ owner's box typically runs all three).
 
 | component | process | what it does |
 |---|---|---|
-| **reader** | `reader/discord_reader.py` (own venv, Windows only) | Polls the Discord desktop client via UI Automation (uiautomation), auto-scrolls the message pane, strips UI noise, dedupes, and POSTs new messages to the info server. Auto-starts/restarts Discord, navigates servers/channels, follows a channel allowlist. Sends a heartbeat with its live-editable settings every ~10 polls. |
+| **reader** | `reader/discord_reader.py` (own venv, Windows only) | Polls the Discord desktop client via UI Automation (uiautomation), auto-scrolls the message pane, strips UI noise, dedupes, and POSTs new messages to the info server. Auto-starts/restarts Discord, navigates servers/channels, follows a channel allowlist. Sends a channel/ok heartbeat every ~10 polls. |
 | **info server** | `run.py -c info/info.config.yaml` (`info:` section) | The alert source: reader ingest (`POST /alert`), parse + dedupe + record, the **alert feed** for consumers (long-poll `GET /api/feed` + push fan-out to registered consumers), the SPX levels text, and a lean admin dashboard (consumer health, feed activity, reader line, levels editor). **No trading wiring** — no executors, no stop monitor, no mirror, no quotes. |
 | **consumer app** | `run.py -c consumer/consumer.config.yaml` (`consumer:` section) | The trading app — everything downstream of parsing, local to each user: risk engine, sizing, paper/live executors against **their own Wealthsimple login**, stop monitor, fill reconciliation, own SQLite store, own Discord webhook, and the full dashboard on localhost. Alert sources: the server's push (its `/alert` endpoint) and its own feed client (long-poll) — dual delivery is idempotent via the atomic signal claim. |
 
@@ -336,7 +336,7 @@ dashboard has no login). Admin-gated routes check the session role.
 | POST | `/api/settings` | admin | validate + apply + persist settings (no restart) |
 | POST | `/api/mode` | admin | the mode slider: validate + persist `trading.mode` + restart the app |
 | GET | `/api/update_status` | any | auto-updater status (last check/result/commit/branch) |
-| POST | `/api/reader_status` | token | reader heartbeat (`{channel, ok}`); returns live reader config — the reader merges it |
+| POST | `/api/reader_status` | token | reader heartbeat (`{channel, ok}`); returns `{}` — reader settings live in `reader/reader.config.yaml` (an edit applies on the reader's restart) |
 | GET | `/api/reader_status` | any | current reader heartbeat state (dashboard reader line) |
 | GET | `/api/users` | admin | list users (no hashes) |
 | POST | `/api/users` | admin | create/delete/set_password (self-change needs current password; cannot delete self or last admin) |
@@ -452,8 +452,8 @@ the info server's `info.auth_token`**), `channel_marker`,
 `discord_server`, `channel_servers` map, `discord_reopen_seconds`
 (15), `discord_restart_seconds` (90), `discord_start_command`,
 `channels` allowlist (**never** include your webhook output channel).
-Most knobs are editable live from the dashboard — the reader merges
-them from its heartbeat.
+Reader knobs are edited in `reader/reader.config.yaml` directly — the
+reader watches the file's mtime and restarts to apply an edit.
 
 ### `discord` — webhooks
 `notify` (master switch), `webhook_url` (trade alerts to your phone),

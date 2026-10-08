@@ -324,3 +324,108 @@ def test_updater_ignores_untracked_files(tmp_path):
                      restart=lambda: calls.append(1))
     assert up.check_once() is True, up.last_result
     assert calls == [1]
+
+
+def test_dirty_worktree_matching_origin_converges(tmp_path):
+    # a shared checkout: the consumer's release swap writes the
+    # exact release content, which looks dirty to git - the info
+    # server's updater must converge HEAD instead of skipping
+    # the pull forever
+    import subprocess
+
+    from core.ops.updater import AutoUpdater, _git
+
+    env = {
+        **os.environ,
+        "GIT_AUTHOR_NAME": "t",
+        "GIT_AUTHOR_EMAIL": "t@t",
+        "GIT_COMMITTER_NAME": "t",
+        "GIT_COMMITTER_EMAIL": "t@t",
+    }
+
+    def git(cwd, *args):
+        subprocess.run(
+            ["git", *args], cwd=cwd, env=env,
+            capture_output=True, check=True,
+        )
+
+    origin = tmp_path / "origin.git"
+    git(tmp_path, "init", "--bare", str(origin))
+    work = tmp_path / "work"
+    git(tmp_path, "clone", str(origin), str(work))
+    _write(work, "core/x.py", "v1")
+    git(work, "add", "-A")
+    git(work, "commit", "-m", "v1")
+    git(work, "push", "-u", "origin", "HEAD")
+
+    other = tmp_path / "other"
+    git(tmp_path, "clone", str(origin), str(other))
+    _write(other, "core/x.py", "v2")
+    git(other, "add", "-A")
+    git(other, "commit", "-m", "v2")
+    git(other, "push")
+
+    # the release swap already wrote v2 content - no pull yet
+    _write(work, "core/x.py", "v2")
+
+    calls = []
+    up = AutoUpdater(
+        _cfg(interval=600, enabled=True), str(work), "",
+        restart=lambda: calls.append(1),
+    )
+    assert up.check_once() is True, up.last_result
+    assert calls == [1]
+    assert (work / "core" / "x.py").read_text() == "v2"
+    head = _git(str(work), "rev-parse", "HEAD").stdout.strip()
+    remote = _git(str(other), "rev-parse", "HEAD").stdout.strip()
+    assert head == remote
+    # the tree is clean afterwards - the next pull is unblocked
+    status = _git(str(work), "status", "--porcelain")
+    assert not [
+        line for line in status.stdout.splitlines()
+        if line.strip() and not line.startswith("??")
+    ]
+
+
+def test_dirty_worktree_diverging_still_skips(tmp_path):
+    # dirt that does NOT match the remote must still block the
+    # pull (real local edits are never clobbered)
+    import subprocess
+
+    origin = tmp_path / "origin.git"
+    subprocess.run(
+        ["git", "init", "--bare", str(origin)],
+        capture_output=True, check=True,
+    )
+    work = tmp_path / "work"
+    subprocess.run(
+        ["git", "clone", str(origin), str(work)],
+        capture_output=True, check=True,
+    )
+    _write(work, "core/x.py", "v1")
+    _git_run(work, "add", "-A")
+    _commit(work, "v1")
+    _git_run(work, "push", "-u", "origin", "HEAD")
+
+    other = tmp_path / "other"
+    subprocess.run(
+        ["git", "clone", str(origin), str(other)],
+        capture_output=True, check=True,
+    )
+    _write(other, "core/x.py", "v2")
+    _git_run(other, "add", "-A")
+    _commit(other, "v2")
+    _git_run(other, "push")
+
+    # a real local edit (differs from the remote)
+    _write(work, "core/x.py", "local edit")
+
+    calls = []
+    up = AutoUpdater(
+        _cfg(interval=600, enabled=True), str(work), "",
+        restart=lambda: calls.append(1),
+    )
+    assert up.check_once() is False
+    assert calls == []
+    assert "dirty" in up.last_result
+    assert (work / "core" / "x.py").read_text() == "local edit"

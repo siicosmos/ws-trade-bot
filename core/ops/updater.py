@@ -374,18 +374,9 @@ class AutoUpdater:
                 line for line in status.stdout.splitlines()
                 if line.strip() and not line.startswith("??")
             ]
-        if dirty:
-            names = ", ".join(
-                line[3:].strip('"') for line in dirty[:4]
-            ) or "?"
-            self.last_result = (
-                "skipped: working tree dirty (" + names + ")"
-            )
-            print(
-                "auto-update: working tree dirty, skipping pull: "
-                + names
-            )
-            return False
+        dirty_names = ", ".join(
+            line[3:].strip('"') for line in dirty[:4]
+        ) or "?"
 
         branch = _git(
             self.root, "rev-parse", "--abbrev-ref", "HEAD"
@@ -416,11 +407,42 @@ class AutoUpdater:
             self.last_result = "up to date"
             return False
 
-        pull = _git(self.root, "pull", "--ff-only", "origin", short)
-        if pull.returncode != 0:
-            self.last_result = f"pull failed: {pull.stderr.strip()[:120]}"
-            print(f"auto-update: pull failed: {pull.stderr.strip()}")
-            return False
+        if dirty:
+            # a shared checkout: the consumer's release swap
+            # writes the exact release content, which makes the
+            # tree look dirty to git. when the worktree already
+            # matches the remote, converge HEAD instead of
+            # skipping the pull forever
+            diff = _git(self.root, "diff", "--stat", ref)
+            if diff.returncode != 0 or diff.stdout.strip():
+                self.last_result = (
+                    "skipped: working tree dirty (" + dirty_names + ")"
+                )
+                print(
+                    "auto-update: working tree dirty, skipping pull: "
+                    + dirty_names
+                )
+                return False
+            reset = _git(self.root, "reset", "--hard", ref)
+            if reset.returncode != 0:
+                self.last_result = (
+                    "reset failed: "
+                    + (reset.stderr or "").strip()[:120]
+                )
+                print(f"auto-update: {self.last_result}")
+                return False
+            print(
+                "auto-update: worktree already matches the release "
+                f"content - converged HEAD to {remote[:8]}"
+            )
+        else:
+            pull = _git(self.root, "pull", "--ff-only", "origin", short)
+            if pull.returncode != 0:
+                self.last_result = (
+                    f"pull failed: {pull.stderr.strip()[:120]}"
+                )
+                print(f"auto-update: pull failed: {pull.stderr.strip()}")
+                return False
 
         new = _git(self.root, "rev-parse", "HEAD").stdout.strip()
         log = _git(self.root, "log", "--oneline", f"{local}..{new}")

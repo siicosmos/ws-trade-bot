@@ -250,26 +250,33 @@ def test_updater_skips_when_dirty():
 
     restarts = []
 
-    def record():
-        restarts.append(True)
+    def R(out="", code=0):
+        return type("R", (), {
+            "returncode": code, "stdout": out, "stderr": ""
+        })()
 
-    u, mod, original, calls, restarts2 = _fake_updater(
-        "/tmp", {
-            "rev-parse": type("R", (), {
-                "returncode": 0, "stdout": "true\n", "stderr": ""
-            })(),
-            "status": type("R", (), {
-                "returncode": 0, "stdout": " M file.py\n", "stderr": ""
-            })(),
-        },
-    )
-    u._restart = record
+    def fake_git(root_dir, *args):
+        # dirty tree whose content does NOT match the remote:
+        # the pull stays blocked (local edits are never clobbered)
+        if args[0] == "status":
+            return R(" M file.py\n")
+        if args[:2] == ("rev-parse", "HEAD"):
+            return R("aaa\n")
+        if args[:2] == ("rev-parse", "origin/main"):
+            return R("bbb\n")
+        if args[0] == "diff":
+            return R(" 1 file changed\n")   # worktree != remote
+        return R()
+
+    original = up._git
+    up._git = fake_git
+    u = AutoUpdater(ConfigStub(), "/tmp", restart=restarts.append)
     try:
         assert u.check_once() is False
         assert restarts == []
         assert "dirty" in u.last_result
     finally:
-        mod._git = original
+        up._git = original
 
 
 def test_updater_pulls_and_restarts():
