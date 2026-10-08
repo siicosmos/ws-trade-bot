@@ -1197,7 +1197,11 @@ def create_app(cfg, store: Store, risk, executor, account=None,
         )
         if html != current:
             _dashboard_cache["html"] = current
-        return app.response_class(current, mimetype="text/html")
+        resp = app.response_class(current, mimetype="text/html")
+        # the page carries the versioned script url - a cached
+        # page would keep stale js alive across updates
+        resp.headers["Cache-Control"] = "no-store"
+        return resp
 
     @app.get("/static/dashboard.css")
     def shared_css():

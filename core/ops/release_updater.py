@@ -181,12 +181,16 @@ class ReleaseUpdater:
         channel: write the VERSION marker from the checkout's
         head + origin so the release comparison starts from the
         code actually running. Best effort - a checkout without
-        a GitHub origin cannot follow releases."""
+        a GitHub origin cannot follow releases. Called on every
+        check for git checkouts: the shared checkout moves with
+        the info server's pulls, so the comparison stays anchored
+        to the actual head instead of a stale seed."""
         from core.ops.updater import _git
 
         head = _git(self.root, "rev-parse", "HEAD")
         if head.returncode != 0:
             return False
+        commit = head.stdout.strip()[:8]
         remote = _git(self.root, "remote", "get-url", "origin")
         url = remote.stdout.strip() if remote.returncode == 0 else ""
         if ":" in url:
@@ -196,9 +200,14 @@ class ReleaseUpdater:
         slug = url.removesuffix(".git").strip()
         if not slug:
             return False
+        if (
+            (self.version or {}).get("commit") == commit
+            and (self.version or {}).get("repo") == slug
+        ):
+            return True   # already current - no rewrite
         ver = {
             "tag": "consumer-latest",
-            "commit": head.stdout.strip()[:8],
+            "commit": commit,
             "built": "",
             "repo": slug,
         }
@@ -210,8 +219,8 @@ class ReleaseUpdater:
         self.version = ver
         self.start_head = str(ver.get("commit") or "")
         print(
-            "auto-update: release channel seeded from the git "
-            f"checkout ({ver['commit']})"
+            "auto-update: release comparison anchored to the git "
+            f"checkout ({commit})"
         )
         return True
 
@@ -227,7 +236,10 @@ class ReleaseUpdater:
             self.last_result = "staged update pending restart"
             return False
 
-        if not self.version:
+        if os.path.isdir(os.path.join(self.root, ".git")):
+            # a shared checkout: the code on disk moves with the
+            # info server's pulls - anchor the release comparison
+            # to the actual head, not a stale seed
             self._seed_version_from_git()
         local = str(self.version.get("commit") or "")
         repo = str(self.version.get("repo") or "")

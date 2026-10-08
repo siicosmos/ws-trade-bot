@@ -1388,6 +1388,11 @@ function revertSettings() {
   setSettingsDirty(false);
   load().then(function() {
     renderSettings((lastPayload && lastPayload.settings) || lastSettings);
+    const msg = document.getElementById("settings-msg");
+    if (msg) {
+      msg.textContent = "Reverted";
+      setTimeout(() => msg.textContent = "", 3000);
+    }
   });
 }
 
@@ -1979,17 +1984,21 @@ async function saveSettings() {
   };
   const res = await fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
   const data = await res.json();
+  const msg = document.getElementById("settings-msg");
   if (res.status !== 200) {
+    if (msg) msg.textContent = "";
     alert("save failed:\n" + (data.errors || []).join("\n"));
   } else {
-    document.getElementById("settings-save").textContent = "Saved";
-    setTimeout(() => document.getElementById("settings-save").textContent = "Save", 1500);
     setSettingsDirty(false);
     await load();
     // the poll-driven re-render is skipped while the modal is
     // open - without this the form keeps showing the pre-save
     // numbers and the save looks like it failed
     renderSettings((lastPayload && lastPayload.settings) || lastSettings);
+    if (msg) {
+      msg.textContent = "Saved";
+      setTimeout(() => msg.textContent = "", 3000);
+    }
   }
 }
 

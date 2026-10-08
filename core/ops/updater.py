@@ -113,7 +113,9 @@ def startup_banner(name, root):
     from core.ops.release_updater import read_version
 
     ver = read_version(root)
-    if ver:
+    head = _git(root, "rev-parse", "--short", "HEAD")
+    git_commit = head.stdout.strip() if head.returncode == 0 else ""
+    if ver and not git_commit:
         # release install - no git history to read
         commit = str(ver.get("commit") or "?")
         line = f"{name} starting - release {commit}"
@@ -121,8 +123,10 @@ def startup_banner(name, root):
         if built:
             line += f" (built {built})"
     else:
-        head = _git(root, "rev-parse", "--short", "HEAD")
-        commit = head.stdout.strip() if head.returncode == 0 else ""
+        # a git checkout tracks the real code on disk - the
+        # VERSION marker a release seed wrote goes stale as the
+        # shared checkout moves, so git wins when it exists
+        commit = git_commit
         subject = _git(root, "log", "-1", "--pretty=%s")
         line = f"{name} starting - commit {commit or '?'}"
         if subject.returncode == 0 and subject.stdout.strip():

@@ -96,7 +96,9 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
         )
         if _page_cache["html"] != current:
             _page_cache["html"] = current
-        return app.response_class(current, mimetype="text/html")
+        resp = app.response_class(current, mimetype="text/html")
+        resp.headers["Cache-Control"] = "no-store"
+        return resp
 
     @app.get("/static/dashboard.css")
     def shared_css():

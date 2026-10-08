@@ -1,0 +1,7 @@
+# normalize line endings: text files are lf in the repo; the
+# windows launchers keep crlf (cmd requires it)
+* text=auto eol=lf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+*.png binary
+*.svg text

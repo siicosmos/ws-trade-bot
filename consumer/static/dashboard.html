@@ -103,7 +103,7 @@
 </div>
 <div id="settingsBackdrop" onclick="if(event.target===this && !backdropTouchMoved) requestCloseSettings()">
   <div id="settingsPanel">
-    <div id="settingsHead"><span>Settings</span><button id="settingsClose" class="btn" onclick="requestCloseSettings()">&#215;</button></div>
+    <div id="settingsHead"><span>Settings</span><span id="settings-msg" class="set-hint" style="margin-left:auto;margin-right:8px"></span><button id="settingsClose" class="btn" onclick="requestCloseSettings()">&#215;</button></div>
     <div id="settingsScroll"><div id="settings" class="card"></div></div>
     <div id="settings-float">
       <button id="settings-revert">Revert</button>
