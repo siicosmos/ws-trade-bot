@@ -486,7 +486,8 @@ ws-trade-bot/
   logs/        info.log · consumer.log · reader.log
 ```
 
-1. **Clone** the repo (or run `scripts/setup_ssh.ps1` to set up the
+1. **Clone** the repo (or run
+   `scripts/setup_info_server_git_pull.ps1` to set up the
    SSH deploy key for the info server's unattended auto-update
    pulls — consumer-only machines don't need it, they follow the
    GitHub release channel with a token instead).
@@ -697,7 +698,7 @@ consumer/                  # the trading app (code + runtime + launcher)
     ws_security_query.py   # the app's FetchSecurity document
     ws_http.py ws_common.py ws_tokens.py account_types.py
 scripts/                   # ws_login, gen_cert, expectancy, diagnose,
-                           # clean_start, setup_ssh,
+                           # clean_start, setup_info_server_git_pull,
                            # start_info/start_consumer/start_reader/
                            # start_discord .bat
 tests/                     # pytest suite (+ scripts/: e2e_test, ui_test)

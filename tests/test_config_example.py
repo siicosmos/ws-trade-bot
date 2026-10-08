@@ -183,3 +183,46 @@ def test_account_is_non_margin():
     assert account_is_non_margin(
         type("A", (), {"type": "", "label": "Margin"})()
     ) is False
+
+
+def test_example_keys_are_all_read_by_the_loader():
+    # every key shipped in a template must be consumed somewhere
+    # (core/config.py, settings, or the reader) - guards against
+    # the examples drifting from the design
+    import re
+
+    loader = (
+        open(os.path.join(os.path.dirname(HERE), "core",
+                          "config.py")).read()
+        + open(os.path.join(os.path.dirname(HERE), "consumer",
+                            "settings.py")).read()
+    )
+    reader_src = open(os.path.join(
+        os.path.dirname(HERE), "reader", "discord_reader.py")).read()
+
+    def audit(fname, source, sections=None):
+        raw = _raw(fname)
+        stale = []
+        for sec, body in raw.items():
+            if not isinstance(body, dict):
+                continue
+            if sections is not None and sec not in sections:
+                continue
+            for key in body:
+                if not re.search(
+                    rf'["\']{re.escape(key)}["\']', source
+                ):
+                    stale.append(f"{fname}: {sec}.{key}")
+        return stale
+
+    stale = audit(
+        "consumer.config.yaml", loader,
+        sections={"paper", "consumer", "auto_update", "quotes",
+                  "discord", "trading", "wealthsimple", "parser"},
+    )
+    stale += audit(
+        "info.config.yaml", loader,
+        sections={"info", "auto_update", "discord", "parser"},
+    )
+    stale += audit("reader.config.yaml", reader_src)
+    assert stale == [], stale
