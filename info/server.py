@@ -79,7 +79,7 @@ def main(cfg, args):
     # consumers (pull backfills whatever a push misses)
     start_fanout_thread(
         cfg, store,
-        cfg.discord.update_webhook_url or cfg.discord.webhook_url,
+        cfg.discord.update_webhook_url,
     )
     print(
         "info server: reader ingest + alert feed "
@@ -99,7 +99,7 @@ def main(cfg, args):
 
     updater = create_updater(
         cfg, ROOT,
-        cfg.discord.update_webhook_url or cfg.discord.webhook_url,
+        cfg.discord.update_webhook_url,
         restart=_restart,
         restart_files=INFO_RESTART_FILES,
     )
@@ -134,7 +134,7 @@ def main(cfg, args):
     # clean restart if serving dies
     start_health_watchdog(
         f"{scheme}://127.0.0.1:{cfg.pipeline.port}/health",
-        cfg.discord.update_webhook_url or cfg.discord.webhook_url,
+        cfg.discord.update_webhook_url,
         verify=scheme != "https",   # self-signed local cert
         store=store,
     )

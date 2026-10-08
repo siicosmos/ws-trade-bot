@@ -464,9 +464,11 @@ reader watches the file's mtime and restarts to apply an edit.
 ### `discord` — webhooks
 `notify` (master switch), `webhook_url` (trade alerts to your phone),
 `consumer_log_webhook_url` (this app's log tail; legacy configs'
-`pipeline_log_webhook_url` still reads), `update_webhook_url`.
-The reader's webhooks (`reader_log_webhook_url`, `raw_alert_webhook_url`)
-live in `reader/reader.config.yaml`.
+`pipeline_log_webhook_url` still reads), `update_webhook_url`
+(empty = off — no fallback webhook anywhere). The reader's webhooks
+(`reader_log_webhook_url`, `raw_alert_webhook_url`,
+`update_webhook_url`) live in `reader/reader.config.yaml`; the info
+server only uses `consumer_log_webhook_url` + `update_webhook_url`.
 
 ### `auto_update`
 `enabled` (true), `interval_seconds` (600). The updater is chosen by

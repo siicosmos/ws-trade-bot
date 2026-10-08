@@ -49,12 +49,9 @@ auto_update:
 # discord - webhooks that send notifications to your private server
 # ---------------------------------------------------------------------------
 discord:
-  notify: true               # master switch for parsed-alert notifications
-  webhook_url: "YOUR_PRIVATE_SERVER_WEBHOOK_URL"  # raw-alert feed channel
   consumer_log_webhook_url: ""  # this app's log tail (info.log) posted to
                                 # discord; empty = off
-  update_webhook_url: ""        # server update/restart notices;
-                                # empty = use the main webhook channel
+  update_webhook_url: ""        # server update/restart notices; empty = off
 
 # ---------------------------------------------------------------------------
 # trading - the info server only reads history_retention_days from

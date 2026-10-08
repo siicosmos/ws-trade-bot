@@ -75,7 +75,7 @@ def test_reader_example_flat_keys():
     assert raw["auth_token"] == ""
     assert isinstance(raw["poll_interval"], (int, float))
     assert isinstance(raw["max_items"], int)
-    for key in ("webhook_url", "reader_log_webhook_url",
+    for key in ("reader_log_webhook_url",
                 "raw_alert_webhook_url", "update_webhook_url"):
         assert raw[key] == ""
 

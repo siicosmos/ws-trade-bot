@@ -1232,13 +1232,10 @@ def main():
     # legacy root config nests them under reader:/discord:
     cfg = raw_cfg.get("reader") or raw_cfg
     discord_cfg = raw_cfg.get("discord") or raw_cfg
-    webhook_url = str(discord_cfg.get("webhook_url") or "")
     raw_alert_webhook_url = str(
         discord_cfg.get("raw_alert_webhook_url") or ""
     )
-    update_webhook_url = (
-        str(discord_cfg.get("update_webhook_url") or "") or webhook_url
-    )
+    update_webhook_url = str(discord_cfg.get("update_webhook_url") or "")
     pipeline_url = cfg.get("pipeline_url", "http://localhost:8080/alert")
     auto_scroll = bool(cfg.get("auto_scroll", True))
     auto_start_discord = bool(cfg.get("auto_start_discord", True))

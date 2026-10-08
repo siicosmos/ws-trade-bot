@@ -40,11 +40,9 @@ discord_restart_seconds: 90
 # discord_start_command: ""
 
 # --- webhooks (the reader's own, to your private server) ---
-webhook_url: ""            # fallback for the webhooks below; empty = off
 reader_log_webhook_url: "" # the reader's log tail (reader.log)
 raw_alert_webhook_url: ""  # every raw message as read, before parsing
-update_webhook_url: ""     # reader update/restart notices;
-                           # empty = use webhook_url
+update_webhook_url: ""     # reader update/restart notices; empty = off
 
 # updates: the reader runs no updater of its own - the info
 # server's git pull updates the whole repo on disk and this
