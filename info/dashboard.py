@@ -43,6 +43,10 @@ def info_html():
     if _html_mtime != mtime:
         _html_mtime = mtime
         INFO_HTML = _read("info.html")
+        INFO_HTML = INFO_HTML.replace(
+            'src="/static/info.js"',
+            f'src="/static/info.js?v={int(mtime or 0)}"',
+        )
     return INFO_HTML
 
 

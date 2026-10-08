@@ -43,6 +43,12 @@ def dashboard_html():
     if _html_mtime != mtime:
         _html_mtime = mtime
         DASHBOARD_HTML = _read("dashboard.html")
+        # cache-bust the script tag: the html re-reads on change,
+        # and the new url forces browsers past any cached js
+        DASHBOARD_HTML = DASHBOARD_HTML.replace(
+            'src="/static/dashboard.js"',
+            f'src="/static/dashboard.js?v={int(mtime or 0)}"',
+        )
     return DASHBOARD_HTML
 
 

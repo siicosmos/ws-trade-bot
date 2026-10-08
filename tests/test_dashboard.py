@@ -1774,3 +1774,23 @@ def test_settings_save_revert_button_lifecycle():
     assert "revert.style.display" not in dirty_fn
     assert 'getElementById("settings-float")' in ijs
     assert 'f.style.display = "flex"' in ijs
+
+
+def test_dashboard_assets_are_cache_busted():
+    # the html re-reads on change and rewrites the script src with
+    # the file's mtime - a code update changes the url, so
+    # browsers never serve stale js (the source of several
+    # "still not fixed" rounds)
+    import consumer.dashboard as dash
+
+    html = dash.dashboard_html()
+    assert re.search(
+        r'src="/static/dashboard\.js\?v=\d+"', html
+    ), "script src is not versioned"
+
+    import info.dashboard as idash
+
+    ihtml = idash.info_html()
+    assert re.search(
+        r'src="/static/info\.js\?v=\d+"', ihtml
+    ), "info script src is not versioned"
