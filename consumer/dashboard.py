@@ -26,6 +26,7 @@ DASHBOARD_HTML = _read("dashboard.html")
 DASHBOARD_CSS = _read("dashboard.css", _CORE_STATIC)
 
 _html_mtime = None
+_css_mtime = None
 
 
 def dashboard_html():
@@ -43,6 +44,20 @@ def dashboard_html():
         _html_mtime = mtime
         DASHBOARD_HTML = _read("dashboard.html")
     return DASHBOARD_HTML
+
+
+def dashboard_css():
+    """The shared stylesheet, same live-reload as the html (it
+    is inlined into the page head)."""
+    global _css_mtime, DASHBOARD_CSS
+    try:
+        mtime = os.path.getmtime(os.path.join(_CORE_STATIC, "dashboard.css"))
+    except OSError:
+        mtime = None
+    if _css_mtime != mtime:
+        _css_mtime = mtime
+        DASHBOARD_CSS = _read("dashboard.css", _CORE_STATIC)
+    return DASHBOARD_CSS
 DASHBOARD_JS = _read("dashboard.js")
 
 # the login page is shared with the info server (core.web_common)

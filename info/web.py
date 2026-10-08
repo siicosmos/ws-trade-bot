@@ -27,7 +27,7 @@ from flask import Flask, Response, jsonify, request
 
 from core.store import Store
 from core.web_common import install_gzip, install_quiet_filter
-from .dashboard import INFO_CSS, info_html
+from .dashboard import info_css, info_html
 from .ingest import ingest_alert
 
 
@@ -88,7 +88,7 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
         # page with new js
         current = info_html().replace(
             '<link rel="stylesheet" href="/static/dashboard.css">',
-            "<style>\n" + INFO_CSS + "\n</style>",
+            "<style>\n" + info_css() + "\n</style>",
             1,
         )
         if _page_cache["html"] != current:

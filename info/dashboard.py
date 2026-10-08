@@ -44,3 +44,24 @@ def info_html():
         _html_mtime = mtime
         INFO_HTML = _read("info.html")
     return INFO_HTML
+
+
+_css_mtime = None
+
+
+def info_css():
+    """The shared stylesheet, same live-reload as the html (it
+    is inlined into the page head)."""
+    global _css_mtime, INFO_CSS
+    import os as _os
+
+    try:
+        mtime = _os.path.getmtime(
+            _os.path.join(_CORE_STATIC, "dashboard.css")
+        )
+    except OSError:
+        mtime = None
+    if _css_mtime != mtime:
+        _css_mtime = mtime
+        INFO_CSS = _read("dashboard.css", _CORE_STATIC)
+    return INFO_CSS

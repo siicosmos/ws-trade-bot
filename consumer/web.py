@@ -13,7 +13,7 @@ from flask import Flask, Response, g, jsonify, redirect, request, session
 
 from consumer.ws.account_types import REGISTERED_ACCOUNT_TYPES
 from consumer.dashboard import (
-    LOGIN_HTML, DASHBOARD_CSS, dashboard_html,
+    LOGIN_HTML, dashboard_css, dashboard_html,
 )
 from consumer.pipeline import process_alert
 from core.store import Store
@@ -1178,7 +1178,7 @@ def create_app(cfg, store: Store, risk, executor, account=None,
         html = _dashboard_cache["html"]
         current = dashboard_html().replace(
             '<link rel="stylesheet" href="/static/dashboard.css">',
-            "<style>\n" + DASHBOARD_CSS + "\n</style>",
+            "<style>\n" + dashboard_css() + "\n</style>",
             1,
         )
         if html != current:
