@@ -5,8 +5,13 @@ from datetime import date
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from core.parser import parse_alert
+import pytest  # noqa: E402
 
 
+pytestmark = pytest.mark.essential
+
+
+@pytest.mark.minimum
 def test_option_buy_0dte():
     a = parse_alert(
         "BOUGHT 0DTE SPX 7645c @ .65 @everyone ROLL UP LOTTO 🎲 tiny size"
@@ -228,3 +233,55 @@ def test_gain_from_unsigned_percentages():
     # size percentages ("2% budget") and other numbers stay ignored
     c = parse_alert("BOUGHT 09/25 ARM 300c @ 1.65 small size")
     assert c.gain_pct is None
+
+
+def test_custom_pattern_named_groups():
+    # a custom pattern is tried before the built-ins and needs a
+    # named 'ticker' group; action/entry come from named groups
+    a = parse_alert(
+        "yo we are aping GME calls entry 30",
+        [r"aping\s+(?P<ticker>\w+)\s+calls\s+entry\s+(?P<entry>[\d.]+)"],
+    )
+    assert a is not None
+    assert a.ticker == "GME"
+    assert a.action == "BUY"
+    assert a.entry == 30.0
+
+
+def test_custom_pattern_action_group_and_fallback_inference():
+    # an explicit action group wins; without one the sell/buy
+    # words in the text decide
+    sell = parse_alert(
+        "dumping PLTR 5.50 stop 4.5",
+        [r"dumping\s+(?P<ticker>\w+)\s+(?P<entry>[\d.]+)\s+stop\s+(?P<stop_loss>[\d.]+)"],
+    )
+    assert sell is not None and sell.action == "SELL"
+    assert sell.stop_loss == 4.5
+    buy = parse_alert(
+        "snapping TSLA 2.20",
+        [r"snapping\s+(?P<ticker>\w+)\s+(?P<entry>[\d.]+)"],
+    )
+    assert buy is not None and buy.action == "BUY"
+
+
+def test_custom_pattern_without_ticker_group_is_skipped():
+    # a pattern that matches but names no ticker is skipped, not
+    # a crash - and the built-ins still get their chance
+    assert parse_alert(
+        "BOUGHT 0DTE SPX 7645c @ .65",
+        [r"BOUGHT\s+(?P<entry>[\d.]+)"],
+    ) is not None
+
+
+def test_custom_pattern_no_match_falls_through_to_builtins():
+    # a non-matching custom list must not block the built-ins
+    a = parse_alert(
+        "BOUGHT 0DTE SPX 7645c @ .65",
+        [r"never\s+matches\s+(?P<ticker>\w+)"],
+    )
+    assert a is not None and a.underlying == "SPX"
+
+
+def test_custom_pattern_empty_list_uses_builtins():
+    assert parse_alert("BOUGHT 0DTE SPX 7645c @ .65", []) is not None
+    assert parse_alert("BOUGHT 0DTE SPX 7645c @ .65", None) is not None

@@ -950,18 +950,17 @@ def heartbeat_status(allowed, title_channel):
 
 
 def sync_with_server(base_url, auth_token, channel, ok, verify=True):
+    # heartbeat only - the info server no longer pushes settings
+    # back (they would override the yaml on every poll)
     headers = {"X-Auth-Token": auth_token} if auth_token else {}
     try:
-        resp = requests.post(
+        requests.post(
             f"{base_url}/api/reader_status",
             json={"channel": channel, "ok": ok},
             headers=headers, timeout=5, verify=verify,
         )
-        if resp.status_code == 200:
-            return resp.json()
     except requests.RequestException:
         pass
-    return None
 
 
 def channel_allowed(title_channel, channels):
@@ -969,79 +968,6 @@ def channel_allowed(title_channel, channels):
         return True
     name = title_channel.lstrip("#").lower()
     return any(entry in name for entry in channels)
-
-
-def merged_config(resp, poll_interval, max_items, channels,
-                  channel_servers=None, reopen_seconds=15,
-                  restart_after=90, auto_switch=True, auto_scroll=True):
-    changed = False
-    if resp is None:
-        return (poll_interval, max_items, channels,
-                channel_servers, reopen_seconds, restart_after,
-                auto_switch, auto_scroll, False)
-    if "auto_switch" in resp:
-        want = bool(resp.get("auto_switch"))
-        if want != auto_switch:
-            auto_switch = want
-            changed = True
-    new_servers = resp.get("channel_servers")
-    if isinstance(new_servers, dict):
-        normalized = {
-            str(k).strip().lower(): str(v).strip()
-            for k, v in new_servers.items()
-            if str(k).strip() and str(v).strip()
-        }
-        if normalized != (channel_servers or {}):
-            channel_servers = normalized
-            changed = True
-    try:
-        r = int(resp.get("discord_reopen_seconds"))
-        if 5 <= r <= 600 and r != reopen_seconds:
-            reopen_seconds = r
-            changed = True
-    except (TypeError, ValueError):
-        pass
-    try:
-        r = int(resp.get("discord_restart_seconds"))
-        if 30 <= r <= 3600 and r != restart_after:
-            restart_after = r
-            changed = True
-    except (TypeError, ValueError):
-        pass
-    new_channels = resp.get("channels")
-    if isinstance(new_channels, list):
-        normalized = sorted(
-            {
-                str(c).strip().lower()[:100]
-                for c in new_channels
-                if str(c).strip()
-            }
-        )
-        if normalized != channels:
-            channels = normalized
-            changed = True
-    try:
-        p = float(resp.get("poll_interval"))
-        if 0.2 <= p <= 10:
-            poll_interval = p
-    except (TypeError, ValueError):
-        pass
-    try:
-        m = int(resp.get("max_items"))
-        if 5 <= m <= 200:
-            max_items = m
-    except (TypeError, ValueError):
-        pass
-    if "auto_scroll" in resp:
-        want_scroll = bool(resp.get("auto_scroll"))
-        if want_scroll != auto_scroll:
-            auto_scroll = want_scroll
-            changed = True
-    return (
-        poll_interval, max_items, channels, channel_servers,
-        reopen_seconds, restart_after, auto_switch, auto_scroll,
-        changed,
-    )
 
 
 def repo_root():
@@ -1605,24 +1531,11 @@ def main():
                                 "foreground and open a channel, or "
                                 "restart the reader"
                             )
-                    resp = sync_with_server(
+                    sync_with_server(
                         base_url, auth_token,
                         *heartbeat_status(allowed, title_channel),
                         verify_tls,
                     )
-                    (poll_interval, max_items, channels,
-                     channel_servers, reopen_seconds, restart_after,
-                     auto_switch, auto_scroll, changed) = merged_config(
-                        resp, poll_interval, max_items, channels,
-                        channel_servers, reopen_seconds, restart_after,
-                        auto_switch, auto_scroll,
-                    )
-                    if changed:
-                        log(
-                            f"channel config -> "
-                            f"channels={channels} "
-                            f"servers={channel_servers}"
-                        )
                     time.sleep(5)
                     continue
                 wait_attempts = 0
@@ -1651,36 +1564,10 @@ def main():
             sync_counter += 1
             if sync_counter >= 10:
                 sync_counter = 0
-                resp = sync_with_server(
+                sync_with_server(
                     base_url, auth_token, current_channel,
                     container is not None, verify_tls,
                 )
-                (new_poll, new_max, new_channels,
-                 new_servers, new_reopen, new_restart, new_switch,
-                 new_scroll, changed) = merged_config(
-                    resp, poll_interval, max_items, channels,
-                    channel_servers, reopen_seconds, restart_after,
-                    auto_switch, auto_scroll,
-                )
-                if changed:
-                    channels = new_channels
-                    channel_servers = new_servers
-                    poll_interval = new_poll
-                    max_items = new_max
-                    reopen_seconds = new_reopen
-                    restart_after = new_restart
-                    auto_switch = new_switch
-                    auto_scroll = new_scroll
-                    container = None
-                    log(
-                        f"channel config -> "
-                        f"channels={channels} "
-                        f"servers={channel_servers}"
-                    )
-                    time.sleep(poll_interval)
-                    continue
-                poll_interval = new_poll
-                max_items = new_max
 
             scroll_counter += 1
             if auto_scroll and scroll_counter % 5 == 0:

@@ -9,6 +9,7 @@ import tempfile
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from core.store import Store, _hash_password, _verify_password
+import pytest  # noqa: E402
 
 
 def _fresh_store():
@@ -17,6 +18,10 @@ def _fresh_store():
     return Store(path)
 
 
+pytestmark = pytest.mark.essential
+
+
+@pytest.mark.minimum
 def test_password_hash_roundtrip():
     stored = _hash_password("hunter22")
     assert stored.startswith("pbkdf2$200000$")

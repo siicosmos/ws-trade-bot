@@ -3,6 +3,7 @@ import re
 import types
 
 from consumer.dashboard import DASHBOARD_HTML, DASHBOARD_CSS, DASHBOARD_JS
+import pytest  # noqa: E402
 
 
 def _strip_complete_strings(line):
@@ -11,6 +12,9 @@ def _strip_complete_strings(line):
     code = re.sub(r"`(?:[^`\\]|\\.)*`", "", code)
     code = re.sub(r'"(?:[^"\\\n]|\\.)*"', "", code)
     return code
+
+
+pytestmark = pytest.mark.essential
 
 
 def test_dashboard_script_strings_terminated():
@@ -1735,6 +1739,7 @@ def test_settings_save_refreshes_form_and_touch_guard():
     assert "!backdropTouchMoved" in ihtml
 
 
+@pytest.mark.minimum
 def test_settings_save_revert_button_lifecycle():
     # save shows only when dirty; revert stays ready to restore
     # the last saved state; the float bar lives while the modal
@@ -1827,3 +1832,21 @@ def test_settings_save_ids_all_exist_in_the_form():
     assert 'id="set-paper-enabled"' in render or (
         '"set-paper-enabled"' in render
     )
+
+
+def test_info_reconnect_banner_wiring():
+    # the info page shows the consumer's orange "server
+    # unreachable" banner: the div exists and jget surfaces fetch
+    # failures into it (every info poller goes through jget)
+    info_root = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "info", "static",
+    )
+    ijs = open(os.path.join(info_root, "info.js")).read()
+    ihtml = open(os.path.join(info_root, "info.html")).read()
+    assert 'id="reconnect"' in ihtml
+    assert "server unreachable" in ihtml
+    jget = ijs.split("async function jget")[1].split("async function jpost")[0]
+    assert jget.count("showReconnect(true)") == 2   # network + bad json
+    assert "showReconnect(false)" in jget           # success clears it
+    assert "function showReconnect" in ijs

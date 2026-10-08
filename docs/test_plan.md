@@ -9,8 +9,19 @@ real network, or real Discord/Wealthsimple.
 Run the automated suite with:
 
 ```bash
+# full suite (default)
 .venv/bin/python -m pytest tests -q --ignore=tests/scripts
+# or scoped by mode (pytest markers, see pytest.ini):
+.venv/bin/python -m pytest tests -q -m minimum     # smoke
+.venv/bin/python -m pytest tests -q -m essential   # core behavior
 ```
+
+minimum ⊂ essential ⊂ full: the minimum set proves the install is
+alive (configs load, alerts parse, settings save); essential adds
+the core behavior modules (parser, settings, reader, stops, users,
+feed, mirror, dashboard assets); everything else - the pipeline
+integration, updater, history search, launcher/watchdog edge cases -
+is full-only.
 
 The suite is fully green on any OS (the reader tests stub the
 Windows UIA); it needs `requirements.txt` installed

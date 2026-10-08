@@ -10,7 +10,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from test_pipeline import _fresh_store, ConfigStub, TradingConfig  # noqa: E402
 from consumer import feedclient  # noqa: E402
+import pytest  # noqa: E402
 
+
+pytestmark = pytest.mark.essential
 
 class _FeedCfg:
     def __init__(self, url="http://info:8080", token="tok"):
@@ -45,6 +48,7 @@ def test_start_feed_client_requires_config():
     assert feedclient.start_feed_client(cfg, None, print) is None
 
 
+@pytest.mark.minimum
 def test_client_anchors_at_head_then_delivers(monkeypatch):
     """First call (no cursor) returns the head - no history
     replay; subsequent long-polls deliver new alerts."""

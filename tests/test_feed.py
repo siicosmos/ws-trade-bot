@@ -14,6 +14,7 @@ from info import fanout  # noqa: E402
 from consumer.pipeline import ingest_alert, process_alert  # noqa: E402
 from consumer.trading.risk import RiskEngine  # noqa: E402
 from consumer.ws.account import PaperAccount  # noqa: E402
+import pytest  # noqa: E402
 
 
 def _info_app(consumers):
@@ -42,6 +43,9 @@ def _info_cfg():
 
 # ---------------------------------------------------------------- feed api
 
+pytestmark = pytest.mark.essential
+
+
 def test_feed_rejects_bad_token():
     app, store, cfg = _info_app(
         [__import__("core.config", fromlist=["ConsumerEntry"])
@@ -54,6 +58,7 @@ def test_feed_rejects_bad_token():
     assert r.status_code == 401
 
 
+@pytest.mark.minimum
 def test_feed_serves_alerts_since_cursor():
     entry = __import__("core.config", fromlist=["ConsumerEntry"]) \
         .ConsumerEntry(label="c1", token="tok1")

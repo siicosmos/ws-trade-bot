@@ -52,8 +52,8 @@ def main():
         cfg = load_config(config_path)
         result(OK, f"config.yaml loads (mode={cfg.trading.mode}, "
                    f"port={cfg.pipeline.port})")
-        if not cfg.discord.webhook_url:
-            result(WARN, "discord.webhook_url not set",
+        if not cfg.discord.trade_alert_webhook_url:
+            result(WARN, "discord.trade_alert_webhook_url not set",
                    "phone alerts will not send")
     except Exception as e:
         exit_code = 1

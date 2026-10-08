@@ -12,7 +12,10 @@ from core.parser import parse_alert
 from consumer.trading.risk import RiskEngine
 from consumer.trading.stops import StopMonitor
 from core.store import Store
+import pytest  # noqa: E402
 
+
+pytestmark = pytest.mark.essential
 
 class ConfigStub:
     def __init__(self, trading, accounts=None, auth_token=""):
@@ -123,6 +126,7 @@ def test_stop_price_fixed_and_trailing():
     assert abs(monitor_t.stop_price(2.0, 2.0) - 1.5) < 1e-9
 
 
+@pytest.mark.minimum
 def test_stop_monitor_fires_on_drop():
     store = _fresh_store()
     cfg = ConfigStub(TradingConfig(mode="paper", stop_loss_pct=25,

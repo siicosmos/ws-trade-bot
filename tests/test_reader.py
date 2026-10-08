@@ -21,6 +21,7 @@ except ImportError:
 sys.modules["psutil"] = MagicMock()
 
 import discord_reader as dr  # noqa: E402
+import pytest  # noqa: E402
 
 if _real_psutil is not None:
     sys.modules["psutil"] = _real_psutil
@@ -36,6 +37,9 @@ def _fake_ctrl(name="", children=None, control_type=None):
 
 def _item(text="", name=""):
     return types.SimpleNamespace(text=text, Name=name)
+
+
+pytestmark = pytest.mark.essential
 
 
 def test_looks_like_message_rejects_observed_chrome():
@@ -331,6 +335,7 @@ def test_is_recent_message():
     )
 
 
+@pytest.mark.minimum
 def test_channel_allowed():
     channels = ["test-alerts", "player-alerts"]
     assert dr.channel_allowed("#test-alerts", channels)
@@ -338,40 +343,6 @@ def test_channel_allowed():
     assert not dr.channel_allowed("trade-alerts", channels)
     assert dr.channel_allowed("anything", [])
     assert dr.channel_allowed("", channels)
-
-
-def test_merged_config_channels():
-    resp = {"channels": ["Player-Alerts", " test-alerts ", ""]}
-    (poll, items, channels, servers, reopen, restart,
-     auto_switch, auto_scroll, changed) = dr.merged_config(
-        resp, 0.5, 40, ["test-alerts"]
-    )
-    assert changed
-    assert channels == ["player-alerts", "test-alerts"]
-    # no change on repeat
-    unchanged = dr.merged_config(
-        {"channels": ["test-alerts"]}, 0.5, 40, ["test-alerts"]
-    )
-    assert not unchanged[-1]
-
-
-def test_merged_config_channel_servers():
-    resp = {
-        "channel_servers": {"player-alerts": "SPX Plays"},
-        "discord_reopen_seconds": 20,
-        "discord_restart_seconds": 120,
-    }
-    (poll, items, channels, servers, reopen, restart,
-     auto_switch, auto_scroll, changed) = dr.merged_config(
-        resp, 0.5, 40, ["test-alerts"], {}, 15, 90
-    )
-    assert changed
-    assert servers == {"player-alerts": "SPX Plays"}
-    assert reopen == 20 and restart == 120
-    # no change on repeat
-    assert not dr.merged_config(
-        resp, 0.5, 40, ["test-alerts"], servers, 20, 120
-    )[-1]
 
 
 def test_channel_allowed_substring_match():

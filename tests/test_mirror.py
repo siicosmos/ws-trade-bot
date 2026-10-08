@@ -11,6 +11,7 @@ import types
 
 from core.store import Store
 from consumer.trading.mirror import mirror_real_trades
+import pytest  # noqa: E402
 
 
 def _option_node(action, qty, premium, cid, strike=105,
@@ -29,6 +30,8 @@ def _option_node(action, qty, premium, cid, strike=105,
         "currency": "USD",
     }
 
+
+pytestmark = pytest.mark.essential
 
 class StubWs:
     def __init__(self, edges, positions=None, label="RRSP"):
@@ -55,6 +58,7 @@ def _store():
     return Store(path)
 
 
+@pytest.mark.minimum
 def test_mirror_books_real_fills_into_real_ledger():
     """buy 2 @ 2.0 then sell 1 @ 2.5: the real ledger books the
     actual fills and realizes +50 - the real card's today gain."""

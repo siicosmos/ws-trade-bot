@@ -607,8 +607,18 @@ true` on 127.0.0.1 exercises the whole pipeline without real orders.
 
 ## Testing
 
+The suite has three modes (pytest markers, see `pytest.ini`) —
+minimum ⊂ essential ⊂ full:
+
 ```bash
-# unit/integration suite (~470 tests, stubs for the reader's UIA)
+# minimum: smoke - configs load, alerts parse, settings save (~11 tests)
+.venv/bin/python -m pytest tests -q -m minimum
+
+# essential: + parser, settings, reader, stops, users, feed, mirror,
+# dashboard assets (~250 tests)
+.venv/bin/python -m pytest tests -q -m essential
+
+# full: everything (~490 tests, stubs for the reader's UIA) - the default
 .venv/bin/python -m pytest tests -q --ignore=tests/scripts
 
 # full-stack black-box E2E (boots the real server on a temp config/db)
@@ -617,7 +627,7 @@ true` on 127.0.0.1 exercises the whole pipeline without real orders.
 # headless-Chrome dashboard smoke test (needs chrome on PATH)
 .venv/bin/python tests/scripts/ui_test.py
 
-# JS syntax check after editing the dashboard
+# JS syntax check after editing the dashboard (needs node)
 node --check consumer/static/dashboard.js
 ```
 

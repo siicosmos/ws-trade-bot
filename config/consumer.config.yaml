@@ -87,8 +87,7 @@ discord:
                                 # (legacy configs' webhook_url still reads)
   consumer_log_webhook_url: ""  # this app's log tail (consumer.log) posted
                                 # to discord; empty = off
-  update_webhook_url: ""        # app update/restart notices;
-                                # empty = use the main webhook channel
+  update_webhook_url: ""        # app update/restart notices; empty = off
 
 # ---------------------------------------------------------------------------
 # trading - how alerts are sized, executed, and risk-managed

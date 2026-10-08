@@ -3,6 +3,7 @@ import os
 import yaml
 
 import core.config as config
+import pytest  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CONFIG_DIR = os.path.join(
@@ -17,6 +18,9 @@ def _raw(name):
 
 def _load(name):
     return config.load_config(os.path.join(CONFIG_DIR, name))
+
+
+pytestmark = pytest.mark.essential
 
 
 def test_consumer_example_role_and_defaults():
@@ -66,6 +70,7 @@ def test_info_example_role_and_no_trading_sections():
     assert cfg.quotes.enabled is False
 
 
+@pytest.mark.minimum
 def test_reader_example_flat_keys():
     raw = _raw("reader.config.yaml")
     # the reader reads flat keys (no nesting)
@@ -80,6 +85,7 @@ def test_reader_example_flat_keys():
         assert raw[key] == ""
 
 
+@pytest.mark.minimum
 def test_examples_load_through_core_config():
     # the info + consumer examples must survive the real loader
     for name in ("consumer.config.yaml", "info.config.yaml"):
@@ -226,3 +232,12 @@ def test_example_keys_are_all_read_by_the_loader():
     )
     stale += audit("reader.config.yaml", reader_src)
     assert stale == [], stale
+
+
+def test_reader_example_dropped_keys_stay_gone():
+    # channel_marker/discord_server were removed - the channels
+    # allowlist (first entry = where the reader sits) is the only
+    # pinning mechanism now
+    raw = _raw("reader.config.yaml")
+    assert "channel_marker" not in raw
+    assert "discord_server" not in raw

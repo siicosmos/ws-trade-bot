@@ -16,7 +16,10 @@ from consumer.settings import apply_settings, get_settings
 from consumer.trading.stops import StopMonitor
 from core.store import Store
 from core.ops.updater import AutoUpdater
+import pytest  # noqa: E402
 
+
+pytestmark = pytest.mark.essential
 
 class ConfigStub:
     def __init__(self, trading=None, accounts=None, auth_token=""):
@@ -50,6 +53,7 @@ def test_get_settings_shape():
     assert s["quotes"]["provider"] == "ws"
 
 
+@pytest.mark.minimum
 def test_apply_settings_updates_memory_and_file():
     fd, cfg_path = tempfile.mkstemp(suffix=".yaml")
     os.close(fd)
@@ -1345,3 +1349,58 @@ def test_paper_adjust_switches_holding_type():
     assert [p["contract_key"] for p in
             store.list_positions("paper", "T")] == [
         "SPX-2026-10-16-7620-P"]
+
+
+def test_trade_alert_webhook_new_key_and_legacy_fallback(tmp_path):
+    """the renamed trade_alert_webhook_url parses directly; configs
+    written before the rename keep working via webhook_url."""
+    from core.config import load_config
+
+    new_path = tmp_path / "new.yaml"
+    new_path.write_text(
+        "discord:\n"
+        "  trade_alert_webhook_url: "
+        "\"https://discord.com/api/webhooks/new\"\n",
+        encoding="utf-8",
+    )
+    assert (
+        load_config(str(new_path)).discord.trade_alert_webhook_url
+        == "https://discord.com/api/webhooks/new"
+    )
+
+    legacy_path = tmp_path / "legacy.yaml"
+    legacy_path.write_text(
+        "discord:\n"
+        "  webhook_url: \"https://discord.com/api/webhooks/old\"\n",
+        encoding="utf-8",
+    )
+    assert (
+        load_config(str(legacy_path)).discord.trade_alert_webhook_url
+        == "https://discord.com/api/webhooks/old"
+    )
+
+
+def test_settings_save_migrates_legacy_trade_webhook_key(tmp_path):
+    """a settings save rewrites the legacy webhook_url key to
+    trade_alert_webhook_url - the obsolete name does not survive."""
+    from core.config import load_config
+
+    from consumer.settings import apply_settings
+
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(
+        "trading:\n  mode: notify\n"
+        "discord:\n"
+        "  webhook_url: \"https://discord.com/api/webhooks/old\"\n",
+        encoding="utf-8",
+    )
+    cfg = load_config(str(cfg_path))
+    applied, errors = apply_settings(
+        cfg, {"trading": {"risk_per_trade_pct": 7}}, str(cfg_path)
+    )
+    assert errors == []
+    text = cfg_path.read_text(encoding="utf-8")
+    assert "trade_alert_webhook_url" in text
+    assert "webhook_url:" not in text.replace(
+        "trade_alert_webhook_url:", ""
+    )
