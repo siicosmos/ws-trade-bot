@@ -29,7 +29,14 @@ def _paper_card_metrics(
     with the same model as the real cards: long options at 100%,
     spreads at full wing width, stocks at their margin rate,
     margin used being negative ledger cash."""
-    cash = store.paper_equity(label)
+    # two cash pools (the adjust editor): the cad ledger cash
+    # and the usd pool - the margin math nets them at the live fx
+    cash_cad = store.paper_equity(label)
+    cash_usd = store.paper_cash_usd(label) or 0.0
+    cash = (
+        cash_cad + cash_usd * conv_fx
+        if cash_cad is not None else None
+    )
     rows = []
     pos_fn = getattr(ledger, "positions", None)
     if callable(pos_fn):
@@ -52,7 +59,9 @@ def _paper_card_metrics(
     ) or None
 
     out = {
-        "paper_cash": cash,
+        # the cad pool - the card renders the usd pool next to it
+        # from paper_cash_usd
+        "paper_cash": cash_cad,
         "paper_stock_value": stock_value or None,
         "paper_option_value": option_value or None,
         "paper_alloc_base": alloc_base,

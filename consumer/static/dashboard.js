@@ -778,8 +778,15 @@ function renderSummary(data) {
           '<div class="sub mrow"><span class="cell"><span class="lab">portfolio value</span><span class="val">' + (phidden? "••••••" : (a.paper_portfolio_value != null ? fmtMoney(a.paper_portfolio_value) + " cad" : '')) +
             '</span></span><span class="cell"><span class="lab">max buying power</span><span class="val">' + (phidden? "••••••" : fmtMoney(a.paper_max_buying_power || 0) + " cad") + '</span></span></div>'
           : '') +
-        ((a.paper_cash != null)
-          ? '<div class="sub"><span>cash ' + pair(Math.max(0, a.paper_cash), a.paper_cash != null) + '</span>' +
+        ((a.paper_cash != null || a.paper_cash_usd != null)
+          ? '<div class="sub"><span>cash ' + (phidden
+              ? "••••••"
+              : [
+                  (a.paper_cash != null
+                    ? fmtMoney(Math.max(0, a.paper_cash)) + " cad" : ""),
+                  (a.paper_cash_usd != null
+                    ? fmtMoney(Math.max(0, a.paper_cash_usd)) + " usd" : ""),
+                ].filter(Boolean).join(" · ") || "—") + '</span>' +
             '<span>available</span></div>'
           : '') +
         '<div class="sub"><span>seeded ' + pair(a.paper_initial, a.paper_initial != null) + '</span>' +

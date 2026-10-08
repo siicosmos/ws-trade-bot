@@ -1340,3 +1340,39 @@ def test_paper_adjust_endpoint():
     assert r.status_code == 400
     assert any("cash_cad" in e for e in r.get_json()["errors"])
     assert any("qty" in e for e in r.get_json()["errors"])
+
+
+def test_paper_card_metrics_include_usd_cash():
+    # the adjust editor's usd cash pool flows through every card
+    # line: the cash line shows both pools natively, the margin
+    # math nets them, and the valuation includes them
+    store = _fresh_store()
+    cfg = ConfigStub(TradingConfig(mode="paper"))
+    store.set_paper_equity(5000.0, "T")
+    store.set_paper_cash_usd(1000.0, "T")
+
+    from consumer.web import _paper_card_metrics
+
+    out = _paper_card_metrics(None, store, cfg, "T", 6000.0, False, 1.0)
+    assert out["paper_cash"] == 5000.0
+    # no holdings -> no margin requirement, no loan
+    assert out["paper_margin_used"] == 0.0
+    assert out["paper_portfolio_value"] == 6000.0
+
+    # the ledger's valuation includes the usd pool (fx 1.0 with
+    # no live account)
+    from consumer.trading.paper import PaperLedger
+
+    ledger = PaperLedger(cfg, store, None)
+    assert ledger.value("T") == 6000.0
+
+    # a negative cad cash pool is a loan - the usd pool offsets it
+    store.set_paper_equity(-500.0, "T")
+    out = _paper_card_metrics(None, store, cfg, "T", 1500.0, False, 1.0)
+    assert out["paper_margin_used"] == 0.0   # -500 + 1000 = +500 net
+    assert out["paper_portfolio_value"] == 1500.0
+
+    # reset clears the usd pool with the rest of the ledger
+    store.reset_paper_account("T")
+    assert store.paper_cash_usd("T") is None
+    assert store.paper_equity("T") is None
