@@ -652,6 +652,39 @@ def test_load_env_tokens_missing_file():
     assert wt.load_env_tokens(path="/nonexistent/ws_tokens.env") is False
 
 
+def test_load_env_tokens_legacy_root_fallback(tmp_path, monkeypatch):
+    import consumer.ws.ws_tokens as wt
+
+    consumer_dir = tmp_path / "consumer"
+    consumer_dir.mkdir()
+    monkeypatch.setattr(
+        wt, "_TOKEN_PATH", str(consumer_dir / "ws_tokens.env")
+    )
+    monkeypatch.setattr(
+        wt, "_LEGACY_TOKEN_PATH", str(tmp_path / "ws_tokens.env")
+    )
+
+    # no file anywhere -> nothing loaded
+    monkeypatch.delenv("WS_ACCESS_TOKEN", raising=False)
+    assert wt.load_env_tokens() is False
+
+    # legacy root file (pre consumer/ installs) is picked up
+    (tmp_path / "ws_tokens.env").write_text(
+        "export WS_ACCESS_TOKEN=legacy-token\n"
+    )
+    assert wt.load_env_tokens() is True
+    assert os.environ.get("WS_ACCESS_TOKEN") == "legacy-token"
+    os.environ.pop("WS_ACCESS_TOKEN", None)
+
+    # the consumer/ location wins once it exists
+    (consumer_dir / "ws_tokens.env").write_text(
+        "export WS_ACCESS_TOKEN=new-token\n"
+    )
+    assert wt.load_env_tokens() is True
+    assert os.environ.get("WS_ACCESS_TOKEN") == "new-token"
+    os.environ.pop("WS_ACCESS_TOKEN", None)
+
+
 def test_notify_mode_forwards_correction():
     cfg, store, account, risk = _setup(mode="notify")
     res = process_alert(

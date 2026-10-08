@@ -487,7 +487,9 @@ ws-trade-bot/
 ```
 
 1. **Clone** the repo (or run `scripts/setup_ssh.ps1` to set up the
-   SSH key for unattended auto-update pulls).
+   SSH deploy key for the info server's unattended auto-update
+   pulls — consumer-only machines don't need it, they follow the
+   GitHub release channel with a token instead).
 2. **Role configs** (once): copy `config/info.config.yaml` to
    `info/info.config.yaml` (port 8080 is already set — add an
    `auth_token` and register consumers under `consumers[]`) and
@@ -500,8 +502,9 @@ ws-trade-bot/
 4. **Your consumer app**: `scripts\start_consumer.bat` — dashboard on
    `http://127.0.0.1:8081` (expose via Tailscale for phone access).
 5. **Wealthsimple login** (consumer): `python scripts/ws_login.py` —
-   saves tokens to gitignored `ws_tokens.env` at the repo root and
-   prints account IDs for the consumer config.
+   stores tokens in the Windows keyring (primary) plus a gitignored
+   `consumer/ws_tokens.env` fallback, and prints account IDs for
+   the consumer config.
 6. **Reader**: `scripts/start_reader.bat` (own venv) and
    `scripts/start_discord.bat` (Discord with
    `--force-renderer-accessibility`).
@@ -550,7 +553,9 @@ Two install types — both auto-update:
 3. `python scripts/ws_login.py` with THEIR Wealthsimple login.
 4. Run `scripts\start_consumer.bat` — they get the full dashboard,
    their own paper/live trading, their own webhook alerts. Updates
-   ride `git pull` (needs the repo accessible from that machine).
+   follow the same release channel as any other consumer install
+   (the updater seeds its VERSION marker from the checkout on the
+   first check) — no git access needed after the initial clone.
 
 Either way, the owner adds a matching `consumers[]` entry (label +
 token) on the info server; add a `push_url` too if the consumer is

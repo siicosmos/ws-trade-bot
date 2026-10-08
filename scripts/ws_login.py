@@ -18,8 +18,12 @@ def main():
     access = os.environ.get("WS_ACCESS_TOKEN") or getattr(ws, "access_token", None)
     refresh = os.environ.get("WS_REFRESH_TOKEN") or getattr(ws, "refresh_token", None)
 
+    # save where the consumer app reads: consumer/ws_tokens.env
+    # (the keyring stays the primary store - this is the headless
+    # fallback)
     token_path = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), "..", "ws_tokens.env"
+        os.path.dirname(os.path.abspath(__file__)),
+        "..", "consumer", "ws_tokens.env",
     )
     if access and refresh:
         with open(token_path, "w") as f:
@@ -30,7 +34,8 @@ def main():
     else:
         print("WARNING: could not capture tokens - stored in keyring only")
 
-    print("\nyour accounts (put the one to trade in config.yaml wealthsimple.account_id):")
+    print("\nyour accounts (add them in the dashboard settings or")
+    print("consumer.config.yaml wealthsimple.accounts):")
     for a in ws.get_accounts():
         print(f"  {a['id']}  {a.get('nickname', '')}  {a.get('accountType', '')}")
 

@@ -3,6 +3,13 @@ import os
 _TOKEN_PATH = os.path.abspath(
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "ws_tokens.env")
 )
+# legacy location: ws_login.py used to save at the repo root
+_LEGACY_TOKEN_PATH = os.path.abspath(
+    os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "..", "..", "ws_tokens.env",
+    )
+)
 _last_written = None
 
 
@@ -25,7 +32,16 @@ def persist_env_tokens(path=None) -> bool:
 
 
 def load_env_tokens(path=None) -> bool:
-    target = path or _TOKEN_PATH
+    if path is None:
+        target = _TOKEN_PATH
+        if not os.path.exists(target) and os.path.exists(
+            _LEGACY_TOKEN_PATH
+        ):
+            # installs predating the consumer/ location keep
+            # their tokens at the repo root - read them there
+            target = _LEGACY_TOKEN_PATH
+    else:
+        target = path
     if not os.path.exists(target):
         return False
     loaded = False
