@@ -412,7 +412,9 @@ def test_paper_badge_and_holdings_hint():
     js = dash.DASHBOARD_JS
     assert 'id="paper-badge"' in dash.DASHBOARD_HTML
     assert "badge.papersim" in js or "papersim" in dash.DASHBOARD_HTML
-    assert 'data.paper ? "" : "none"' in js
+    # the mode badge already reads "paper" in paper mode - the
+    # second badge is only for paper running alongside notify
+    assert 'data.paper && data.mode !== "paper"' in js
     assert '"holdings "' in js
 
 
