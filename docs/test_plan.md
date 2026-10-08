@@ -12,10 +12,9 @@ Run the automated suite with:
 .venv/bin/python -m pytest tests -q --ignore=tests/scripts
 ```
 
-Known env-dependent failures (not regressions):
-`test_ws_http_shim_injects_timeout` (moomoo module missing),
-`test_heartbeat_fires_while_channel_quiet` /
-`test_unsent_messages_are_retried` (reader timing).
+The suite is fully green on any OS (the reader tests stub the
+Windows UIA); it needs `requirements.txt` installed
+(`wealthsimple-python` backs the ws-http shim test).
 
 ---
 

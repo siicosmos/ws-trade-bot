@@ -624,6 +624,12 @@ def test_heartbeat_fires_while_channel_quiet(monkeypatch, tmp_path):
     monkeypatch.setattr(dr, "sync_clock", lambda: None)
     monkeypatch.setattr(dr, "git_head", lambda root: "abc123")
     monkeypatch.setattr(dr, "repo_root", lambda: ".")
+    # the banner runs git subprocesses - on posix their wait
+    # polling burns the patched time.sleep before the poll loop
+    # ever runs, so stub the pre-loop side effects out
+    monkeypatch.setattr(dr, "_startup_banner", lambda: None)
+    monkeypatch.setattr(dr, "_log_previous_exit", lambda: None)
+    monkeypatch.setattr(dr, "_terminate_stale_reader", lambda: None)
     monkeypatch.setattr(dr, "find_discord_window", lambda: FakeWindow())
     monkeypatch.setattr(
         dr, "find_message_container",
@@ -772,6 +778,11 @@ def test_unsent_messages_are_retried(monkeypatch, tmp_path):
     monkeypatch.setattr(dr, "sync_clock", lambda: None)
     monkeypatch.setattr(dr, "git_head", lambda root: "abc123")
     monkeypatch.setattr(dr, "repo_root", lambda: ".")
+    # see test_heartbeat_fires_while_channel_quiet: the banner's
+    # git subprocesses eat the patched sleep on posix
+    monkeypatch.setattr(dr, "_startup_banner", lambda: None)
+    monkeypatch.setattr(dr, "_log_previous_exit", lambda: None)
+    monkeypatch.setattr(dr, "_terminate_stale_reader", lambda: None)
     monkeypatch.setattr(dr, "find_discord_window", lambda: FakeWindow())
     monkeypatch.setattr(
         dr, "find_message_container", lambda *a, **k: FakeContainer()
