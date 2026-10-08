@@ -22,7 +22,7 @@ if errorlevel 1 (
 )
 
 if not exist config.yaml (
-  echo config.yaml missing - run scripts\split_roles.py first
+  echo config.yaml missing - copy ..\config.example.yaml here and set role: consumer
   pause
   exit /b 1
 )

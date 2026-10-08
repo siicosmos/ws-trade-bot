@@ -23,7 +23,8 @@ pipeline:
   # consumer = the trading app (default: alerts in, sizing,
   # paper/live execution, dashboard). info = the alert source
   # server: reader ingest + alert feed for consumer apps, no
-  # trading. split_roles.py generates one config per role.
+  # trading. copy this file once per role folder (info/ and
+  # consumer/) and set the role in each.
   role: consumer
   host: "0.0.0.0"            # what to bind to; 127.0.0.1 = this PC only
   port: 8080

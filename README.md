@@ -462,12 +462,12 @@ ws-trade-bot/
 
 1. **Clone** the repo (or run `scripts/setup_ssh.ps1` to set up the
    SSH key for unattended auto-update pulls).
-2. **Split the monolith** (once): `python scripts/split_roles.py` —
-   generates `info/config.yaml` + `info/trades.db` (keeps port 8080
-   and the reader's token) and `consumer/config.yaml` +
-   `consumer/trades.db` (port 8081, own token, registered as a push
-   consumer). An earlier flat-layout split (`config_info.yaml` at the
-   root) is moved into the folders automatically, tokens preserved.
+2. **Role configs** (once): copy `config.example.yaml` to
+   `info/config.yaml` (set `pipeline.role: info`, keep port 8080 —
+   the reader's target) and to `consumer/config.yaml` (set
+   `pipeline.role: consumer`, port 8081, own `auth_token`, a `feed:`
+   section pointing at the info server, and register the consumer
+   under the info server's `consumers[]`).
 3. **Info server**: `scripts\start_info.bat` — the reader keeps posting to
    `:8080` unchanged.
 4. **Your consumer app**: `scripts\start_consumer.bat` — dashboard on
@@ -563,8 +563,8 @@ incl. the kill switch), `test_settings_update.py`, `test_users.py`,
   paper round trips; drives the "set `contracts_max: 0` on
   negative-expectancy tiers" decision rule.
 - **diagnostics**: `python scripts/diagnose.py` (deps, config,
-  connectivity); `python scripts/dump_discord_tree.py` (reader
-  debugging).
+  connectivity); `python reader/inspect_discord.py` (reader
+  debugging - dumps the Discord UIA tree).
 - **go-live**: see `docs/live_readiness_plan.md` for the checklist,
   suggested starting settings, and the safety-system reference.
 
@@ -624,8 +624,8 @@ consumer/                  # the trading app (code + runtime + launcher)
     ws_positions_query.py  # the app's FetchIdentityPositions document
     ws_security_query.py   # the app's FetchSecurity document
     ws_http.py ws_common.py ws_tokens.py account_types.py
-scripts/                   # split_roles, ws_login, gen_cert, expectancy,
-                           # diagnose, clean_start, setup_ssh, dump_discord_tree,
+scripts/                   # ws_login, gen_cert, expectancy, diagnose,
+                           # clean_start, setup_ssh,
                            # start_info/start_consumer/start_reader/
                            # start_discord .bat
 tests/                     # pytest suite (+ scripts/: e2e_test, ui_test)
