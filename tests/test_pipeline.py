@@ -1,4 +1,5 @@
 import os
+import pytest
 import sys
 import tempfile
 import time
@@ -4918,3 +4919,110 @@ def test_new_real_account_gets_a_paper_account():
     assert set(acct.values()) == {"T", "N"}
     # re-running is a no-op (the seed markers guard)
     assert seed_paper_accounts(cfg, store, acct) == []
+
+
+def _paper_executor_with_fx(store, fx, quotes=None, value=10000.0):
+    """A paper executor over a ledger stub with a pinned fx rate
+    (the live fx comes from the ws account's positions)."""
+    from consumer.trading.executor import PaperExecutor
+
+    class FxLedger:
+        def fx(self):
+            return fx
+
+        def value(self, label="default"):
+            return value
+
+        def _quotes(self):
+            return quotes or {}
+
+    store.set_paper_equity(value, "default")
+    return PaperExecutor(
+        _cfg_paper(), store, FxLedger()
+    ), FxLedger()
+
+
+def _cfg_paper():
+    from tests.test_settings_update import ConfigStub
+    from core.config import TradingConfig
+
+    return ConfigStub(TradingConfig(
+        mode="paper", cooldown_seconds=0, dedupe_window_minutes=0,
+    ))
+
+
+def test_paper_usd_option_buy_debits_at_fx():
+    cfg, store, account, risk = _setup()
+    executor, _ledger = _paper_executor_with_fx(store, fx=1.4)
+    alert = parse_alert("BOUGHT 0DTE SPY 759c @ 1.0 small")
+    res = executor.execute(alert, cfg, store)
+    assert res.ok
+    # 2 contracts (small tier max 1 for tiny... small: max 2) at
+    # $1.00 x 100 x 1.4 fx = $280 cad out of the cad pool
+    cost = store.paper_equity("default")
+    assert cost == pytest.approx(10000.0 - res.qty * 1.0 * 100 * 1.4)
+
+
+def test_paper_usd_stock_buy_debits_at_fx_and_sizes_at_fx():
+    cfg, store, account, risk = _setup()
+    executor, _ledger = _paper_executor_with_fx(store, fx=1.4)
+    # medium tier = 10% of 10000 = 1000 cad -> at fx 1.4 that is
+    # ~714 usd of buying power -> 7 shares at $100
+    alert = parse_alert("BOUGHT COIN @ 100 medium")
+    res = executor.execute(alert, cfg, store)
+    assert res.ok
+    assert res.qty == 7
+    assert store.paper_equity("default") == pytest.approx(
+        10000.0 - 7 * 100 * 1.4
+    )
+
+
+def test_paper_buy_with_insufficient_cash_becomes_a_loan():
+    # margin accounts lend: the buy drives the cad cash negative
+    # and the card surfaces it as margin used
+    cfg, store, account, risk = _setup()
+    executor, ledger = _paper_executor_with_fx(
+        store, fx=1.4, value=10000.0
+    )
+    # the account sizes against its (healthy) value but the cash
+    # pool is nearly empty - the buy still executes on margin
+    store.set_paper_equity(50.0, "default")
+    alert = parse_alert("BOUGHT 0DTE SPY 759c @ 1.0 small")
+    res = executor.execute(alert, cfg, store)
+    assert res.ok
+    cash = store.paper_equity("default")
+    assert cash == pytest.approx(50.0 - res.qty * 100 * 1.4)
+    assert cash < 0
+
+    from consumer.web import _paper_card_metrics
+
+    # the honest account value: negative cash + the position at
+    # cost basis
+    real_value = cash + res.qty * 1.0 * 100 * 1.4
+    out = _paper_card_metrics(
+        ledger, store, cfg, "default", real_value, False, 1.4,
+    )
+    assert out["paper_margin_used"] == pytest.approx(-cash, abs=0.01)
+    assert out["paper_portfolio_value"] == pytest.approx(
+        real_value + (-cash), abs=0.01
+    )
+
+
+def test_paper_usd_cash_pool_covers_usd_buys():
+    # the adjust editor's usd pool is part of the spendable cash:
+    # a usd buy draws the combined pool down (netted at fx)
+    cfg, store, account, risk = _setup()
+    executor, ledger = _paper_executor_with_fx(store, fx=1.4)
+    store.set_paper_equity(100.0, "default")
+    store.set_paper_cash_usd(500.0, "default")
+    alert = parse_alert("BOUGHT 0DTE SPY 759c @ 1.0 small")
+    res = executor.execute(alert, cfg, store)
+    assert res.ok
+    # 280 cad cost comes out of the combined pools: the cad pool
+    # drains first and the rest nets against the usd pool
+    cad, usd = (
+        store.paper_equity("default"), store.paper_cash_usd("default")
+    )
+    assert cad + usd * 1.4 == pytest.approx(
+        100.0 + 500.0 * 1.4 - res.qty * 100 * 1.4
+    )

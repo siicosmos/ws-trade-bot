@@ -274,6 +274,21 @@ class PaperExecutor:
         fn = getattr(self.account, "fx", None)
         return float(fn()) if callable(fn) else 1.0
 
+    def _stock_is_usd(self, key):
+        """Stock alerts quote in the listing's currency - the
+        alerted names are US-listed (the option path assumes the
+        same). A live quote for the symbol carries the security's
+        currency; default to usd like the option path."""
+        quotes_fn = getattr(self.account, "_quotes", None)
+        if callable(quotes_fn):
+            try:
+                quote = quotes_fn().get(key)
+                if quote is not None:
+                    return bool(quote.get("usd", True))
+            except Exception:
+                pass
+        return True
+
     def execute(self, alert, cfg, store) -> ExecutionResult:
         if alert.kind == "option":
             return self._option(alert, cfg, store)
@@ -418,12 +433,17 @@ class PaperExecutor:
                 pct = stock_tiers.get(
                     tier_name, stock_tiers.get("medium")
                 )
+                usd = self._stock_is_usd(key)
+                fx = self._fx() if usd else 1.0
                 if pct is not None:
                     value = self.account.value(label)
                     budget = max(0.0, float(value or 0) * pct / 100.0)
+                    # the budget is cad - a usd listing spends it
+                    # at the live fx
+                    spendable = budget / fx if fx else budget
                 else:
-                    budget = float(cfg.trading.position_size_cad)
-                qty = max(0, int(budget / price))
+                    spendable = float(cfg.trading.position_size_cad)
+                qty = max(0, int(spendable / price))
                 if qty < 1:
                     breakdown[label] = "0 (position size too small)"
                     continue
@@ -436,7 +456,7 @@ class PaperExecutor:
                 store.apply_position(
                     self.mode, alert, qty, premium=price, account=label
                 )
-                store.adjust_paper_equity(-qty * price, label)
+                store.adjust_paper_equity(-qty * price * fx, label)
                 breakdown[label] = f"{qty} @ {price}"
                 total += qty
             ok = total > 0
@@ -463,7 +483,11 @@ class PaperExecutor:
                     premium=alert.premium or alert.entry, account=label
                 )
             if alert.entry:
-                store.adjust_paper_equity(qty * alert.entry, label)
+                store.adjust_paper_equity(
+                    qty * alert.entry * (self._fx()
+                                         if self._stock_is_usd(key)
+                                         else 1.0), label
+                )
             breakdown[label] = f"{qty}/{held} @ {alert.entry}"
             total += qty
         ok = total > 0
