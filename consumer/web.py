@@ -1146,6 +1146,11 @@ def create_app(cfg, store: Store, risk, executor, account=None,
     )
     app.permanent_session_lifetime = timedelta(days=30)
     app.config["MAX_CONTENT_LENGTH"] = 1024 * 1024
+    # the dashboard assets change with every release - the flask
+    # default (hours of browser caching) serves stale js after an
+    # update; these files are tiny and local/tailnet, always
+    # revalidate
+    app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
     if getattr(cfg.pipeline, "tls_cert", "") and getattr(
         cfg.pipeline, "tls_key", ""

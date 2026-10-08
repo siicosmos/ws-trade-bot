@@ -35,6 +35,9 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
     app = Flask(__name__)
     install_quiet_filter()
     app.config["MAX_CONTENT_LENGTH"] = 1024 * 1024
+    # the dashboard assets change with every release - always
+    # revalidate (see the consumer app for the same note)
+    app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
 
     # the reader's heartbeat state (dashboard reader line).
     # reader settings live in the reader's own yaml - read the
