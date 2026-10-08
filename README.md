@@ -102,7 +102,7 @@ All wrapped by `core/ops/supervise.py` (crash → log + Discord notice
 2. **reader** — UIA poll loop (default 0.5s) reads on-screen messages
    (auto-scrolled to bottom — Discord only exposes scrolled-in rows),
    strips chrome/timestamps/reactions, dedupes via a persisted seen-set
-   (`.reader_seen.json`) + reaction-prefix detection, filters by the
+   (`.reader_seen.json` in the reader folder) + reaction-prefix detection, filters by the
    `reader.channels` allowlist.
 3. **Delivery to the info server** — each new message is POSTed to
    `reader.pipeline_url` (default `http://localhost:8080/alert`) as

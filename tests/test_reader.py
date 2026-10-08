@@ -1,5 +1,7 @@
+import json
 import os
 import sys
+import time
 import types
 from unittest.mock import MagicMock
 
@@ -1211,3 +1213,23 @@ def test_find_message_container_unnamed_list_strict(monkeypatch):
         object(), "", "#🚨│player-alerts", strict_title=True
     )
     assert got is unnamed_list
+
+
+def test_seen_file_migrates_to_reader_folder(tmp_path, monkeypatch):
+    # the seen-set moved from the repo root into the reader
+    # folder - the rename must preserve it (old Discord
+    # messages must not re-trigger alerts)
+    legacy = tmp_path / "root" / ".reader_seen.json"
+    legacy.parent.mkdir()
+    legacy.write_text(json.dumps({"old alert": time.time()}))
+    new = tmp_path / "reader" / ".reader_seen.json"
+    monkeypatch.setattr(dr, "LEGACY_SEEN_FILE", str(legacy))
+    monkeypatch.setattr(dr, "SEEN_FILE", str(new))
+
+    seen, _ = dr.load_seen()
+    assert "old alert" in seen
+    assert new.exists() and not legacy.exists()
+
+    # a second load is fine once the legacy file is gone
+    seen2, _ = dr.load_seen()
+    assert "old alert" in seen2

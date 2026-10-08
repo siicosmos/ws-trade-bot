@@ -1108,12 +1108,33 @@ def repo_root():
     return os.path.abspath(os.path.join(here, ".."))
 
 
-SEEN_FILE = os.path.join(repo_root(), ".reader_seen.json")
+# the seen-set lives in the reader's own folder, next to its
+# config (the repo-root location is legacy - migrated on load)
+SEEN_FILE = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), ".reader_seen.json"
+)
+LEGACY_SEEN_FILE = os.path.join(repo_root(), ".reader_seen.json")
 SEEN_RETAIN_SECONDS = 48 * 3600
+
+
+def _migrate_seen_file():
+    """One-time rename: .reader_seen.json moved from the repo
+    root into the reader folder - keeping it preserves the
+    seen-set, so old Discord messages do not re-trigger."""
+    if os.path.exists(SEEN_FILE) or not os.path.exists(
+        LEGACY_SEEN_FILE
+    ):
+        return
+    try:
+        os.makedirs(os.path.dirname(SEEN_FILE), exist_ok=True)
+        os.rename(LEGACY_SEEN_FILE, SEEN_FILE)
+    except OSError:
+        pass
 
 
 def load_seen():
     """Messages already delivered, surviving reader restarts."""
+    _migrate_seen_file()
     try:
         with open(SEEN_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
