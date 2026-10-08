@@ -73,7 +73,7 @@ def main(cfg, args):
     )
     prev_exit = ""
     try:
-        with open(exit_file) as f:
+        with open(exit_file, encoding="utf-8") as f:
             prev_exit = f.read().strip()
         os.remove(exit_file)
     except OSError:

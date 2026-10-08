@@ -252,7 +252,7 @@ def test_mode_endpoint_persists_and_reports_restart(tmp_path):
     # persisted to the config file
     import yaml
 
-    raw = yaml.safe_load(open(config_path))
+    raw = yaml.safe_load(open(config_path, encoding="utf-8"))
     assert raw["trading"]["mode"] == "paper"
     # and the live config object moved too
     assert cfg.trading.mode == "paper"

@@ -28,7 +28,7 @@ def _cfg(enabled=True, token="", role="consumer"):
 def _write(root, rel, text):
     path = os.path.join(root, rel)
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w") as f:
+    with open(path, "w", encoding="utf-8") as f:
         f.write(text)
 
 
@@ -115,7 +115,7 @@ def test_check_once_stages_and_restarts(tmp_path, monkeypatch):
         else:
             import hashlib
             digest = hashlib.sha256(zip_bytes["data"]).hexdigest()
-            with open(dest, "w") as f:
+            with open(dest, "w", encoding="utf-8") as f:
                 f.write(f"{digest}  consumer-bbb.zip\n")
 
     monkeypatch.setattr(ru, "latest_release", lambda *a, **k: release)
@@ -148,7 +148,7 @@ def test_checksum_mismatch_aborts(tmp_path, monkeypatch):
         if url.endswith(".zip"):
             _make_zip(dest, "bbb")
         else:
-            with open(dest, "w") as f:
+            with open(dest, "w", encoding="utf-8") as f:
                 f.write("deadbeef  consumer-bbb.zip\n")
 
     monkeypatch.setattr(ru, "latest_release", lambda *a, **k: release)
@@ -209,19 +209,19 @@ def test_apply_update_swaps_and_preserves_state(tmp_path):
     assert mod.apply(root) is True
 
     # code swapped
-    with open(os.path.join(root, "core", "mod.py")) as f:
+    with open(os.path.join(root, "core", "mod.py"), encoding="utf-8") as f:
         assert f.read() == "x = 1\n"
     assert not os.path.exists(os.path.join(root, "core", "old.py"))
-    with open(os.path.join(root, "run.py")) as f:
+    with open(os.path.join(root, "run.py"), encoding="utf-8") as f:
         assert f.read() == "print('hi')\n"
     # state preserved
-    with open(os.path.join(root, "consumer", "consumer.config.yaml")) as f:
+    with open(os.path.join(root, "consumer", "consumer.config.yaml"), encoding="utf-8") as f:
         assert f.read() == "role: consumer\n"
-    with open(os.path.join(root, "consumer", "consumer.trades.db")) as f:
+    with open(os.path.join(root, "consumer", "consumer.trades.db"), encoding="utf-8") as f:
         assert f.read() == "db-bytes"
     # VERSION + record + cleanup
     assert read_version(root)["commit"] == "bbb"
-    with open(os.path.join(root, ".last_update.json")) as f:
+    with open(os.path.join(root, ".last_update.json"), encoding="utf-8") as f:
         rec = json.load(f)
     assert rec["how"] == "release" and rec["commit"] == "bbb"
     assert not os.path.exists(os.path.join(root, ".update_pending.json"))
@@ -268,9 +268,9 @@ def test_apply_update_failure_restores_state(tmp_path, monkeypatch):
         mod.apply(root)
 
     # the state files are back (consumer/ recreated if needed)
-    with open(os.path.join(root, "consumer", "consumer.config.yaml")) as f:
+    with open(os.path.join(root, "consumer", "consumer.config.yaml"), encoding="utf-8") as f:
         assert f.read() == "role: consumer\n"
-    with open(os.path.join(root, "consumer", "consumer.trades.db")) as f:
+    with open(os.path.join(root, "consumer", "consumer.trades.db"), encoding="utf-8") as f:
         assert f.read() == "db-bytes"
     # the marker + staging stay - the next launcher pass retries
     assert os.path.exists(os.path.join(root, ".update_pending.json"))
@@ -288,7 +288,7 @@ def test_incomplete_staged_build_aborts(tmp_path, monkeypatch):
             with zipfile.ZipFile(dest, "w") as z:
                 z.writestr("run.py", "print('hi')\n")   # no core/ consumer/
         else:
-            with open(dest, "w") as f:
+            with open(dest, "w", encoding="utf-8") as f:
                 f.write("placeholder\n")
 
     monkeypatch.setattr(ru, "latest_release", lambda *a, **k: release)

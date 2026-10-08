@@ -26,7 +26,7 @@ def main():
         "..", "consumer", "ws_tokens.env",
     )
     if access and refresh:
-        with open(token_path, "w") as f:
+        with open(token_path, "w", encoding="utf-8") as f:
             f.write(f"export WS_ACCESS_TOKEN={access}\n")
             f.write(f"export WS_REFRESH_TOKEN={refresh}\n")
         os.chmod(token_path, 0o600)

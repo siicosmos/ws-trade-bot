@@ -16,7 +16,7 @@ def persist_env_tokens(path=None) -> bool:
     current = (access, refresh)
     if current == _last_written:
         return False
-    with open(target, "w") as f:
+    with open(target, "w", encoding="utf-8") as f:
         f.write(f"export WS_ACCESS_TOKEN={access}\n")
         f.write(f"export WS_REFRESH_TOKEN={refresh}\n")
     os.chmod(target, 0o600)
@@ -29,7 +29,7 @@ def load_env_tokens(path=None) -> bool:
     if not os.path.exists(target):
         return False
     loaded = False
-    with open(target) as f:
+    with open(target, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if not line or "=" not in line:

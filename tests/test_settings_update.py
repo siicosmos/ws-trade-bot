@@ -57,7 +57,7 @@ def test_get_settings_shape():
 def test_apply_settings_updates_memory_and_file():
     fd, cfg_path = tempfile.mkstemp(suffix=".yaml")
     os.close(fd)
-    with open(cfg_path, "w") as f:
+    with open(cfg_path, "w", encoding="utf-8") as f:
         f.write(
             "trading:\n  mode: paper\n  risk_per_trade_pct: 5\n"
             "discord:\n  trade_alert_webhook_url: \"x\"\n"
@@ -163,7 +163,7 @@ def test_settings_endpoint_roundtrip():
 
     fd, cfg_path = tempfile.mkstemp(suffix=".yaml")
     os.close(fd)
-    with open(cfg_path, "w") as f:
+    with open(cfg_path, "w", encoding="utf-8") as f:
         f.write("trading:\n  mode: notify\n")
 
     cfg = ConfigStub(TradingConfig(mode="notify"), accounts=[])
@@ -420,7 +420,7 @@ def test_reader_status_endpoints():
 def test_account_settings_apply_and_persist():
     fd, cfg_path = tempfile.mkstemp(suffix=".yaml")
     os.close(fd)
-    with open(cfg_path, "w") as f:
+    with open(cfg_path, "w", encoding="utf-8") as f:
         f.write(
             "wealthsimple:\n"
             "  exchange_hint: NASDAQ\n"
@@ -525,7 +525,7 @@ def test_quotes_disabled_by_default(tmp_path):
     from consumer.trading.quotes import make_quote_provider
 
     cfg_path = tmp_path / "config.yaml"
-    with open(cfg_path, "w") as f:
+    with open(cfg_path, "w", encoding="utf-8") as f:
         f.write("quotes:\n  provider: ws\n")
     cfg = load_config(str(cfg_path))
     assert cfg.quotes.enabled is False
@@ -844,7 +844,7 @@ def test_new_fields_persist_to_config_file():
 
     fd, cfg_path = tempfile.mkstemp(suffix=".yaml")
     os.close(fd)
-    with open(cfg_path, "w") as f:
+    with open(cfg_path, "w", encoding="utf-8") as f:
         f.write("trading:\n  mode: notify\n")
 
     cfg = ConfigStub(
@@ -859,7 +859,7 @@ def test_new_fields_persist_to_config_file():
     }, config_path=cfg_path)
     assert ok and not errors
 
-    with open(cfg_path) as f:
+    with open(cfg_path, encoding="utf-8") as f:
         raw = yaml.safe_load(f)
     assert raw["trading"]["order_type"] == "limit"
     assert raw["trading"]["max_daily_loss_pct"] == 2.5
@@ -1124,7 +1124,7 @@ def test_account_add_remove_and_type():
     # remove one and flip the other back to auto-detect
     fd, cfg_path = tempfile.mkstemp(suffix=".yaml")
     os.close(fd)
-    with open(cfg_path, "w") as f:
+    with open(cfg_path, "w", encoding="utf-8") as f:
         f.write("wealthsimple:\n  accounts: []\n")
     cfg = ConfigStub(TradingConfig(mode="notify"), accounts=[])
 

@@ -521,7 +521,7 @@ def test_persist_env_tokens():
         os.environ["WS_ACCESS_TOKEN"] = "acc1"
         os.environ["WS_REFRESH_TOKEN"] = "ref1"
         assert wt.persist_env_tokens(path=path) is True
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             content = f.read()
         assert "export WS_ACCESS_TOKEN=acc1" in content
         assert "export WS_REFRESH_TOKEN=ref1" in content
@@ -532,7 +532,7 @@ def test_persist_env_tokens():
 
         os.environ["WS_ACCESS_TOKEN"] = "acc2"
         assert wt.persist_env_tokens(path=path) is True
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             assert "acc2" in f.read()
     finally:
         if old[0] is None:
@@ -631,7 +631,7 @@ def test_load_env_tokens():
 
     fd, path = tempfile.mkstemp(suffix=".env")
     os.close(fd)
-    with open(path, "w") as f:
+    with open(path, "w", encoding="utf-8") as f:
         f.write("export WS_ACCESS_TOKEN=tokA\n")
         f.write("export WS_REFRESH_TOKEN=tokB\n")
         f.write("garbage line\n")
@@ -2798,7 +2798,7 @@ def test_loghook_file_and_rotation(tmp_path):
     stream = TeeStream(io.StringIO(), None, lf)
     stream.write("first line\n")
     stream.write("second line\n")
-    content = open(path).read()
+    content = open(path, encoding="utf-8").read()
     assert "first line" in content and "second line" in content
 
     for i in range(30):
@@ -2815,7 +2815,7 @@ def test_loghook_file_and_rotation(tmp_path):
         print("via install")
     finally:
         sys.stdout, sys.stderr = saved_out, saved_err
-    assert "via install" in open(path).read()
+    assert "via install" in open(path, encoding="utf-8").read()
 
 
 def test_summary_includes_paper_when_enabled():
@@ -3341,7 +3341,7 @@ def test_clean_start_script(tmp_path):
             os.path.abspath(trader_store.__file__))), "logs")
     os.makedirs(real_logs, exist_ok=True)
     marker = os.path.join(real_logs, "clean_start_marker.log")
-    with open(marker, "w") as f:
+    with open(marker, "w", encoding="utf-8") as f:
         f.write("keep me\n")
 
     repo = os.path.dirname(os.path.dirname(
@@ -4986,6 +4986,15 @@ def test_quote_provider_startup_survives_opend_down(monkeypatch):
 
     monkeypatch.setattr(
         q.MoomooQuoteProvider, "_context", _instant_timeout
+    )
+    # the ws fallback must fail deterministically - a machine with
+    # real ws tokens (keyring/env) would otherwise construct a live
+    # client and hand back a quote function
+    def _no_client(cfg, account):
+        raise RuntimeError("no ws credentials in the test")
+
+    monkeypatch.setattr(
+        "consumer.trading.executor.WealthsimpleExecutor", _no_client
     )
     cfg = _types.SimpleNamespace(
         quotes=_types.SimpleNamespace(

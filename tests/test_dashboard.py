@@ -467,7 +467,7 @@ def test_levels_spy_spot_and_refresh_cadence():
     the spy pane shows 'SPY now: x' under its title."""
     import consumer.web as srv
 
-    src = open(srv.__file__).read()
+    src = open(srv.__file__, encoding="utf-8").read()
     assert '"spy": spy' in src
     assert "refresh_seconds" in src
     js = DASHBOARD_JS
@@ -1325,7 +1325,7 @@ def test_paper_manual_sell_ui():
     assert '"Sold"' in js and "data.realized" in js
     # the sell price lookup is bounded so the post answers fast
     import consumer.web as srv
-    assert "_bounded(_paper_positions_payload, ctx)" in open(srv.__file__).read()
+    assert "_bounded(_paper_positions_payload, ctx)" in open(srv.__file__, encoding="utf-8").read()
 
 
 def test_manual_paper_sell_live_price_and_fx():
@@ -1732,8 +1732,10 @@ def test_settings_save_refreshes_form_and_touch_guard():
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         "info", "static",
     )
-    ijs = open(os.path.join(info_root, "info.js")).read()
-    ihtml = open(os.path.join(info_root, "info.html")).read()
+    ijs = open(os.path.join(info_root, "info.js"),
+              encoding="utf-8").read()
+    ihtml = open(os.path.join(info_root, "info.html"),
+                 encoding="utf-8").read()
     assert "loadSettings();" in ijs.split("async function saveSettings")[1]
     assert "backdropTouchMoved" in ijs
     assert "!backdropTouchMoved" in ihtml
@@ -1768,7 +1770,8 @@ def test_settings_save_revert_button_lifecycle():
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         "info", "static",
     )
-    ijs = open(os.path.join(info_root, "info.js")).read()
+    ijs = open(os.path.join(info_root, "info.js"),
+              encoding="utf-8").read()
     assert 'save.style.display = v ? "" : "none"' in ijs
     dirty_fn = ijs.split("function setSettingsDirty")[1].split("}")[0]
     assert "revert.style.display" not in dirty_fn
@@ -1842,8 +1845,10 @@ def test_info_reconnect_banner_wiring():
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         "info", "static",
     )
-    ijs = open(os.path.join(info_root, "info.js")).read()
-    ihtml = open(os.path.join(info_root, "info.html")).read()
+    ijs = open(os.path.join(info_root, "info.js"),
+              encoding="utf-8").read()
+    ihtml = open(os.path.join(info_root, "info.html"),
+                 encoding="utf-8").read()
     assert 'id="reconnect"' in ihtml
     assert "server unreachable" in ihtml
     jget = ijs.split("async function jget")[1].split("async function jpost")[0]

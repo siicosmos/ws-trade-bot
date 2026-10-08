@@ -61,7 +61,7 @@ def main(cfg, args):
         os.path.dirname(os.path.abspath(args.db)), "pipeline_exit.txt"
     )
     try:
-        with open(exit_file) as f:
+        with open(exit_file, encoding="utf-8") as f:
             print("previous run: " + f.read().strip())
         os.remove(exit_file)
     except OSError:

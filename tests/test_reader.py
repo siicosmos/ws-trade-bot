@@ -23,6 +23,19 @@ sys.modules["psutil"] = MagicMock()
 import discord_reader as dr  # noqa: E402
 import pytest  # noqa: E402
 
+
+class _StrictUIAError(Exception):
+    """stands in for the real COMError: on windows UIAError is the
+    narrow _ctypes COMError, on posix the import fallback widens it
+    to Exception - which silently swallows stub-signature drift and
+    other real bugs in the reader tests. the autouse fixture below
+    makes every test see the strict windows semantics."""
+
+
+@pytest.fixture(autouse=True)
+def _strict_uia_error(monkeypatch):
+    monkeypatch.setattr(dr, "UIAError", _StrictUIAError)
+
 if _real_psutil is not None:
     sys.modules["psutil"] = _real_psutil
 
@@ -366,10 +379,10 @@ def test_find_message_container_strict_title(monkeypatch):
     )
     monkeypatch.setattr(dr, "item_text", lambda it: it.text)
     assert dr.find_message_container(
-        object(), "", "trade-alerts", strict_title=True
+        object(), "trade-alerts", strict_title=True
     ) is None
     assert dr.find_message_container(
-        object(), "", "trade-alerts", strict_title=False
+        object(), "trade-alerts", strict_title=False
     ) is rail
 
 
@@ -606,7 +619,8 @@ def test_heartbeat_fires_while_channel_quiet(monkeypatch, tmp_path):
         lambda *a, **k: FakeContainer(),
     )
     monkeypatch.setattr(
-        dr, "current_messages", lambda container, max_items=40: []
+        dr, "current_messages",
+        lambda container, max_items=40, floor=None: [],
     )
     monkeypatch.setattr(dr, "WebhookLog", lambda url: None)
     monkeypatch.setattr(dr, "sync_with_server", fake_sync)
@@ -1191,7 +1205,7 @@ def test_find_message_container_unnamed_list_strict(monkeypatch):
     monkeypatch.setattr(dr, "item_text", lambda it: it.text)
     # strict: the window title matches the channel
     got = dr.find_message_container(
-        object(), "", "#🚨│player-alerts", strict_title=True
+        object(), "#🚨│player-alerts", strict_title=True
     )
     assert got is unnamed_list
 
@@ -1209,5 +1223,5 @@ def test_seen_file_lives_in_the_reader_folder(tmp_path, monkeypatch):
 
     seen_at = {"new alert": time.time()}
     dr.save_seen(seen_at)
-    with open(seen_file) as f:
+    with open(seen_file, encoding="utf-8") as f:
         assert "new alert" in json.load(f)

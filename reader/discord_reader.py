@@ -417,7 +417,8 @@ def _startup_banner():
         )
     )
     try:
-        with open(os.path.join(root, ".last_update.json")) as f:
+        with open(os.path.join(root, ".last_update.json"),
+                  encoding="utf-8") as f:
             rec = json.load(f)
         if (
             isinstance(rec, dict)

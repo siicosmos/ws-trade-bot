@@ -1,5 +1,6 @@
 import os
 import tempfile
+import time
 from dataclasses import dataclass, field
 from typing import List, Optional
 
@@ -271,7 +272,7 @@ def dump_yaml_config(raw, config_path):
     top-level sections."""
     directory = os.path.dirname(os.path.abspath(config_path))
     fd, tmp = tempfile.mkstemp(dir=directory, suffix=".yaml.tmp")
-    with os.fdopen(fd, "w") as f:
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
         text = yaml.safe_dump(
             raw, default_flow_style=False, sort_keys=False,
             allow_unicode=True, width=4096,
@@ -289,7 +290,18 @@ def dump_yaml_config(raw, config_path):
                 out.append("")
             out.append(line)
         f.write("\n".join(out))
-    os.replace(tmp, config_path)
+    # windows: the destination can be briefly locked (an open
+    # handle or a real-time scanner) - os.replace then fails with
+    # permission denied; retry briefly before giving up
+    for attempt in range(5):
+        try:
+            os.replace(tmp, config_path)
+            break
+        except PermissionError:
+            if attempt == 4:
+                os.unlink(tmp)
+                raise
+            time.sleep(0.2 * (attempt + 1))
 
 
 
@@ -340,7 +352,7 @@ def _load_accounts(ws_raw: dict) -> List[WSAccountConfig]:
 
 
 def load_config(path: str) -> Config:
-    with open(path, "r") as f:
+    with open(path, "r", encoding="utf-8") as f:
         raw = yaml.safe_load(f) or {}
 
     # the web-server section is named for the role (consumer: /

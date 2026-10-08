@@ -379,7 +379,7 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
             return jsonify({"status": "error", "errors": errors}), 400
         if applied and config_path:
             try:
-                with open(config_path) as f:
+                with open(config_path, encoding="utf-8") as f:
                     import yaml as _yaml
 
                     raw = _yaml.safe_load(f) or {}

@@ -121,7 +121,7 @@ def build(out_dir):
         for chunk in iter(lambda: f.read(1 << 20), b""):
             digest.update(chunk)
     sums_path = os.path.join(out_dir, "SHA256SUMS")
-    with open(sums_path, "w") as f:
+    with open(sums_path, "w", encoding="utf-8") as f:
         f.write(f"{digest.hexdigest()}  {os.path.basename(zip_path)}\n")
     print(f"built {zip_path}")
     print(f"built {sums_path}")

@@ -40,7 +40,8 @@ def read_version(root):
     """The VERSION file the build writes; None when missing or
     malformed (a git install has none)."""
     try:
-        with open(os.path.join(root, VERSION_FILE)) as f:
+        with open(os.path.join(root, VERSION_FILE),
+                   encoding="utf-8") as f:
             data = json.load(f)
         if isinstance(data, dict) and data.get("commit"):
             return data
@@ -149,7 +150,8 @@ class ReleaseUpdater:
 
     def last_pull(self):
         try:
-            with open(os.path.join(self.root, ".last_update.json")) as f:
+            with open(os.path.join(self.root, ".last_update.json"),
+                      encoding="utf-8") as f:
                 data = json.load(f)
             if isinstance(data, dict) and data.get("ts"):
                 return data
@@ -210,7 +212,8 @@ class ReleaseUpdater:
             "repo": slug,
         }
         try:
-            with open(os.path.join(self.root, VERSION_FILE), "w") as f:
+            with open(os.path.join(self.root, VERSION_FILE), "w",
+                      encoding="utf-8") as f:
                 json.dump(ver, f, indent=2)
         except OSError:
             return False
@@ -291,7 +294,7 @@ class ReleaseUpdater:
             sums_path = os.path.join(staging, "SHA256SUMS")
             try:
                 download_file(checksum_asset["url"], token, sums_path)
-                with open(sums_path) as f:
+                with open(sums_path, encoding="utf-8") as f:
                     sums = parse_checksums(f.read())
             except requests.RequestException as e:
                 self.errors += 1
@@ -328,7 +331,8 @@ class ReleaseUpdater:
             shutil.rmtree(staging, ignore_errors=True)
             return False
 
-        with open(os.path.join(self.root, PENDING_FILE), "w") as f:
+        with open(os.path.join(self.root, PENDING_FILE), "w",
+                      encoding="utf-8") as f:
             json.dump(
                 {
                     "staging": STAGING_DIR,

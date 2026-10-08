@@ -35,7 +35,7 @@ def test_build_zip_artifact(tmp_path):
 
     # SHA256SUMS matches the actual zip bytes
     digest = hashlib.sha256(open(zip_path, "rb").read()).hexdigest()
-    assert open(sums_path).read() == f"{digest}  {name}\n"
+    assert open(sums_path, encoding="utf-8").read() == f"{digest}  {name}\n"
 
     z = zipfile.ZipFile(zip_path)
     names = z.namelist()

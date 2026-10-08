@@ -41,7 +41,7 @@ def apply(root):
     when nothing was pending."""
     pending_path = os.path.join(root, PENDING_FILE)
     try:
-        with open(pending_path) as f:
+        with open(pending_path, encoding="utf-8") as f:
             pending = json.load(f)
     except (OSError, ValueError):
         return False   # nothing pending (or corrupt - ignore it)
@@ -114,7 +114,8 @@ def apply(root):
     # 4. record + clear the staging area
     commit = str(pending.get("commit") or "?")
     try:
-        with open(os.path.join(root, UPDATE_RECORD), "w") as f:
+        with open(os.path.join(root, UPDATE_RECORD), "w",
+                      encoding="utf-8") as f:
             json.dump(
                 {"how": "release", "commit": commit, "ts": time.time()},
                 f,

@@ -80,7 +80,7 @@ def write_config(path, mode, auth_token="", role="consumer", **trading):
         },
         "parser": {},
     }
-    with open(path, "w") as f:
+    with open(path, "w", encoding="utf-8") as f:
         yaml.safe_dump(cfg, f)
 
 
@@ -115,7 +115,7 @@ def start_pipeline(config_path, db_path):
     except subprocess.TimeoutExpired:
         pass
     err.flush()
-    with open(err.name) as f:
+    with open(err.name, encoding="utf-8") as f:
         tail = f.read()[-2000:]
     raise RuntimeError(
         f"pipeline did not start (stderr tail):\n{tail}"
@@ -434,7 +434,7 @@ def run_settings_phase():
             str(rrsp),
         )
 
-        with open(cfg_path) as f:
+        with open(cfg_path, encoding="utf-8") as f:
             content = f.read()
         check("settings persisted to config.yaml", "risk_pct_max: 3" in content)
 
@@ -480,11 +480,11 @@ def run_reader_status_phase():
     # the reader heartbeats the info server (its alert source);
     # reader knobs are config-file managed there
     import yaml as _yaml
-    with open(cfg_path) as f:
+    with open(cfg_path, encoding="utf-8") as f:
         cfg_raw = _yaml.safe_load(f)
     cfg_raw["reader"]["channels"] = ["player-alerts"]
     cfg_raw["consumers"] = []
-    with open(cfg_path, "w") as f:
+    with open(cfg_path, "w", encoding="utf-8") as f:
         _yaml.safe_dump(cfg_raw, f)
     proc, health = start_pipeline(cfg_path, db_path)
     try:

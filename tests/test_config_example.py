@@ -12,7 +12,7 @@ CONFIG_DIR = os.path.join(
 
 
 def _raw(name):
-    with open(os.path.join(CONFIG_DIR, name)) as f:
+    with open(os.path.join(CONFIG_DIR, name), encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 
@@ -170,12 +170,15 @@ def test_example_keys_are_all_read_by_the_loader():
 
     loader = (
         open(os.path.join(os.path.dirname(HERE), "core",
-                          "config.py")).read()
+                          "config.py"),
+             encoding="utf-8").read()
         + open(os.path.join(os.path.dirname(HERE), "consumer",
-                            "settings.py")).read()
+                            "settings.py"),
+               encoding="utf-8").read()
     )
     reader_src = open(os.path.join(
-        os.path.dirname(HERE), "reader", "discord_reader.py")).read()
+        os.path.dirname(HERE), "reader", "discord_reader.py"),
+        encoding="utf-8").read()
 
     def audit(fname, source, sections=None):
         raw = _raw(fname)

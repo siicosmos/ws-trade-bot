@@ -490,7 +490,7 @@ def set_mode(cfg, mode, config_path=None):
     """Persist trading.mode (the mode slider). Returns False
     when the write failed."""
     try:
-        with open(config_path) as f:
+        with open(config_path, encoding="utf-8") as f:
             raw = yaml.safe_load(f) or {}
     except OSError:
         return False
@@ -505,7 +505,7 @@ def set_mode(cfg, mode, config_path=None):
 
 
 def _persist(cfg, config_path):
-    with open(config_path) as f:
+    with open(config_path, encoding="utf-8") as f:
         raw = yaml.safe_load(f) or {}
 
     trading = raw.setdefault("trading", {})

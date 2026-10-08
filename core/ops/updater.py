@@ -132,7 +132,8 @@ def startup_banner(name, root):
         if subject.returncode == 0 and subject.stdout.strip():
             line += f' "{subject.stdout.strip()}"'
     try:
-        with open(os.path.join(root, UPDATE_RECORD)) as f:
+        with open(os.path.join(root, UPDATE_RECORD),
+                      encoding="utf-8") as f:
             rec = json.load(f)
         if (
             isinstance(rec, dict)
@@ -203,7 +204,8 @@ class AutoUpdater:
         new = self._head()
         try:
             with open(
-                os.path.join(self.root, UPDATE_RECORD), "w"
+                os.path.join(self.root, UPDATE_RECORD), "w",
+                encoding="utf-8",
             ) as f:
                 json.dump(
                     {
@@ -218,7 +220,8 @@ class AutoUpdater:
 
     def last_pull(self):
         try:
-            with open(os.path.join(self.root, UPDATE_RECORD)) as f:
+            with open(os.path.join(self.root, UPDATE_RECORD),
+                      encoding="utf-8") as f:
                 data = json.load(f)
             if isinstance(data, dict) and data.get("ts"):
                 return data
@@ -241,7 +244,8 @@ class AutoUpdater:
                 return
             new = self._head()
             with open(
-                os.path.join(self.root, UPDATE_RECORD), "w"
+                os.path.join(self.root, UPDATE_RECORD), "w",
+                encoding="utf-8",
             ) as f:
                 json.dump(
                     {

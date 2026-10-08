@@ -89,7 +89,7 @@ def load_secret_key(config_path):
         os.path.dirname(os.path.abspath(config_path)), ".session_key"
     )
     try:
-        with open(key_file) as f:
+        with open(key_file, encoding="utf-8") as f:
             key = f.read().strip()
         if key:
             return key
@@ -97,7 +97,7 @@ def load_secret_key(config_path):
         pass
     key = secrets.token_hex(32)
     try:
-        with open(key_file, "w") as f:
+        with open(key_file, "w", encoding="utf-8") as f:
             f.write(key)
         # the session signing key is only for this user
         os.chmod(key_file, 0o600)
