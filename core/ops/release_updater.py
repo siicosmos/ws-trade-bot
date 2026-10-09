@@ -21,8 +21,9 @@ import requests
 
 from core.ops.updater import update_record_path  # noqa: E402
 
-# the consumer's release marker lives with the consumer app
-VERSION_FILE = os.path.join("consumer", "VERSION")
+# the consumer's release marker at the repo root - outside the
+# code dirs an update swap replaces
+VERSION_FILE = "VERSION"
 # the consumer's own pending marker + update record - the info
 # server shares the checkout on the owner's box and must not
 # clobber them
@@ -44,12 +45,12 @@ STATE_FILES = (
 
 def read_version(root):
     """The VERSION file the build writes; None when missing or
-    malformed (a git install has none). Reads the consumer-folder
-    marker first, then the repo-root location older releases
-    wrote (backward compatibility)."""
+    malformed (a git install has none). Reads the repo-root
+    marker first, then the consumer-folder location an
+    intermediate build wrote (backward compatibility)."""
     for path in (
         os.path.join(root, VERSION_FILE),
-        os.path.join(root, "VERSION"),
+        os.path.join(root, "consumer", "VERSION"),
     ):
         try:
             with open(path, encoding="utf-8") as f:
@@ -159,22 +160,22 @@ class ReleaseUpdater:
         self.last_result = "not checked yet"
         self.errors = 0
         self.version = read_version(root) or {}
-        # a VERSION marker at the repo root was written by an
-        # older release's apply_update - move it next to the app,
-        # or remove it when the app already has one (two markers
-        # would disagree about the applied release)
-        legacy = os.path.join(root, "VERSION")
-        current = os.path.join(root, VERSION_FILE)
-        if os.path.exists(legacy):
+        # a VERSION marker inside consumer/ was written by an
+        # intermediate build - the marker belongs at the repo root
+        # (outside the swapped dirs). move it back, or remove a
+        # duplicate when the root already has one
+        legacy = os.path.join(root, VERSION_FILE)
+        stray = os.path.join(root, "consumer", "VERSION")
+        if os.path.exists(stray):
             try:
-                if os.path.exists(current):
-                    os.remove(legacy)
-                    print("auto-update: removed the duplicate root "
-                          "VERSION marker")
+                if os.path.exists(legacy):
+                    os.remove(stray)
+                    print("auto-update: removed the duplicate "
+                          "consumer/VERSION marker")
                 else:
-                    shutil.move(legacy, current)
+                    shutil.move(stray, legacy)
                     print("auto-update: moved the release marker to "
-                          "consumer/VERSION")
+                          "the repo root")
             except OSError:
                 pass
         self.start_head = str(self.version.get("commit") or "")

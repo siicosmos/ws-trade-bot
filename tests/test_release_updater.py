@@ -50,7 +50,7 @@ def _make_zip(path, commit):
         z.writestr("consumer/static/app.js", "// js\n")
         z.writestr("run.py", "print('hi')\n")
         z.writestr(
-            "consumer/VERSION",
+            "VERSION",
             json.dumps({"commit": commit, "repo": "o/r"}) + "\n",
         )
 
@@ -70,12 +70,12 @@ def _load_apply_update():
 
 def test_read_version_roundtrip(tmp_path):
     assert read_version(str(tmp_path)) is None
-    _write(tmp_path, "consumer/VERSION", json.dumps(
+    _write(tmp_path, "VERSION", json.dumps(
         {"commit": "aaa", "repo": "o/r"}))
     ver = read_version(str(tmp_path))
     assert ver["commit"] == "aaa"
     assert ver["repo"] == "o/r"
-    _write(tmp_path, "consumer/VERSION", "not json")
+    _write(tmp_path, "VERSION", "not json")
     assert read_version(str(tmp_path)) is None
 
 
@@ -91,7 +91,7 @@ def test_find_asset_and_commit():
 
 
 def test_check_once_up_to_date(tmp_path, monkeypatch):
-    _write(tmp_path, "consumer/VERSION", json.dumps(
+    _write(tmp_path, "VERSION", json.dumps(
         {"commit": "aaa", "repo": "o/r"}))
     monkeypatch.setattr(ru, "latest_release", lambda *a, **k: _release("aaa"))
     up = ReleaseUpdater(_cfg(), str(tmp_path), "")
@@ -100,7 +100,7 @@ def test_check_once_up_to_date(tmp_path, monkeypatch):
 
 
 def test_check_once_stages_and_restarts(tmp_path, monkeypatch):
-    _write(tmp_path, "consumer/VERSION", json.dumps(
+    _write(tmp_path, "VERSION", json.dumps(
         {"commit": "aaa", "repo": "o/r"}))
     release = _release("bbb")
 
@@ -140,7 +140,7 @@ def test_check_once_stages_and_restarts(tmp_path, monkeypatch):
 
 
 def test_checksum_mismatch_aborts(tmp_path, monkeypatch):
-    _write(tmp_path, "consumer/VERSION", json.dumps(
+    _write(tmp_path, "VERSION", json.dumps(
         {"commit": "aaa", "repo": "o/r"}))
     release = _release("bbb")
 
@@ -168,7 +168,7 @@ def test_checksum_mismatch_aborts(tmp_path, monkeypatch):
 
 
 def test_check_once_disabled_and_pending(tmp_path, monkeypatch):
-    _write(tmp_path, "consumer/VERSION", json.dumps(
+    _write(tmp_path, "VERSION", json.dumps(
         {"commit": "aaa", "repo": "o/r"}))
     up = ReleaseUpdater(_cfg(enabled=False), str(tmp_path), "")
     assert up.check_once() is False
@@ -284,7 +284,7 @@ def test_apply_update_failure_leaves_state_untouched(tmp_path, monkeypatch):
 
 def test_incomplete_staged_build_aborts(tmp_path, monkeypatch):
     # a truncated or wrong artifact must not replace the tree
-    _write(tmp_path, "consumer/VERSION", json.dumps(
+    _write(tmp_path, "VERSION", json.dumps(
         {"commit": "aaa", "repo": "o/r"}))
     release = _release("bbb")
 
@@ -332,7 +332,7 @@ def test_create_updater_routes_by_role(tmp_path):
     ) is ReleaseUpdater
 
     b = os.path.join(str(tmp_path), "b")
-    _write(b, "consumer/VERSION", json.dumps({"commit": "aaa", "repo": "o/r"}))
+    _write(b, "VERSION", json.dumps({"commit": "aaa", "repo": "o/r"}))
     assert type(
         create_updater(_cfg(role="info"), b, "")
     ) is AutoUpdater
@@ -384,7 +384,7 @@ def test_status_payload_compatible(tmp_path):
     from core.ops.updater import update_status_payload
 
     b = os.path.join(str(tmp_path), "b")
-    _write(b, "consumer/VERSION", json.dumps({"commit": "aaa", "repo": "o/r"}))
+    _write(b, "VERSION", json.dumps({"commit": "aaa", "repo": "o/r"}))
     app = type("A", (), {"ws_updater": ReleaseUpdater(_cfg(), b, "")})()
     payload = update_status_payload(app)
     assert payload["status"] == "active"
@@ -395,7 +395,7 @@ def test_checksum_missing_from_sums_aborts(tmp_path, monkeypatch):
     """a SHA256SUMS file that does not list the asset (renamed
     artifact, partial upload) must abort - the old code silently
     skipped the check and staged the unverified zip."""
-    _write(tmp_path, "consumer/VERSION", json.dumps(
+    _write(tmp_path, "VERSION", json.dumps(
         {"commit": "aaa", "repo": "o/r"}))
     release = _release("bbb")
 

@@ -69,15 +69,6 @@ def apply(root):
     # consumer/ individually and rmtree'd the dir - when the
     # state files were not in consumer/ the wipe took the config,
     # tokens and ledger with it)
-    # the consumer's session key rides inside consumer/ - move it
-    # out before the swap and back in after (login sessions
-    # survive the update)
-    session_key = os.path.join(root, "consumer", ".consumer_session_key")
-    key_saved = None
-    if os.path.exists(session_key):
-        key_saved = os.path.join(root, ".consumer_session_key.saved")
-        shutil.move(session_key, key_saved)
-
     for d in CODE_DIRS:
         shutil.rmtree(os.path.join(root, d), ignore_errors=True)
         if os.path.isdir(os.path.join(staging, d)):
@@ -87,19 +78,17 @@ def apply(root):
             shutil.copytree(os.path.join(staging, d),
                             os.path.join(root, d), dirs_exist_ok=True)
 
-    if key_saved:
-        shutil.move(key_saved, session_key)
     for name in CODE_FILES:
         src = os.path.join(staging, name)
         if os.path.exists(src):
             dst = os.path.join(root, name)
             os.makedirs(os.path.dirname(dst), exist_ok=True)
             shutil.copy2(src, dst)
-    # the release marker first: a later failure must not leave the
-    # updater blind (no VERSION = it cannot follow releases)
+    # the release marker: at the repo root - outside the swapped
+    # dirs (a later failure cannot leave the updater blind)
     ver = os.path.join(staging, "VERSION")
     if os.path.exists(ver):
-        shutil.copy2(ver, os.path.join(root, "consumer", "VERSION"))
+        shutil.copy2(ver, os.path.join(root, "VERSION"))
     # launcher .bat files are skipped: cmd re-reads the running
     # batch file, replacing it mid-loop is undefined
     scripts_src = os.path.join(staging, "scripts")
