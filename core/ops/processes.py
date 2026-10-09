@@ -67,6 +67,18 @@ def terminate_stale_instances(script_path, config_path=None, log=print):
     check they would terminate each other in a restart loop.
     Without config_path the legacy rule applies (same script
     directory). Returns the pids that were terminated.
+
+    Concurrency note: there is a check-then-kill window - a pid
+    that matched both filters at scan time could in theory be a
+    different process by the terminate() call (pid reuse). That
+    is acceptable here: this is a single-user local machine, and
+    the two-key filter already scopes the scan to this repo's own
+    entry points, so a chance collision on both keys is
+    astronomically unlikely. A shared or multi-tenant host would
+    need real ownership verification (pid + psutil create_time(),
+    never a pid alone) or a supervisor that owns the lifecycle
+    (systemd/supervisord) - do not lift this function into that
+    environment unchanged.
     """
     try:
         import psutil
