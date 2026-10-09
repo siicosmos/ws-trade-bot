@@ -173,7 +173,7 @@ class MoomooQuoteProvider:
                 row = data.iloc[i]
                 code = str(row.get("code") or "").upper()
                 if sym in code:
-                    p = self.extract_price(row)
+                    p = self.extract_price(row, session=session)
                     if p:
                         price = p
                         break

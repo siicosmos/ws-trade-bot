@@ -769,3 +769,57 @@ def test_extract_price_follows_the_active_session():
         session="regular") == 774.40
     assert MoomooQuoteProvider.extract_price(
         row(bid_price=774.40, last_price=774.45)) == 774.40
+
+
+def test_stock_quote_extended_uses_the_session_price(monkeypatch):
+    """regression: stock_quote computed the session but never
+    passed it to extract_price - the ladder's spy spot kept
+    showing the regular-session bid through the overnight
+    session."""
+    import types
+
+    from consumer.trading.quotes import MoomooQuoteProvider
+
+    cfg = ConfigStub(TradingConfig(mode="paper"))
+    p = MoomooQuoteProvider(cfg)
+
+    class _Row:
+        @staticmethod
+        def get(key):
+            return {
+                "code": "US.SPY",
+                "bid_price": 774.45,          # the stale regular bid
+                "last_price": 773.93,
+                "overnight_price": 776.13,    # the live overnight price
+            }.get(key)
+
+    class _Data:
+        empty = False
+
+        def __len__(self):
+            return 1
+
+        class _Iloc:
+            @staticmethod
+            def __getitem__(i):
+                return _Row()
+
+        iloc = _Iloc()
+
+    class _Ctx:
+        @staticmethod
+        def get_market_snapshot(codes):
+            return 0, _Data()
+
+        @staticmethod
+        def close():
+            pass
+
+    monkeypatch.setattr(
+        p, "_context", lambda: _Ctx(), raising=False
+    )
+    # extended=True (the ladder): the overnight session's price
+    assert p.stock_quote("SPY", extended=True) == 776.13
+    p._stock_cache.clear()   # the 5s ttl cache would serve the first
+    # extended=False (trading pricing): the regular-session quote
+    assert p.stock_quote("SPY") == 774.45
