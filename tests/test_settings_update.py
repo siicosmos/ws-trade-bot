@@ -328,8 +328,8 @@ def test_updater_pulls_and_restarts():
     calls = []
     restarts = []
 
-    def record():
-        restarts.append(True)
+    def record(*a, **k):
+        restarts.append(k.get("reason") or "restart")
 
     original = up._git
     up._git = fake_git
@@ -337,7 +337,8 @@ def test_updater_pulls_and_restarts():
         cfg = ConfigStub()
         u = AutoUpdater(cfg, "/tmp", restart=record)
         assert u.check_once() is True
-        assert restarts == [True]
+        # the restart carries the reason for the webhook notice
+        assert restarts == ["code updated to aaa"]
         assert "updated to" in u.last_result
     finally:
         up._git = original

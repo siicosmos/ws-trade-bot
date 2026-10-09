@@ -591,6 +591,14 @@ id/type/enabled but no label input; a new row has one.
    Get-Content logs\consumer.log -Tail 2
    # -> previous run: consumer app exited with code <n>
    ```
+4. The Discord webhook shows `Consumer app restarting` with the
+   previous exit as the reason (the info server posts
+   `Info server restarting` the same way).
+5. `taskkill /F /IM python.exe` kills BOTH roles at once —
+   each role's launcher loop is independent, so both apps
+   restart within 5s and both post their own restart notices.
+   The `.bat` windows themselves are cmd.exe and are not
+   affected.
 
 #### M-9.3 — With a staged update pending, the launcher runs `apply_update.py` before relaunching and the app comes up on the new release (overlaps M-4.1).
 

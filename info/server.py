@@ -60,12 +60,15 @@ def main(cfg, args):
     exit_file = os.path.join(
         os.path.dirname(os.path.abspath(args.db)), "pipeline_exit.txt"
     )
+    prev_exit = ""
     try:
         with open(exit_file, encoding="utf-8") as f:
-            print("previous run: " + f.read().strip())
+            prev_exit = f.read().strip()
         os.remove(exit_file)
     except OSError:
         pass
+    if prev_exit:
+        print("previous run: " + prev_exit)
 
     log_batcher = install_log_webhook(
         cfg.discord.consumer_log_webhook_url,
@@ -84,12 +87,49 @@ def main(cfg, args):
         f"{'s' if len(cfg.consumers) != 1 else ''} registered)"
     )
 
-    startup_banner("info server", ROOT)
+    banner = startup_banner("info server", ROOT)
 
-    def _restart():
-        # the update restart exits via os._exit, which bypasses
-        # atexit - flush the log batcher so the restart lines
-        # reach the webhook
+    # parity with the consumer app: an unclean previous exit (a
+    # crash or a manual kill - NOT a deliberate exit-77 restart,
+    # which posted its own notice on the way down) is reported to
+    # the update webhook, throttled to one notice a minute
+    if prev_exit and "code 77" not in prev_exit:
+        import time as _time
+
+        last_notice = store.meta_get("restart_notice_ts") or 0
+        try:
+            due = _time.time() - float(last_notice) > 60
+        except (TypeError, ValueError):
+            due = True
+        if due:
+            store.meta_set("restart_notice_ts", _time.time())
+            from core.ops.notify import notify_discord
+
+            notify_discord(
+                cfg.discord.update_webhook_url,
+                "Info server restarting",
+                {"reason": prev_exit, "running": banner},
+                ok=True,
+            )
+            print("restart notice posted to the update webhook")
+
+    def _restart(reason="restart", commits=None):
+        # parity with the consumer app: every restart posts a
+        # notice to the update webhook (update applies, local code
+        # changes). the update restart exits via os._exit, which
+        # bypasses atexit - flush the log batcher first so the
+        # restart lines reach the webhook
+        from core.ops.notify import notify_discord
+
+        fields = {"reason": str(reason)[:1000]}
+        if commits:
+            fields["commits"] = commits
+        notify_discord(
+            cfg.discord.update_webhook_url,
+            "Info server restarting",
+            fields,
+            ok=True,
+        )
         if log_batcher is not None:
             log_batcher.flush_now()
         os._exit(77)

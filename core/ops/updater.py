@@ -351,18 +351,12 @@ class AutoUpdater:
             commit = log.stdout.strip()
         except (OSError, ValueError):
             pass
-        notify_discord(
-            self.webhook_url,
-            f"{self.name} restarting",
-            {
-                "reason": f"code updated to {new[:8] if new else '?'}",
-                "commits": commit[:1000] or "-",
-            },
-            ok=True,
-        )
         print("auto-update: local code changed - restarting pipeline...")
         self.last_result = f"local change: {new[:8] if new else '?'}"
-        self._restart()
+        self._restart(
+            reason=f"local code changed to {new[:8] if new else '?'}",
+            commits=commit[:1000] or "-",
+        )
         return True
 
     def _run(self):
@@ -527,19 +521,14 @@ class AutoUpdater:
             self._record_update("auto")
             return False
 
-        notify_discord(
-            self.webhook_url,
-            f"{self.name} restarting",
-            {
-                "reason": f"code updated to {new[:8]}",
-                "commits": commits[:1000] or "-",
-            },
-            ok=True,
-        )
-
         print("auto-update: restarting pipeline...")
         self._record_update("auto")
-        self._restart()
+        # the app's _restart owns the webhook notice (it carries
+        # the reason + commits) - posting here too double-posted
+        self._restart(
+            reason=f"code updated to {new[:8]}",
+            commits=commits[:1000] or "-",
+        )
         return True
 
 
