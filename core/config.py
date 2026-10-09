@@ -255,10 +255,10 @@ class ConsumerEntry:
     label: str = ""
     token: str = ""
     push_url: str = ""
-    # verify the consumer's TLS certificate on push (the self
-    # signed dev certs need this off; a proper CA or Tailscale
-    # cert turns it on)
-    push_verify_ssl: bool = False
+    # verify the consumer's TLS certificate on push - on by
+    # default (verification off is vulnerable to interception);
+    # the self-signed dev certs need this off explicitly
+    push_verify_ssl: bool = True
 
 
 @dataclass
@@ -267,9 +267,10 @@ class FeedConfig:
     url: str = ""
     token: str = ""
     poll_seconds: float = 1.0
-    # the info server usually runs a self-signed cert - verify
-    # only when explicitly asked for
-    verify_ssl: bool = False
+    # verify the info server's TLS certificate - on by default
+    # (verification off is vulnerable to man-in-the-middle);
+    # the self-signed dev certs need this off explicitly
+    verify_ssl: bool = True
 
 
 @dataclass
@@ -487,7 +488,7 @@ def load_config(path: str) -> Config:
                 label=label,
                 token=str(entry.get("token", "")).strip(),
                 push_url=str(entry.get("push_url", "")).strip(),
-                push_verify_ssl=bool(entry.get("push_verify_ssl", False)),
+                push_verify_ssl=bool(entry.get("push_verify_ssl", True)),
             )
         )
 
@@ -496,7 +497,7 @@ def load_config(path: str) -> Config:
         url=str(_get(feed_raw, "url", "")).strip(),
         token=str(_get(feed_raw, "token", "")).strip(),
         poll_seconds=float(_get(feed_raw, "poll_seconds", 1.0)),
-        verify_ssl=bool(_get(feed_raw, "verify_ssl", False)),
+        verify_ssl=bool(_get(feed_raw, "verify_ssl", True)),
     )
 
     discord_raw = _section(raw, "discord")

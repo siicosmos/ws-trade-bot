@@ -16,7 +16,9 @@
 info:
   host: "0.0.0.0"            # what to bind to; 127.0.0.1 = this PC only
   port: 8081                 # the reader posts here (reader.info_server_url); the consumer owns 8080
-  auth_token: ""             # the reader's credential + dashboard password.
+  auth_token: ""             # the reader's credential + the admin login
+                             # (username "admin", this token as the
+                             # password - treat it as a root credential).
                              # REQUIRED (the server refuses to start without it).
                              # generate: python -c "import secrets; print(secrets.token_urlsafe(24))"
   tls_cert: ""               # HTTPS: paths from scripts/gen_cert.py, e.g.
@@ -33,10 +35,11 @@ consumers:
   - label: owner
     token: "GENERATE_A_TOKEN"
     push_url: "http://127.0.0.1:8080/alert"   # the consumer's /alert route
-    # push_verify_ssl: true   # verify the consumer's TLS cert on push
-    #                          (off by default - the self-signed dev
-    #                          certs fail verification; a proper CA or
-    #                          Tailscale cert turns it on)
+    # push_verify_ssl: false  # verify the consumer's TLS cert on push
+    #                          (ON by default - off is vulnerable to
+    #                          man-in-the-middle). set false ONLY while
+    #                          the consumer runs a self-signed dev cert;
+    #                          a proper CA or Tailscale cert keeps it on
 
 # ---------------------------------------------------------------------------
 # auto_update - the info server is a git checkout: fetch +

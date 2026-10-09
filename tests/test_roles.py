@@ -351,7 +351,7 @@ def test_get_settings_includes_mode():
 
 def test_session_cookies_never_collide_between_apps():
     """Cookies ignore ports - two apps on one host (two
-    consumers, or a consumer next to anything else) must set
+    consumers, a consumer next to the info server, ...) must set
     differently-named session cookies or each login logs the
     other out."""
     from consumer.web import create_app
@@ -370,12 +370,15 @@ def test_session_cookies_never_collide_between_apps():
             cfg, store, risk,
             PaperExecutor(cfg, store, account), account,
         ))
+    # the info server logs in with its own cookie on the same host
+    info_app, _ = _make_info_app(auth_token="t")
+    apps.append(info_app)
     names = []
     for app in apps:
         with app.test_request_context():
             names.append(app.config["SESSION_COOKIE_NAME"])
-    assert names == ["ws_session_8081", "ws_session_8082"]
-    assert len(set(names)) == 2
+    assert names[:2] == ["ws_session_8081", "ws_session_8082"]
+    assert len(set(names)) == 3
 
 
 def test_info_write_routes_are_token_guarded():
@@ -425,20 +428,20 @@ def test_info_reader_status_is_token_guarded():
                     headers=_headers("t"))
     assert r.status_code == 200
     # the state was only touched by the authenticated post
-    state = client.get("/api/reader_status").get_json()
+    state = client.get("/api/reader_status", headers=_headers("t")) \
+        .get_json()
     assert state["channel"] == "real"
 
 
-def test_info_settings_get_masks_webhooks_without_token():
-    """the info dashboard is open-read, but webhook urls are
-    bearer credentials - only a request carrying the write token
-    sees the real values."""
+def test_info_settings_requires_trusted_request():
+    """webhook urls are bearer credentials - an unauthenticated
+    request gets the session/token guard's 401, a trusted one
+    (session or the write token) sees the real values."""
     app, store = _make_info_app(auth_token="t")
     client = app.test_client()
 
-    anon = client.get("/api/settings").get_json()
-    assert anon["discord"]["consumer_log_webhook_url"] == ""
-    assert anon["discord"]["update_webhook_url"] == ""
+    anon = client.get("/api/settings")
+    assert anon.status_code == 401
 
     # set real values through the guarded POST
     r = client.post("/api/settings", json={"discord": {
@@ -448,10 +451,6 @@ def test_info_settings_get_masks_webhooks_without_token():
             "https://discord.com/api/webhooks/upd456",
     }}, headers=_headers("t"))
     assert r.status_code == 200
-
-    anon = client.get("/api/settings").get_json()
-    assert anon["discord"]["consumer_log_webhook_url"] == "••••••••"
-    assert anon["discord"]["update_webhook_url"] == "••••••••"
 
     trusted = client.get("/api/settings", headers=_headers("t")).get_json()
     assert trusted["discord"]["consumer_log_webhook_url"] == (

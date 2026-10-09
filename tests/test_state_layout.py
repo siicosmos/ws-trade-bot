@@ -25,7 +25,7 @@ def test_session_key_lives_at_the_repo_root(tmp_path, monkeypatch):
     out on every update."""
     key_file = tmp_path / ".consumer_session_key"
     monkeypatch.setattr(wc, "_session_key_file",
-                        lambda: str(key_file))
+                        lambda role="consumer": str(key_file))
     k1 = wc.load_secret_key(str(tmp_path / "config" / "x.yaml"))
     assert key_file.exists()
     k2 = wc.load_secret_key(str(tmp_path / "config" / "x.yaml"))

@@ -82,20 +82,21 @@ def _purge_login_fails(now):
         _LOGIN_FAILS.pop(ip, None)
 
 
-def _session_key_file():
-    """The consumer's login-session signing key - at the repo
-    root, outside the code dirs an update swap replaces (the
-    info server has no sessions)."""
+def _session_key_file(role="consumer"):
+    """The login-session signing key - at the repo root, outside
+    the code dirs an update swap replaces. One file per role (a
+    consumer app and the info server on the same host must not
+    share a signing key)."""
     return os.path.join(
         os.path.dirname(os.path.abspath(__file__)),
-        "..", ".consumer_session_key"
+        "..", f".{role}_session_key"
     )
 
 
-def load_secret_key(config_path):
+def load_secret_key(config_path, role="consumer"):
     if not config_path:
         return secrets.token_hex(32)
-    key_file = _session_key_file()
+    key_file = _session_key_file(role)
     try:
         with open(key_file, encoding="utf-8") as f:
             key = f.read().strip()

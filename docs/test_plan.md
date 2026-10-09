@@ -74,19 +74,23 @@ Conventions for every manual step below:
    ```
 3. The lean info dashboard serves (consumer health table,
    reader line, levels editor — no mode slider, no account
-   cards): open `http://127.0.0.1:8081/`.
-4. Liveness + open reads:
+   cards): open `http://127.0.0.1:8081/` — it redirects to
+   `/login`; log in as `admin` with the `auth_token`.
+4. Liveness + guarded reads:
    ```powershell
    curl.exe -s http://127.0.0.1:8081/health
    # -> {"status":"ok"}
-   curl.exe -s http://127.0.0.1:8081/api/feed-status
-   # -> per-consumer health JSON (open GET)
+   curl.exe -s -o NUL -w "%{http_code}" http://127.0.0.1:8081/api/feed-status
+   # -> 401 (login or X-Auth-Token required)
+   curl.exe -s http://127.0.0.1:8081/api/feed-status -H "X-Auth-Token: <info-token>"
+   # -> per-consumer health JSON
    ```
 5. No trading wiring on the info role — the trading routes
    do not exist here:
    ```powershell
-   curl.exe -s -o NUL -w "%{http_code}" http://127.0.0.1:8081/api/positions
-   # -> 404
+   curl.exe -s -o NUL -w "%{http_code}" http://127.0.0.1:8081/api/positions -H "X-Auth-Token: <info-token>"
+   # -> 404 (the auth guard would 401 first - the token gets you
+   # to the router, and the router has no trading routes)
    ```
 6. Start the consumer: `scripts\start_consumer.bat`.
 7. Role dispatch picked consumer — `logs\consumer.log`
@@ -361,10 +365,11 @@ Select-String "auto-update|starting" logs\info.log | Select-Object -Last 5
    curl.exe -s -X POST http://127.0.0.1:8081/api/spx-levels -H "X-Auth-Token: <info-token>" -H "Content-Type: application/json" -d "{\"text\":\"SPX 6000/6050 credit spread\"}"
    # -> {"status":"ok"} - and the ladder text shows on every consumer
    ```
-3. In the browser: the levels editor prompts once for the
-   token (localStorage, no cookie); a wrong token gets a
-   401, is dropped, and the next save re-prompts. The
-   read-only GETs stay open.
+3. In the browser: the info dashboard requires login (the
+   `auth_token` seeded the `admin` account on first boot) —
+   log in and the levels editor saves with the session cookie
+   (HttpOnly, no token in localStorage). An anonymous GET gets
+   redirected to `/login`; an anonymous API call gets a 401.
 
 #### M-5.5 — Dashboard git badge: open the info dashboard and confirm the badge shows the current head and the `last_pull` timestamp matches the record (`Get-Content .last_update_info.json`).
 

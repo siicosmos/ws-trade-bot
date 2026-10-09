@@ -50,7 +50,12 @@ feed:
   url: "http://127.0.0.1:8081"
   token: "THE_MATCHING_TOKEN"
   poll_seconds: 1.0
-  verify_ssl: false         # the info server usually runs a self-signed cert
+  verify_ssl: true          # verify the info server's TLS cert (on by
+                            # default - off is vulnerable to
+                            # man-in-the-middle). set false ONLY while
+                            # the server runs a self-signed dev cert
+                            # (scripts/gen_cert.py); a proper CA or
+                            # Tailscale cert keeps it on
 
 # ---------------------------------------------------------------------------
 # auto_update - the consumer follows the rolling GitHub Release

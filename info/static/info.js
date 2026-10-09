@@ -12,37 +12,20 @@ document.addEventListener("touchmove", function() { backdropTouchMoved = true; }
 
 let lastRefresh = null;
 
-// the write routes (levels editor, settings) are token-guarded -
-// no session cookie here (it would fight the consumer app's
-// cookie on the same host). the token is prompted once and kept
-// in localStorage; it is the reader's pipeline token
-function writeToken() {
-  let t = localStorage.getItem("info_write_token") || "";
-  if (!t) {
-    t = (prompt("write token (the reader's auth_token, which must match the info server's info.auth_token):") || "")
-      .trim();
-    if (t) localStorage.setItem("info_write_token", t);
-  }
-  return t;
-}
-
-function forgetWriteToken() {
-  localStorage.removeItem("info_write_token");
+// the write routes (levels editor, settings) are session-guarded -
+// the browser holds only the HttpOnly session cookie (no token in
+// localStorage); a 401 means the session expired - back to login
+function loginRedirect() {
+  window.location.href = "/login";
 }
 
 async function jpost(url, payload) {
   const r = await fetch(url, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Auth-Token": writeToken(),
-    },
+    headers: {"Content-Type": "application/json"},
     body: JSON.stringify(payload),
   });
-  if (r.status === 401) {
-    // a wrong token sticks otherwise - drop it and retry next time
-    forgetWriteToken();
-  }
+  if (r.status === 401) loginRedirect();
   return r;
 }
 
@@ -53,17 +36,19 @@ function showReconnect(on) {
   if (el) el.style.display = on ? "block" : "none";
 }
 
-async function jget(url, auth=false) {
+async function jget(url) {
   let r;
   try {
-    r = await fetch(url, auth ? {
-      headers: {"X-Auth-Token": writeToken()},
-    } : undefined);
+    r = await fetch(url);
   } catch (e) {
     showReconnect(true);
     throw e;
   }
-  if (r.status === 401) { throw new Error("auth"); }
+  if (r.status === 401) {
+    // session expired - the login page is the way back in
+    loginRedirect();
+    throw new Error("auth");
+  }
   try {
     const data = await r.json();
     showReconnect(false);
@@ -383,15 +368,9 @@ function closeSettings() {
 }
 
 function loadSettings() {
-  // the real webhook values are only served to a request carrying
-  // the write token - send it when it is already stored (no
-  // prompt on open; the save flow prompts when needed)
-  const token = localStorage.getItem("info_write_token") || "";
-  return jget("/api/settings", !!token).catch(function () {
-    // the stored token may be stale - the masked (unauthenticated)
-    // view still renders the editable fields
-    return jget("/api/settings", false);
-  }).then(function (s) {
+  // the session cookie authenticates - the real webhook values
+  // come back for a logged-in browser
+  return jget("/api/settings").then(function (s) {
     lastSettings = s;
     renderSettings(s);
     setSettingsDirty(false);
@@ -456,7 +435,7 @@ document.getElementById("levels-save").onclick = async function () {
       text: document.getElementById("levels-input").value,
     });
     if (r.status === 401) {
-      status.textContent = "unauthorized - wrong write token";
+      status.textContent = "session expired - redirecting to login";
     } else {
       status.textContent = r.ok ? "saved" : "save failed (" + r.status + ")";
     }

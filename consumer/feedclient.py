@@ -16,6 +16,7 @@ from datetime import datetime
 import requests
 
 from core.ops.supervise import supervised
+from core.redact import redact
 
 # backoff on feed errors: seconds between polls after failures
 BACKOFF_MIN = 2.0
@@ -48,7 +49,11 @@ def _backfill_signals(base, store, limit=50, headers=None,
         data = r.json()
         rows = list(reversed(data)) if isinstance(data, list) else []
     except Exception as e:
-        print(f"feed backfill failed: {e}")
+        # the token rides in the headers - an exception message
+        # must never carry it into the log (the log tail is
+        # posted to discord verbatim)
+        print(f"feed backfill failed: "
+              f"{redact(str(e), (headers or {}).get('X-Auth-Token'))}")
         return 0
     added = 0
     for row in rows:
@@ -84,7 +89,14 @@ def _backfill_signals(base, store, limit=50, headers=None,
 def _loop(cfg, store, on_alert, state=None):
     base = cfg.feed.url.rstrip("/")
     headers = {"X-Auth-Token": cfg.feed.token}
-    verify = bool(getattr(cfg.feed, "verify_ssl", False))
+    verify = bool(getattr(cfg.feed, "verify_ssl", True))
+    if not verify:
+        print(
+            "feed client: TLS certificate verification is DISABLED "
+            "(feed.verify_ssl: false) - connections are vulnerable "
+            "to man-in-the-middle attacks; set feed.verify_ssl: true "
+            "once the info server has a verifiable certificate"
+        )
     poll = max(float(getattr(cfg.feed, "poll_seconds", 1.0) or 1.0), 0.5)
     cursor = None
     backoff = BACKOFF_MIN
@@ -155,12 +167,13 @@ def _loop(cfg, store, on_alert, state=None):
         except Exception as e:
             if state is not None:
                 state["ok"] = False
-                state["error"] = str(e)[:200]
+                state["error"] = redact(str(e), cfg.feed.token)[:200]
             # the failure used to be fully silent: a wrong feed
             # token (401) left the dashboard's reader line offline
             # with no reason in the log or the ui. the growing
             # backoff rate-limits the log naturally
-            print(f"feed client: {e} - retrying in {backoff:.0f}s")
+            print(f"feed client: {redact(str(e), cfg.feed.token)} "
+                  f"- retrying in {backoff:.0f}s")
             time.sleep(backoff)
             backoff = min(backoff * 2, BACKOFF_MAX)
             continue

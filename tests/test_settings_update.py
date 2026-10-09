@@ -421,7 +421,7 @@ def test_reader_status_endpoints():
     )
     assert resp.get_json() == {}
 
-    status = client.get("/api/reader_status").get_json()
+    status = client.get("/api/reader_status", headers=hdr).get_json()
     assert status["channel"] == "test"
     assert status["ok"] is True
     assert status["desired"] == "player-alerts"
@@ -436,7 +436,7 @@ def test_reader_status_endpoints():
         headers=hdr,
     )
     assert resp.status_code == 200
-    status = client.get("/api/reader_status").get_json()
+    status = client.get("/api/reader_status", headers=hdr).get_json()
     assert status["ok"] is False
     assert status["error"] == "no discord channel attached"
 

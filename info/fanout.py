@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 import requests
 
 from core.ops.supervise import supervised
+from core.redact import redact, redact_url
 
 # how hard the push tries before leaving the alert to the
 # consumer's pull cursor
@@ -87,6 +88,10 @@ def _push(consumer, row, verify_ssl):
         "channel": row["channel"] or "",
     }
     headers = {"X-Auth-Token": consumer.token}
+    # the error text lands in FEED_STATE (rendered on the info
+    # dashboard) and can reach the log webhook - it must never
+    # carry the consumer's token or url credentials
+    _secrets = (consumer.token, consumer.push_url)
     last_error = None
     for attempt in range(PUSH_ATTEMPTS):
         try:
@@ -98,7 +103,9 @@ def _push(consumer, row, verify_ssl):
                 return True, None
             last_error = f"HTTP {r.status_code}"
         except Exception as e:
-            last_error = e
+            last_error = redact_url(
+                redact(str(e), *_secrets), *_secrets
+            )
         if attempt < PUSH_ATTEMPTS - 1:
             time.sleep(PUSH_RETRY_SECONDS)
     return False, last_error
@@ -126,7 +133,7 @@ def _tick(store, consumers, cursors):
         rows = store.signals_since(cursors.get(c.label, 0), limit=50)
         if not rows:
             continue
-        verify = bool(getattr(c, "push_verify_ssl", False))
+        verify = bool(getattr(c, "push_verify_ssl", True))
         for row in rows:
             if time.time() >= deadline:
                 break
@@ -152,6 +159,18 @@ def start_fanout_thread(cfg, store, webhook_url=""):
     ]
     if not consumers:
         return None
+    for c in consumers:
+        if (
+            str(c.push_url).startswith("https://")
+            and not bool(getattr(c, "push_verify_ssl", True))
+        ):
+            print(
+                f"fan-out: TLS certificate verification is DISABLED "
+                f"for consumer {c.label!r} (push_verify_ssl: false) "
+                f"- pushes are vulnerable to man-in-the-middle "
+                f"attacks; set push_verify_ssl: true once the "
+                f"consumer has a verifiable certificate"
+            )
     t, _state = supervised(
         "alert fan-out", lambda: _loop(cfg, store, consumers),
         webhook_url,

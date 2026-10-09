@@ -304,22 +304,24 @@ the `X-Auth-Token` machine token for scripts and the reader.
 **Info dashboard** (`role: info`) — the lean source-of-truth page:
 consumer health table (feed last-seen, cursor, push stats), the
 recent alert feed, the reader line, and the SPX levels editor (the
-cross-device source of truth). **No login** — it serves no session
-cookie (so it can't fight the consumer app's cookie on the same
-host). The write routes are token-guarded with the reader's
-`X-Auth-Token` (no cookie): `POST /alert` (a fake alert would make
-consumers trade) and the levels + settings POSTs (a fake levels
-text reaches every consumer's ladder and informs trades just the
-same) — the dashboard prompts once for the token and keeps it in
-localStorage.
+cross-device source of truth). **Session login**, same as the
+consumer app but with its own cookie name and signing key, so the
+two apps never fight on the same host — the `auth_token` seeds the
+`admin` account on first boot (treat it as a root credential; the
+login endpoint rate-limits brute force). Machine flows keep their
+header tokens: `POST /alert` (a fake alert would make consumers
+trade) and the levels + settings writes accept the reader's
+`X-Auth-Token`, and `/api/feed` stays per-consumer-token guarded.
+No token is ever stored in the browser — only the HttpOnly session
+cookie.
 
 ## HTTP API reference
 
 All API paths require auth (browser session or `X-Auth-Token` header)
-except `/health`, `/favicon.ico`, and `/login`, plus the info role's
-open read-only GETs (`/api/feed-status`, `/api/levels`,
-`/api/reader_status`, `/api/settings`, `/api/signals` — the info
-dashboard has no login). Admin-gated routes check the session role.
+except `/health`, `/favicon.ico`, and `/login` — on both roles (the
+info dashboard logs in like the consumer one; `/api/feed` skips the
+session guard and does its own per-consumer token check). Admin-gated
+routes check the session role.
 
 | method | path | auth | purpose |
 |---|---|---|---|
@@ -328,7 +330,7 @@ dashboard has no login). Admin-gated routes check the session role.
 | GET | `/` | session | dashboard page (lean info page when `role: info`) |
 | GET | `/health` | none | liveness `{"status":"ok"}` (watchdog target) |
 | GET | `/api/feed` | consumer token | **info role** — alerts after the `since=` cursor (long-poll `wait=` up to 25s), SPX levels text, new cursor; without `since=`: head-only (fresh consumers anchor here) |
-| GET | `/api/feed-status` | open | **info role** — per-consumer health (last seen, cursor, pushed/failed, last error) |
+| GET | `/api/feed-status` | any | **info role** — per-consumer health (last seen, cursor, pushed/failed, last error) |
 | GET | `/api/summary` | any | account cards summary (mode, values, margin, risk, reader, stops) |
 | GET | `/api/dashboard` | any | one batched poll: summary + paper positions + positions + signals + trades + settings + update status + me (cached, stale-while-revalidate) |
 | GET | `/api/positions` | any | open positions (live WS rows where fetchable, ledger rows otherwise) |
@@ -352,7 +354,7 @@ dashboard has no login). Admin-gated routes check the session role.
 | GET | `/api/users` | admin | list users (no hashes) |
 | POST | `/api/users` | admin | create/delete/set_password (self-change needs current password; cannot delete self or last admin) |
 | POST | `/alert` | token | **alert ingest** — JSON `{text, author, ts, parsed_ts, channel}`; runs `process_alert` (consumer) / `ingest_alert` (info) |
-| GET | `/api/levels` | open | **info role** — the current SPX levels text (read-only) |
+| GET | `/api/levels` | any | **info role** — the current SPX levels text (read-only) |
 | POST | `/api/spx-levels` | token | **info role** — save the levels text (consumers render it read-only on their ladder) |
 
 The eight trading routes (`/api/positions`, `/api/paper-*`,
@@ -410,8 +412,10 @@ their `/alert`), `push_url` (empty = pull-only consumer).
 
 ### `feed` — consumer role: where the feed lives
 `url` (the info server), `token` (must match a `consumers[]` entry),
-`poll_seconds` (1.0), `verify_ssl` (false — the info server usually
-runs a self-signed cert).
+`poll_seconds` (1.0), `verify_ssl` (**true** — TLS certificates are
+verified by default; set false only while the server runs a
+self-signed dev cert, which leaves the connection open to
+man-in-the-middle).
 
 ### `trading` — mode + sizing + risk
 `mode` (notify|paper|live — also the **mode slider** in the
@@ -722,6 +726,7 @@ core/                      # shared foundation (both apps execute this)
   parser.py                # alert regexes, Alert dataclass, contract keys
   signals.py               # message keys + the atomic signal claim
   web_common.py            # session auth, login page, gzip, log quieting
+  redact.py                # token/credential scrubbing for error text
   ops/
     notify.py loghook.py processes.py supervise.py updater.py watchdog.py
     release_updater.py     # release-install updater (GitHub Releases)
@@ -790,13 +795,20 @@ Open ideas, in no particular order:
 1. **Consumer management UI** — the info server's consumers list is
    config-file managed; add create/revoke + token rotation to the
    info dashboard.
-2. **Feed push over TLS** — the fan-out verifies consumer certs only
-   when `push_verify_ssl` is set on the consumers[] entry (off by
-   default: the self-signed dev certs fail verification); consider a
-   proper CA or Tailscale cert guidance for consumer endpoints.
+2. **Feed push over TLS** — the fan-out verifies consumer certs by
+   default (`push_verify_ssl: true`); self-signed dev certs need an
+   explicit `push_verify_ssl: false` (and the startup warns about
+   the interception risk). Consider a proper CA or Tailscale cert
+   guidance for consumer endpoints.
 3. **Keep diagrams current** — re-render the dot sources when the
    schema, architecture, or runtime layout change.
 
 (Done since this list was written: username+password login is
 enforced — the token only seeds the admin and authenticates the
-reader/scripts — and `push_verify_ssl` is a real, parsed knob.)
+reader/scripts — and `push_verify_ssl` is a real, parsed knob.
+Also done: the info dashboard logs in like the consumer one (own
+cookie + signing key, no token in localStorage), TLS verification
+defaults ON for the feed pull and the push (explicit opt-out for
+self-signed dev certs, with a startup warning), auth tokens are
+redacted from every error path that reaches a log or webhook, and
+requirements.txt pins exact versions.)

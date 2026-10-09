@@ -8,6 +8,7 @@ config.yaml
 /config/ws_tokens.env
 /db/
 .consumer_session_key
+.info_session_key
 /VERSION
 trades.db
 reader/discord_tree.txt

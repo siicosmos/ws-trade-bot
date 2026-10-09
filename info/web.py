@@ -2,31 +2,35 @@
 reader heartbeat, and the lean admin dashboard.
 
 No trading lives here - the executors, ledgers, positions and
-quotes are consumer-app territory. This app is the alert
-source: the reader POSTs alerts, signals are recorded, and
+quotes are consumer-app territory. This app is the alert source: the reader POSTs alerts, signals are recorded, and
 consumers receive them via push (fan-out) and the long-poll
 feed.
 
-No login: the dashboard is open (read-only data - signals,
-levels, consumer health), so a session cookie here can never
-fight with the consumer app's cookie on the same host. The
-write routes are token-guarded (X-Auth-Token, the reader's
-pipeline token): POST /alert - a fake alert would make every
-consumer app trade - and the levels editor + settings POSTs - a
-fake levels text reaches every consumer's ladder and informs
-trades just the same. The dashboard prompts once for the token
-and keeps it in localStorage (no cookie).
+Session login (the same machinery as the consumer app, with its
+own cookie name and signing key so the two apps never fight on
+the same host): every route requires a logged-in browser or a
+matching X-Auth-Token header, except /health, /favicon.ico,
+/login, /alert (the reader's pipeline token) and /api/feed (the
+per-consumer feed token - a fake alert would make every
+consumer app trade, and a fake levels text reaches every
+consumer's ladder, so the write routes carry the same token
+guard on top). No localStorage token: the browser holds only
+the HttpOnly session cookie.
 """
 
 import hmac
 import os
 import logging
 import time
+from datetime import timedelta
 
-from flask import Flask, Response, jsonify, request
+from flask import Flask, Response, jsonify, request, session
 
 from core.store import Store
-from core.web_common import install_gzip, install_quiet_filter
+from core.web_common import (
+    LOGIN_HTML, install_auth, install_gzip, install_quiet_filter,
+    load_secret_key,
+)
 from .dashboard import info_css, info_html
 from .ingest import ingest_alert
 
@@ -34,10 +38,34 @@ from .ingest import ingest_alert
 def create_app(cfg, store: Store, config_path=None) -> Flask:
     app = Flask(__name__)
     install_quiet_filter()
+    app.secret_key = load_secret_key(config_path, "info")
+    # cookies ignore ports: the consumer app (or a second info
+    # server) on the same host must not share this cookie name
+    # or they log each other out
+    app.config["SESSION_COOKIE_NAME"] = "ws_session_info_" + str(
+        getattr(cfg.pipeline, "port", 8081)
+    )
+    # the session cookie is the only browser credential - keep it
+    # away from javascript (XSS) and other sites (CSRF navigation)
+    app.config["SESSION_COOKIE_HTTPONLY"] = True
+    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+    if getattr(cfg.pipeline, "tls_cert", "") and getattr(
+        cfg.pipeline, "tls_key", ""
+    ):
+        app.config["SESSION_COOKIE_SECURE"] = True
+    # a stolen cookie on the alert source must not stay valid
+    # for a month - 12h matches the consumer dashboard
+    app.permanent_session_lifetime = timedelta(hours=12)
     app.config["MAX_CONTENT_LENGTH"] = 1024 * 1024
     # the dashboard assets change with every release - always
     # revalidate (see the consumer app for the same note)
     app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
+
+    # first boot: the access token becomes the admin password -
+    # the token is the bootstrap (it is mandatory, see the
+    # refusal check in server.main)
+    if store.user_count() == 0 and cfg.pipeline.auth_token:
+        store.create_user("admin", cfg.pipeline.auth_token, "admin")
 
     # the reader's heartbeat state (dashboard reader line).
     # reader settings live in the reader's own yaml - read the
@@ -80,12 +108,20 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
             token.encode("utf-8", "ignore"),
         )
 
+    def _trusted():
+        """A logged-in browser session or the machine token -
+        both count as the admin for the write routes and the
+        settings masking."""
+        return bool(session.get("auth")) or _reader_token_ok()
+
     def _write_guard():
         """The other write routes guard the same way: a fake
         levels text reaches every consumer's ladder, and a fake
         settings POST redirects this app's log webhooks or
-        disables its auto-update."""
-        if not _reader_token_ok():
+        disables its auto-update. The session guard already ran
+        (install_auth) - this is the second layer for the token
+        path (the reader, scripts)."""
+        if not _trusted():
             # a rejected write (token mismatch) used to be fully
             # silent - werkzeug is quieted and the caller gives no
             # detail. rate-limited so a scanner cannot flood the log
@@ -102,6 +138,10 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
         return None
 
     install_gzip(app)
+    # session login for the dashboard + the machine-token guard
+    # for the reader/scripts; /api/feed does its own per-consumer
+    # token auth (see the route below)
+    install_auth(app, cfg, store, LOGIN_HTML, exempt_paths=("/api/feed",))
 
     @app.get("/")
     def info_page():
@@ -382,11 +422,11 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
     # --------------------------------------------------------
     @app.get("/api/settings")
     def api_settings_get():
-        # the dashboard is open-read, but the webhook urls are
-        # bearer credentials - only a request carrying the valid
-        # write token (the settings editor sends it) sees the real
-        # values; everyone else gets a placeholder
-        trusted = _reader_token_ok()
+        # the dashboard requires login, but the webhook urls are
+        # bearer credentials - only a trusted request (a session
+        # or the write token) sees the real values; anything else
+        # gets a placeholder
+        trusted = _trusted()
         mask = "••••••••"
 
         def webhook(value):
