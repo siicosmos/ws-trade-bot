@@ -11,7 +11,7 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from test_pipeline import _fresh_store, ConfigStub, TradingConfig  # noqa: E402
+from _helpers import ConfigStub, TradingConfig, _fresh_store  # noqa: E402
 
 pytestmark = pytest.mark.essential
 
@@ -19,10 +19,38 @@ TOKEN = "s3cret-feed-token-value"
 
 
 class _StopLoop(BaseException):
-    """Ends the feed loop's single iteration: raised by the
-    patched time.sleep (outside the loop's `except Exception`),
-    so the test runs _loop synchronously - no threads to park or
-    leak across tests."""
+    """Ends the feed loop under test: the fake requests.get
+    raises a plain RuntimeError (which the loop's
+    `except Exception` catches), the loop then calls time.sleep -
+    patched below to raise this instead, which escapes the loop
+    and lands in the test's pytest.raises. BaseException keeps
+    the sentinel out of the loop's own error handling."""
+
+
+class _StopTime:
+    """Stands in for feedclient's time module (patched in
+    feedclient's namespace, not on the global time module):
+    sleep ends the loop, time stays real."""
+
+    @staticmethod
+    def sleep(seconds):
+        raise _StopLoop()
+
+    @staticmethod
+    def time():
+        return time.time()
+
+
+def _run_one_loop_iteration(monkeypatch, cfg, store, state=None):
+    """Run feedclient._loop until its first sleep: the fake
+    requests.get raises exactly once, the loop's error path then
+    reaches time.sleep - which raises _StopLoop and ends the
+    loop. Synchronous, in the test's own thread."""
+    from consumer import feedclient
+
+    monkeypatch.setattr(feedclient, "time", _StopTime)
+    with pytest.raises(_StopLoop):
+        feedclient._loop(cfg, store, print, state)
 
 
 # ------------------------------------------------- tls defaults
@@ -82,20 +110,6 @@ def test_push_verify_ssl_defaults_to_true(tmp_path):
     )
     cfg = load_config(str(path))
     assert cfg.consumers[0].push_verify_ssl is True
-
-
-def _run_one_loop_iteration(monkeypatch, cfg, store, state=None):
-    """Run feedclient._loop until its first sleep: the fake
-    requests.get raises (or returns) once, the patched sleep then
-    ends the loop - synchronously, in the test's own thread."""
-    from consumer import feedclient
-
-    def _stop(seconds):
-        raise _StopLoop()
-
-    monkeypatch.setattr(feedclient.time, "sleep", _stop)
-    with pytest.raises(_StopLoop):
-        feedclient._loop(cfg, store, print, state)
 
 
 def test_feedclient_defaults_verify_to_true(monkeypatch, capsys):

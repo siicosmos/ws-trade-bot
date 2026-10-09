@@ -14,11 +14,8 @@ from consumer.trading.executor import (
 from core.parser import parse_alert
 from consumer.pipeline import process_alert
 from consumer.trading.risk import RiskEngine
-from core.store import Store
 
-# the shared stubs live in conftest.py - re-exported here so the
-# modules importing them from test_pipeline keep working
-from conftest import ConfigStub, _fresh_store  # noqa: F401
+from _helpers import ConfigStub, _fresh_store
 
 
 def _setup(**trading_kw):

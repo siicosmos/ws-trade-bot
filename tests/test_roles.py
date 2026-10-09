@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import pytest  # noqa: E402
 
-from test_pipeline import _fresh_store, ConfigStub, TradingConfig  # noqa: E402
+from _helpers import ConfigStub, TradingConfig, _fresh_store  # noqa: E402
 from core.config import FeedConfig, load_config  # noqa: E402
 from info.ingest import ingest_alert  # noqa: E402
 from consumer.trading.risk import RiskEngine  # noqa: E402

@@ -8,7 +8,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from test_pipeline import _fresh_store, ConfigStub, TradingConfig  # noqa: E402
+from _helpers import ConfigStub, TradingConfig, _fresh_store  # noqa: E402
 from consumer import feedclient  # noqa: E402
 import pytest  # noqa: E402
 
