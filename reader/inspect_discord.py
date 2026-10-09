@@ -237,9 +237,6 @@ def find_channel_control(window, channel_names):
     return None
 
 
-_last_channel_click = 0.0
-
-
 def _ensure_on_screen(ctrl, window=None, log=print):
     """A minimized (or tray) discord reports (0,0) clickable
     points - every synthetic click lands on nothing. Restore

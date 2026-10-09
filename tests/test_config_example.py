@@ -197,12 +197,13 @@ def test_example_keys_are_all_read_by_the_loader():
 
     stale = audit(
         "consumer.config.yaml", loader,
-        sections={"paper", "consumer", "auto_update", "quotes",
+        sections={"paper", "consumer", "feed", "auto_update", "quotes",
                   "discord", "trading", "wealthsimple", "parser"},
     )
     stale += audit(
         "info.config.yaml", loader,
-        sections={"info", "auto_update", "discord", "parser"},
+        sections={"info", "consumers", "auto_update", "discord",
+                  "trading", "parser"},
     )
     stale += audit("reader.config.yaml", reader_src)
     assert stale == [], stale

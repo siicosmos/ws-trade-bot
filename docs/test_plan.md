@@ -633,7 +633,8 @@ id/type/enabled but no label input; a new row has one.
    .venv\Scripts\python tests\scripts\e2e_test.py
    .venv\Scripts\python tests\scripts\ui_test.py
    ```
-   Expect `RESULT: 64 passed, 0 failed` and
+   Expect `RESULT: 64 passed, 0 failed` (65 with chrome on
+   PATH, which runs the ui-smoke phase too) and
    `UI RESULT: 31 passed, 0 failed`.
 
 #### M-10.2 — Notify-mode smoke on the live box: one alert flows reader → info → consumer → Discord embed, ledger row recorded, dashboard shows it.

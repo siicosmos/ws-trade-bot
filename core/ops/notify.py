@@ -9,18 +9,24 @@ def notify_discord(webhook_url: str, title: str, fields: dict, ok: bool = True,
         return
     if color is None:
         color = 3066993 if ok else 15158332
+    # discord rejects embeds over 6000 chars total - cap the field
+    # count so a long sizing table cannot silently drop the notice
+    trimmed = list(fields.items())[:20]
     embed = {
-        "title": title,
+        "title": title[:250],
         "color": color,
         "fields": [
-            {"name": str(k), "value": str(v)[:1000], "inline": True}
-            for k, v in fields.items()
+            {"name": str(k)[:250], "value": str(v)[:1000], "inline": True}
+            for k, v in trimmed
         ],
     }
     try:
-        requests.post(webhook_url, json={"embeds": [embed]}, timeout=10)
-    except requests.RequestException:
-        pass
+        r = requests.post(webhook_url, json={"embeds": [embed]}, timeout=10)
+        if getattr(r, "status_code", 0) >= 300:
+            # a swallowed failure made trade notifications vanish
+            print(f"notify: webhook returned {r.status_code} for {title!r}")
+    except requests.RequestException as e:
+        print(f"notify: webhook unreachable for {title!r}: {e}")
 
 
 def notify_plain(webhook_url: str, text: str):

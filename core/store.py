@@ -335,11 +335,6 @@ class Store:
         )
         # everything is stored in UTC; the browser renders it in the
         # user's timezone
-        ts = (
-            datetime.fromtimestamp(ts_epoch, tz=timezone.utc)
-            .isoformat(timespec="seconds")
-            if ts_epoch else self._now()
-        )
         with self._write_lock, self._conn:
             cur = self._conn.execute(
                 "INSERT OR IGNORE INTO signals "

@@ -349,7 +349,7 @@ dashboard has no login). Admin-gated routes check the session role.
 | GET | `/api/levels` | open | **info role** — the current SPX levels text (read-only) |
 | POST | `/api/spx-levels` | token | **info role** — save the levels text (consumers render it read-only on their ladder) |
 
-The seven trading routes (`/api/positions`, `/api/paper-*`,
+The eight trading routes (`/api/positions`, `/api/paper-*`,
 `/api/position-*`) return 404 on an info server — trading runs on
 consumer apps.
 
@@ -776,13 +776,13 @@ Open ideas, in no particular order:
 1. **Consumer management UI** — the info server's consumers list is
    config-file managed; add create/revoke + token rotation to the
    info dashboard.
-2. **Enforce username+password login** — remove the bare-token browser
-   fallback: the access token stays as the machine credential for the
-   reader/scripts and seeds the admin on upgrade, but can no longer
-   open a browser session on its own. Change-password form gets a
-   new+confirm pair with a mismatch check.
-3. **Feed push over TLS** — the fan-out verifies consumer certs only
-   when `push_verify_ssl` is set; consider a proper CA or Tailscale
-   cert guidance for consumer endpoints.
-4. **Keep diagrams current** — re-render the dot sources when the
+2. **Feed push over TLS** — the fan-out verifies consumer certs only
+   when `push_verify_ssl` is set on the consumers[] entry (off by
+   default: the self-signed dev certs fail verification); consider a
+   proper CA or Tailscale cert guidance for consumer endpoints.
+3. **Keep diagrams current** — re-render the dot sources when the
    schema, architecture, or runtime layout change.
+
+(Done since this list was written: username+password login is
+enforced — the token only seeds the admin and authenticates the
+reader/scripts — and `push_verify_ssl` is a real, parsed knob.)

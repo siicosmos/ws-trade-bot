@@ -495,11 +495,7 @@ function monModeLive() {
     && lastPayload.summary.mode === "live";
 }
 
-function monModeLabel() {
-  return monModeLive() ? "live" : "paper";
-}
-
-function sellPosition(mode, label, key, qty, price, avg) {
+function sellPosition(mode, label, key, qty, price) {
   openModal(
     "Manual position sell" + (mode === "live" ? " (LIVE ORDER)" : ""),
     "Sell the whole " + key + " position (" + label + ")" +
@@ -1009,7 +1005,7 @@ function renderPositionsInto(elId, rows, emptyText, monMode) {
         ? '<td class=num>' +
           (monMode === "live"
             ? '<button class="mini-toggle" title="take-profit / trailing for this position" onclick="setTp(\'' + monMode + '\', \'' + jsq(p.account) + '\', \'' + jsq(p.contract_key) + '\', ' + (p.tp_gain_pct == null ? "null" : p.tp_gain_pct) + ', ' + (p.trail_pct == null ? "null" : p.trail_pct) + ')">tp</button> ' +
-            '<button class="mini-toggle danger" title="place a REAL sell order at the current bid" onclick="sellPosition(\'' + monMode + '\', \'' + jsq(p.account) + '\', \'' + jsq(p.contract_key) + '\', ' + (p.qty || 0) + ', ' + (p.current_price == null ? "null" : p.current_price) + ', ' + (p.avg_premium == null ? "null" : p.avg_premium) + ')">sell</button></td>'
+            '<button class="mini-toggle danger" title="place a REAL sell order at the current bid" onclick="sellPosition(\'' + monMode + '\', \'' + jsq(p.account) + '\', \'' + jsq(p.contract_key) + '\', ' + (p.qty || 0) + ', ' + (p.current_price == null ? "null" : p.current_price) + ')">sell</button></td>'
             : '<button class="mini-toggle" disabled title="live mode only - these buttons act on real positions (the paper card buttons manage the paper ledger)">tp</button> ' +
               '<button class="mini-toggle danger" disabled title="live mode only - these buttons act on real positions">sell</button></td>')
         : '<td></td>') + "</tr>";

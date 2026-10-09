@@ -141,10 +141,6 @@ class StopMonitor:
     def _fire(self, pos, bid, reason="stop"):
         tag = {"stop": "[STOP]", "back_to_entry": "[B2E]",
                "tp": "[TP]"}.get(reason, "[STOP]")
-        title = (
-            "BACK TO ENTRY FAILED" if reason == "back_to_entry"
-            and False else ""
-        )
         alert = Alert(
             action="SELL",
             ticker=pos["underlying"],

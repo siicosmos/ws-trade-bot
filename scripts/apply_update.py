@@ -46,7 +46,17 @@ def apply(root):
     except (OSError, ValueError):
         return False   # nothing pending (or corrupt - ignore it)
 
-    staging = os.path.join(root, pending.get("staging") or STAGING_DIR)
+    # the staging name comes from a json file anyone with write
+    # access to consumer/ could tamper with - only the literal
+    # expected directory name is honored (a ".." would make the
+    # cleanup rmtree delete arbitrary directories)
+    staging_name = pending.get("staging") or STAGING_DIR
+    if staging_name != STAGING_DIR:
+        print(f"apply_update: unexpected staging name "
+              f"{staging_name!r} - ignoring the pending marker")
+        os.remove(pending_path)
+        return False
+    staging = os.path.join(root, STAGING_DIR)
     if not os.path.isdir(staging):
         # staged build missing - drop the marker, keep running
         os.remove(pending_path)

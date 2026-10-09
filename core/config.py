@@ -116,8 +116,6 @@ class TradingConfig:
     stop_loss_pct: float = 25.0
     trailing_stop_pct: float = 0.0
     stop_check_seconds: int = 30
-    # "hero or zero" / "profits only" alerts spend at most this
-    # fraction of today's realized sell gains
     max_contracts_per_trade: int = 10
     max_open_risk_pct: float = 30.0
     # correlation-aware risk: a single (underlying, expiry, right)
@@ -131,9 +129,6 @@ class TradingConfig:
     # from the estimate gets its remainder cancelled - the filled
     # part stays as the position for future alerts. 0 = off
     partial_fill_cancel_pct: float = 10.0
-    stop_loss_pct: float = 25.0
-    trailing_stop_pct: float = 0.0
-    stop_check_seconds: int = 30
     # "hero or zero" / "profits only" alerts spend at most this
     # fraction of today's realized sell gains
     lotto_gain_budget_pct: float = 75.0

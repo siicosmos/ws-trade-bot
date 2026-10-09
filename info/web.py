@@ -89,8 +89,6 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
 
     install_gzip(app)
 
-    _page_cache = {"html": ""}
-
     @app.get("/")
     def info_page():
         # the stylesheet is inlined into the head (same pattern
@@ -102,8 +100,6 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
             "<style>\n" + info_css() + "\n</style>",
             1,
         )
-        if _page_cache["html"] != current:
-            _page_cache["html"] = current
         resp = app.response_class(current, mimetype="text/html")
         resp.headers["Cache-Control"] = "no-store"
         return resp

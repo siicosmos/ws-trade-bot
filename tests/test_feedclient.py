@@ -102,7 +102,7 @@ def test_client_anchors_at_head_then_delivers(monkeypatch):
     assert author == "a"
     assert channel == "player-alerts"
     # ts converted from the iso string to epoch
-    assert abs(ts - 1789972200.0) < 1 or ts is not None
+    assert abs(ts - 1791297000.0) < 1
     # levels synced into the local store
     assert store.meta_get("spx_levels_text") == "Pivot 6800"
 

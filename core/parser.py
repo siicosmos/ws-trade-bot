@@ -328,14 +328,17 @@ def parse_alert(text: str, custom_patterns: Optional[List[str]] = None) -> Optio
 
     action = "BUY" if BUY_RE.search(text) else "SELL"
 
+    entry_m = ENTRY_RE.search(text)
+    stop_m = STOP_RE.search(text)
+    tp_m = TP_RE.search(text)
     return Alert(
         action=action,
         ticker=ticker,
         size=size,
         profits_only=profits_only,
-        entry=_num(ENTRY_RE.search(text).group(1)) if ENTRY_RE.search(text) else None,
-        stop_loss=_num(STOP_RE.search(text).group(1)) if STOP_RE.search(text) else None,
-        take_profit=_num(TP_RE.search(text).group(1)) if TP_RE.search(text) else None,
+        entry=_num(entry_m.group(1)) if entry_m else None,
+        stop_loss=_num(stop_m.group(1)) if stop_m else None,
+        take_profit=_num(tp_m.group(1)) if tp_m else None,
         gain_pct=_gain(text),
         raw=text,
     )

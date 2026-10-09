@@ -39,33 +39,40 @@ def main():
         result(WARN, "wealthsimple-python not installed",
                "live mode unavailable; notify sizing falls back to paper values")
 
-    config_path = os.path.join(ROOT, "config.yaml")
+    config_path = os.path.join(ROOT, "consumer", "consumer.config.yaml")
     if not os.path.exists(config_path):
-        result(FAIL, "config.yaml exists",
-               "run: copy config/consumer.config.yaml config.yaml")
-        print("\ncreate config.yaml first, then rerun")
+        result(FAIL, "consumer config exists",
+               "run: copy config/consumer.config.yaml "
+               "consumer/consumer.config.yaml")
+        print("\ncreate consumer/consumer.config.yaml first, then rerun")
         sys.exit(1)
 
     try:
         from core.config import load_config
 
         cfg = load_config(config_path)
-        result(OK, f"config.yaml loads (mode={cfg.trading.mode}, "
+        result(OK, f"consumer config loads (mode={cfg.trading.mode}, "
                    f"port={cfg.pipeline.port})")
         if not cfg.discord.trade_alert_webhook_url:
             result(WARN, "discord.trade_alert_webhook_url not set",
                    "phone alerts will not send")
     except Exception as e:
         exit_code = 1
-        result(FAIL, "config.yaml loads", f"{type(e).__name__}: {e}")
+        result(FAIL, "consumer config loads", f"{type(e).__name__}: {e}")
         sys.exit(1)
 
     db_path = os.path.join(ROOT, "consumer", "consumer.trades.db")
     try:
-        from core.store import Store
+        import sqlite3
 
-        Store(db_path)
-        result(OK, "consumer.trades.db opens (schema/migrations ok)")
+        # read-only: a diagnostic must not create or migrate the
+        # production db (Store() runs the schema/migration path)
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        conn.execute("SELECT COUNT(*) FROM signals").fetchone()
+        conn.close()
+        result(OK, "consumer.trades.db opens read-only (schema present)")
+    except sqlite3.OperationalError as e:
+        result(WARN, "consumer.trades.db", f"{e} (missing or pre-schema)")
     except Exception as e:
         exit_code = 1
         result(FAIL, "consumer.trades.db opens",

@@ -115,8 +115,6 @@ def sweep_pending_orders(cfg, store, ws_account, label,
             est = float(row["est_price"])
             if current and est > 0:
                 move = abs(float(current) - est) / est * 100
-            if current and est > 0:
-                move = abs(float(current) - est) / est * 100
                 if move >= shock_pct:
                     if _shock_cancel(
                         store, ws, row, float(current), move,

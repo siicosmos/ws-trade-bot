@@ -59,6 +59,12 @@ def main():
                 serialization.NoEncryption(),
             )
         )
+    # the private key must not be world-readable (a no-op on
+    # windows, where ntfs acls govern)
+    try:
+        os.chmod(key_path, 0o600)
+    except OSError:
+        pass
     print(f"certificate: {cert_path}")
     print(f"private key: {key_path}")
     print(f"valid for: {', '.join(dns_names + ips)}")
