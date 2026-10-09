@@ -51,10 +51,14 @@ def _backfill_signals(base, store, limit=50):
             ts_epoch = (
                 datetime.fromisoformat(ts).timestamp() if ts else None
             )
-            key = row.get("message_key")
             text = row.get("text") or ""
-            if not key or not text:
+            if not text:
                 continue
+            # the info's /api/signals does not return message keys -
+            # compute it locally (the same sha256 the claim uses)
+            from core.signals import message_key
+
+            key = message_key(text, row.get("author") or "")
             if store.record_signal(
                 key, row.get("author") or "", text,
                 bool(row.get("parsed")),

@@ -287,6 +287,22 @@ class ReleaseUpdater:
         if not remote or remote == local:
             self.last_result = "up to date"
             return False
+        # a git checkout: a release OLDER than the checkout head is
+        # a downgrade - the checkout is authoritative (the user
+        # pulled newer code; CI's builds lag the pushes). applying
+        # an older build would wipe it. release installs (no git)
+        # skip this check - their release is always the newest
+        from core.ops.updater import _git as _git_cmd
+
+        r = _git_cmd(self.root, "merge-base", "--is-ancestor",
+                     remote, "HEAD")
+        if r.returncode == 0:
+            self.last_result = (
+                f"release {remote[:8]} is older than the checkout "
+                "head - skipped"
+            )
+            print(f"auto-update: {self.last_result}")
+            return False
 
         return self._stage(release, asset, remote)
 

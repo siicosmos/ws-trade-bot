@@ -237,8 +237,12 @@ def test_backfill_claims_recent_signals_without_executing(monkeypatch):
             break
         time.sleep(0.05)
 
-    # the backfilled signal is claimed (visible + deduped)...
-    assert store.seen_signal("k-backfill-1")
+    # the backfilled signal is claimed (visible + deduped) - the
+    # key is computed locally from the text+author
+    from core.signals import message_key
+
+    key = message_key("BOUGHT 0DTE SPY 759c @ 1.5 small", "a")
+    assert store.seen_signal(key)
     # the recent-signals view carries the text (no keys) - the
     # dashboard's list is what we are asserting on
     rows = store.recent_signals(limit=10)
