@@ -7,6 +7,8 @@ config.yaml
 /config/reader.config.yaml
 /config/ws_tokens.env
 /db/
+/consumer/.consumer_session_key
+/consumer/VERSION
 trades.db
 reader/discord_tree.txt
 *.db
@@ -17,8 +19,6 @@ ws_tokens.env
 certs/
 .last_update_info.json
 .last_update_consumer.json
-VERSION
-.session_key
 .reader_seen.json
 reader.log*
 logs/

@@ -93,7 +93,7 @@ def apply(root):
                          os.path.join(scripts_dst, fn))
     ver = os.path.join(staging, "VERSION")
     if os.path.exists(ver):
-        shutil.copy2(ver, os.path.join(root, "VERSION"))
+        shutil.copy2(ver, os.path.join(root, "consumer", "VERSION"))
 
     # record + clear the staging area
     commit = str(pending.get("commit") or "?")

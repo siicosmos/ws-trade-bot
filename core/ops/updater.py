@@ -117,7 +117,7 @@ RUNTIME_IGNORED = (
     "db/*",
     ".last_update_info.json", ".last_update_consumer.json",
     ".update_pending_consumer.json", ".reader_seen.json",
-    ".session_key",
+
     "config/consumer.config.yaml", "config/info.config.yaml",
     "config/reader.config.yaml", "config/ws_tokens.env",
     "*.pyc", "__pycache__/*",
