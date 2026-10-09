@@ -1205,6 +1205,11 @@ def test_start_discord_rate_limited_and_command(monkeypatch):
 
     ok = idisc.start_discord(log=lambda *a: None)
     assert ok and launched and launched[0][1] == "--processStart"
+    # the keep-alive flags ride the launch (the renderer must
+    # not throttle/suspend screen-off - the ui tree would freeze
+    # and the reader would read a stale pane)
+    assert "--process-start-args" in launched[0]
+    assert "--disable-renderer-backgrounding" in launched[0][-1]
 
     # inside the cooldown: no second launch
     launched.clear()

@@ -51,7 +51,13 @@ def start_discord(command=None, log=print, cooldown=15):
     the app under the current version - re-running it while the
     app sits in the tray signals the single instance to show its
     window. Rate limited to one attempt every 15s so a dead
-    discord comes back quickly."""
+    discord comes back quickly.
+
+    The default launch carries chromium's keep-alive flags: with
+    the display off discord's renderer throttles and then
+    suspends (the ui tree freezes and the reader reads a stale
+    pane - the 10/09 08:45-10:22 gap). the flags disable the
+    backgrounding so the tree keeps updating screen-off."""
     import os
     import subprocess
     import time as _time
@@ -60,11 +66,18 @@ def start_discord(command=None, log=print, cooldown=15):
     if _time.time() - _last_discord_start < cooldown:
         return False
     _last_discord_start = _time.time()
+    keep_alive = (
+        "--disable-renderer-backgrounding "
+        "--disable-background-timer-throttling "
+        "--disable-backgrounding-occluded-windows "
+        "--disable-features=CalculateNativeWinOcclusion"
+    )
     cmd = command or [
         os.path.expandvars(
             "%LocalAppData%\\Discord\\Update.exe"
         ),
         "--processStart", "Discord.exe",
+        "--process-start-args", keep_alive,
     ]
     try:
         subprocess.Popen(
