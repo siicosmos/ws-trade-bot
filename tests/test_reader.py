@@ -33,8 +33,80 @@ class _StrictUIAError(Exception):
 
 
 @pytest.fixture(autouse=True)
-def _strict_uia_error(monkeypatch):
+def _strict_uia_error(monkeypatch, tmp_path):
     monkeypatch.setattr(dr, "UIAError", _StrictUIAError)
+    # the reader-heartbeat machinery points at tmp: no test
+    # touches the real reader/.reader_alive, and no test trips
+    # into the standby loop (the stubbed psutil would report
+    # every pid alive)
+    monkeypatch.setattr(
+        dr, "_READER_HEARTBEAT", str(tmp_path / ".reader_alive")
+    )
+    monkeypatch.setattr(dr, "_reader_heartbeat_alive", lambda: False)
+
+
+def test_second_launcher_stands_by_instead_of_killing(monkeypatch, tmp_path):
+    """a second launcher's reader finds a healthy heartbeat and
+    stands by (it must NOT kill the running reader - two
+    launchers fought all night, each new reader killing the
+    running one ~40s into its life)."""
+    import threading as _threading
+
+    heartbeats = []
+    cfg = {
+        "info_server_url": "http://localhost:8080/alert",
+        "poll_interval": 0.01,
+        "channels": ["player-alerts"],
+        "auth_token": "",
+    }
+
+    class FakeWindow:
+        Name = "🚨│player-alerts | #general - Discord"
+
+    class FakeContainer:
+        Name = "🚨│player-alerts 中的消息"
+
+    monkeypatch.setattr(dr, "load_config", lambda: cfg)
+    monkeypatch.setattr(dr, "sync_clock", lambda: None)
+    monkeypatch.setattr(dr, "git_head", lambda root: "abc123")
+    monkeypatch.setattr(dr, "repo_root", lambda: ".")
+    monkeypatch.setattr(dr, "_startup_banner", lambda: None)
+    monkeypatch.setattr(dr, "_log_previous_exit", lambda: None)
+    monkeypatch.setattr(dr, "_terminate_stale_reader", lambda: None)
+    monkeypatch.setattr(dr, "find_discord_window", lambda: FakeWindow())
+    monkeypatch.setattr(
+        dr, "find_message_container", lambda *a, **k: FakeContainer()
+    )
+    monkeypatch.setattr(
+        dr, "current_messages",
+        lambda container, max_items=40, floor=None: [],
+    )
+    monkeypatch.setattr(dr, "WebhookLog", lambda url: None)
+    monkeypatch.setattr(
+        dr, "sync_with_server",
+        lambda *a, **k: heartbeats.append(a),
+    )
+    # a LIVE heartbeat: another reader holds the slot
+    monkeypatch.setattr(dr, "_reader_heartbeat_alive", lambda: True)
+
+    standby_logs = []
+    real_sleep = dr.time.sleep
+
+    def fake_sleep(secs):
+        standby_logs.append(secs)
+        if len(standby_logs) >= 3:
+            raise KeyboardInterrupt   # the other reader "stops"
+    monkeypatch.setattr(dr.time, "sleep", fake_sleep)
+
+    try:
+        dr.main()
+    except KeyboardInterrupt:
+        pass
+
+    # the standby loop slept (it did not run the poll loop or
+    # kill anything)
+    assert 15 in standby_logs, standby_logs
+    assert heartbeats == []   # no poll loop ran
 
 if _real_psutil is not None:
     sys.modules["psutil"] = _real_psutil

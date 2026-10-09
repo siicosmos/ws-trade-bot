@@ -964,9 +964,41 @@ def snap_to_bottom(container, log_fn=None):
             _warn("pane still not at the bottom after scrolling")
         except Exception:
             pass
-    # fallback: focus the pane and send End - Discord jumps the
-    # chat to the newest messages, materializing them in the tree
-    # (a readable window does not need the restore attempt)
+    # fallback: post the End key to the window WITHOUT focus -
+    # a posted WM_KEYDOWN reaches chromium even when the window
+    # cannot be foregrounded (the screen-off/locked case, where
+    # SetForegroundWindow is refused); ignored by builds that
+    # only read focused input
+    try:
+        hwnd = container.GetTopLevelControl().NativeWindowHandle
+    except Exception:
+        hwnd = 0
+    if hwnd:
+        try:
+            import ctypes as _ctypes
+
+            user32 = _ctypes.windll.user32   # windows only
+            WM_KEYDOWN, WM_KEYUP, VK_END = 0x0100, 0x0101, 0x23
+            for _ in range(3):
+                user32.PostMessageW(
+                    hwnd, WM_KEYDOWN, VK_END, 0x00520001
+                )
+                user32.PostMessageW(hwnd, WM_KEYUP, VK_END, 0xC0520001)
+                time.sleep(0.3)
+                try:
+                    if pattern is not None:
+                        now_pct = _uia_prop(
+                            pattern, "VerticalScrollPercent"
+                        )
+                        if now_pct is not None and now_pct >= 97:
+                            return
+                except Exception:
+                    pass
+        except AttributeError:
+            pass   # not windows (tests / non-windows dev)
+    # last resort: focus the pane and send End - Discord jumps
+    # the chat to the newest messages, materializing them in the
+    # tree (a readable window does not need the restore attempt)
     ensure_visible(container, log=log_fn or print)
     try:
         window = container.GetTopLevelControl()
@@ -1061,6 +1093,43 @@ def channel_allowed(title_channel, channels):
 def repo_root():
     here = os.path.dirname(os.path.abspath(__file__))
     return os.path.abspath(os.path.join(here, ".."))
+
+
+_READER_HEARTBEAT = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), ".reader_alive"
+)
+_STANDBY_NOTICE = 3600
+
+
+def _touch_reader_heartbeat():
+    try:
+        with open(_READER_HEARTBEAT, "w", encoding="utf-8") as f:
+            f.write(str(os.getpid()))
+    except OSError:
+        pass
+
+
+def _reader_heartbeat_alive():
+    """True when ANOTHER reader process is alive and its
+    heartbeat is fresh (< 90s old)."""
+    try:
+        with open(_READER_HEARTBEAT, encoding="utf-8") as f:
+            pid = int(f.read().strip() or 0)
+        if not pid or pid == os.getpid():
+            return False
+        if not psutil.pid_exists(pid):
+            return False
+        age = time.time() - os.path.getmtime(_READER_HEARTBEAT)
+        return age < 90
+    except (OSError, ValueError):
+        return False
+
+
+def _remove_reader_heartbeat():
+    try:
+        os.remove(_READER_HEARTBEAT)
+    except OSError:
+        pass
 
 
 # the seen-set lives in the reader's own folder - git pulls never
@@ -1202,6 +1271,7 @@ def _terminate_stale_reader():
     except Exception as e:
         log(f"stale-reader check failed: {e}")
         return
+    survivors = []
     for p in stale:
         try:
             p.terminate()
@@ -1218,12 +1288,35 @@ def _terminate_stale_reader():
                 psutil.NoSuchProcess, psutil.AccessDenied
             ):
                 pass
+        survivors = alive
     except Exception:
         pass
     if stale:
+        gone = [p for p in stale if p not in survivors]
+        if gone:
+            log(
+                "terminated stale reader process(es): "
+                + ", ".join(str(p.pid) for p in gone)
+            )
+    for p in survivors:
+        # an elevated orphan (a boot-time reader started with
+        # admin rights) survives terminate+kill from a
+        # non-elevated process - it ran alongside for 13h once,
+        # posting with the boot-time config while every new
+        # reader claimed to have terminated it
         log(
-            "terminated stale reader process(es): "
-            + ", ".join(str(p.pid) for p in stale)
+            f"stale reader process(es) SURVIVED termination: "
+            f"{p.pid} - likely elevated (admin); close it "
+            f"manually or run this launcher as admin"
+        )
+        notify_reader(
+            _reader_log_webhook,
+            "Reader: a stale reader could not be terminated",
+            f"pid {p.pid} survived terminate+kill - it is "
+            f"likely elevated (admin). two readers fight over "
+            f"the discord pane; close it manually or run this "
+            f"launcher as admin",
+            color=15158332,
         )
 
 
@@ -1241,10 +1334,39 @@ def _log_previous_exit():
 
 def main():
     global _last_stall_notice
+    global _reader_log_webhook
     _last_stall_notice = time.time()
-    _log_previous_exit()
-    _terminate_stale_reader()
+    # the webhook handle first: the stale-reader termination
+    # notice (and the misconfig notice) fire before the log hook
+    # exists
     raw_cfg = load_config()
+    _reader_log_webhook = str(
+        (raw_cfg.get("discord") or raw_cfg).get(
+            "reader_log_webhook_url"
+        ) or ""
+    )
+    _log_previous_exit()
+    if _reader_heartbeat_alive():
+        # another reader is alive and healthy (a second launcher
+        # window): stand by instead of killing it - two readers
+        # fighting over the pane killed each other every ~40s
+        # through the night
+        log(
+            "another reader is alive and healthy - standing by "
+            "(close this launcher window, or stop the other "
+            "reader to take over)"
+        )
+        notify_reader(
+            _reader_log_webhook,
+            "Reader: second launcher detected - standing by",
+            "a healthy reader already runs; this instance waits "
+            "instead of killing it",
+        )
+        while _reader_heartbeat_alive():
+            time.sleep(15)
+        log("the other reader stopped - taking over")
+    _terminate_stale_reader()
+    _touch_reader_heartbeat()
     # the reader's own yaml is flat (keys at top level); the
     # legacy root config nests them under reader:/discord:
     cfg = raw_cfg.get("reader") or raw_cfg
@@ -1293,10 +1415,6 @@ def main():
         log("pipeline URL is https - skipping certificate verification")
 
     global _log_hook
-    global _reader_log_webhook
-    _reader_log_webhook = str(
-        discord_cfg.get("reader_log_webhook_url") or ""
-    )
     _log_hook = WebhookLog(_reader_log_webhook)
 
     _startup_banner()
@@ -1383,6 +1501,10 @@ def main():
     _stayup_log_ts = 0.0
 
     while True:
+        # every loop path refreshes the heartbeat (the mtime is
+        # the freshness signal - a quiet/empty pane must not
+        # stale it and invite a takeover kill)
+        _touch_reader_heartbeat()
         if time.time() - last_clock_check > 600:
             last_clock_check = time.time()
             sync_clock()
@@ -1902,3 +2024,5 @@ if __name__ == "__main__":
 
         log("reader crashed:\n" + traceback.format_exc())
         sys.exit(1)
+    finally:
+        _remove_reader_heartbeat()

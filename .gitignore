@@ -30,3 +30,4 @@ dist/
 .update_pending*.json
 .code_swapped.json
 .pytest_cache/
+reader/.reader_alive
