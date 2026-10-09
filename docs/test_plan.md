@@ -182,7 +182,7 @@ Conventions for every manual step below:
    git itself).
 3. The seeded marker matches the checkout:
    ```powershell
-   Get-Content consumer\VERSION
+   Get-Content VERSION   # the repo root, next to consumer\
    git rev-parse --short HEAD
    ```
 
@@ -239,7 +239,7 @@ Conventions for every manual step below:
 3. The swap preserved the state:
    ```powershell
    Get-ChildItem consumer\consumer.config.yaml, consumer\ws_tokens.env, consumer\consumer.trades.db
-   Get-Content consumer\VERSION          # -> the new sha
+   Get-Content VERSION                    # -> the new sha (repo root)
    Get-Content .last_update.json | ConvertFrom-Json
    ```
 4. The dashboard still works (M-1.1 steps 8-9) and the
