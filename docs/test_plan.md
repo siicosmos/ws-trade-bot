@@ -102,14 +102,9 @@ Conventions for every manual step below:
    # -> JSON with mode / accounts[] / reader
    ```
 10. The dispatch did not cross wires: `http://127.0.0.1:8081/`
-    shows no trading UI, and the consumer has no info-only
-    routes — unauthenticated the auth guard answers first:
-    ```powershell
-    curl.exe -s -o NUL -w "%{http_code}" http://127.0.0.1:8080/api/feed-status
-    # -> 401 (guard runs before routing)
-    curl.exe -s -o NUL -w "%{http_code}" -H "X-Auth-Token: <consumer-token>" http://127.0.0.1:8080/api/feed-status
-    # -> 404 (authenticated: the route really does not exist)
-    ```
+    shows no trading UI, and
+    `curl.exe -s -o NUL -w "%{http_code}" http://127.0.0.1:8080/api/feed-status`
+    → 404 (that route is info-only).
 
 ## 2. Per-role file names
 
@@ -314,7 +309,6 @@ Run them directly:
 
 #### M-5.1 — Push a docs-only commit: info server pulls, posts "Info server updated (no restart)", keeps running. Then verify the update record followed the pull:
 
-
 ```powershell
 Get-Content .last_update.json | ConvertFrom-Json
 # "commit" must equal the current head:
@@ -327,7 +321,6 @@ skip the record write, leaving the hash pointing at the old
 commit - `test_check_once_records_no_restart_pull`.)
 
 #### M-5.2 — Push an `info/*` commit: pulls, posts "Info server restarting", restarts, banner shows the new commit. Confirm in `logs\info.log`:
-
 
 ```powershell
 Select-String "auto-update|starting" logs\info.log | Select-Object -Last 5
@@ -367,7 +360,6 @@ Select-String "auto-update|starting" logs\info.log | Select-Object -Last 5
    read-only GETs stay open.
 
 #### M-5.5 — Dashboard git badge: open the info dashboard and confirm the badge shows the current head and the `last_pull` timestamp matches the record (`Get-Content .last_update.json`).
-
 
 
 ## 6. Reader (rides the info pull)
@@ -603,14 +595,14 @@ id/type/enabled but no label input; a new row has one.
    Get-Content logs\consumer.log -Tail 2
    # -> previous run: consumer app exited with code <n>
    ```
-4. The Discord webhook shows `Consumer app restarting` with the
-   previous exit as the reason (the info server posts
-   `Info server restarting` the same way).
+4. The Discord webhook shows `Consumer app restarting`
+   with the previous exit as the reason (the info server
+   posts `Info server restarting` the same way).
 5. `taskkill /F /IM python.exe` kills BOTH roles at once —
    each role's launcher loop is independent, so both apps
-   restart within 5s and both post their own restart notices.
-   The `.bat` windows themselves are cmd.exe and are not
-   affected.
+   restart within 5s and both post their own restart
+   notices. The `.bat` windows themselves are cmd.exe and
+   are not affected.
 6. Kill the launcher cmd for one role:
    ```powershell
    Get-CimInstance Win32_Process -Filter "Name='cmd.exe'" |
@@ -618,17 +610,19 @@ id/type/enabled but no label input; a new row has one.
      Select-Object ProcessId
    taskkill /F /PID <cmd-pid>
    ```
-   Without `/T` the python child survives as an orphan: the app
-   keeps running but is **unsupervised** — the next crash or
-   update restart leaves it down until the `.bat` is started
-   again. Restart the launcher to re-arm supervision.
+   Without `/T` the python child survives as an orphan: the
+   app keeps running but is **unsupervised** — the next
+   crash or update restart leaves it down until the `.bat`
+   is started again. Restart the launcher to re-arm
+   supervision.
 7. Kill the whole tree (launcher + python):
    ```powershell
    taskkill /F /T /PID <cmd-pid>
    ```
-   Nothing restarts (the supervisor is gone) — start the `.bat`
-   again. This is the "closed the launcher window" scenario:
-   closing a console window kills the attached python too.
+   Nothing restarts (the supervisor is gone) — start the
+   `.bat` again. This is the "closed the launcher window"
+   scenario: closing a console window kills the attached
+   python too.
 
 #### M-9.3 — With a staged update pending, the launcher runs `apply_update.py` before relaunching and the app comes up on the new release (overlaps M-4.1).
 
@@ -671,8 +665,7 @@ id/type/enabled but no label input; a new row has one.
    .venv\Scripts\python tests\scripts\e2e_test.py
    .venv\Scripts\python tests\scripts\ui_test.py
    ```
-   Expect `RESULT: 64 passed, 0 failed` (65 with chrome on
-   PATH, which runs the ui-smoke phase too) and
+   Expect `RESULT: 64 passed, 0 failed` and
    `UI RESULT: 31 passed, 0 failed`.
 
 #### M-10.2 — Notify-mode smoke on the live box: one alert flows reader → info → consumer → Discord embed, ledger row recorded, dashboard shows it.
