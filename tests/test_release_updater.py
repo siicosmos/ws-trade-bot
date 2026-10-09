@@ -283,13 +283,22 @@ def test_incomplete_staged_build_aborts(tmp_path, monkeypatch):
         {"commit": "aaa", "repo": "o/r"}))
     release = _release("bbb")
 
+    zip_path = {}
+
     def download(url, token, dest, timeout=300):
         if url.endswith(".zip"):
             with zipfile.ZipFile(dest, "w") as z:
                 z.writestr("run.py", "print('hi')\n")   # no core/ consumer/
+            zip_path["p"] = dest
         else:
+            # the sums list the (bad) zip so the checksum passes
+            # and the extract-stage completeness check is what
+            # aborts
+            import hashlib
+            digest = hashlib.sha256(
+                open(zip_path["p"], "rb").read()).hexdigest()
             with open(dest, "w", encoding="utf-8") as f:
-                f.write("placeholder\n")
+                f.write(f"{digest}  consumer-bbb.zip\n")
 
     monkeypatch.setattr(ru, "latest_release", lambda *a, **k: release)
     monkeypatch.setattr(ru, "download_file", download)
@@ -375,3 +384,33 @@ def test_status_payload_compatible(tmp_path):
     assert payload["status"] == "active"
     assert payload["head"] == "aaa"
     assert payload["branch"] == "release"
+
+def test_checksum_missing_from_sums_aborts(tmp_path, monkeypatch):
+    """a SHA256SUMS file that does not list the asset (renamed
+    artifact, partial upload) must abort - the old code silently
+    skipped the check and staged the unverified zip."""
+    _write(tmp_path, "VERSION", json.dumps(
+        {"commit": "aaa", "repo": "o/r"}))
+    release = _release("bbb")
+
+    def download(url, token, dest, timeout=300):
+        if url.endswith(".zip"):
+            _make_zip(dest, "bbb")
+        else:
+            # sums for a DIFFERENT asset name - the real zip is
+            # not listed
+            with open(dest, "w", encoding="utf-8") as f:
+                f.write("deadbeef  consumer-old.zip\n")
+
+    monkeypatch.setattr(ru, "latest_release", lambda *a, **k: release)
+    monkeypatch.setattr(ru, "download_file", download)
+
+    calls = []
+    up = ReleaseUpdater(
+        _cfg(), str(tmp_path), "", restart=lambda *a, **k: calls.append(1)
+    )
+    assert up.check_once() is False
+    assert calls == []
+    assert "checksum missing" in up.last_result
+    assert not os.path.exists(os.path.join(
+        str(tmp_path), ".update_pending.json"))

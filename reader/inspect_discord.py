@@ -104,14 +104,15 @@ def kill_discord(log=print):
 
 def close_extra_windows(window, log=print):
     """Send WM_CLOSE to discord's OTHER top-level windows -
-    update banners and popups that block the message list."""
-    closed = []
+    update banners and popups that block the message list.
+    Returns how many were closed."""
+    closed = 0
     pids = discord_pids()
     try:
         root = auto.GetRootControl()
         windows = root.GetChildren()
     except UIAError:
-        return []
+        return 0
     main_pid = None
     try:
         main_pid = window.ProcessId if window is not None else None

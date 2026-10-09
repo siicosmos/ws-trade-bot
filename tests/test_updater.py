@@ -140,7 +140,8 @@ def test_update_record_roundtrip(tmp_path):
     _commit(repo, "a")
 
     up = AutoUpdater(_cfg(), str(repo), "")
-    assert up.last_pull() is None
+    # startup seeds the record for the running head
+    assert up.last_pull()["how"] == "startup"
     up._record_update("manual")
     record = up.last_pull()
     assert record["how"] == "manual"
@@ -212,12 +213,16 @@ def test_seed_record_from_reflog(tmp_path):
 
 
 def test_seed_skipped_without_pull_reflog(tmp_path):
+    # a fresh repo gets a startup record (no reflog seed needed)
     repo = tmp_path / "repo"
     repo.mkdir()
-    subprocess.run(["git", "init"], cwd=repo, capture_output=True, check=True)
+    subprocess.run(["git", "init"], cwd=repo, capture_output=True,
+                   check=True)
     _commit(repo, "a")
     up = AutoUpdater(_cfg(), str(repo), "")
-    assert up.last_pull() is None
+    rec = up.last_pull()
+    assert rec["how"] == "startup"
+    assert rec["commit"] == up._head()[:8]
 
 
 def test_interval_change_applies_mid_cycle(tmp_path, monkeypatch):
@@ -486,3 +491,38 @@ def test_check_once_records_no_restart_pull(tmp_path):
     assert record["commit"] == head[:8]
     assert record["how"] == "auto"
     assert up.last_pull()["commit"] == head[:8]
+
+
+def test_startup_refreshes_stale_record(tmp_path):
+    """a record left at an older commit (manual git pull, stale
+    reflog seed) is refreshed to the running head at startup - the
+    banner and the dashboard's last_pull must describe the code
+    actually running. a current record keeps its original ts."""
+    import json
+    import time
+
+    from core.ops.updater import UPDATE_RECORD, AutoUpdater
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init"], cwd=repo, capture_output=True,
+                   check=True)
+    _commit(repo, "a")
+
+    # a stale record: commit does not match the head
+    stale = {"how": "pull", "commit": "deadbeef", "ts": 1.0}
+    (repo / UPDATE_RECORD).write_text(
+        json.dumps(stale), encoding="utf-8")
+
+    up = AutoUpdater(_cfg(), str(repo), "")
+    rec = json.loads(
+        (repo / UPDATE_RECORD).read_text(encoding="utf-8"))
+    assert rec["commit"] == up._head()[:8]
+    assert rec["how"] == "startup"
+    assert rec["ts"] > 1.0
+
+    # a current record is left alone (the pull ts stays honest)
+    before = up.last_pull()
+    time.sleep(0.01)
+    up2 = AutoUpdater(_cfg(), str(repo), "")
+    assert up2.last_pull() == before

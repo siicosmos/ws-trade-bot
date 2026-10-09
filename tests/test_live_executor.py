@@ -159,15 +159,18 @@ def test_live_option_buy_sizes_books_and_pends(monkeypatch):
         cfg, store,
     )
     assert res.ok
-    # budget 5% x 10000 = 500 -> 3 contracts @ 1.5 (ask)
-    assert ws.orders == [("buy_option", 3, 1.5)]
+    # the live limit is clamped to the alert's quoted premium
+    # (+ max_slippage_pct): the 1.5 ask is 25% above the quoted
+    # 1.2, so the order bids 1.22 instead of chasing the ask.
+    # budget 5% x 10000 = 500 -> 4 contracts @ 1.22 (tier max 4)
+    assert ws.orders == [("buy_option", 4, 1.22)]
     assert store.get_position(
         "live", f"SPY-{TODAY}-759-C", "RRSP"
-    ) == 3
+    ) == 4
     pending = store.open_pending_orders("live", "RRSP")
     assert len(pending) == 1
-    assert pending[0]["qty"] == 3
-    assert pending[0]["est_price"] == 1.5
+    assert pending[0]["qty"] == 4
+    assert pending[0]["est_price"] == 1.22
     assert pending[0]["pre_qty"] == 0
     assert pending[0]["status"] == "open"
 
@@ -511,3 +514,108 @@ def test_open_risk_cap_per_account(monkeypatch):
     assert "open risk cap reached" in res2.breakdown["Margin"]
     assert "open risk cap reached" in res2.breakdown["RRSP"]
     assert len(ws.orders) == 1
+
+
+def test_execute_serializes_concurrent_calls(monkeypatch):
+    """the stop monitor, the feed client, flask threads and the
+    mirror all call execute() - interleaved get_position -> order
+    -> apply_position would double-sell the same live position,
+    so the whole path must hold one lock."""
+    import threading
+    import time as _time
+
+    cfg = _live_cfg()
+    store = _store()
+    ex = _executor(cfg, store, None)
+
+    ws = FakeWS()
+    _patch_client(monkeypatch, ws)
+
+    active = []
+    overlap = []
+
+    def slow_option(alert, cfg2, store2):
+        active.append(1)
+        _time.sleep(0.05)
+        if len(active) > 1:
+            overlap.append(len(active))
+        active.pop()
+        return ExecutionResult(True, "ok")
+
+    monkeypatch.setattr(ex, "_execute_option", slow_option)
+
+    alert = parse_alert("BOUGHT 0DTE SPX 6000c @ 1.50 tiny size")
+    threads = [
+        threading.Thread(target=ex.execute, args=(alert, cfg, store))
+        for _ in range(4)
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert not overlap, f"execute() ran concurrently: {overlap}"
+
+
+def test_idless_accounts_inherit_fallback_once():
+    """the id-less fallback resolves to ONE real account - handing
+    it to every id-less row would place the same order twice on
+    the same account."""
+    cfg = _live_cfg()
+    cfg.wealthsimple.accounts = [
+        WSAccountConfig(account_id="", label="A", enabled=True),
+        WSAccountConfig(account_id="", label="B", enabled=True),
+        WSAccountConfig(account_id="acc-real", label="C",
+                        enabled=True),
+    ]
+    ex = WealthsimpleExecutor(cfg, None)
+
+    class StubWS:
+        def get_accounts(self):
+            return [{"id": "acc-first", "status": "ACTIVE"}]
+
+    pairs = ex._account_ids(StubWS())
+    # config order wins: row A (id-less) inherits the fallback
+    # first; row C's explicit id resolves to the SAME account and
+    # is skipped as a duplicate - one alert, one order, one account
+    assert [(p[0], p[1]) for p in pairs] == [("A", "acc-real")]
+
+
+def test_idless_single_row_inherits_fallback():
+    # the legit single-account case: one row, id left blank - it
+    # inherits the resolved account and trades as before
+    cfg = _live_cfg()
+    cfg.wealthsimple.accounts = [
+        WSAccountConfig(account_id="", label="Only", enabled=True),
+    ]
+    ex = WealthsimpleExecutor(cfg, None)
+
+    class StubWS:
+        def get_accounts(self):
+            return [{"id": "acc-first", "status": "ACTIVE"}]
+
+    pairs = ex._account_ids(StubWS())
+    assert [(p[0], p[1]) for p in pairs] == [("Only", "acc-first")]
+
+
+def test_option_limit_clamped_to_alert_premium():
+    """a stale/garbage chain quote must not be chased at any
+    price: the live limit stays within max_slippage_pct of the
+    alert's quoted premium."""
+    import types as _types
+
+    cfg = _live_cfg()
+    cfg.trading.max_slippage_pct = 2
+    ex = WealthsimpleExecutor(cfg, None)
+
+    # buy: an ask way above the quoted premium is capped
+    assert ex._clamped_limit(3.00, 1.50, "BUY", cfg) == 1.53
+    # a better ask is taken as-is
+    assert ex._clamped_limit(1.40, 1.50, "BUY", cfg) == 1.4
+    # sell: a bid way below the quoted premium is floored
+    assert ex._clamped_limit(0.50, 1.50, "SELL", cfg) == 1.47
+    # a better bid is taken as-is
+    assert ex._clamped_limit(1.60, 1.50, "SELL", cfg) == 1.6
+    # no quoted premium -> no clamp possible, raw quote passes
+    assert ex._clamped_limit(3.00, None, "BUY", cfg) == 3.0
+    assert ex._clamped_limit(None, 1.50, "BUY", cfg) is None

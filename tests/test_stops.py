@@ -658,3 +658,26 @@ def test_paper_stops_run_without_quotes_enabled():
     monitor.quote_fn = FakeQ(0.5)
     monitor.check_once()
     assert store.get_position("paper", key) == 0
+
+
+def test_oversell_clamps_realized_to_held_contracts():
+    """a sell larger than the position (duplicate/correction
+    alert) clamps qty to 0 and must not book p&l for contracts
+    that were never held - the realized number feeds the lotto
+    budget and the daily-loss breaker."""
+    store = _fresh_store()
+    alert = _buy()
+    store.apply_position("paper", alert, 5, premium=2.0)
+
+    # sell 10x while holding 5x: only the 5 held contracts close
+    store.apply_position("paper", alert, -10, premium=3.0)
+    # fully-closed positions drop out of list_positions (qty > 0)
+    qty, realized = store._conn.execute(
+        "SELECT qty, realized FROM positions WHERE mode = 'paper'"
+    ).fetchone()
+    assert qty == 0
+    # 5 closed contracts x (3.00 - 2.00) x 100 = 500 - not 1000
+    assert realized == 500.0
+    # the today accumulator (lotto budget / daily-loss breaker)
+    # carries the clamped number too
+    assert store.realized_today("paper") == 500.0

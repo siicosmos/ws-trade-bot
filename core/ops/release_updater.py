@@ -303,7 +303,20 @@ class ReleaseUpdater:
                 shutil.rmtree(staging, ignore_errors=True)
                 return False
             expected = sums.get(asset["name"])
-            if expected and expected != sha256_file(zip_path):
+            if not expected:
+                # a sums file that does not list this asset means
+                # the release is not what we expected (renamed
+                # artifact, partial upload) - installing an
+                # unverified zip is not an option
+                self.errors += 1
+                self.last_result = (
+                    f"checksum missing for {asset['name']} - "
+                    "the SHA256SUMS file does not list it"
+                )
+                print(f"auto-update: {self.last_result} - not staging")
+                shutil.rmtree(staging, ignore_errors=True)
+                return False
+            if expected != sha256_file(zip_path):
                 self.errors += 1
                 self.last_result = f"checksum mismatch for {remote}"
                 print(f"auto-update: {self.last_result} - not staging")

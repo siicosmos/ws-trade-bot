@@ -181,6 +181,20 @@ class AutoUpdater:
         if r.returncode == 0:
             self.branch = r.stdout.strip()
         self._seed_record_if_missing()
+        self._refresh_record_at_startup()
+
+    def _refresh_record_at_startup(self):
+        """The record must describe the code actually running: a
+        record left at an older commit (a manual git pull, a seed
+        from an old reflog entry) made the banner and the
+        dashboard's last_pull point at a hash that is not ours."""
+        head = self._head()
+        if not head:
+            return
+        rec = self.last_pull() or {}
+        if rec.get("commit") == head[:8]:
+            return   # already current - keep the original ts
+        self._record_update("startup")
 
     def start(self):
         if self._thread is None or not self._thread.is_alive():

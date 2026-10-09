@@ -554,7 +554,12 @@ class Store:
                 # share (x1) - the old x100-for-everything inflated
                 # stock p&l a hundredfold
                 mult = 100 if getattr(alert, "kind", "option") == "option" else 1
-                realized = old_realized + (-delta) * (premium - old_avg) * mult
+                # only the contracts actually held close: a sell
+                # larger than the position (duplicate/correction
+                # alert) clamps qty to 0 and must not book p&l for
+                # contracts that were never there
+                closed = min(-delta, old_qty)
+                realized = old_realized + closed * (premium - old_avg) * mult
 
             self._conn.execute(
                 "INSERT INTO positions (mode, account, contract_key, underlying, "

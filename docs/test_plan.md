@@ -101,10 +101,15 @@ Conventions for every manual step below:
    curl.exe -s -H "X-Auth-Token: <consumer-token>" http://127.0.0.1:8080/api/summary
    # -> JSON with mode / accounts[] / reader
    ```
-10. The dispatch did not cross wires: `http://127.0.0.1:8081/`
-    shows no trading UI, and
-    `curl.exe -s -o NUL -w "%{http_code}" http://127.0.0.1:8080/api/feed-status`
-    → 404 (that route is info-only).
+      10. The dispatch did not cross wires: `http://127.0.0.1:8081/`
+          shows no trading UI, and the consumer has no info-only
+          routes — unauthenticated the auth guard answers first:
+          ```powershell
+          curl.exe -s -o NUL -w "%{http_code}" http://127.0.0.1:8080/api/feed-status
+          # -> 401 (guard runs before routing)
+          curl.exe -s -o NUL -w "%{http_code}" -H "X-Auth-Token: <consumer-token>" http://127.0.0.1:8080/api/feed-status
+          # -> 404 (authenticated: the route really does not exist)
+          ```
 
 ## 2. Per-role file names
 

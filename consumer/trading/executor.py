@@ -1,3 +1,4 @@
+import threading
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -506,6 +507,12 @@ class WealthsimpleExecutor:
         self.cfg = cfg
         self.account = account
         self._ws = None
+        # one order path at a time: the stop monitor, the feed
+        # client, flask request threads and the mirror all call
+        # execute() concurrently - get_position -> ws order ->
+        # apply_position is not atomic, and interleaved triggers
+        # would double-sell the same live position
+        self._order_lock = threading.Lock()
 
     def _client(self):
         if self._ws is None:
@@ -567,12 +574,28 @@ class WealthsimpleExecutor:
 
     def _account_ids(self, ws):
         out = []
+        seen_ids = set()
+        fallback_used = False
         for acct in effective_accounts(self.cfg):
             account_id = acct.account_id
             if not account_id:
+                # the id-less fallback resolves to ONE real account
+                # (the first enabled one) - handing it to every
+                # id-less row would place the same order twice on
+                # the same account, so only the first row inherits
+                # it and the rest are skipped
+                if fallback_used:
+                    continue
                 from consumer.ws.account import resolve_account_id
 
                 account_id = resolve_account_id(ws, self.cfg)
+                fallback_used = True
+            if account_id in seen_ids:
+                # two rows resolving to the same real account
+                # (explicit duplicate or a colliding fallback)
+                # would double-trade it
+                continue
+            seen_ids.add(account_id)
             out.append((account_label(acct), account_id, acct))
         return out
 
@@ -590,15 +613,32 @@ class WealthsimpleExecutor:
             return round(base * (1 + offset), 2)
         return round(base * (1 - offset), 2)
 
+    def _clamped_limit(self, base, premium, side, cfg):
+        """bound the live option limit to the alert's quoted
+        premium: a stale or garbage chain quote must not be chased
+        at any price (max_slippage_pct is the tolerated deviation;
+        the post-fill slippage notice still reports the real fill
+        against the estimate). a capped limit may simply not fill -
+        that is the safe outcome."""
+        if not base or not premium:
+            return base
+        slip = getattr(cfg.trading, "max_slippage_pct", 2) / 100.0
+        if side == "BUY":
+            return round(min(base, premium * (1 + slip)), 2)
+        return round(max(base, premium * (1 - slip)), 2)
+
     def execute(self, alert, cfg, store) -> ExecutionResult:
         if alert.ticker in (cfg.trading.skip_underlyings or []):
             return ExecutionResult(
                 False, f"{alert.ticker} in skip_underlyings (not tradeable on WS)"
             )
 
-        if alert.kind == "option":
-            return self._execute_option(alert, cfg, store)
-        return self._execute_stock(alert, cfg, store)
+        # serialize the whole resolve-order-book path (see
+        # _order_lock in __init__)
+        with self._order_lock:
+            if alert.kind == "option":
+                return self._execute_option(alert, cfg, store)
+            return self._execute_stock(alert, cfg, store)
 
     def _execute_option(self, alert, cfg, store) -> ExecutionResult:
         ws = self._client()
@@ -620,7 +660,10 @@ class WealthsimpleExecutor:
 
         for label, account_id, acct in self._account_ids(ws):
             if alert.action == "BUY":
-                limit = quote.get("ask") or alert.premium
+                limit = self._clamped_limit(
+                    quote.get("ask") or alert.premium, alert.premium,
+                    "BUY", cfg,
+                )
                 if not limit:
                     breakdown[label] = "no ask/premium to price order"
                     continue
@@ -714,7 +757,10 @@ class WealthsimpleExecutor:
                     breakdown[label] = "no position in ledger"
                     continue
                 qty = sell_quantity(held, alert.scale)
-                limit = quote.get("bid") or alert.premium
+                limit = self._clamped_limit(
+                    quote.get("bid") or alert.premium, alert.premium,
+                    "SELL", cfg,
+                )
                 if not limit:
                     breakdown[label] = "no bid/premium to price order"
                     continue
