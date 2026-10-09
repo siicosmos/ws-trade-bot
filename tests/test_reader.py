@@ -582,7 +582,7 @@ def test_heartbeat_fires_while_channel_quiet(monkeypatch, tmp_path):
 
     cfg = {
         "reader": {
-            "pipeline_url": "http://localhost:8080/alert",
+            "info_server_url": "http://localhost:8080/alert",
             "poll_interval": 0.01,
             "channels": ["player-alerts"],
             "auth_token": "",
@@ -737,7 +737,7 @@ def test_unsent_messages_are_retried(monkeypatch, tmp_path):
 
     cfg = {
         "reader": {
-            "pipeline_url": "http://localhost:8080/alert",
+            "info_server_url": "http://localhost:8080/alert",
             "poll_interval": 0.01,
             "channels": ["player-alerts"],
         },

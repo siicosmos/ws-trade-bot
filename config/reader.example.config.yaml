@@ -7,7 +7,7 @@
 # ---------------------------------------------------------------------------
 
 # where the info server's ingest endpoint lives (its port)
-pipeline_url: "http://localhost:8081/alert"   # use https:// if TLS is on
+info_server_url: "http://localhost:8081/alert"   # use https:// if TLS is on
 
 # --- delivery ---
 auth_token: ""             # MUST match the info server's info.auth_token

@@ -187,7 +187,7 @@ class ParserConfig:
 
 @dataclass
 class ReaderConfig:
-    pipeline_url: str = "http://localhost:8080/alert"
+    info_server_url: str = "http://localhost:8080/alert"
     poll_interval: float = 0.5
     max_items: int = 40
     auth_token: str = ""
@@ -584,8 +584,8 @@ def load_config(path: str) -> Config:
             ),
         ),
         reader=ReaderConfig(
-            pipeline_url=str(
-                _get(_section(raw, "reader"), "pipeline_url",
+            info_server_url=str(
+                _get(_section(raw, "reader"), "info_server_url",
                      "http://localhost:8080/alert")
             ),
             poll_interval=float(

@@ -541,10 +541,10 @@ def notify_restart(webhook_url, reason, commits=""):
         pass
 
 
-def status_base_url(pipeline_url):
-    if pipeline_url.endswith("/alert"):
-        return pipeline_url[: -len("/alert")]
-    return pipeline_url
+def status_base_url(info_server_url):
+    if info_server_url.endswith("/alert"):
+        return info_server_url[: -len("/alert")]
+    return info_server_url
 
 
 def message_likeness(text):
@@ -1219,7 +1219,9 @@ def main():
         discord_cfg.get("raw_alert_webhook_url") or ""
     )
     update_webhook_url = str(discord_cfg.get("update_webhook_url") or "")
-    pipeline_url = cfg.get("pipeline_url", "http://localhost:8080/alert")
+    info_server_url = cfg.get(
+        "info_server_url", "http://localhost:8080/alert"
+    )
     auto_scroll = bool(cfg.get("auto_scroll", True))
     auto_start_discord = bool(cfg.get("auto_start_discord", True))
     discord_start_command = cfg.get("discord_start_command") or None
@@ -1243,8 +1245,8 @@ def main():
         }
     )
     auth_token = cfg.get("auth_token", "")
-    base_url = status_base_url(pipeline_url)
-    verify_tls = not pipeline_url.lower().startswith("https")
+    base_url = status_base_url(info_server_url)
+    verify_tls = not info_server_url.lower().startswith("https")
     if not verify_tls:
         try:
             import urllib3
@@ -1695,7 +1697,8 @@ def main():
                 retry = []
                 for text, ts, chan in pending:
                     if post_message(
-                        pipeline_url, text, auth_token, ts, verify_tls, chan
+                        info_server_url, text, auth_token, ts,
+                        verify_tls, chan
                     ):
                         mark_seen(text)
                         post_raw_alert(raw_alert_webhook_url, text)
@@ -1718,8 +1721,8 @@ def main():
                     if text in seen:
                         continue
                     if post_message(
-                        pipeline_url, text, auth_token, ts, verify_tls,
-                        current_channel or "",
+                        info_server_url, text, auth_token, ts,
+                        verify_tls, current_channel or "",
                     ):
                         mark_seen(text)
                         post_raw_alert(raw_alert_webhook_url, text)

@@ -74,7 +74,7 @@ def test_info_example_role_and_no_trading_sections():
 def test_reader_example_flat_keys():
     raw = _raw("reader.example.config.yaml")
     # the reader reads flat keys (no nesting)
-    assert raw["pipeline_url"].startswith("http")
+    assert raw["info_server_url"].startswith("http")
     assert raw["channels"]
     assert all(isinstance(c, str) for c in raw["channels"])
     assert raw["auth_token"] == ""

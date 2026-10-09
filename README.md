@@ -105,7 +105,7 @@ All wrapped by `core/ops/supervise.py` (crash → log + Discord notice
    (`.reader_seen.json` in the reader folder) + reaction-prefix detection, filters by the
    `reader.channels` allowlist.
 3. **Delivery to the info server** — each new message is POSTed to
-   `reader.pipeline_url` (default `http://localhost:8080/alert`; the shipped template sets 8081) as
+   `reader.info_server_url` (default `http://localhost:8080/alert`; the shipped template sets 8081) as
    JSON `{text, author, ts, parsed_ts, channel}` with header
    `X-Auth-Token: <reader.auth_token>` (must match the info server's
    `info.auth_token`). Messages count as seen only after a 2xx;
@@ -451,7 +451,7 @@ real fills into the paper ledger at actual prices),
 `mirror_interval_seconds` (60).
 
 ### `reader` — the Windows Discord watcher
-`pipeline_url`, `poll_interval` (0.5), `auth_token` (**must match
+`info_server_url`, `poll_interval` (0.5), `auth_token` (**must match
 the info server's `info.auth_token`**),
 `max_items` (40),
 `auto_scroll`, `auto_start_discord`, `auto_switch_channel`,

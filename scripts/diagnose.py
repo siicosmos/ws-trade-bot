@@ -118,7 +118,7 @@ def main():
             hint = (" - likely a Windows/Hyper-V excluded port range; "
                     "change the port in config/<role>.config.yaml "
                     "(e.g. 8081) "
-                    "and update reader.pipeline_url to match")
+                    "and update reader.info_server_url to match")
         exit_code = 1
         result(FAIL, f"port {port} can be bound", detail + hint)
 
