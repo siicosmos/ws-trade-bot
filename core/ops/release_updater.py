@@ -44,15 +44,20 @@ STATE_FILES = (
 
 def read_version(root):
     """The VERSION file the build writes; None when missing or
-    malformed (a git install has none)."""
-    try:
-        with open(os.path.join(root, VERSION_FILE),
-                   encoding="utf-8") as f:
-            data = json.load(f)
-        if isinstance(data, dict) and data.get("commit"):
-            return data
-    except (OSError, ValueError):
-        pass
+    malformed (a git install has none). Reads the consumer-folder
+    marker first, then the repo-root location older releases
+    wrote (backward compatibility)."""
+    for path in (
+        os.path.join(root, VERSION_FILE),
+        os.path.join(root, "VERSION"),
+    ):
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict) and data.get("commit"):
+                return data
+        except (OSError, ValueError):
+            continue
     return None
 
 
@@ -154,6 +159,18 @@ class ReleaseUpdater:
         self.last_result = "not checked yet"
         self.errors = 0
         self.version = read_version(root) or {}
+        # a VERSION marker at the repo root was written by an
+        # older release's apply_update - move it next to the app
+        legacy = os.path.join(root, "VERSION")
+        if os.path.exists(legacy) and not os.path.exists(
+            os.path.join(root, VERSION_FILE)
+        ):
+            try:
+                shutil.move(legacy, os.path.join(root, VERSION_FILE))
+                print("auto-update: moved the release marker to "
+                      "consumer/VERSION")
+            except OSError:
+                pass
         self.start_head = str(self.version.get("commit") or "")
         self.branch = "release"
 
