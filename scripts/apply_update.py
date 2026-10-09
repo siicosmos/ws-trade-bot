@@ -95,6 +95,11 @@ def apply(root):
             dst = os.path.join(root, name)
             os.makedirs(os.path.dirname(dst), exist_ok=True)
             shutil.copy2(src, dst)
+    # the release marker first: a later failure must not leave the
+    # updater blind (no VERSION = it cannot follow releases)
+    ver = os.path.join(staging, "VERSION")
+    if os.path.exists(ver):
+        shutil.copy2(ver, os.path.join(root, "consumer", "VERSION"))
     # launcher .bat files are skipped: cmd re-reads the running
     # batch file, replacing it mid-loop is undefined
     scripts_src = os.path.join(staging, "scripts")
@@ -106,10 +111,6 @@ def apply(root):
                 continue
             shutil.copy2(os.path.join(scripts_src, fn),
                          os.path.join(scripts_dst, fn))
-    ver = os.path.join(staging, "VERSION")
-    if os.path.exists(ver):
-        shutil.copy2(ver, os.path.join(root, "consumer", "VERSION"))
-
     # record + clear the staging area
     commit = str(pending.get("commit") or "?")
     try:

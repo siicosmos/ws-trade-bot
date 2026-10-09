@@ -160,15 +160,21 @@ class ReleaseUpdater:
         self.errors = 0
         self.version = read_version(root) or {}
         # a VERSION marker at the repo root was written by an
-        # older release's apply_update - move it next to the app
+        # older release's apply_update - move it next to the app,
+        # or remove it when the app already has one (two markers
+        # would disagree about the applied release)
         legacy = os.path.join(root, "VERSION")
-        if os.path.exists(legacy) and not os.path.exists(
-            os.path.join(root, VERSION_FILE)
-        ):
+        current = os.path.join(root, VERSION_FILE)
+        if os.path.exists(legacy):
             try:
-                shutil.move(legacy, os.path.join(root, VERSION_FILE))
-                print("auto-update: moved the release marker to "
-                      "consumer/VERSION")
+                if os.path.exists(current):
+                    os.remove(legacy)
+                    print("auto-update: removed the duplicate root "
+                          "VERSION marker")
+                else:
+                    shutil.move(legacy, current)
+                    print("auto-update: moved the release marker to "
+                          "consumer/VERSION")
             except OSError:
                 pass
         self.start_head = str(self.version.get("commit") or "")
