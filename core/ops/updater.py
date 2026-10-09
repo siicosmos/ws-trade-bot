@@ -4,6 +4,8 @@ import subprocess
 import threading
 import time
 
+from core.redact import format_error
+
 
 # per-role update records: the info server and the consumer app
 # share a checkout on the owner's box - separate files so their
@@ -448,13 +450,16 @@ class AutoUpdater:
                     # keep the loop alive, but stay visible: a
                     # persistently failing local-change check must
                     # not look like "everything is fine"
-                    print(f"auto-update: local-change check failed: {e}")
+                    print(f"auto-update: local-change check failed: "
+                          f"{format_error(e)}")
             try:
                 self.check_once()
             except Exception as e:
                 self.errors += 1
-                self.last_result = f"error: {e}"
-                print(f"auto-update error: {e}")
+                # the git badge renders one line - type + message
+                # there, the traceback in the log
+                self.last_result = f"error: {type(e).__name__}: {e}"
+                print(f"auto-update error: {format_error(e)}")
 
     def check_once(self) -> bool:
         self.last_check = time.time()

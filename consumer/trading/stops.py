@@ -4,6 +4,7 @@ import time
 
 from core.ops.notify import notify_discord
 from core.parser import Alert
+from core.redact import format_error
 from core.store import et_now
 
 
@@ -86,7 +87,7 @@ class StopMonitor:
                 self.check_once()
             except Exception as e:
                 self.errors += 1
-                print(f"stop monitor error: {e}")
+                print(f"stop monitor error: {format_error(e)}")
 
     def stop_price(self, entry, peak, pos=None):
         """The effective stop: the per-size stop loss from the

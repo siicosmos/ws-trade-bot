@@ -11,6 +11,8 @@ letting the restart loop do the recovery.
 import os
 import time
 
+from core.redact import format_error
+
 
 def tick(state, ok, now, grace_seconds):
     """One health-check decision.
@@ -58,7 +60,7 @@ def start_health_watchdog(
                 try:
                     store.maybe_prune()
                 except Exception as e:
-                    log(f"history prune failed: {e}")
+                    log(f"history prune failed: {format_error(e)}")
             try:
                 resp = requests.get(
                     health_url, timeout=10, verify=verify

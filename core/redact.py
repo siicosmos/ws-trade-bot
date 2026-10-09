@@ -1,4 +1,4 @@
-"""Secret redaction for error strings.
+"""Error text for logs, dashboard state, and Discord webhooks.
 
 Auth tokens travel in request headers, but error text that ends
 up in logs, dashboard state, or Discord webhooks must never
@@ -6,11 +6,16 @@ carry them - an exception message can embed the request URL
 (with credentials) or other request details, and the log tail
 is posted to Discord verbatim. redact() scrubs known secrets
 from any string before it is stored, printed, or reported.
+
+format_error() is the standard broad-catch rendering: exception
+type + message lead (a truncated consumer keeps the
+identification), the traceback follows for the log.
 """
 
 from urllib.parse import urlsplit, urlunsplit
 
 import logging
+import traceback
 
 log = logging.getLogger("redact")
 
@@ -56,3 +61,16 @@ def redact_url(url, *secrets):
         # token-scrubbed above; note the parse failure at debug
         log.debug("redact_url: urlsplit failed (%s)", e)
     return out
+
+
+def format_error(e, *secrets):
+    """The standard broad-catch error text: `Type: message` leads
+    (a truncated consumer - a webhook field, a dashboard cell -
+    keeps the identification), the traceback follows for the
+    log. Secrets are scrubbed from everything: the traceback's
+    final line repeats the message verbatim, so a token in the
+    message would otherwise ride into the log."""
+    return redact(
+        f"{type(e).__name__}: {e}\n{traceback.format_exc()}",
+        *secrets,
+    )

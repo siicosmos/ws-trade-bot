@@ -16,7 +16,7 @@ from datetime import datetime
 import requests
 
 from core.ops.supervise import supervised
-from core.redact import redact
+from core.redact import format_error
 
 # backoff on feed errors: seconds between polls after failures
 BACKOFF_MIN = 2.0
@@ -51,9 +51,10 @@ def _backfill_signals(base, store, limit=50, headers=None,
     except Exception as e:
         # the token rides in the headers - an exception message
         # must never carry it into the log (the log tail is
-        # posted to discord verbatim)
+        # posted to discord verbatim); format_error redacts the
+        # traceback too (its last line repeats the message)
         print(f"feed backfill failed: "
-              f"{redact(str(e), (headers or {}).get('X-Auth-Token'))}")
+              f"{format_error(e, (headers or {}).get('X-Auth-Token'))}")
         return 0
     added = 0
     for row in rows:
@@ -165,14 +166,17 @@ def _loop(cfg, store, on_alert, state=None):
                         # one bad alert must not kill the feed
                         pass
         except Exception as e:
+            err = format_error(e, cfg.feed.token)
             if state is not None:
                 state["ok"] = False
-                state["error"] = redact(str(e), cfg.feed.token)[:200]
+                # the dashboard's reader line renders one line -
+                # type + message there, the traceback in the log
+                state["error"] = err.split("\n")[0][:200]
             # the failure used to be fully silent: a wrong feed
             # token (401) left the dashboard's reader line offline
             # with no reason in the log or the ui. the growing
             # backoff rate-limits the log naturally
-            print(f"feed client: {redact(str(e), cfg.feed.token)} "
+            print(f"feed client: {err.rstrip()}\n"
                   f"- retrying in {backoff:.0f}s")
             time.sleep(backoff)
             backoff = min(backoff * 2, BACKOFF_MAX)

@@ -8,6 +8,8 @@ of itself before starting work.
 
 import os
 
+from core.redact import format_error
+
 
 def _protected_pids(me):
     """Me plus every ancestor.
@@ -113,7 +115,7 @@ def terminate_stale_instances(script_path, config_path=None, log=print):
                 continue
     except Exception as e:  # psutil internals vary by platform
         try:
-            log(f"stale-process check failed: {e}")
+            log(f"stale-process check failed: {format_error(e)}")
         except Exception:
             pass
         return []

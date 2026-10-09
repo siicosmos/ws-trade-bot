@@ -653,7 +653,7 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                     error = getattr(provider, "_index_error", None)
             except Exception as e:
                 price = None
-                error = str(e)
+                error = f"{type(e).__name__}: {e}"
         if not price:
             # ws fallback: a live quote straight from the ws api
             # (the index when listed, else the spy etf x ratio)

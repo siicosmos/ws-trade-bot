@@ -709,4 +709,5 @@ def snap_to_bottom(container, log_fn=None):
                 "latest messages", period=21600,
             )
     except Exception as e:
-        _warn(f"auto-scroll fallback failed: {e}", period=600)
+        _warn(f"auto-scroll fallback failed: "
+              f"{type(e).__name__}: {e}", period=600)

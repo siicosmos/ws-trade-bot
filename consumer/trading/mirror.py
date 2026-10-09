@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 from consumer.trading.paper import seed_real_accounts
+from core.redact import format_error
 
 # an estimated live booking older than this is reversed: the
 # order never filled, so the ledger must not carry it
@@ -207,7 +208,8 @@ def _shock_cancel(store, ws, row, current_price, move_pct,
         except Exception as e:
             # already filled / already cancelled at the broker -
             # either way the remainder will not trade against us
-            print(f"pending-order cancel: {e}")
+            print(f"pending-order cancel: "
+                  f"{type(e).__name__}: {e}")
     mult = 100 if (row.get("kind") or "option") == "option" else 1
     filled = int(row.get("filled_qty") or 0)
     store.correct_fill(
@@ -512,7 +514,7 @@ def start_mirror_thread(cfg, store, ws_account, ledger,
                     webhook_url=webhook_url,
                 )
             except Exception as e:
-                print(f"trade mirror error: {e}")
+                print(f"trade mirror error: {format_error(e)}")
                 continue
             for line in applied:
                 print(f"trade mirror: {line}")

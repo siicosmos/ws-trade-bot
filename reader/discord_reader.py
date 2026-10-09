@@ -5,6 +5,7 @@ import subprocess
 import sys
 import threading
 import time
+import traceback
 from datetime import datetime, timedelta
 
 import psutil
@@ -84,8 +85,13 @@ def _supervised_thread(name, target, restart_delay=30):
                 log(f"{name} thread exited unexpectedly - "
                     f"restarting in {restart_delay}s")
             except Exception as e:
-                log(f"{name} thread crashed: {e} - restarting "
-                    f"in {restart_delay}s")
+                # same shape as core.ops.supervise: type + message
+                # lead (the webhook truncation keeps the id), the
+                # traceback follows for the log
+                log(f"{name} thread crashed: "
+                    f"{type(e).__name__}: {e}\n"
+                    f"{traceback.format_exc()}"
+                    f"- restarting in {restart_delay}s")
             time.sleep(restart_delay)
 
     t = threading.Thread(target=_runner, daemon=True, name=name)
@@ -430,7 +436,7 @@ def post_message(url, text, token="", ts=None, verify=True, channel=""):
                 )
         return ok
     except requests.RequestException as e:
-        log(f"post failed: {e}")
+        log(f"post failed: {type(e).__name__}: {e}")
         return False
 
 
@@ -664,7 +670,8 @@ def _terminate_stale_reader():
             ):
                 continue
     except Exception as e:
-        log(f"stale-reader check failed: {e}")
+        log(f"stale-reader check failed: "
+            f"{type(e).__name__}: {e}\n{traceback.format_exc()}")
         return
     survivors = []
     for p in stale:
@@ -1363,7 +1370,8 @@ def main():
         except UIAError as e:
             if time.time() - last_stale_log > 300:
                 log(
-                    f"UIA stale element ({e}) - re-attaching "
+                    f"UIA stale element "
+                    f"({type(e).__name__}: {e}) - re-attaching "
                     f"(further occurrences hidden for 5m)"
                 )
                 last_stale_log = time.time()

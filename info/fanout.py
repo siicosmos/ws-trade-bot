@@ -104,7 +104,8 @@ def _push(consumer, row, verify_ssl):
             last_error = f"HTTP {r.status_code}"
         except Exception as e:
             last_error = redact_url(
-                redact(str(e), *_secrets), *_secrets
+                redact(f"{type(e).__name__}: {e}", *_secrets),
+                *_secrets,
             )
         if attempt < PUSH_ATTEMPTS - 1:
             time.sleep(PUSH_RETRY_SECONDS)

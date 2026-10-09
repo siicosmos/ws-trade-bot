@@ -211,6 +211,8 @@ def test_fanout_last_error_never_carries_token(monkeypatch):
         fanout.PUSH_RETRY_SECONDS = orig_retry
     assert ok is False
     assert err
+    # the dashboard cell keeps the identification
+    assert err.startswith("RuntimeError:")
     assert TOKEN not in err
     assert "push-target" not in err
 
@@ -236,8 +238,15 @@ def test_feedclient_error_state_never_carries_token(monkeypatch, capsys):
     monkeypatch.setattr(_requests, "get", _fake_get)
     _run_one_loop_iteration(monkeypatch, cfg, _fresh_store(), state=state)
     assert state.get("error")
+    # the dashboard line keeps the identification (type + message)
+    assert state["error"].startswith("RuntimeError:")
     assert TOKEN not in state["error"]
     out = capsys.readouterr().out
+    # the log gets the full standard rendering: type + message
+    # lead, the traceback follows - and stays token-free (the
+    # traceback's last line repeats the message verbatim)
+    assert "RuntimeError: handshake" in out
+    assert "Traceback" in out
     assert TOKEN not in out
 
 

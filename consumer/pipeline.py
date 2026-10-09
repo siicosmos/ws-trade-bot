@@ -213,7 +213,7 @@ def process_alert(
     except Exception as e:
         store.record_trade(
             executor.mode, alert.action, alert.ticker, 0, None,
-            alert, "error", str(e), key,
+            alert, "error", f"{type(e).__name__}: {e}", key,
         )
         notify_discord(
             cfg.discord.trade_alert_webhook_url,
