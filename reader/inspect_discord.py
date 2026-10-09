@@ -88,7 +88,7 @@ def start_discord(command=None, log=print, cooldown=15):
         log(f"discord not showing a window - started {cmd[0]}")
         return True
     except Exception as e:
-        log(f"discord start failed: {e}")
+        log(f"discord start failed: {type(e).__name__}: {e}")
         return False
 
 
@@ -293,7 +293,7 @@ def _ensure_on_screen(ctrl, window=None, log=print):
             log("restored the discord window (second attempt)")
             return True
     except Exception as e:
-        log(f"discord restore failed: {e}")
+        log(f"discord restore failed: {type(e).__name__}: {e}")
     return False
 
 
@@ -368,7 +368,7 @@ def click_channel_control(ctrl, window=None, log=print):
         )
         return True
     except Exception as e:
-        log(f"channel switch failed: {e}")
+        log(f"channel switch failed: {type(e).__name__}: {e}")
         return False
 
 
@@ -497,7 +497,7 @@ def ensure_visible(control, window=None, log=print):
             )
             return True
     except Exception as e:
-        log(f"discord restore check failed: {e}")
+        log(f"discord restore check failed: {type(e).__name__}: {e}")
     return False
 
 
@@ -534,7 +534,7 @@ def _foreground_discord(window, log=print):
         try:
             window.SetActive()
         except Exception as e:
-            log(f"discord focus attempt {attempt + 1} failed: {e}")
+            log(f"discord focus attempt {attempt + 1} failed: {type(e).__name__}: {e}")
         _time.sleep(0.4)
     if fg() != hwnd:
         # the retry loop calls this every poll - the same warning

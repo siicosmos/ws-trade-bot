@@ -199,7 +199,7 @@ def main(argv):
     try:
         apply(root)
     except Exception as e:
-        print(f"apply_update failed: {e}")
+        print(f"apply_update failed: {type(e).__name__}: {e}")
         return 1
     return 0
 
