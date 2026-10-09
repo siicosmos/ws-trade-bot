@@ -97,9 +97,9 @@ def test_stop_exit_sells_price_marketable(monkeypatch):
     )
     normal = parse_alert("SOLD 0DTE SPY 759c @ 1.2")
     res2 = ex.execute(normal, cfg, store)
-    if res2.ok and ws.orders:
-        name2, qty2, limit2 = ws.orders[-1]
-        assert limit2 >= 0.50   # the clamp holds the floor
+    assert res2.ok and ws.orders, res2.detail
+    name2, qty2, limit2 = ws.orders[-1]
+    assert limit2 >= 0.50   # the clamp holds the floor
 
 
 def test_concurrent_buys_respect_the_daily_cap(monkeypatch):
@@ -198,7 +198,6 @@ def test_info_settings_rollback_on_write_failure(monkeypatch):
     info_web = importlib.import_module("info.web")
     core_config = importlib.import_module("core.config")
 
-    cfg = core_config.load_config(None) if False else None
     # build a minimal info config
     import tempfile as tf
 
@@ -238,3 +237,21 @@ def test_info_settings_rollback_on_write_failure(monkeypatch):
         assert cfg.auto_update.interval_seconds == before_interval
     finally:
         os.unlink(path)
+
+
+def test_exit_marker_is_read_next_to_the_db(tmp_path):
+    """the launcher writes db\\pipeline_exit_<role>.txt - the
+    marker is read from the db's directory (a bare relative read
+    looked in the cwd and the previous-run banner never fired)
+    and removed after the read."""
+    from core.ops.updater import pop_exit_marker
+
+    db = tmp_path / "db" / "consumer.trades.db"
+    db.parent.mkdir()
+    marker = db.parent / "pipeline_exit_consumer.txt"
+    marker.write_text("consumer app exited with code 1",
+                      encoding="utf-8")
+    prev = pop_exit_marker(str(db), "consumer")
+    assert prev == "consumer app exited with code 1"
+    assert not marker.exists()
+    assert pop_exit_marker(str(db), "consumer") == ""

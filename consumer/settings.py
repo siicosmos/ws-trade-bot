@@ -137,6 +137,16 @@ def apply_settings(cfg, payload: dict, config_path=None) -> tuple:
     errors = []
     applied = {}
 
+    # the whole sections snapshot before any mutation - a failed
+    # config write rolls them back (the running process must not
+    # diverge from what a restart would load)
+    snapshot = {}
+    for name in ("trading", "wealthsimple", "discord", "paper",
+                 "quotes", "auto_update"):
+        section = getattr(cfg, name, None)
+        if section is not None:
+            snapshot[name] = dict(vars(section))
+
     trading_payload = payload.get("trading") or {}
     for key, (kind, lo, hi) in EDITABLE_SCALARS.items():
         if key not in trading_payload:
@@ -391,11 +401,19 @@ def apply_settings(cfg, payload: dict, config_path=None) -> tuple:
     paper_cfg = getattr(cfg, "paper", None)
     if paper_cfg is not None:
         if "enabled" in paper_payload:
-            paper_cfg.enabled = bool(paper_payload["enabled"])
-            applied["paper.enabled"] = paper_cfg.enabled
+            value = paper_payload["enabled"]
+            if not isinstance(value, bool):
+                errors.append("paper.enabled: must be true or false")
+            else:
+                paper_cfg.enabled = value
+                applied["paper.enabled"] = value
         if "mirror" in paper_payload:
-            paper_cfg.mirror = bool(paper_payload["mirror"])
-            applied["paper.mirror"] = paper_cfg.mirror
+            value = paper_payload["mirror"]
+            if not isinstance(value, bool):
+                errors.append("paper.mirror: must be true or false")
+            else:
+                paper_cfg.mirror = value
+                applied["paper.mirror"] = value
         if "mirror_interval_seconds" in paper_payload:
             try:
                 interval = int(
@@ -415,8 +433,12 @@ def apply_settings(cfg, payload: dict, config_path=None) -> tuple:
 
     quotes_payload = payload.get("quotes") or {}
     if "enabled" in quotes_payload:
-        cfg.quotes.enabled = bool(quotes_payload["enabled"])
-        applied["quotes.enabled"] = cfg.quotes.enabled
+        value = quotes_payload["enabled"]
+        if not isinstance(value, bool):
+            errors.append("quotes.enabled: must be true or false")
+        else:
+            cfg.quotes.enabled = value
+            applied["quotes.enabled"] = value
     if "moomoo_host" in quotes_payload:
         host = str(quotes_payload["moomoo_host"]).strip()[:100]
         cfg.quotes.moomoo_host = host
@@ -488,8 +510,12 @@ def apply_settings(cfg, payload: dict, config_path=None) -> tuple:
 
     au = payload.get("auto_update") or {}
     if "enabled" in au:
-        cfg.auto_update.enabled = bool(au["enabled"])
-        applied["auto_update.enabled"] = cfg.auto_update.enabled
+        value = au["enabled"]
+        if not isinstance(value, bool):
+            errors.append("auto_update.enabled: must be true or false")
+        else:
+            cfg.auto_update.enabled = value
+            applied["auto_update.enabled"] = value
     if "interval_seconds" in au:
         try:
             value = int(au["interval_seconds"])
@@ -509,6 +535,16 @@ def apply_settings(cfg, payload: dict, config_path=None) -> tuple:
             with _PERSIST_LOCK:
                 _persist(cfg, config_path)
         except OSError as e:
+            # a failed write rolls the in-memory values back - the
+            # running process must not diverge from what a restart
+            # would load (the info server's settings endpoint does
+            # the same)
+            for name, fields in snapshot.items():
+                target = getattr(cfg, name, None)
+                if target is None:
+                    continue
+                for field, value in fields.items():
+                    setattr(target, field, value)
             errors.append(f"could not write config: {e}")
 
     return applied, errors
@@ -536,7 +572,6 @@ def _set_mode_locked(cfg, mode, config_path):
     except OSError:
         return False
     cfg.trading.mode = mode
-    cfg.trading.dry_run = mode != "live"
     return True
 
 

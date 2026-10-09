@@ -22,7 +22,10 @@ REPO = os.path.abspath(
 TARGETS = [
     "reader/discord_reader.py",
     "run.py",
-    "trader",
+    "core",
+    "consumer",
+    "info",
+    "scripts",
 ]
 
 

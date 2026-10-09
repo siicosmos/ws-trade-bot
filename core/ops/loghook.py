@@ -105,13 +105,20 @@ class TeeStream:
         self._batcher = batcher
         self._log_file = log_file
         self._buf = ""
+        # concurrent prints (flask threads, the stop monitor)
+        # must not merge or split lines mid-buffer
+        self._buf_lock = threading.Lock()
 
     def write(self, s):
         # line-buffered: every complete line (console, webhook
         # and file copies) is stamped with the log format
-        self._buf += s
-        while "\n" in self._buf:
-            line, self._buf = self._buf.split("\n", 1)
+        with self._buf_lock:
+            self._buf += s
+            lines = []
+            while "\n" in self._buf:
+                line, self._buf = self._buf.split("\n", 1)
+                lines.append(line)
+        for line in lines:
             self._emit(line)
 
     def _emit(self, line):

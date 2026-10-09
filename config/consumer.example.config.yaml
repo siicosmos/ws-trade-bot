@@ -70,10 +70,10 @@ auto_update:
 # quotes - live option prices (used by the stop-loss monitor)
 # ---------------------------------------------------------------------------
 quotes:
-  enabled: false             # false = prices come from the ws option
-                             # chains / the paper ledger; moomoo needs
-                             # this on (the portal settings toggle does
-                             # it live)
+  enabled: false             # selects the pricing provider: false =
+                             # prices come from the ws option chains /
+                             # the paper ledger; moomoo needs this on
+                             # (the portal settings toggle does it live)
   provider: ws               # ws = Wealthsimple, moomoo = local moomoo terminal
   moomoo_host: "127.0.0.1"
   moomoo_port: 11111
@@ -144,8 +144,7 @@ trading:
                                 # position for future alerts (0 = off)
   stop_loss_pct: 25          # % drop from entry premium that triggers a sell
                              # (paper/live only; the stop monitor runs
-                             # without quotes.enabled too - this only
-                             # selects the pricing provider)
+                             # without quotes.enabled too)
   trailing_stop_pct: 0       # % off the peak premium; 0 = off
   stop_check_seconds: 30     # how often positions are checked
   back_to_entry_enabled: true  # 0dte protection: sell back to entry when

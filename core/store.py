@@ -339,7 +339,6 @@ class Store:
         paths (push + feed pull) can race on the same message
         and only one wins."""
         self.maybe_prune()
-        self._touch()
         # both stored in UTC: the alert's own (Discord-displayed) time
         # and the moment the reader parsed and passed it down
         ts = (
@@ -355,6 +354,7 @@ class Store:
         # everything is stored in UTC; the browser renders it in the
         # user's timezone
         with self._write_lock, self._conn:
+            self._touch()
             cur = self._conn.execute(
                 "INSERT OR IGNORE INTO signals "
                 "(message_key, ts, author, text, parsed, correction, "
@@ -398,7 +398,6 @@ class Store:
         today = now.date().isoformat()
         if self._prune_day == today:
             return
-        self._prune_day = today
         cutoff = (
             now - timedelta(days=int(retention))
         ).isoformat(timespec="seconds")
@@ -425,6 +424,7 @@ class Store:
                     "DELETE FROM trades WHERE ts < ?", (cutoff,)
                 )
                 self._touch()
+                self._prune_day = today
                 print(
                     f"history prune: removed {gone_s} signal(s) and "
                     f"{gone_t} trade(s) older than {retention} days"
@@ -461,7 +461,7 @@ class Store:
             return row[0] if row else None
 
     def claim_execution(self, mode: str, dedupe_key: str,
-                        ttl_seconds: float = 30) -> bool:
+                        ttl_seconds: float = 300) -> bool:
         """Advisory in-lock execution claim: the executor books
         the order under its own lock but the trade ROW is
         recorded by the pipeline after execute() returns - two
@@ -689,7 +689,13 @@ class Store:
                     )
 
             if old_qty > 0 and new_qty == 0:
-                self._record_close(mode, realized)
+                # the streak reads THIS close's pnl (the delta),
+                # not the position's cumulative realized - a
+                # position scaled out at a gain must not reset the
+                # streak when its last contracts close at a loss
+                self._record_close(
+                    mode, round(realized - old_realized, 2)
+                )
 
     def _record_close(self, mode: str, realized: float):
         # runs inside apply_position's transaction - opening a
@@ -850,12 +856,13 @@ class Store:
     def recent_trades(self, limit=50):
         with self._conn:
             rows = self._conn.execute(
-                "SELECT ts, mode, action, ticker, qty, price, status, detail "
+                "SELECT ts, mode, action, ticker, qty, price, status, detail, "
+                "message_key "
                 "FROM trades ORDER BY id DESC LIMIT ?",
                 (limit,),
             ).fetchall()
         keys = ["ts", "mode", "action", "ticker", "qty", "price", "status",
-                "detail"]
+                "detail", "message_key"]
         return [dict(zip(keys, r)) for r in rows]
 
     def has_recent_prefix(self, text, within_seconds=300, limit=50):
@@ -1122,6 +1129,15 @@ class Store:
                 self._conn.execute(
                     "DELETE FROM meta WHERE key = ?", (key,)
                 )
+            # the day's realized accumulators reset too - the
+            # lotto budget and the daily-loss breaker would keep
+            # counting pre-reset pnl for the rest of the et day
+            today = et_now().strftime("%Y-%m-%d")
+            self._conn.execute(
+                "DELETE FROM meta WHERE key = ? OR key = ?",
+                (f"realized_today:paper:{today}",
+                 f"realized_today:paper:{label}:{today}"),
+            )
 
     def paper_cash_usd(self, label: str = "default"):
         """The account's USD cash pool (the adjust editor); the
@@ -1284,6 +1300,11 @@ class Store:
             prev_qty = int(row[0] or 0) if row else 0
             prev_price = row[1] if row else None
             total = prev_qty + int(filled_qty)
+            # a fill with no price carries the previous blended
+            # price for its qty - averaging in 0 would dilute the
+            # blend toward zero (a fake better-than-market fill)
+            if filled_price is None:
+                filled_price = prev_price
             blended = (
                 ((prev_qty * (prev_price or 0.0))
                  + int(filled_qty) * (filled_price or 0.0)) / total

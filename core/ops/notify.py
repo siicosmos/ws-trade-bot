@@ -67,6 +67,8 @@ def notify_alert(webhook_url: str, alert, sizing=None, correction=False,
         title = (
             f"{prefix}{emoji} {alert.action} {alert.underlying} "
             f"{alert.strike:g}{alert.right}"
+            if alert.strike is not None else
+            f"{prefix}{emoji} {alert.action} {alert.underlying}"
         )
         if alert.expiry:
             title += f" exp {alert.expiry}"
@@ -80,7 +82,10 @@ def notify_alert(webhook_url: str, alert, sizing=None, correction=False,
             "strike": alert.strike,
             "call/put": "call" if alert.right == "C" else "put",
             "expiry": alert.expiry,
-            "premium": f"**${alert.premium:g}**",
+            "premium": (
+                f"**${alert.premium:g}**"
+                if alert.premium is not None else "-"
+            ),
         }
         if alert.action == "SELL":
             if alert.gain_pct is not None:

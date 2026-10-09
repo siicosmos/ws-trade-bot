@@ -1610,10 +1610,12 @@ def main():
                                 "foreground and open a channel, or "
                                 "restart the reader"
                             )
+                    channel, ok, reason = heartbeat_status(
+                        allowed, title_channel
+                    )
                     sync_with_server(
-                        base_url, auth_token,
-                        *heartbeat_status(allowed, title_channel),
-                        verify_tls,
+                        base_url, auth_token, channel, ok,
+                        verify=verify_tls, error=reason,
                     )
                     time.sleep(5)
                     continue

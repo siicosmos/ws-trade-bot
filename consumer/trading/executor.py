@@ -17,8 +17,13 @@ class ExecutionResult:
 
 
 def tier_for(alert, cfg):
+    tiers = (
+        cfg.trading.size_tiers
+        if alert is None or alert.kind != "stock"
+        else getattr(cfg.trading, "stock_size_tiers", None)
+    ) or {}
     if alert and alert.size:
-        tier = (cfg.trading.size_tiers or {}).get(alert.size)
+        tier = tiers.get(alert.size)
         if tier:
             return tier
     return None
@@ -50,7 +55,9 @@ def effective_open_risk_cap(acct, cfg) -> float:
 
 
 def tier_plan(alert, cfg, account_value, price, acct=None) -> dict:
-    cost = float(price) * 100 if price else 0.0
+    # options size per contract (x100); stocks per share
+    mult = 100 if (alert is None or alert.kind != "stock") else 1
+    cost = float(price) * mult if price else 0.0
     tier = tier_for(alert, cfg)
     risk_pct = effective_risk_pct(acct, cfg, alert)
     if account_value and account_value > 0:
@@ -275,11 +282,6 @@ class PaperExecutor:
         # (the live executor documents the same hazard)
         self._order_lock = threading.Lock()
 
-    def _fx(self):
-        # seeded ledgers are CAD; option premiums quote USD
-        fn = getattr(self.account, "fx", None)
-        return float(fn()) if callable(fn) else 1.0
-
     def _account_fx(self):
         """the account's usd->cad rate for cad-normalizing
         realized pnl (the ws account and the paper ledger both
@@ -289,6 +291,10 @@ class PaperExecutor:
             return float(fn()) if callable(fn) else 1.0
         except Exception:
             return 1.0
+
+    def _fx(self):
+        # seeded ledgers are CAD; option premiums quote USD
+        return self._account_fx()
 
     def _stock_is_usd(self, key):
         """Stock alerts quote in the listing's currency - the
@@ -308,6 +314,11 @@ class PaperExecutor:
     def execute(self, alert, cfg, store) -> ExecutionResult:
         with self._order_lock:
             if not alert.stop_exit:
+                if alert.ticker in (cfg.trading.skip_underlyings or []):
+                    return ExecutionResult(
+                        False,
+                        f"{alert.ticker} in skip_underlyings",
+                    )
                 allowed, reason = RiskEngine(
                     cfg, store, None
                 ).evaluate(alert)
@@ -678,11 +689,6 @@ class WealthsimpleExecutor:
         return round(max(base, premium * (1 - slip)), 2)
 
     def execute(self, alert, cfg, store) -> ExecutionResult:
-        if alert.ticker in (cfg.trading.skip_underlyings or []):
-            return ExecutionResult(
-                False, f"{alert.ticker} in skip_underlyings (not tradeable on WS)"
-            )
-
         # serialize the whole resolve-order-book path (see
         # _order_lock in __init__). the risk gates re-check under
         # the lock: the pipeline evaluated them in its own thread,
@@ -692,6 +698,12 @@ class WealthsimpleExecutor:
         # store-backed gates are the racy ones)
         with self._order_lock:
             if not alert.stop_exit:
+                if alert.ticker in (cfg.trading.skip_underlyings or []):
+                    return ExecutionResult(
+                        False,
+                        f"{alert.ticker} in skip_underlyings "
+                        f"(not tradeable on WS)",
+                    )
                 # auto-exits (stop loss / take profit / trailing)
                 # bypass the gates by design - protection is never
                 # dedupe-blocked or whitelist-blocked
@@ -826,17 +838,21 @@ class WealthsimpleExecutor:
                     pre_qty, pre_avg = store.position_state(
                         self.mode, label, key
                     )
-                    store.apply_position(
-                        self.mode, alert, qty, premium=float(limit), account=label
-                    )
-                    # the estimated booking rides the ledger now (the
-                    # gates depend on it); the mirror reconciles the
-                    # actual fill or reverses the estimate
+                    # the pending row lands before the ledger
+                    # booking: a booking failure then leaves a row
+                    # the sweep can reconcile or reverse (instead
+                    # of an orphaned live order)
                     store.record_pending_order(
                         self.mode, label, str(order.get("orderId") or ""),
                         "option", key, alert.underlying, alert.expiry,
                         alert.strike, alert.right, alert.action, qty,
                         float(limit), pre_qty=pre_qty, pre_avg=pre_avg,
+                    )
+                    # the estimated booking rides the ledger now (the
+                    # gates depend on it); the mirror reconciles the
+                    # actual fill or reverses the estimate
+                    store.apply_position(
+                        self.mode, alert, qty, premium=float(limit), account=label
                     )
                     breakdown[label] = f"{qty}x @ {limit}{note}"
                     total += qty
@@ -860,16 +876,18 @@ class WealthsimpleExecutor:
                     pre_qty, pre_avg = store.position_state(
                         self.mode, label, key
                     )
-                    store.apply_position(
-                        self.mode, alert, -qty,
-                        premium=float(limit), account=label,
-                        fx=self._account_fx(),
-                    )
+                    # the pending row lands before the ledger
+                    # booking (see the buy path)
                     store.record_pending_order(
                         self.mode, label, str(order.get("orderId") or ""),
                         "option", key, alert.underlying, alert.expiry,
                         alert.strike, alert.right, alert.action, qty,
                         float(limit), pre_qty=pre_qty, pre_avg=pre_avg,
+                    )
+                    store.apply_position(
+                        self.mode, alert, -qty,
+                        premium=float(limit), account=label,
+                        fx=self._account_fx(),
                     )
                     breakdown[label] = f"{qty}/{held}x @ {limit}"
                     total += qty

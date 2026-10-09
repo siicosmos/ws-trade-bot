@@ -53,6 +53,14 @@ def apply(root):
         except OSError:
             pass
         return False
+    if not isinstance(pending, dict):
+        # valid json, wrong shape (null / a list / a string) -
+        # same blocking symptom, same treatment
+        try:
+            os.remove(pending_path)
+        except OSError:
+            pass
+        return False
 
     # the staging name comes from a json file anyone with write
     # access to consumer/ could tamper with - only the literal

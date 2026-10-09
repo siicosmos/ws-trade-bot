@@ -119,8 +119,9 @@ function renderReader() {
     return;
   }
   const r = readerInfo;
-  const age = r.age_seconds === null ? null
-    : Math.round(r.age_seconds + (Date.now() - r.receivedAt) / 1000);
+  const rawAge = Number(r.age_seconds);
+  const age = !isFinite(rawAge) ? null
+    : Math.round(rawAge + (Date.now() - r.receivedAt) / 1000);
   const ageTxt =
     age === null || age > 30 ? "offline" : age + "s ago";
   const errTxt = r.ok === false && r.error
@@ -360,8 +361,20 @@ function openSettings() {
 document.addEventListener("keydown", function(e) {
   if (e.key !== "Escape") return;
   const el = document.getElementById("settingsBackdrop");
-  if (el && el.style.display === "flex") closeSettings();
+  if (el && el.style.display === "flex") requestCloseSettings();
 });
+
+function requestCloseSettings() {
+  // unsaved edits get a confirm - the consumer dashboard does
+  // the same (a backdrop tap or escape must not silently drop
+  // a typed webhook url)
+  if (settingsDirty &&
+      !confirm("Discard unsaved settings changes?")) {
+    return;
+  }
+  setSettingsDirty(false);
+  closeSettings();
+}
 
 function closeSettings() {
   document.getElementById("settingsBackdrop").style.display = "none";

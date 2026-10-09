@@ -607,10 +607,9 @@ function renderReader() {
     return;
   }
   const r = readerInfo;
-  const age = r.age_seconds === null ? null
-    : Math.round(
-        r.age_seconds + (Date.now() - r.receivedAt) / 1000
-      );
+  const rawAge = Number(r.age_seconds);
+  const age = !isFinite(rawAge) ? null
+    : Math.round(rawAge + (Date.now() - r.receivedAt) / 1000);
   const ageTxt =
     age === null || age > 30 ? "offline" : age + "s ago";
   // a failing feed (wrong token, server down) says why - the
@@ -815,7 +814,7 @@ function renderSummary(data) {
               "$" + r.price.toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) +
               (isOpt && !phidden ? ' <span class="subv">($' + (r.price * 100).toLocaleString("en-CA", { maximumFractionDigits: 0 }) + ")</span>" : "");
             const guardChips =
-              (r.tp_gain_pct
+              (r.tp_gain_pct != null
                 ? ' <span class="tag ignored mini" title="auto-sell the rest at this gain">TP ' +
                   r.tp_gain_pct + '%</span>' : "") +
               (r.trail_pct != null
@@ -999,7 +998,7 @@ function renderPositionsInto(elId, rows, emptyText, monMode) {
             : '<span class="subv">(' + fmtMoney(p.cost_cad) + ')</span>')
         : (p.cost_usd != null ? (p.spread ? fmtSigned(p.cost_usd) : (p.short ? "-" : "") + fmtMoney(p.cost_usd)) + (p.cost_cad != null ? '<span class="subv">(' + (p.spread ? fmtSigned(p.cost_cad) : fmtMoney(p.cost_cad)) + ')</span>' : "") : '<span class="subv">(' + fmtMoney(avgTotal) + ")</span>")) + "</td>" +
       '<td class=num style="color:' + retColor + '">' +
-      (p.tp_gain_pct ? '<span class="tag ignored mini" title="auto-sell the rest at this gain">TP ' + p.tp_gain_pct + '%</span> ' : "") +
+      (p.tp_gain_pct != null ? '<span class="tag ignored mini" title="auto-sell the rest at this gain">TP ' + p.tp_gain_pct + '%</span> ' : "") +
       (p.trail_pct != null ? '<span class="tag ignored mini" title="' +
         (p.trail_pct > 0
           ? "auto-sell once the bid falls this % off its peak"
@@ -1084,7 +1083,11 @@ let showIgnored = true;
 
 function _lsJson(key, dflt) {
   try {
-    return JSON.parse(localStorage.getItem(key) || dflt);
+    const v = JSON.parse(localStorage.getItem(key) || dflt);
+    // a stored "null"/"false" literal parses to a non-object -
+    // the consumers index into it and would blank the dashboard
+    return (v && typeof v === "object" && !Array.isArray(v))
+      ? v : JSON.parse(dflt);
   } catch (e) { return JSON.parse(dflt); }
 }
 
@@ -1542,7 +1545,8 @@ async function doModeSwitch(mode) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ mode: mode }),
     });
-    const d = await r.json();
+    if (r.status === 401) { location.href = "/login"; return; }
+    const d = await r.json().catch(() => ({}));
     if (!r.ok) {
       alert((d.errors || [d.error || "mode switch failed"]).join("\n"));
       return;
@@ -1612,7 +1616,7 @@ function renderSettings(s) {
     '<div class="set-checks" style="margin-bottom:0">' +
       '<div class="set-check"><label>mode</label>' +
         _modeSlider(t.mode) +
-        _fieldHelp("notify = alerts only \u00b7 paper = simulated fills \u00b7 live = real orders - switching warns, saves and restarts the app") +
+        _fieldHelp("notify = alerts only \u00b7 paper = simulated fills \u00b7 live = real orders - switching warns and restarts the app (unsaved settings edits are dropped)") +
       '</div>' +
       _check("set-notify", "phone notifications", dc.notify !== false,
         "send parsed trade alerts and results to the discord webhook") +
@@ -2065,7 +2069,11 @@ async function saveSettings() {
 function applyDashboard(data) {
   me = data.me || null;
   renderMe();
-  paperPositions = data.paper_positions || {};
+  // an error payload ({error: ...}) is truthy - it must not
+  // read as an empty ledger on a money dashboard
+  paperPositions = (data.paper_positions &&
+                    !data.paper_positions.error)
+    ? data.paper_positions : {};
   renderSummary(data.summary);
   renderPositions(data.positions || []);
   renderSignals(data.signals || []);
@@ -2453,6 +2461,7 @@ async function usersPost(payload) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
+  if (res.status === 401) { location.href = "/login"; return; }
   const data = await res.json().catch(() => ({}));
   const msg = document.getElementById("users-msg");
   if (msg) msg.textContent = res.status === 200 ? "" : (data.error || "failed");

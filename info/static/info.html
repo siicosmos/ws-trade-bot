@@ -55,9 +55,9 @@
   <p class="set-hint" style="margin-top:8px">shared with every consumer app's levels ladder via the feed.</p>
 </div>
 </main>
-<div id="settingsBackdrop" onclick="if(event.target===this && !backdropTouchMoved) closeSettings()">
+<div id="settingsBackdrop" onclick="if(event.target===this && !backdropTouchMoved) requestCloseSettings()">
   <div id="settingsPanel">
-    <div id="settingsHead"><span>Settings</span><span id="settings-msg" class="set-hint" style="margin-left:auto;margin-right:8px"></span><button id="settingsClose" class="btn" onclick="closeSettings()">&#215;</button></div>
+    <div id="settingsHead"><span>Settings</span><span id="settings-msg" class="set-hint" style="margin-left:auto;margin-right:8px"></span><button id="settingsClose" class="btn" onclick="requestCloseSettings()">&#215;</button></div>
     <div id="settingsScroll"><div id="settings" class="card"></div></div>
     <div id="settings-float">
       <button id="settings-revert" onclick="revertSettings()">Revert</button>

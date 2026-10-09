@@ -355,9 +355,13 @@ def mirror_real_trades(cfg, store, ws_account, ledger=None,
             prev_ids = json.loads(
                 store.meta_get(f"mirror:{label}:ids") or "[]"
             )
-            seen = set(prev_ids)
         except (TypeError, ValueError):
-            seen = set()
+            prev_ids = []
+        if not isinstance(prev_ids, list):
+            # a corrupt blob must not abort the pass before the
+            # cursor persists (the fills would re-apply next pass)
+            prev_ids = []
+        seen = set(prev_ids)
         new_ids = []
         for edge in edges:
             act = (edge or {}).get("node") or {}
@@ -370,7 +374,14 @@ def mirror_real_trades(cfg, store, ws_account, ledger=None,
                 qty = abs(float(act.get("assetQuantity") or 0))
             except (TypeError, ValueError):
                 qty = 0.0
-            if not qty or not _status_ok(status):
+            amount = act.get("amount")
+            try:
+                amount = abs(float(amount or 0))
+            except (TypeError, ValueError):
+                amount = 0.0
+            # a missing/zero amount must not book a 0.0 premium
+            # (a fake full loss on sells, a zeroed basis on buys)
+            if not qty or not amount or not _status_ok(status):
                 continue
             action = str(act.get("type") or "").upper()
             if action not in ("BUY", "SELL"):
@@ -378,11 +389,6 @@ def mirror_real_trades(cfg, store, ws_account, ledger=None,
             info = _option_shim(act) or _stock_shim(act)
             if info is None:
                 continue
-            amount = act.get("amount")
-            try:
-                amount = abs(float(amount or 0))
-            except (TypeError, ValueError):
-                amount = 0.0
             # amount is the executed total in the activity's
             # settlement currency; per-unit premium for options
             # divides by the contract multiplier. the ledger books

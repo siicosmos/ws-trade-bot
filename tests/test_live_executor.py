@@ -37,10 +37,12 @@ def _chain_entry(opt_id, strike, ask, bid):
 class FakeWS:
     """The executor's client surface, recording every order."""
 
-    def __init__(self, ask=1.5, bid=1.2, fail_orders=False):
+    def __init__(self, ask=1.5, bid=1.2, fail_orders=False,
+                 currency="USD"):
         self.ask = ask
         self.bid = bid
         self.fail_orders = fail_orders
+        self.currency = currency
         self.orders = []
 
     def get_ticker_id(self, ticker, hint=None):
@@ -68,7 +70,10 @@ class FakeWS:
         return self._order("sell_option", qty, limit)
 
     def get_security_quote(self, sec_id):
-        return {"ask": self.ask, "bid": self.bid, "price": self.ask}
+        return {
+            "ask": self.ask, "bid": self.bid, "price": self.ask,
+            "quoteV2": {"currency": self.currency},
+        }
 
     def market_buy(self, account_id, sec_id, qty):
         return self._order("market_buy", qty, self.ask)
@@ -91,14 +96,18 @@ class FakeWS:
 class StubAccount:
     """Just .value/.values - what the executor and risk read."""
 
-    def __init__(self, values):
+    def __init__(self, values, fx=1.0):
         self._values = values
+        self._fx = fx
 
     def value(self, label="default"):
         return self._values.get(label)
 
     def values(self):
         return dict(self._values)
+
+    def fx(self):
+        return self._fx
 
 
 def _live_cfg(**over):
@@ -544,8 +553,10 @@ def test_execute_serializes_concurrent_calls(monkeypatch):
 
     active = []
     overlap = []
+    entered = []
 
     def slow_option(alert, cfg2, store2):
+        entered.append(alert.contract_key())
         active.append(1)
         _time.sleep(0.05)
         if len(active) > 1:
@@ -555,10 +566,16 @@ def test_execute_serializes_concurrent_calls(monkeypatch):
 
     monkeypatch.setattr(ex, "_execute_option", slow_option)
 
-    alert = parse_alert("BOUGHT 0DTE SPX 6000c @ 1.50 tiny size")
+    # distinct alerts (different strikes -> different dedupe keys):
+    # the execution claim would otherwise let only one thread past
+    # the gates and the lock would never be contended
+    alerts = [
+        parse_alert(f"BOUGHT 0DTE SPX {6000 + i}c @ 1.50 tiny size")
+        for i in range(4)
+    ]
     threads = [
-        threading.Thread(target=ex.execute, args=(alert, cfg, store))
-        for _ in range(4)
+        threading.Thread(target=ex.execute, args=(a, cfg, store))
+        for a in alerts
     ]
     for t in threads:
         t.start()
@@ -566,6 +583,9 @@ def test_execute_serializes_concurrent_calls(monkeypatch):
         t.join()
 
     assert not overlap, f"execute() ran concurrently: {overlap}"
+    # every thread got past the gates (distinct dedupe keys) and
+    # reached the instrumented execution path
+    assert len(entered) == 4, entered
 
 
 def test_idless_accounts_inherit_fallback_once():
@@ -630,3 +650,38 @@ def test_option_limit_clamped_to_alert_premium():
     # no quoted premium -> no clamp possible, raw quote passes
     assert ex._clamped_limit(3.00, None, "BUY", cfg) == 3.0
     assert ex._clamped_limit(None, 1.50, "BUY", cfg) is None
+
+
+def test_live_stock_budget_converts_at_the_listing_fx(monkeypatch):
+    """the cad budget spends at the listing's fx: a usd listing
+    divides by the fx rate, a cad listing does not."""
+    ws = FakeWS(ask=100.0, bid=99.0, currency="USD")
+    _patch_client(monkeypatch, ws)
+    cfg = _live_cfg(cooldown_seconds=0, dedupe_window_minutes=0)
+    cfg.trading.stock_size_tiers = {"medium": 5.0}
+    store = _store()
+    account = StubAccount(_account_values(), fx=1.25)
+    ex = _executor(cfg, store, account)
+
+    alert = parse_alert("BOUGHT LLYX shares @ 100.0 medium size")
+    res = ex.execute(alert, cfg, store)
+    assert res.ok
+    # 5% x 10000 = 500 cad -> 500 / 1.25 fx = 400 usd -> 4 shares
+    assert ws.orders == [("limit_buy", 4, 100.5)] or ws.orders == [
+        ("market_buy", 4, 100.0)
+    ], ws.orders
+
+    # a cad listing spends the budget as-is
+    ws2 = FakeWS(ask=100.0, bid=99.0, currency="CAD")
+    _patch_client(monkeypatch, ws2)
+    store2 = _store()
+    ex2 = _executor(cfg, store2, account)
+    res2 = ex2.execute(
+        parse_alert("BOUGHT LLYX shares @ 100.0 medium size"),
+        cfg, store2,
+    )
+    assert res2.ok
+    # 500 cad / 100 = 5 shares, no fx conversion
+    assert ws2.orders == [("limit_buy", 5, 100.5)] or ws2.orders == [
+        ("market_buy", 5, 100.0)
+    ], ws2.orders

@@ -28,7 +28,17 @@ def clear_database(db_path: str) -> dict:
                 counts[table] = conn.execute(
                     f"SELECT COUNT(*) FROM {table}"
                 ).fetchone()[0]
-                conn.execute(f"DELETE FROM {table}")
+                if table == "signals":
+                    # keep the newest signal as the rowid anchor -
+                    # an empty table restarts rowids at 1 and a
+                    # running consumer's feed cursor (since=N)
+                    # would never see the new rows again
+                    conn.execute(
+                        "DELETE FROM signals WHERE rowid < "
+                        "(SELECT MAX(rowid) FROM signals)"
+                    )
+                else:
+                    conn.execute(f"DELETE FROM {table}")
             except sqlite3.OperationalError:
                 counts[table] = None  # table missing - nothing to do
         conn.execute("VACUUM")

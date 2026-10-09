@@ -21,7 +21,8 @@ from consumer.trading.risk import RiskEngine
 from consumer.web import create_app
 from core.ops.loghook import default_log_path, install_log_webhook
 from core.ops.updater import (
-    CONSUMER_RESTART_FILES, create_updater, startup_banner,
+    CONSUMER_RESTART_FILES, create_updater, pop_exit_marker,
+    startup_banner,
 )
 from core.ops.watchdog import start_health_watchdog
 from core.store import Store
@@ -68,18 +69,8 @@ def main(cfg, args):
     )
     mode = cfg.trading.mode
 
-    # the .bat restart loop writes the exit code; surface it.
-    # the file lives next to the db (db\pipeline_exit_consumer.txt)
-    exit_file = os.path.join(
-        os.path.dirname(os.path.abspath(args.db)), EXIT_FILE
-    )
-    prev_exit = ""
-    try:
-        with open(exit_file, encoding="utf-8") as f:
-            prev_exit = f.read().strip()
-        os.remove(exit_file)
-    except OSError:
-        pass
+    # the .bat restart loop writes the exit code; surface it
+    prev_exit = pop_exit_marker(args.db, "consumer")
     if prev_exit:
         print("previous run: " + prev_exit)
 

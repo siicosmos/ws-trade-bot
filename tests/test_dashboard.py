@@ -1480,7 +1480,7 @@ def test_settings_layout_mirror_and_automation():
     assert js.count('_section("automation"') == 1
     assert '_section("mirror real fills"' not in js
     # the reader section is gone from the consumer's settings -
-    # the reader reads its own reader/reader.config.yaml
+    # the reader reads its own config/reader.config.yaml
     assert '_section("reader"' not in js
     assert "set-reader-" not in js
     # accounts: the last section in the form

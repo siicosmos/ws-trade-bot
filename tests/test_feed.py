@@ -162,7 +162,7 @@ def test_fanout_pushes_new_signals():
     try:
         from info.fanout import _tick
         _record(store, "BOUGHT 0DTE SPY 759c @ 1.5 small")
-        _tick(store, [entry], {entry.token: 0})
+        _tick(store, [entry], {entry.label: 0})
     finally:
         _requests.post = orig
 
@@ -200,7 +200,7 @@ def test_fanout_push_failure_advances_cursor():
         orig_retry = f.PUSH_RETRY_SECONDS
         f.PUSH_RETRY_SECONDS = 0
         try:
-            f._tick(store, [entry], {entry.token: 0})
+            f._tick(store, [entry], {entry.label: 0})
         finally:
             f.PUSH_RETRY_SECONDS = orig_retry
     finally:
@@ -279,8 +279,7 @@ def test_fanout_duplicate_labels_are_rejected():
     from core.config import load_config
 
     yaml_src = (
-        "pipeline:\n"
-        "  role: info\n"
+        "info:\n"
         "  auth_token: tok\n"
         "consumers:\n"
         "  - label: dup\n"

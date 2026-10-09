@@ -496,7 +496,7 @@ def run_reader_status_phase():
             headers=hdr, timeout=5,
         ).json()
         # the heartbeat no longer pushes reader settings (they
-        # live in reader/reader.config.yaml and would be
+        # live in config/reader.config.yaml and would be
         # overridden on every poll) - it acknowledges with {}
         check("reader heartbeat acknowledges", r == {}, str(r))
 
@@ -506,7 +506,7 @@ def run_reader_status_phase():
         check("reader status shows the channel",
               status["channel"] == "test-channel", str(status))
         check("reader status shows desired marker",
-              # desired comes from reader/reader.config.yaml on
+              # desired comes from config/reader.config.yaml on
               # this machine - only assert the field exists
               "desired" in status, str(status))
         check("reader status shows heartbeat age",

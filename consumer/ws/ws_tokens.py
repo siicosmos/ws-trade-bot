@@ -1,10 +1,12 @@
 import os
+import threading
 
 _TOKEN_PATH = os.path.abspath(
     os.path.join(os.path.dirname(os.path.abspath(__file__)),
                  "..", "..", "config", "ws_tokens.env")
 )
 _last_written = None
+_PERSIST_LOCK = threading.Lock()
 
 
 def persist_env_tokens(path=None) -> bool:
@@ -17,9 +19,14 @@ def persist_env_tokens(path=None) -> bool:
     current = (access, refresh)
     if current == _last_written:
         return False
-    with open(target, "w", encoding="utf-8") as f:
-        f.write(f"export WS_ACCESS_TOKEN={access}\n")
-        f.write(f"export WS_REFRESH_TOKEN={refresh}\n")
+    # the values/mirror/executor threads can race the
+    # check-then-write - the body is synchronized
+    with _PERSIST_LOCK:
+        if current == _last_written:
+            return False
+        with open(target, "w", encoding="utf-8") as f:
+            f.write(f"export WS_ACCESS_TOKEN={access}\n")
+            f.write(f"export WS_REFRESH_TOKEN={refresh}\n")
     os.chmod(target, 0o600)
     _last_written = current
     return True

@@ -229,6 +229,12 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
             # an unparsable cursor must not fall back to 0 - that
             # would replay the entire alert history to the consumer
             return jsonify({"error": "invalid since"}), 400
+        head_now = store.max_signal_rowid()
+        if since > head_now:
+            # a cursor beyond the head exists only after a db
+            # wipe/rewind - clamping to the head skips the dead
+            # range instead of stranding the consumer forever
+            since = head_now
         try:
             wait = min(
                 max(float(request.args.get("wait", 0) or 0), 0.0), 25.0
@@ -478,16 +484,17 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
 
                     raw = _yaml.safe_load(f) or {}
                 if applied.get("auto_update.enabled") is not None:
-                    raw.setdefault("auto_update", {})["enabled"] = (
-                        cfg.auto_update.enabled
-                    )
+                    au = raw.setdefault("auto_update", {}) or {}
+                    au["enabled"] = cfg.auto_update.enabled
+                    raw["auto_update"] = au
                 if "auto_update.interval_seconds" in applied:
                     raw.setdefault(
                         "auto_update", {}
                     )["interval_seconds"] = (
                         cfg.auto_update.interval_seconds
                     )
-                d = raw.setdefault("discord", {})
+                d = raw.setdefault("discord", {}) or {}
+                raw["discord"] = d
                 for field in ("consumer_log_webhook_url",
                               "update_webhook_url"):
                     if f"discord.{field}" in applied:
@@ -495,7 +502,7 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
                 from core.config import dump_yaml_config
 
                 dump_yaml_config(raw, config_path)
-            except OSError as e:
+            except (OSError, _yaml.YAMLError) as e:
                 for key, value in snapshot.items():
                     section, field = key.split(".", 1)
                     if section == "auto_update":

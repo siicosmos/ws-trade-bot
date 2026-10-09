@@ -14,6 +14,24 @@ UPDATE_RECORDS = {
 }
 
 
+def pop_exit_marker(db_path, role):
+    """Read + remove the launcher's exit-code marker (written
+    next to the db as db/pipeline_exit_<role>.txt); returns the
+    previous run's last words ("")."""
+    path = os.path.join(
+        os.path.dirname(os.path.abspath(db_path)),
+        f"pipeline_exit_{role}.txt",
+    )
+    prev = ""
+    try:
+        with open(path, encoding="utf-8") as f:
+            prev = f.read().strip()
+        os.remove(path)
+    except OSError:
+        pass
+    return prev
+
+
 def update_record_path(root, role):
     name = UPDATE_RECORDS.get(role, UPDATE_RECORDS["consumer"])
     return os.path.join(root, name)
@@ -331,13 +349,17 @@ class AutoUpdater:
         files (logs, dbs) so a pull can proceed - the reader.log
         class of incident, where a runtime file was once
         committed and then locally modified."""
+        import re as _re
+
         healed = []
         for line in dirty_lines:
             # porcelain -z separates entries with NUL and never
-            # quotes: rename pairs ("old -> new") and non-ascii
-            # paths (quoted octal escapes in the line format)
-            # parsed garbage here
-            path = line[3:].split(" -> ")[-1].strip("\x00").strip()
+            # quotes; a rename arrives as TWO fragments ("XY new"
+            # then the bare old path) - fragments without a
+            # status prefix are the old-path halves, not entries
+            if not _re.match(r"^[A-Z?! ]{2} ", line):
+                continue
+            path = line[3:].strip()
             if not path or not _is_ignored_runtime_file(
                 self.root, path
             ):

@@ -1,15 +1,13 @@
 import gzip
-import hmac
 import logging
 import os
 import re
-import secrets
 import threading
 import time
 from dataclasses import dataclass, field
 from datetime import timedelta
 
-from flask import Flask, Response, g, jsonify, redirect, request, session
+from flask import Flask, Response, g, jsonify, request, session
 
 from consumer.ws.account_types import REGISTERED_ACCOUNT_TYPES
 from consumer.dashboard import (
@@ -46,11 +44,13 @@ def _paper_card_metrics(
             rows = []
     by_key = {r["contract_key"]: r for r in rows}
     stock_value = round(sum(
-        (r.get("value") or 0)
+        (r.get("value_cad") if r.get("value_cad") is not None
+         else (r.get("value") or 0))
         for r in rows if r.get("kind") == "stock"
     ), 2)
     option_value = round(sum(
-        abs(r.get("value") or 0)
+        (r.get("value_cad") if r.get("value_cad") is not None
+         else abs(r.get("value") or 0))
         for r in rows if r.get("kind") == "option"
     ), 2)
     pos_cash = max(cash or 0.0, 0.0)
@@ -110,12 +110,11 @@ def _paper_card_metrics(
                 symbol=str(r.get("underlying") or ""),
                 kind="stock",
                 currency="usd" if is_usd else "cad",
-                # ledger values are cad - carry the native figure
-                native_value=(
-                    (r.get("value") or 0) / conv_fx
-                    if is_usd and conv_fx
-                    else (r.get("value") or 0)
-                ),
+                # ledger values stay in the quote currency (usd
+                # rows quote usd) - carry the native figure and
+                # let compute_requirement convert (dividing here
+                # cancelled the fx and understated usd margin)
+                native_value=abs(r.get("value") or 0),
             )
         )
 
@@ -156,12 +155,17 @@ def _paper_card_metrics(
             for l in legs
         )
         cur = "usd" if usd else "cad"
-        if info and info.get("kind") in (
-            "vertical", "butterfly", "condor",
-            "iron fly", "ratio",
+        if (
+            info and info.get("kind") in (
+                "vertical", "butterfly", "condor",
+                "iron fly", "ratio",
+            )
+            and info.get("debit") is False
         ):
-            # ws's maintenance rule: sold spreads carry the full
-            # wing width - the same rule as the real account
+            # ws's maintenance rule: SOLD (credit) spreads carry
+            # the full wing width - the same rule as the real
+            # account. a long/debit structure charges its legs
+            # (the debit paid), not the wing
             holdings.append(
                 Holding(
                     symbol=sym,
@@ -184,11 +188,7 @@ def _paper_card_metrics(
                         symbol=leg.get("contract_key") or "?",
                         kind="long",
                         currency=cur,
-                        native_value=(
-                            abs(row.get("value") or 0) / conv_fx
-                            if is_usd and conv_fx
-                            else abs(row.get("value") or 0)
-                        ),
+                        native_value=abs(row.get("value") or 0),
                     )
                 )
 
@@ -1314,16 +1314,19 @@ def create_app(cfg, store: Store, risk, executor, account=None,
             return jsonify({"error": "label required"}), 400
 
         errors = []
+        # validate first, apply last - the cash edits used to land
+        # before the holdings validation ran, so a holdings error
+        # returned 400 with the cash already changed
+        pending_cad = None
+        pending_usd = None
         if payload.get("cash_cad") is not None:
             try:
-                cash_cad = round(float(payload["cash_cad"]), 2)
-                store.set_paper_equity(max(0.0, cash_cad), label)
+                pending_cad = max(0.0, round(float(payload["cash_cad"]), 2))
             except (TypeError, ValueError):
                 errors.append("cash_cad: not a number")
         if payload.get("cash_usd") is not None:
             try:
-                cash_usd = round(float(payload["cash_usd"]), 2)
-                store.set_paper_cash_usd(max(0.0, cash_usd), label)
+                pending_usd = max(0.0, round(float(payload["cash_usd"]), 2))
             except (TypeError, ValueError):
                 errors.append("cash_usd: not a number")
 
@@ -1389,6 +1392,12 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                     ))
                 if not errors:
                     store.set_paper_holdings(label, rows)
+
+        if not errors:
+            if pending_cad is not None:
+                store.set_paper_equity(pending_cad, label)
+            if pending_usd is not None:
+                store.set_paper_cash_usd(pending_usd, label)
 
         if errors:
             return jsonify({"status": "error", "errors": errors}), 400
@@ -1602,6 +1611,7 @@ def create_app(cfg, store: Store, risk, executor, account=None,
         # the live price the holdings table shows; the avg premium
         # is the fallback when no quote is available
         price = None
+        row_usd = None
         try:
             # bounded: the paper pricing can reach the slow ws
             # api - the sell must answer fast (the avg premium
@@ -1611,6 +1621,9 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                 if r.get("contract_key") == contract_key:
                     if r.get("price"):
                         price = float(r["price"])
+                    # the listing's currency rides the priced row
+                    # (the store's position row has no usd column)
+                    row_usd = bool(r.get("usd"))
                     break
         except Exception:
             price = None
@@ -1651,7 +1664,7 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                 fx = ledger.fx() or 1.0
             except Exception:
                 fx = 1.0
-        usd = bool(row.get("usd", is_option))
+        usd = row_usd if row_usd is not None else is_option
         fx_eff = fx if (is_option or usd) else 1.0
         realized = (
             round(qty * (price - avg) * mult * fx_eff, 2)
@@ -1995,14 +2008,18 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                 avg = pos.get("avg_premium") or 0
                 if held < 1 or not avg:
                     continue
-                # the original alert's size keyword
+                # the original alert's size keyword. the trade
+                # rows are per-ALERT (one aggregate row across the
+                # accounts), so the lookup matches the newest paper
+                # BUY for the ticker - an account filter could
+                # never match and every position silently resized
+                # to the medium tier
                 trade_key = None
                 for t in store.recent_trades(200):
                     if (
                         t.get("mode") == "paper"
                         and t.get("ticker") == pos.get("underlying")
                         and t.get("action") == "BUY"
-                        and t.get("account") == label
                     ):
                         trade_key = t.get("message_key")
                         break

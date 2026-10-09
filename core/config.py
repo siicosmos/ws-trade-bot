@@ -103,7 +103,6 @@ class WSAccountConfig:
 @dataclass
 class TradingConfig:
     mode: str = "notify"
-    dry_run: bool = True
     order_type: str = "limit"
     limit_offset_pct: float = 0.5
     position_size_cad: float = 100.0
@@ -299,14 +298,24 @@ def dump_yaml_config(raw, config_path):
         raise
     # windows: the destination can be briefly locked (an open
     # handle or a real-time scanner) - os.replace then fails with
-    # permission denied; retry briefly before giving up
+    # permission denied; retry briefly before giving up. any
+    # failure cleans the temp file (it must not mask the error)
     for attempt in range(5):
         try:
             os.replace(tmp, config_path)
             break
-        except PermissionError:
+        except OSError as e:
             if attempt == 4:
-                os.unlink(tmp)
+                try:
+                    os.unlink(tmp)
+                except OSError:
+                    pass
+                raise
+            if not isinstance(e, PermissionError):
+                try:
+                    os.unlink(tmp)
+                except OSError:
+                    pass
                 raise
             time.sleep(0.2 * (attempt + 1))
 
@@ -316,6 +325,18 @@ def dump_yaml_config(raw, config_path):
 def _get(d, key, default):
     value = d.get(key, default)
     return default if value is None else value
+
+
+def _str_list(value):
+    """A list-of-strings setting tolerates a scalar (a yaml
+    string would otherwise iterate per character: "ABC" ->
+    ['A', 'B', 'C'])."""
+    if isinstance(value, (list, tuple)):
+        return [str(t).strip().upper() for t in value
+                if str(t).strip()]
+    if isinstance(value, str) and value.strip():
+        return [value.strip().upper()]
+    return []
 
 
 def _valid_custom_patterns(patterns):
@@ -495,7 +516,6 @@ def load_config(path: str) -> Config:
 
     trading = TradingConfig(
         mode=mode,
-        dry_run=mode != "live",
         order_type=str(_get(trading_raw, "order_type", "limit")).lower(),
         limit_offset_pct=float(_get(trading_raw, "limit_offset_pct", 0.5)),
         position_size_cad=float(_get(trading_raw, "position_size_cad", 100.0)),
@@ -527,9 +547,9 @@ def load_config(path: str) -> Config:
         paper_account_value=float(
             _get(trading_raw, "paper_account_value", 10000.0)
         ),
-        skip_underlyings=[
-            t.upper() for t in _get(trading_raw, "skip_underlyings", [])
-        ],
+        skip_underlyings=_str_list(
+            _get(trading_raw, "skip_underlyings", [])
+        ),
         max_trades_per_day=int(_get(trading_raw, "max_trades_per_day", 5)),
         cooldown_seconds=int(_get(trading_raw, "cooldown_seconds", 60)),
         history_retention_days=int(
@@ -538,9 +558,9 @@ def load_config(path: str) -> Config:
         dedupe_window_minutes=int(
             _get(trading_raw, "dedupe_window_minutes", 10)
         ),
-        ticker_whitelist=[
-            t.upper() for t in _get(trading_raw, "ticker_whitelist", [])
-        ],
+        ticker_whitelist=_str_list(
+            _get(trading_raw, "ticker_whitelist", [])
+        ),
         max_daily_loss_pct=float(
             _get(trading_raw, "max_daily_loss_pct", 0.0)
         ),

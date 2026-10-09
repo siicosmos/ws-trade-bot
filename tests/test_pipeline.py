@@ -3388,7 +3388,9 @@ def test_clean_start_script(tmp_path):
     assert res.returncode == 0, res.stderr
 
     conn = sqlite3.connect(db)
-    assert conn.execute("SELECT COUNT(*) FROM signals").fetchone()[0] == 0
+    # the newest signal stays as the rowid anchor (an empty table
+    # would rewind every running consumer's feed cursor)
+    assert conn.execute("SELECT COUNT(*) FROM signals").fetchone()[0] == 1
     assert conn.execute("SELECT COUNT(*) FROM trades").fetchone()[0] == 0
     # paper state survives the clean start
     assert conn.execute(
@@ -3809,9 +3811,11 @@ def test_margin_breakdown_currencies():
     # us stock shows usd, ca stock shows cad
     assert coin.rstrip().endswith("usd"), coin
     assert zwc.rstrip().endswith("cad"), zwc
-    # the usd figure is the cad ledger amount divided by the
-    # value fx; cad stocks show their ledger amount as-is
-    assert "1459.85" in coin, coin
+    # the usd figure is the native quote-currency value (the
+    # ledger's usd rows quote usd) - the fx conversion happens
+    # once inside compute_requirement, not cancelled out by a
+    # divide-here-multiply-there round trip
+    assert "2000.00" in coin, coin
     assert "3200.00" in zwc, zwc
 
 

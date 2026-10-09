@@ -141,20 +141,36 @@ def process_alert(
             # the hybrid used to bypass them entirely.
             allowed, reason = risk.evaluate(alert)
             if allowed:
-                res = executor.execute(alert, cfg, store)
-                paper = {
-                    "ok": bool(res.ok),
-                    "qty": res.qty,
-                    "detail": res.detail,
-                }
-                store.record_trade(
-                    "paper", alert.action, alert.ticker, res.qty or 0,
-                    res.price or alert.premium, alert,
-                    "executed" if res.ok else "skipped",
-                    (res.detail or "") + (
-                        " | " + mismatch if mismatch else ""
-                    ), key,
-                )
+                try:
+                    res = executor.execute(alert, cfg, store)
+                except Exception as e:
+                    # the main path records the error (which
+                    # releases the execution claim) and notifies -
+                    # the hybrid leg does the same
+                    res = None
+                    paper = {
+                        "ok": False, "qty": 0,
+                        "detail": f"error: {e}",
+                    }
+                    store.record_trade(
+                        "paper", alert.action, alert.ticker, 0,
+                        alert.premium, alert, "error", str(e), key,
+                    )
+                if res is not None:
+                    paper = {
+                        "ok": bool(res.ok),
+                        "qty": res.qty,
+                        "detail": res.detail,
+                    }
+                    store.record_trade(
+                        "paper", alert.action, alert.ticker,
+                        res.qty or 0, res.price or alert.premium,
+                        alert,
+                        "executed" if res.ok else "skipped",
+                        (res.detail or "") + (
+                            " | " + mismatch if mismatch else ""
+                        ), key,
+                    )
             else:
                 paper = {
                     "ok": False,

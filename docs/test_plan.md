@@ -234,7 +234,8 @@ Conventions for every manual step below:
 
 **Steps:**
 
-1. Push a trivial commit (`touch docs/x.md`) to main and
+1. Push a trivial commit (any shell: `ni docs\x.md` in
+   PowerShell, `touch docs/x.md` in bash) to main and
    wait for the CI release workflow to go green.
 2. On the consumer box, within `auto_update.interval_seconds`:
    ```powershell
@@ -646,7 +647,8 @@ id/type/enabled but no label input; a new row has one.
 **Automated**
 
 - `tests/scripts/e2e_test.py` — boots the real server end-to-end
-  (config, db, feed, alert flow, auth guard, reader heartbeat).
+  (config, db, alert flow, auth guard, reader heartbeat,
+  dashboard smoke).
 - `tests/scripts/ui_test.py` — headless-Chrome dashboard smoke
   (31 checks incl. the settings save/revert lifecycle).
 - `test_pipeline.py::test_clean_start_script` — the clean-start

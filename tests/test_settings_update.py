@@ -388,7 +388,7 @@ def test_reader_status_endpoints():
     # the reader heartbeats the info server (its alert source).
     # reader settings live in the reader's own yaml - the
     # heartbeat only reports channel/ok; the dashboard's
-    # "desired" line reads reader/config.yaml at app build time
+    # "desired" line reads config/reader.config.yaml at app build time
     from info.web import create_app
 
     cfg = ConfigStub(TradingConfig(mode="notify"), auth_token="t")
@@ -426,6 +426,19 @@ def test_reader_status_endpoints():
     assert status["ok"] is True
     assert status["desired"] == "player-alerts"
     assert status["age_seconds"] is not None
+
+    # a failing heartbeat carries the reason - the dashboards
+    # render it in red (the round-trip is the whole feature)
+    resp = client.post(
+        "/api/reader_status",
+        json={"channel": None, "ok": False,
+              "error": "no discord channel attached"},
+        headers=hdr,
+    )
+    assert resp.status_code == 200
+    status = client.get("/api/reader_status").get_json()
+    assert status["ok"] is False
+    assert status["error"] == "no discord channel attached"
 
 
 def test_account_settings_apply_and_persist():

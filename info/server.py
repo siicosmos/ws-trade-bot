@@ -11,7 +11,8 @@ import sys
 
 from core.ops.loghook import default_log_path, install_log_webhook
 from core.ops.updater import (
-    INFO_RESTART_FILES, create_updater, startup_banner,
+    INFO_RESTART_FILES, create_updater, pop_exit_marker,
+    startup_banner,
 )
 from core.ops.watchdog import start_health_watchdog
 from core.store import Store
@@ -57,18 +58,8 @@ def main(cfg, args):
         ),
     )
 
-    # the .bat restart loop writes the exit code; surface it.
-    # the file lives next to the db (db\pipeline_exit_info.txt)
-    exit_file = os.path.join(
-        os.path.dirname(os.path.abspath(args.db)), EXIT_FILE
-    )
-    prev_exit = ""
-    try:
-        with open(exit_file, encoding="utf-8") as f:
-            prev_exit = f.read().strip()
-        os.remove(exit_file)
-    except OSError:
-        pass
+    # the .bat restart loop writes the exit code; surface it
+    prev_exit = pop_exit_marker(args.db, "info")
     if prev_exit:
         print("previous run: " + prev_exit)
 
