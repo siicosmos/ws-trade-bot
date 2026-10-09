@@ -343,6 +343,7 @@ def test_release_updater_seeds_version_from_git(tmp_path, monkeypatch):
 
     repo = tmp_path / "repo"
     repo.mkdir()
+    (repo / "consumer").mkdir()   # the marker seeds into consumer/
     env = {
         **os.environ,
         "GIT_AUTHOR_NAME": "t",
