@@ -3,7 +3,9 @@ import os
 import stat
 import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+_root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+if _root not in sys.path:
+    sys.path.append(_root)
 
 from wealthsimple_python import WealthsimpleV2
 

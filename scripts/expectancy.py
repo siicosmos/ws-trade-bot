@@ -22,7 +22,8 @@ import sys
 ROOT = os.path.abspath(os.path.join(
     os.path.dirname(os.path.abspath(__file__)), ".."
 ))
-sys.path.insert(0, ROOT)
+if ROOT not in sys.path:
+    sys.path.append(ROOT)
 
 
 def _rows(db, query, params=()):

@@ -19,12 +19,13 @@ from datetime import datetime, timezone
 
 # the script runs as `python scripts/build_consumer_zip.py` (ci +
 # the readme) - sys.path[0] is scripts/, so the repo root must be
-# added for the core.* imports below (ci never noticed: the
-# GITHUB_REPOSITORY env short-circuits repo_slug() before its
-# core import on a release runner)
+# appended for the core.* imports below (lowest priority: stdlib
+# and site-packages always win; ci never noticed the missing
+# bootstrap because the GITHUB_REPOSITORY env short-circuits
+# repo_slug() before its core import on a release runner)
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
-    sys.path.insert(0, ROOT)
+    sys.path.append(ROOT)
 
 # consumer/ files that belong to the user, never to the artifact
 # belt-and-suspenders: state lives in config/ + db/ (never

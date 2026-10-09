@@ -20,7 +20,8 @@ import time
 _root = sys.argv[1] if len(sys.argv) > 1 else os.path.dirname(
     os.path.dirname(os.path.abspath(__file__))
 )
-sys.path.insert(0, _root)
+if _root not in sys.path:
+    sys.path.append(_root)
 
 from core.ops.release_updater import (  # noqa: E402
     PENDING_FILE,
