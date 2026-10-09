@@ -17,9 +17,12 @@ import time
 
 # the repo root must be importable before the core import - the
 # launcher runs this as scripts/apply_update.py from consumer/
+# and passes ".." (relative, resolved against the launch cwd
+# here, once: a later chdir must never re-resolve it)
 _root = sys.argv[1] if len(sys.argv) > 1 else os.path.dirname(
     os.path.dirname(os.path.abspath(__file__))
 )
+_root = os.path.abspath(_root)
 if _root not in sys.path:
     sys.path.append(_root)
 

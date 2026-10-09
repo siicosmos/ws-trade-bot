@@ -3,7 +3,9 @@ import os
 import stat
 import sys
 
-_root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+_root = os.path.abspath(os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), ".."
+))
 if _root not in sys.path:
     sys.path.append(_root)
 
