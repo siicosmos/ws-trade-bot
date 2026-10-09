@@ -19,7 +19,7 @@ let lastRefresh = null;
 function writeToken() {
   let t = localStorage.getItem("info_write_token") || "";
   if (!t) {
-    t = (prompt("write token (the reader's pipeline.auth_token):") || "")
+    t = (prompt("write token (the reader's auth_token, which must match the info server's info.auth_token):") || "")
       .trim();
     if (t) localStorage.setItem("info_write_token", t);
   }

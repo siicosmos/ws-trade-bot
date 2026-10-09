@@ -10,7 +10,7 @@
 pipeline_url: "http://localhost:8081/alert"   # use https:// if TLS is on
 
 # --- delivery ---
-auth_token: ""             # MUST match the info server's pipeline.auth_token
+auth_token: ""             # MUST match the info server's info.auth_token
 poll_interval: 0.5         # seconds between message checks
 max_items: 40              # how many on-screen messages to read per pass
 channels:                  # allowlist: only these channels are read
