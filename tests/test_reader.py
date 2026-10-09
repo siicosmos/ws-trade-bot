@@ -1306,3 +1306,35 @@ def test_seen_file_lives_in_the_reader_folder(tmp_path, monkeypatch):
     dr.save_seen(seen_at)
     with open(seen_file, encoding="utf-8") as f:
         assert "new alert" in json.load(f)
+
+
+def test_reader_config_merge_adds_missing_keys(tmp_path):
+    """the startup merge appends the example's missing keys to
+    the flat live config (with their comments) - add-only, the
+    user's values untouched, idempotent."""
+    live = tmp_path / "reader.config.yaml"
+    live.write_text(
+        "info_server_url: http://localhost:8081/alert\n"
+        "auth_token: tok\n",
+        encoding="utf-8",
+    )
+    example = tmp_path / "reader.example.config.yaml"
+    example.write_text(
+        "# reader example\n"
+        "info_server_url: http://localhost:8081/alert\n"
+        "poll_interval: 0.5          # the pane poll\n"
+        "auth_token: x\n"
+        "auto_scroll: true\n",
+        encoding="utf-8",
+    )
+    added = dr.merge_new_config_keys(str(live), str(example))
+    assert sorted(added) == ["auto_scroll", "poll_interval"]
+    import yaml as _yaml
+
+    d = _yaml.safe_load(live.read_text(encoding="utf-8"))
+    assert d["auth_token"] == "tok"          # untouched
+    assert d["poll_interval"] == 0.5
+    assert d["auto_scroll"] is True
+    assert "the pane poll" in live.read_text(encoding="utf-8")
+    # idempotent
+    assert dr.merge_new_config_keys(str(live), str(example)) == []

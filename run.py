@@ -37,6 +37,30 @@ def main():
         config_path=os.path.abspath(args.config),
     )
 
+    # a new release's config knobs land in the live config
+    # before the load: the example documents every key (with
+    # comments) - the missing ones are appended add-only, so the
+    # knobs are visible and tunable instead of silently defaulting
+    from core.ops.config_merge import merge_new_config_keys
+
+    example = os.path.join(
+        os.path.dirname(os.path.abspath(args.config)),
+        os.path.basename(args.config).replace(
+            ".config.yaml", ".example.config.yaml"
+        ),
+    )
+    try:
+        added = merge_new_config_keys(
+            os.path.abspath(args.config), example
+        )
+        if added:
+            print(
+                "config: added " + str(len(added))
+                + " new key(s) from the example: " + ", ".join(added)
+            )
+    except OSError as e:
+        print(f"config: the new-key merge failed: {e}")
+
     cfg = load_config(args.config)
     role = getattr(cfg.pipeline, "role", "consumer") or "consumer"
 

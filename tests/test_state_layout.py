@@ -255,3 +255,55 @@ def test_exit_marker_is_read_next_to_the_db(tmp_path):
     assert prev == "consumer app exited with code 1"
     assert not marker.exists()
     assert pop_exit_marker(str(db), "consumer") == ""
+
+
+def test_startup_config_merge_adds_missing_keys(tmp_path):
+    """a new release's config knobs land in the live config at
+    startup: the example's missing keys are appended to their
+    section with their comments - add-only (the user's values
+    are never touched) and idempotent."""
+    from core.ops.config_merge import merge_new_config_keys
+
+    live = tmp_path / "consumer.config.yaml"
+    live.write_text(
+        "consumer:\n"
+        "  auth_token: my-token\n"
+        "\n"
+        "trading:\n"
+        "  mode: paper\n"
+        "  stop_loss_pct: 35\n",
+        encoding="utf-8",
+    )
+    example = tmp_path / "consumer.example.config.yaml"
+    example.write_text(
+        "consumer:\n"
+        "  auth_token: x\n"
+        "\n"
+        "trading:\n"
+        "  mode: notify\n"
+        "  stop_loss_pct: 25\n"
+        "  trailing_stop_pct: 0    # % off the peak\n"
+        "  adaptive_trail: true\n"
+        "\n"
+        "quotes:\n"
+        "  enabled: false\n",
+        encoding="utf-8",
+    )
+    added = merge_new_config_keys(str(live), str(example))
+    assert "trading.trailing_stop_pct" in added
+    assert "trading.adaptive_trail" in added
+    assert "quotes.enabled" in added
+    import yaml as _yaml
+
+    d = _yaml.safe_load(live.read_text(encoding="utf-8"))
+    # the user's values untouched
+    assert d["consumer"]["auth_token"] == "my-token"
+    assert d["trading"]["mode"] == "paper"
+    assert d["trading"]["stop_loss_pct"] == 35
+    # the new keys landed with their comments
+    text = live.read_text(encoding="utf-8")
+    assert "adaptive_trail: true" in text
+    assert "# % off the peak" in text
+    assert d["quotes"]["enabled"] is False
+    # idempotent
+    assert merge_new_config_keys(str(live), str(example)) == []

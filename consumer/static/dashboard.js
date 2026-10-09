@@ -1652,29 +1652,48 @@ function renderSettings(s) {
       '<div class="set-grid">' +
         _numField("set-lotto_gain_budget_pct", "lotto budget %",
           t.lotto_gain_budget_pct,
-          "hero-or-zero / profits-only buys may spend at most this % of today's realized sell gains", "big") +
+          "hero-or-zero / profits-only buys may spend at most this % of today's realized sell gains") +
       '</div>') +
     _subsection("risk caps",
       '<div class="set-grid">' +
         _numField("set-risk_per_trade_pct", "default risk %", t.risk_per_trade_pct,
-          "% of account value risked per trade when no size keyword is given", "big") +
+          "% of account value risked per trade when no size keyword is given") +
         _numField("set-max_contracts_per_trade", "max contracts", t.max_contracts_per_trade,
-          "hard cap on contracts per trade across all accounts", "big") +
+          "hard cap on contracts per trade across all accounts") +
         _numField("set-max_open_risk_pct", "open risk cap %", t.max_open_risk_pct,
-          "stop opening new risk once deployed capital exceeds this % of account value", "big") +
+          "stop opening new risk once deployed capital exceeds this % of account value") +
         _numField("set-cluster_cap_pct", "cluster cap %", t.cluster_cap_pct,
-          "one underlying+expiry+direction cluster (e.g. several SPX 0dte calls) may never exceed this % of account value - a buy into a capped cluster is skipped even when the global cap has room (0 = off)", "big") +
+          "one underlying+expiry+direction cluster (e.g. several SPX 0dte calls) may never exceed this % of account value - a buy into a capped cluster is skipped even when the global cap has room (0 = off)") +
         _numField("set-max_daily_loss_pct", "daily loss cap %", t.max_daily_loss_pct,
-          "hard daily-loss circuit breaker: once today's realized pnl sinks below this % of account value, new buys pause until tomorrow (0 = off)", "big") +
+          "hard daily-loss circuit breaker: once today's realized pnl sinks below this % of account value, new buys pause until tomorrow (0 = off)") +
       '</div>') +
     _subsection("stops & exits",
       '<div class="set-grid">' +
         _numField("set-stop_loss_pct", "stop loss %", t.stop_loss_pct,
-          "global stop loss % below entry (per-size overrides live in the size tiers below)", "big") +
+          "global stop loss % below entry (per-size overrides live in the size tiers below)") +
         _numField("set-trailing_stop_pct", "trailing stop %", t.trailing_stop_pct,
-          "trailing stop distance once in profit; 0 disables", "big") +
+          "trailing stop distance once in profit; 0 disables (the adaptive ratchet below overrides this when enabled)") +
         _numField("set-stop_check_seconds", "stop check (s)", t.stop_check_seconds,
           "how often the stop monitor polls quotes") +
+      '</div>' +
+      '<div class="set-grid" style="margin-top:10px">' +
+        _check("set-adaptive_trail", "adaptive trail (stepped ratchet)",
+          t.adaptive_trail !== false,
+          "the trail tightens as the gain at the peak grows (ride the run-up wide, lock in more near the top); a position's own trail (set beside it in the table) still wins when pinned") +
+        _numField("set-adaptive_trail_min_pct", "adaptive trail min %", t.adaptive_trail_min_pct,
+          "the adaptive trail never tightens past this") +
+        _numField("set-adaptive_trail_expiry_tighten", "0dte tighten (%/h)", t.adaptive_trail_expiry_tighten,
+          "on 0dte expiry days the trail tightens this % per hour after 13:00 et (the air pocket before the close); 0 = off") +
+        _txtField("set-adaptive_trail_steps", "adaptive steps (gain:trail)",
+          Object.entries(t.adaptive_trail_steps || {}).map(function(kv) { return kv[0] + ":" + kv[1]; }).join(", "),
+          "10:10, 25:7, 50:5, 999:3",
+          "gain-at-peak ceiling -> trail %: at +12% gain the 25 step gives a 7% trail; the first ceiling >= the gain wins") +
+        '<div class="set-field"><label>unparsed sell action</label>' +
+        '<div class="field-help">a sell whose price does not parse never books blind</div>' +
+        '<select id="set-unparsed_sell_action" title="a sell whose price does not parse never books blind">' +
+          '<option value="trail"' + (t.unparsed_sell_action !== "skip" ? " selected" : "") + '>trail (the trailing stop takes it out)</option>' +
+          '<option value="skip"' + (t.unparsed_sell_action === "skip" ? " selected" : "") + '>skip (record + notify only)</option>' +
+        '</select></div>' +
       '</div>') +
     _subsection("live fills",
       '<div class="set-grid">' +
@@ -1687,9 +1706,9 @@ function renderSettings(s) {
         _numField("set-limit_offset_pct", "limit offset %", t.limit_offset_pct,
           "how far past the market price a limit order chases (limit order type only)") +
         _numField("set-max_slippage_pct", "slippage notice %", t.max_slippage_pct,
-          "a live fill landing this % away from the order's estimated price posts a discord notice with both prices (data only, 0 = off)", "big") +
+          "a live fill landing this % away from the order's estimated price posts a discord notice with both prices (data only, 0 = off)") +
         _numField("set-partial_fill_cancel_pct", "partial-fill cancel %", t.partial_fill_cancel_pct,
-          "a partially-filled order whose price runs this % away from the estimate gets its remainder cancelled - the filled part stays as the position (0 = off)", "big") +
+          "a partially-filled order whose price runs this % away from the estimate gets its remainder cancelled - the filled part stays as the position (0 = off)") +
       '</div>') +
     _subsection("quotes provider",
       '<div class="set-checks" style="margin-bottom:10px">' +
@@ -1945,12 +1964,25 @@ async function saveSettings() {
   const val = (id) => document.getElementById(id).value;
   const num = (id) => parseFloat(val(id));
   const trading = {};
-  for (const k of ["risk_per_trade_pct","max_contracts_per_trade","max_open_risk_pct","cluster_cap_pct","max_slippage_pct","partial_fill_cancel_pct","stop_loss_pct","max_daily_loss_pct","trailing_stop_pct","stop_check_seconds","max_consecutive_losses","min_dte_days","max_trades_per_day","cooldown_seconds","dedupe_window_minutes","limit_offset_pct","history_retention_days","lotto_gain_budget_pct","position_size_cad","paper_account_value"]) {
+  for (const k of ["risk_per_trade_pct","max_contracts_per_trade","max_open_risk_pct","cluster_cap_pct","max_slippage_pct","partial_fill_cancel_pct","stop_loss_pct","max_daily_loss_pct","trailing_stop_pct","stop_check_seconds","max_consecutive_losses","min_dte_days","max_trades_per_day","cooldown_seconds","dedupe_window_minutes","limit_offset_pct","history_retention_days","lotto_gain_budget_pct","position_size_cad","paper_account_value","adaptive_trail_min_pct","adaptive_trail_expiry_tighten"]) {
     trading[k] = num("set-" + k);
   }
   trading.order_type = val("set-order_type");
   trading.trading_paused = document.getElementById("set-trading_paused").checked;
   trading.back_to_entry_enabled = document.getElementById("set-back_to_entry_enabled").checked;
+  trading.adaptive_trail = document.getElementById("set-adaptive_trail").checked;
+  trading.unparsed_sell_action = val("set-unparsed_sell_action");
+  // the steps text field: "10:10, 25:7, 50:5, 999:3" -> a map
+  trading.adaptive_trail_steps = (function() {
+    const map = {};
+    val("set-adaptive_trail_steps").split(",").forEach(function(part) {
+      const bits = part.trim().split(":");
+      if (bits.length !== 2) return;
+      const g = parseFloat(bits[0]), tr = parseFloat(bits[1]);
+      if (isFinite(g) && isFinite(tr)) map[String(g)] = tr;
+    });
+    return map;
+  })();
   const toList = (id) => val(id).split(",").map(function(s) { return s.trim(); }).filter(Boolean);
   trading.ticker_whitelist = toList("set-ticker_whitelist");
   trading.skip_underlyings = toList("set-skip_underlyings");

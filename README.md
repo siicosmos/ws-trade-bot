@@ -291,9 +291,15 @@ the `X-Auth-Token` machine token for scripts and the reader.
 - **settings modal**: everything from [Configuration
   reference](#configuration-reference) marked "editable" — applied and
   persisted to the role's config atomically; help text renders under each
-  field on touch screens. Accounts are managed here too: add new ones
-  (label + id + type), toggle/remove existing, per-account overrides.
+  field on touch screens (and as hover tooltips on desktop). Accounts are
+  managed here too: add new ones (label + id + type), toggle/remove
+  existing, per-account overrides. Includes the adaptive trail
+  (stepped ratchet + 0dte tighten) and the unparsed-sell action.
 - **users panel** (admin): create/delete users, change passwords.
+- **config self-update**: on startup each role merges the example's
+  missing keys into its live config (add-only, with the example's
+  comments) — a new release's knobs surface in your config file
+  instead of silently defaulting.
 
 **Info dashboard** (`role: info`) — the lean source-of-truth page:
 consumer health table (feed last-seen, cursor, push stats), the

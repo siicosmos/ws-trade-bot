@@ -477,6 +477,54 @@ def find_config_path():
     return None
 
 
+def merge_new_config_keys(live_path, example_path):
+    """Add the example's missing keys to the flat live config,
+    with the example's comments - add-only (the user's values
+    are never touched). A local copy of core.ops.config_merge's
+    section merge: the reader imports no trader code, and its
+    config is flat (top-level keys)."""
+    import yaml as _yaml
+
+    if not os.path.exists(live_path) or not os.path.exists(
+        example_path
+    ):
+        return []
+    with open(live_path, encoding="utf-8") as f:
+        live_text = f.read()
+    with open(example_path, encoding="utf-8") as f:
+        example_text = f.read()
+    live_keys = set(
+        _yaml.safe_load(live_text) or {}
+    )
+    example_cfg = _yaml.safe_load(example_text) or {}
+    # the example's key blocks: a key line + its comment lines
+    blocks = {}
+    pending = []
+    for line in example_text.splitlines():
+        m = re.match(r"^([A-Za-z_][\w-]*\s*):", line)
+        if m:
+            blocks[m.group(1).strip()] = pending + [line]
+            pending = []
+        elif line.strip().startswith("#") or not line.strip():
+            pending.append(line)
+        else:
+            pending = []
+    missing = [
+        (k, b) for k, b in blocks.items()
+        if k not in live_keys and not k.startswith("#")
+    ]
+    if not missing:
+        return []
+    out = live_text.rstrip("\n")
+    added = []
+    for key, block in missing:
+        added.append(key)
+        out += "\n\n" + "\n".join(block).rstrip("\n")
+    with open(live_path, "w", encoding="utf-8") as f:
+        f.write(out.rstrip("\n") + "\n")
+    return added
+
+
 def load_config():
     import yaml
 

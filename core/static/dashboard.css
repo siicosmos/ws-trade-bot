@@ -373,7 +373,6 @@
     cursor: pointer;
   }
   .set-field textarea { resize: none; overflow: hidden; }
-  .set-field input.big { padding: 8px; font-size: 15px; font-weight: 600; }
   .set-checks {
     display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start;
     margin-bottom: 12px;

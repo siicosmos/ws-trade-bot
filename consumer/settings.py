@@ -30,10 +30,15 @@ EDITABLE_SCALARS = {
     "history_retention_days": ("int", 0, 3650),
     "position_size_cad": ("float", 0, 1000000),
     "paper_account_value": ("float", 0, 100000000),
+    "adaptive_trail_expiry_tighten": ("float", 0, 10),
+    "adaptive_trail_min_pct": ("float", 0, 100),
 }
-EDITABLE_ENUMS = {"order_type": ("market", "limit")}
+EDITABLE_ENUMS = {
+    "order_type": ("market", "limit"),
+    "unparsed_sell_action": ("trail", "skip"),
+}
 EDITABLE_BOOLS = (
-    "back_to_entry_enabled", "trading_paused",
+    "back_to_entry_enabled", "trading_paused", "adaptive_trail",
 )
 EDITABLE_LISTS = ("ticker_whitelist", "skip_underlyings")
 EDITABLE_ACCOUNT_NUMERIC = {
@@ -58,6 +63,12 @@ def get_settings(cfg, mask_secrets=False) -> dict:
     trading["size_tiers"] = cfg.trading.size_tiers
     trading["stock_size_tiers"] = dict(
         getattr(cfg.trading, "stock_size_tiers", {}) or {}
+    )
+    trading["adaptive_trail_steps"] = dict(
+        getattr(cfg.trading, "adaptive_trail_steps", {}) or {}
+    )
+    trading["adaptive_trail_steps"] = dict(
+        getattr(cfg.trading, "adaptive_trail_steps", {}) or {}
     )
     accounts = [
         {
@@ -249,6 +260,59 @@ def apply_settings(cfg, payload: dict, config_path=None) -> tuple:
                 tiers_out[tname] = dollars
             cfg.trading.stock_size_tiers = tiers_out
             applied["trading.stock_size_tiers"] = tiers_out
+
+    raw_steps = trading_payload.get("adaptive_trail_steps")
+    if raw_steps is not None:
+        if isinstance(raw_steps, str):
+            parsed = {}
+            for part in raw_steps.split(","):
+                part = part.strip()
+                if not part:
+                    continue
+                if ":" not in part:
+                    errors.append(
+                        f"trading.adaptive_trail_steps: {part!r} - "
+                        f"expected 'gain:trail' pairs"
+                    )
+                    continue
+                gain, _, trail = part.partition(":")
+                try:
+                    parsed[str(float(gain.strip()))] = float(
+                        trail.strip()
+                    )
+                except (TypeError, ValueError):
+                    errors.append(
+                        f"trading.adaptive_trail_steps: {part!r} - "
+                        f"expected numbers"
+                    )
+                    continue
+            raw_steps = parsed
+        if isinstance(raw_steps, dict):
+            steps_out = {}
+            for gain, trail in raw_steps.items():
+                try:
+                    g, tr = float(gain), float(trail)
+                except (TypeError, ValueError):
+                    errors.append(
+                        f"trading.adaptive_trail_steps.{gain}: "
+                        f"bad numbers"
+                    )
+                    continue
+                if g < 0 or not (0 <= tr <= 100):
+                    errors.append(
+                        f"trading.adaptive_trail_steps.{gain}: "
+                        f"gain must be >= 0 and trail 0-100"
+                    )
+                    continue
+                steps_out[str(g)] = tr
+            if steps_out and not errors:
+                cfg.trading.adaptive_trail_steps = steps_out
+                applied["trading.adaptive_trail_steps"] = steps_out
+        else:
+            errors.append(
+                "trading.adaptive_trail_steps: expected a mapping "
+                "or 'gain:trail' pairs"
+            )
 
     tiers = trading_payload.get("size_tiers")
     if isinstance(tiers, dict):
@@ -593,6 +657,12 @@ def _persist(cfg, config_path):
     trading["size_tiers"] = cfg.trading.size_tiers
     trading["stock_size_tiers"] = dict(
         getattr(cfg.trading, "stock_size_tiers", {}) or {}
+    )
+    trading["adaptive_trail_steps"] = dict(
+        getattr(cfg.trading, "adaptive_trail_steps", {}) or {}
+    )
+    trading["adaptive_trail_steps"] = dict(
+        getattr(cfg.trading, "adaptive_trail_steps", {}) or {}
     )
 
     ws = raw.setdefault("wealthsimple", {})
