@@ -791,6 +791,8 @@ def test_stock_quote_extended_uses_the_session_price(monkeypatch):
                 "bid_price": 774.45,          # the stale regular bid
                 "last_price": 773.93,
                 "overnight_price": 776.13,    # the live overnight price
+                "after_price": 775.10,        # the post-market price
+                "pre_price": 773.80,          # the pre-market price
             }.get(key)
 
     class _Data:
@@ -818,8 +820,19 @@ def test_stock_quote_extended_uses_the_session_price(monkeypatch):
     monkeypatch.setattr(
         p, "_context", lambda: _Ctx(), raising=False
     )
+    # pin the session: the test must not depend on the wall clock
+    # (the real session at run time could be regular, post,
+    # overnight or pre)
+    import consumer.trading.quotes as _q
+
+    monkeypatch.setattr(_q, "us_session", lambda now=None: "overnight")
     # extended=True (the ladder): the overnight session's price
     assert p.stock_quote("SPY", extended=True) == 776.13
     p._stock_cache.clear()   # the 5s ttl cache would serve the first
     # extended=False (trading pricing): the regular-session quote
     assert p.stock_quote("SPY") == 774.45
+    p._stock_cache.clear()
+    # the pre session picks the pre price
+    p._stock_cache.clear()
+    monkeypatch.setattr(_q, "us_session", lambda now=None: "pre")
+    assert p.stock_quote("SPY", extended=True) == 773.80
