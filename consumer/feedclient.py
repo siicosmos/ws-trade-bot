@@ -34,12 +34,16 @@ def _backfill_signals(base, store, limit=50):
     signals table as ALREADY-CLAIMED rows: the dashboard's recent
     alerts survive a wiped/rebuilt consumer db, and the dedupe
     memory covers anything the info server still holds. Claimed
-    without executing - old alerts must never re-trade."""
+    without executing - old alerts must never re-trade. the rows
+    insert OLDEST FIRST (the api returns newest first, reversed
+    here) so the rowid order matches the time order and the
+    dashboard shows newest on top."""
     try:
         r = requests.get(f"{base}/api/signals?limit={limit}",
                          timeout=10)
         r.raise_for_status()
         rows = r.json() if isinstance(r.json(), list) else []
+        rows = list(reversed(rows))
     except Exception:
         return 0
     added = 0

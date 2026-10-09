@@ -201,15 +201,22 @@ def test_backfill_claims_recent_signals_without_executing(monkeypatch):
             return {"alerts": [], "cursor": 41, "levels": ""}
 
     # the anchor + the backfill's /api/signals call
-    signals = [{
-        "message_key": "k-backfill-1",
-        "ts": "2026-10-06T14:30:00+00:00",
-        "author": "a",
-        "text": "BOUGHT 0DTE SPY 759c @ 1.5 small",
-        "parsed": True,
-        "correction": False,
-        "channel": "player-alerts",
-    }]
+    # the api returns newest first - the backfill must insert
+    # oldest first so the rowid order matches the time order
+    signals = [
+        {"message_key": "k-backfill-2",
+         "ts": "2026-10-06T15:30:00+00:00",
+         "author": "a",
+         "text": "BOUGHT 0DTE SPY 760c @ 1.5 small",
+         "parsed": True, "correction": False,
+         "channel": "player-alerts"},
+        {"message_key": "k-backfill-1",
+         "ts": "2026-10-06T14:30:00+00:00",
+         "author": "a",
+         "text": "BOUGHT 0DTE SPY 759c @ 1.5 small",
+         "parsed": True, "correction": False,
+         "channel": "player-alerts"},
+    ]
 
     def _fake_get(url, params=None, headers=None, timeout=0,
                   verify=False):
@@ -243,10 +250,12 @@ def test_backfill_claims_recent_signals_without_executing(monkeypatch):
 
     key = message_key("BOUGHT 0DTE SPY 759c @ 1.5 small", "a")
     assert store.seen_signal(key)
-    # the recent-signals view carries the text (no keys) - the
-    # dashboard's list is what we are asserting on
+    # the recent-signals view is rowid-desc: the newest (760c)
+    # must come first - the insertion order was oldest first
     rows = store.recent_signals(limit=10)
-    assert any("SPY 759c" in r["text"] for r in rows)
+    texts = [r["text"] for r in rows]
+    assert texts[:2] == ["BOUGHT 0DTE SPY 760c @ 1.5 small",
+                         "BOUGHT 0DTE SPY 759c @ 1.5 small"], texts
     # ...and was NOT executed (no on_alert call, no trade)
     assert executed == []
     t.join(timeout=1)
