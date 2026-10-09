@@ -207,7 +207,7 @@ def sync_clock():
     if offset is None:
         return
     if abs(offset - _clock_offset) > 5:
-        log(
+        _log(
             f"local clock off by {offset:+.0f}s vs internet time "
             f"- correcting"
         )

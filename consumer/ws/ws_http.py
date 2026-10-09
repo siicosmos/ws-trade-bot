@@ -51,9 +51,9 @@ class _RequestsShim:
     through untouched."""
 
     def __getattr__(self, name):
-        real = getattr(_requests, name)
         if name == "Session":
             return _TimeoutSession
+        real = getattr(_requests, name)
         if not callable(real) or inspect.isclass(real):
             return real
 

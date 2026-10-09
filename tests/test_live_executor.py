@@ -296,7 +296,7 @@ def test_live_stock_buy_respects_tier_and_open_risk(monkeypatch):
     ]
 
     # now trip the cap: the ledger's open risk (what
-    # _at_open_risk_cap reads) is filled with option positions -
+    # at_open_risk_cap reads) is filled with option positions -
     # 10 contracts @ 1.0 = 1000 of risk vs the 500 (5%) cap
     store.apply_position(
         "live", parse_alert("BOUGHT 0DTE SPX 7650c @ 1.0"), 10,

@@ -18,7 +18,6 @@ except ImportError:
 
 from inspect_discord import (
     _window_readable,
-    _foreground_discord,
     close_extra_windows,
     ensure_visible,
     tree_entry_names,
@@ -28,7 +27,6 @@ from inspect_discord import (
     updater_window_visible,
     kill_discord,
     start_discord,
-    switch_server_keyboard,
 )
 
 _last_hb_fail_log = 0.0

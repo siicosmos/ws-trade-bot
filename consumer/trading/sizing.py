@@ -9,7 +9,7 @@ from typing import Optional
 
 from consumer.ws.account import account_label, effective_accounts
 
-from .risk_gates import at_cluster_cap
+from .risk_gates import at_cluster_cap, effective_open_risk_cap
 
 
 def tier_for(alert, cfg):
@@ -142,8 +142,6 @@ def account_sizing(alert, cfg, account, store=None) -> list:
                         f"{plan['tier_max']} "
                         f"(budget could afford {plan['affordable']})"
                     )
-
-        from .risk_gates import effective_open_risk_cap
 
         acct_cap = effective_open_risk_cap(acct, cfg)
         if (

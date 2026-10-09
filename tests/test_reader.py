@@ -1340,3 +1340,27 @@ def test_reader_config_merge_adds_missing_keys(tmp_path):
     assert "the pane poll" in live.read_text(encoding="utf-8")
     # idempotent
     assert dr.merge_new_config_keys(str(live), str(example)) == []
+
+
+def test_sync_clock_logs_drift_and_corrects(monkeypatch):
+    """a >5s clock drift is logged (through the window module's
+    _log bridge into the reader's log shipper) and the offset is
+    corrected - the drift message must not raise (a bare log(
+    reference used to NameError here after the window-layer
+    split, silently dropping both the message and the fix)."""
+    seen = []
+    monkeypatch.setattr(dw, "_log", seen.append)
+    monkeypatch.setattr(dw, "internet_offset", lambda: 90.0)
+    monkeypatch.setattr(dw, "_clock_offset", 0.0)
+    dw.sync_clock()
+    assert dw._clock_offset == 90.0
+    assert any("clock off" in m for m in seen)
+    # a drift within 5s of the current offset is corrected silently
+    monkeypatch.setattr(dw, "internet_offset", lambda: 92.0)
+    dw.sync_clock()
+    assert dw._clock_offset == 92.0
+    assert len(seen) == 1
+    # no reachable time source: nothing changes
+    monkeypatch.setattr(dw, "internet_offset", lambda: None)
+    dw.sync_clock()
+    assert dw._clock_offset == 92.0

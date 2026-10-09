@@ -466,7 +466,6 @@ def test_levels_spy_spot_and_refresh_cadence():
     overnight) and the poll rides the positions refresh setting;
     the spy pane shows 'SPY now: x' under its title."""
     import consumer.web as srv
-    import consumer.web_payloads as payloads
 
     src = open(srv.__file__, encoding="utf-8").read()
     assert '"spy": spy' in src
@@ -566,7 +565,6 @@ def test_spx_endpoint_reports_market_status():
     import time as time_mod
 
     import consumer.web as srv
-    import consumer.web_payloads as payloads
     from core.store import Store
 
     class _FreshStore:
@@ -968,7 +966,6 @@ def test_spx_endpoint_prefers_moomoo_spy(monkeypatch):
 
     import consumer.trading.quotes as quotes_mod
     import consumer.web as srv
-    import consumer.web_payloads as payloads
     saved = quotes_mod.ACTIVE_QUOTE_PROVIDER
     quotes_mod.ACTIVE_QUOTE_PROVIDER = StubProvider()
     srv._sec_id_cache.clear()
@@ -1047,7 +1044,6 @@ def test_spx_proxy_only_as_last_resort(monkeypatch):
 
     import consumer.trading.quotes as quotes_mod
     import consumer.web as srv
-    import consumer.web_payloads as payloads
     saved = quotes_mod.ACTIVE_QUOTE_PROVIDER
     quotes_mod.ACTIVE_QUOTE_PROVIDER = ProxyProvider()
     srv._sec_id_cache.clear()
@@ -1296,7 +1292,6 @@ def test_manual_paper_sell_endpoint():
     # the cached dashboard sections were dropped: the next poll
     # shows the position gone instead of a stale pre-sell copy
     import consumer.web as srv
-    import consumer.web_payloads as payloads
     assert "paper" not in srv._section_cache
     assert "positions" not in srv._section_cache
     assert store.get_position("paper", ck, "RRSP") == 0
@@ -1386,7 +1381,6 @@ def test_paper_manual_sell_ui():
     assert '"Sold"' in js and "data.realized" in js
     # the sell price lookup is bounded so the post answers fast
     import consumer.web as srv
-    import consumer.web_payloads as payloads
     assert "_bounded(_paper_positions_payload, ctx)" in open(srv.__file__, encoding="utf-8").read()
 
 
@@ -1526,7 +1520,6 @@ def test_paper_reset_invalidates_sections():
 
 def srv_section_cache():
     import consumer.web as srv
-    import consumer.web_payloads as payloads
 
     return srv._section_cache
 
