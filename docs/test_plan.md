@@ -599,6 +599,24 @@ id/type/enabled but no label input; a new row has one.
    restart within 5s and both post their own restart notices.
    The `.bat` windows themselves are cmd.exe and are not
    affected.
+6. Kill the launcher cmd for one role:
+   ```powershell
+   Get-CimInstance Win32_Process -Filter "Name='cmd.exe'" |
+     Where-Object CommandLine -match "start_consumer.bat" |
+     Select-Object ProcessId
+   taskkill /F /PID <cmd-pid>
+   ```
+   Without `/T` the python child survives as an orphan: the app
+   keeps running but is **unsupervised** — the next crash or
+   update restart leaves it down until the `.bat` is started
+   again. Restart the launcher to re-arm supervision.
+7. Kill the whole tree (launcher + python):
+   ```powershell
+   taskkill /F /T /PID <cmd-pid>
+   ```
+   Nothing restarts (the supervisor is gone) — start the `.bat`
+   again. This is the "closed the launcher window" scenario:
+   closing a console window kills the attached python too.
 
 #### M-9.3 — With a staged update pending, the launcher runs `apply_update.py` before relaunching and the app comes up on the new release (overlaps M-4.1).
 
