@@ -28,7 +28,8 @@ id_mod = _load(
     "inspect_discord_switch_test",
     os.path.join(_READER_DIR, "inspect_discord.py"),
 )
-import discord_reader as dr  # noqa: E402
+import discord_reader as dr
+import discord_window as dw  # noqa: E402
 
 # windll does not exist off-windows; the code under test only
 # touches it at call time, so a stand-in module attribute works
@@ -127,11 +128,11 @@ def test_switch_cycles_until_title_matches():
 def test_switch_server_keyboard_first_short_circuit(monkeypatch):
     calls = []
     monkeypatch.setattr(
-        dr, "switch_server_keyboard",
+        dw, "switch_server_keyboard",
         lambda w, s, log=print: calls.append(("kbd", s)) or True,
     )
     monkeypatch.setattr(
-        dr, "find_channel_control",
+        dw, "find_channel_control",
         lambda w, names: calls.append(("find", names)),
     )
     assert dr.switch_server(
@@ -144,15 +145,15 @@ def test_switch_server_falls_back_to_rail_click(monkeypatch):
     calls = []
     sentinel = object()
     monkeypatch.setattr(
-        dr, "switch_server_keyboard",
+        dw, "switch_server_keyboard",
         lambda w, s, log=print: calls.append(("kbd", s)) or False,
     )
     monkeypatch.setattr(
-        dr, "find_channel_control",
+        dw, "find_channel_control",
         lambda w, names: calls.append(("find", names)) or sentinel,
     )
     monkeypatch.setattr(
-        dr, "click_channel_control",
+        dw, "click_channel_control",
         lambda c, window=None, log=print:
             calls.append(("click",)) or True,
     )
@@ -168,10 +169,10 @@ def test_switch_server_falls_back_to_rail_click(monkeypatch):
 
 def test_switch_server_fails_when_nothing_reaches(monkeypatch):
     monkeypatch.setattr(
-        dr, "switch_server_keyboard",
+        dw, "switch_server_keyboard",
         lambda w, s, log=print: False,
     )
-    monkeypatch.setattr(dr, "find_channel_control", lambda w, n: None)
+    monkeypatch.setattr(dw, "find_channel_control", lambda w, n: None)
     assert dr.switch_server(
         None, "SPX Plays", log=lambda *a, **k: None
     ) is False
@@ -179,12 +180,12 @@ def test_switch_server_fails_when_nothing_reaches(monkeypatch):
 
 def test_switch_server_fails_when_click_refused(monkeypatch):
     monkeypatch.setattr(
-        dr, "switch_server_keyboard",
+        dw, "switch_server_keyboard",
         lambda w, s, log=print: False,
     )
-    monkeypatch.setattr(dr, "find_channel_control", lambda w, n: object())
+    monkeypatch.setattr(dw, "find_channel_control", lambda w, n: object())
     monkeypatch.setattr(
-        dr, "click_channel_control",
+        dw, "click_channel_control",
         lambda c, window=None, log=print: False,
     )
     assert dr.switch_server(

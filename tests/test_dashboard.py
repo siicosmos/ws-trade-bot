@@ -466,6 +466,7 @@ def test_levels_spy_spot_and_refresh_cadence():
     overnight) and the poll rides the positions refresh setting;
     the spy pane shows 'SPY now: x' under its title."""
     import consumer.web as srv
+    import consumer.web_payloads as payloads
 
     src = open(srv.__file__, encoding="utf-8").read()
     assert '"spy": spy' in src
@@ -565,6 +566,7 @@ def test_spx_endpoint_reports_market_status():
     import time as time_mod
 
     import consumer.web as srv
+    import consumer.web_payloads as payloads
     from core.store import Store
 
     class _FreshStore:
@@ -612,6 +614,7 @@ def test_spx_endpoint_survives_hung_ws_api(monkeypatch):
     import time as time_mod
 
     import consumer.web as srv
+    import consumer.web_payloads as payloads
     from core.config import (
         AutoUpdateConfig, DiscordConfig, QuotesConfig, ReaderConfig,
         TradingConfig, WealthsimpleConfig,
@@ -643,8 +646,8 @@ def test_spx_endpoint_survives_hung_ws_api(monkeypatch):
 
             return FakeWS()
 
-    monkeypatch.setattr(srv, "_WS_QUOTE_TIMEOUT", 0.3)
-    monkeypatch.setattr(srv, "_WS_QUOTE_RETRY", 5.0)
+    monkeypatch.setattr(payloads, "_WS_QUOTE_TIMEOUT", 0.3)
+    monkeypatch.setattr(payloads, "_WS_QUOTE_RETRY", 5.0)
     srv._sec_id_cache.clear()
     srv._ws_quote_cache.clear()
     srv._ws_quote_fail_ts.clear()
@@ -687,6 +690,7 @@ def test_dashboard_endpoint_survives_hung_ws_api(monkeypatch):
     import time as time_mod
 
     import consumer.web as srv
+    import consumer.web_payloads as payloads
     from core.config import (
         AutoUpdateConfig, DiscordConfig, QuotesConfig, ReaderConfig,
         TradingConfig, WealthsimpleConfig,
@@ -719,7 +723,7 @@ def test_dashboard_endpoint_survives_hung_ws_api(monkeypatch):
             time_mod.sleep(30)
             return {}
 
-    monkeypatch.setattr(srv, "_WS_QUOTE_TIMEOUT", 0.3)
+    monkeypatch.setattr(payloads, "_WS_QUOTE_TIMEOUT", 0.3)
     srv._sec_id_cache.clear()
     srv._ws_quote_cache.clear()
     srv._ws_quote_fail_ts.clear()
@@ -752,6 +756,7 @@ def test_dashboard_sections_serve_stale_cache(monkeypatch):
     import time as time_mod
 
     import consumer.web as srv
+    import consumer.web_payloads as payloads
     from core.config import (
         AutoUpdateConfig, DiscordConfig, QuotesConfig, ReaderConfig,
         TradingConfig, WealthsimpleConfig,
@@ -794,7 +799,7 @@ def test_dashboard_sections_serve_stale_cache(monkeypatch):
             time_mod.sleep(30)
             return {}
 
-    monkeypatch.setattr(srv, "_WS_QUOTE_TIMEOUT", 0.3)
+    monkeypatch.setattr(payloads, "_WS_QUOTE_TIMEOUT", 0.3)
     srv._sec_id_cache.clear()
     srv._ws_quote_cache.clear()
     srv._ws_quote_fail_ts.clear()
@@ -856,6 +861,59 @@ def test_ws_http_shim_injects_timeout(monkeypatch):
         ws_http._installed = False
 
 
+def test_ws_http_shim_covers_sessions_and_new_verbs():
+    """the shim is not a two-verb stub: requests.Session resolves
+    to a subclass whose adapter enforces the timeout at the
+    transport layer, and any verb the client adds later (put,
+    delete, patch, ...) is wrapped lazily."""
+    import consumer.ws.ws_http as ws_http
+
+    shim = ws_http._RequestsShim()
+    # Session is the enforcing subclass, not the raw class
+    assert shim.Session is ws_http._TimeoutSession
+    s = shim.Session()
+    adapter = s.get_adapter("https://api.wealthsimple.com/")
+    assert isinstance(adapter, ws_http._TimeoutAdapter)
+    # non-callables and other classes pass through untouched
+    assert shim.exceptions is ws_http._requests.exceptions
+    assert shim.Request is ws_http._requests.Request
+    # every verb carries the timeout (patch the transport to see it)
+    seen = {}
+
+    class _Resp:
+        status_code = 200
+
+    def fake_send(self, request, **kwargs):
+        seen["timeout"] = kwargs.get("timeout")
+        return _Resp()
+
+    import requests as real_requests
+
+    orig_send = real_requests.Session.send
+    real_requests.Session.send = fake_send
+    try:
+        for verb in ("get", "post", "put", "delete", "patch"):
+            getattr(shim, verb)("http://x")
+            assert seen["timeout"] == ws_http.WS_HTTP_TIMEOUT, verb
+        # an explicit timeout is preserved
+        shim.post("http://x", timeout=3)
+        assert seen["timeout"] == 3
+    finally:
+        real_requests.Session.send = orig_send
+
+    # the adapter enforces the timeout even when a prepared
+    # request reaches the wire with none (the session path)
+    orig_adapter_send = real_requests.adapters.HTTPAdapter.send
+    real_requests.adapters.HTTPAdapter.send = fake_send
+    try:
+        adapter = ws_http._TimeoutAdapter()
+        prep = real_requests.Request("POST", "http://x").prepare()
+        adapter.send(prep)
+        assert seen["timeout"] == ws_http.WS_HTTP_TIMEOUT
+    finally:
+        real_requests.adapters.HTTPAdapter.send = orig_adapter_send
+
+
 def test_spx_endpoint_prefers_moomoo_spy(monkeypatch):
     """moomoo opend is local and fast - the spy ladder spot rides
     it when available and the slow ws quote api is not consulted
@@ -910,6 +968,7 @@ def test_spx_endpoint_prefers_moomoo_spy(monkeypatch):
 
     import consumer.trading.quotes as quotes_mod
     import consumer.web as srv
+    import consumer.web_payloads as payloads
     saved = quotes_mod.ACTIVE_QUOTE_PROVIDER
     quotes_mod.ACTIVE_QUOTE_PROVIDER = StubProvider()
     srv._sec_id_cache.clear()
@@ -988,6 +1047,7 @@ def test_spx_proxy_only_as_last_resort(monkeypatch):
 
     import consumer.trading.quotes as quotes_mod
     import consumer.web as srv
+    import consumer.web_payloads as payloads
     saved = quotes_mod.ACTIVE_QUOTE_PROVIDER
     quotes_mod.ACTIVE_QUOTE_PROVIDER = ProxyProvider()
     srv._sec_id_cache.clear()
@@ -1236,6 +1296,7 @@ def test_manual_paper_sell_endpoint():
     # the cached dashboard sections were dropped: the next poll
     # shows the position gone instead of a stale pre-sell copy
     import consumer.web as srv
+    import consumer.web_payloads as payloads
     assert "paper" not in srv._section_cache
     assert "positions" not in srv._section_cache
     assert store.get_position("paper", ck, "RRSP") == 0
@@ -1325,6 +1386,7 @@ def test_paper_manual_sell_ui():
     assert '"Sold"' in js and "data.realized" in js
     # the sell price lookup is bounded so the post answers fast
     import consumer.web as srv
+    import consumer.web_payloads as payloads
     assert "_bounded(_paper_positions_payload, ctx)" in open(srv.__file__, encoding="utf-8").read()
 
 
@@ -1464,6 +1526,7 @@ def test_paper_reset_invalidates_sections():
 
 def srv_section_cache():
     import consumer.web as srv
+    import consumer.web_payloads as payloads
 
     return srv._section_cache
 

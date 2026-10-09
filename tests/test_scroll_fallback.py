@@ -13,6 +13,7 @@ except ImportError:
     sys.modules.setdefault("psutil", MagicMock())
 
 import discord_reader as dr  # noqa: E402
+import discord_window as dw  # noqa: E402
 
 
 import pytest  # noqa: E402
@@ -60,16 +61,16 @@ class _FakeContainer:
 
 def _patch_foreground(monkeypatch, ok=True):
     monkeypatch.setattr(
-        dr, "_foreground_discord",
+        dw, "_foreground_discord",
         lambda w, log=print: ok,
     )
 
 
 def test_end_fallback_sends_keys_when_focused(monkeypatch):
-    monkeypatch.setattr(dr, "_snap_warn_ts", 0.0)
+    monkeypatch.setattr(dw, "_snap_warn_ts", 0.0)
     _patch_foreground(monkeypatch, ok=True)
     monkeypatch.setattr(
-        dr, "ensure_visible", lambda *a, **k: False
+        dw, "ensure_visible", lambda *a, **k: False
     )
     container = _FakeContainer(_FakePattern())
     dr.snap_to_bottom(container, log_fn=lambda *a, **k: None)
@@ -80,7 +81,7 @@ def test_end_fallback_sends_keys_when_focused(monkeypatch):
 def test_end_fallback_skipped_without_focus(monkeypatch):
     _patch_foreground(monkeypatch, ok=False)
     monkeypatch.setattr(
-        dr, "ensure_visible", lambda *a, **k: False
+        dw, "ensure_visible", lambda *a, **k: False
     )
     container = _FakeContainer(_FakePattern())
     dr.snap_to_bottom(container, log_fn=lambda *a, **k: None)
@@ -91,7 +92,7 @@ def test_end_fallback_skipped_without_focus(monkeypatch):
 def test_end_fallback_skipped_without_window(monkeypatch):
     _patch_foreground(monkeypatch, ok=True)
     monkeypatch.setattr(
-        dr, "ensure_visible", lambda *a, **k: False
+        dw, "ensure_visible", lambda *a, **k: False
     )
     container = _FakeContainer(_FakePattern())
     container.GetTopLevelControl = lambda: (_ for _ in ()).throw(
@@ -111,7 +112,7 @@ def test_no_end_fallback_when_scroll_succeeds(monkeypatch):
 
     _patch_foreground(monkeypatch, ok=True)
     monkeypatch.setattr(
-        dr, "ensure_visible", lambda *a, **k: False
+        dw, "ensure_visible", lambda *a, **k: False
     )
     container = _FakeContainer(_GoodPattern())
     dr.snap_to_bottom(container, log_fn=lambda *a, **k: None)

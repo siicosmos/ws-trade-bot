@@ -21,6 +21,7 @@ except ImportError:
 sys.modules["psutil"] = MagicMock()
 
 import discord_reader as dr  # noqa: E402
+import discord_window as dw  # noqa: E402
 import pytest  # noqa: E402
 
 
@@ -35,6 +36,7 @@ class _StrictUIAError(Exception):
 @pytest.fixture(autouse=True)
 def _strict_uia_error(monkeypatch, tmp_path):
     monkeypatch.setattr(dr, "UIAError", _StrictUIAError)
+    monkeypatch.setattr(dw, "UIAError", _StrictUIAError)
     # the reader-heartbeat machinery points at tmp: no test
     # touches the real reader/.reader_alive, and no test trips
     # into the standby loop (the stubbed psutil would report
@@ -196,7 +198,7 @@ def test_find_message_container_prefers_message_pane(monkeypatch):
         dr.auto, "WalkControl",
         lambda *a, **k: [(chrome, 1), (msgs, 2), (members, 3)],
     )
-    monkeypatch.setattr(dr, "item_text", lambda it: it.text)
+    monkeypatch.setattr(dw, "item_text", lambda it: it.text)
     assert dr.find_message_container(object(), "") is msgs
 
 
@@ -209,7 +211,7 @@ def test_find_message_container_accepts_pane_type(monkeypatch):
         ],
     )
     monkeypatch.setattr(dr.auto, "WalkControl", lambda *a, **k: [(msgs, 2)])
-    monkeypatch.setattr(dr, "item_text", lambda it: it.text)
+    monkeypatch.setattr(dw, "item_text", lambda it: it.text)
     assert dr.find_message_container(object(), "") is msgs
 
 
@@ -219,7 +221,7 @@ def test_find_message_container_scores_item_names(monkeypatch):
         children=[_item(name="DoubleL, 今天 00:13"), _item(name="Liam, 今天 00:14")],
     )
     monkeypatch.setattr(dr.auto, "WalkControl", lambda *a, **k: [(msgs, 2)])
-    monkeypatch.setattr(dr, "item_text", lambda it: it.text)
+    monkeypatch.setattr(dw, "item_text", lambda it: it.text)
     assert dr.find_message_container(object(), "") is msgs
 
 
@@ -238,7 +240,7 @@ def test_find_message_container_title_bonus(monkeypatch):
     monkeypatch.setattr(
         dr.auto, "WalkControl", lambda *a, **k: [(other, 1), (msgs, 2)]
     )
-    monkeypatch.setattr(dr, "item_text", lambda it: it.text)
+    monkeypatch.setattr(dw, "item_text", lambda it: it.text)
     assert dr.find_message_container(object(), "test-message") is msgs
 
 
@@ -251,7 +253,7 @@ def test_find_message_container_rejects_all_chrome(monkeypatch):
         ],
     )
     monkeypatch.setattr(dr.auto, "WalkControl", lambda *a, **k: [(chrome, 1)])
-    monkeypatch.setattr(dr, "item_text", lambda it: it.text)
+    monkeypatch.setattr(dw, "item_text", lambda it: it.text)
     assert dr.find_message_container(object(), "") is None
 
 
@@ -264,7 +266,7 @@ def test_current_messages_filters_chrome(monkeypatch):
             _item(text="123"),
         ],
     )
-    monkeypatch.setattr(dr, "item_text", lambda it: it.text)
+    monkeypatch.setattr(dw, "item_text", lambda it: it.text)
     msgs = dr.current_messages(container)
     assert [t for t, _ in msgs] == [
         "BOUGHT 0DTE SPX 7645c @ .65 tiny size",
@@ -277,7 +279,7 @@ def test_current_messages_falls_back_to_item_name(monkeypatch):
     from datetime import datetime
 
     monkeypatch.setattr(
-        dr, "true_now", lambda: datetime(2026, 9, 18, 14, 3)
+        dw, "true_now", lambda: datetime(2026, 9, 18, 14, 3)
     )
     container = _fake_ctrl(
         name="test-message",
@@ -286,7 +288,7 @@ def test_current_messages_falls_back_to_item_name(monkeypatch):
             _item(name="Liam, 今天 14:02"),
         ],
     )
-    monkeypatch.setattr(dr, "item_text", lambda it: it.text)
+    monkeypatch.setattr(dw, "item_text", lambda it: it.text)
     msgs = dr.current_messages(container)
     assert [t for t, _ in msgs] == [
         "DoubleL, 今天 14:01",
@@ -381,7 +383,7 @@ def test_find_message_container_title_match_beats_score(monkeypatch):
     monkeypatch.setattr(
         dr.auto, "WalkControl", lambda *a, **k: [(rail, 1), (pane, 4)]
     )
-    monkeypatch.setattr(dr, "item_text", lambda it: it.text)
+    monkeypatch.setattr(dw, "item_text", lambda it: it.text)
     assert dr.find_message_container(object(), "trade-alerts") is pane
 
 
@@ -449,7 +451,7 @@ def test_find_message_container_strict_title(monkeypatch):
     monkeypatch.setattr(
         dr.auto, "WalkControl", lambda *a, **k: [(rail, 1)]
     )
-    monkeypatch.setattr(dr, "item_text", lambda it: it.text)
+    monkeypatch.setattr(dw, "item_text", lambda it: it.text)
     assert dr.find_message_container(
         object(), "trade-alerts", strict_title=True
     ) is None
@@ -496,7 +498,7 @@ def test_current_messages_drops_old_by_meta(monkeypatch):
             ),
         ],
     )
-    monkeypatch.setattr(dr, "item_text", lambda it: it.text)
+    monkeypatch.setattr(dw, "item_text", lambda it: it.text)
     msgs = dr.current_messages(container)
     assert [t for t, _ in msgs] == [f"BOUGHT 0DTE SPX 7645c @ .65"]
 
@@ -579,11 +581,11 @@ def test_notify_restart_posts_webhook(monkeypatch):
 
 def test_true_now_applies_clock_offset():
     from datetime import datetime
-    dr._clock_offset = 90.0
+    dw._clock_offset = 90.0
     try:
         assert (dr.true_now() - datetime.now()).total_seconds() > 89
     finally:
-        dr._clock_offset = 0.0
+        dw._clock_offset = 0.0
     assert abs((dr.true_now() - datetime.now()).total_seconds()) < 1
 
 
@@ -592,11 +594,11 @@ def test_is_recent_uses_offset(monkeypatch):
     future = datetime.now() + timedelta(hours=3)
     text = future.strftime("%A, %B ") + f"{future.day}, {future.year} " + future.strftime("%I:%M %p")
     assert not dr.is_recent_message(text)
-    dr._clock_offset = 3 * 3600.0
+    dw._clock_offset = 3 * 3600.0
     try:
         assert dr.is_recent_message(text)
     finally:
-        dr._clock_offset = 0.0
+        dw._clock_offset = 0.0
 
 
 def test_internet_offset_shape():
@@ -728,7 +730,7 @@ def test_boot_floor_delivers_late_but_not_history(monkeypatch):
     import discord_reader as dr
 
     fake_now = datetime(2026, 9, 18, 9, 26)
-    monkeypatch.setattr(dr, "true_now", lambda: fake_now)
+    monkeypatch.setattr(dw, "true_now", lambda: fake_now)
     boot = fake_now - timedelta(hours=6)
 
     # the incident: alert arrived 3h ago during a UIA blind period
@@ -751,14 +753,14 @@ def test_current_messages_passes_floor(monkeypatch):
     import discord_reader as dr
 
     fake_now = datetime(2026, 9, 18, 9, 26)
-    monkeypatch.setattr(dr, "true_now", lambda: fake_now)
+    monkeypatch.setattr(dw, "true_now", lambda: fake_now)
     boot = fake_now - timedelta(hours=6)
 
     class Item:
         Name = "APP — 06:39 BOUGHT 09/25 ARM 300c @ 1.65 small size"
 
-    monkeypatch.setattr(dr, "message_items", lambda c: [Item()])
-    monkeypatch.setattr(dr, "item_text", lambda i: i.Name)
+    monkeypatch.setattr(dw, "message_items", lambda c: [Item()])
+    monkeypatch.setattr(dw, "item_text", lambda i: i.Name)
 
     msgs = dr.current_messages(None, 40, boot)
     assert msgs and "ARM 300c" in msgs[0][0]
@@ -773,7 +775,7 @@ def test_embed_meta_times_parse(monkeypatch):
     import discord_reader as dr
 
     monkeypatch.setattr(
-        dr, "true_now", lambda: datetime(2026, 9, 18, 9, 26)
+        dw, "true_now", lambda: datetime(2026, 9, 18, 9, 26)
     )
     for text in (
         "📢 SPX Plays • Option Alert\nAPP\n今天 06:39\nBOUGHT ARM 300c",
@@ -886,7 +888,7 @@ def test_day_floor_catches_up_whole_day(monkeypatch):
     import discord_reader as dr
 
     fake_now = datetime(2026, 9, 18, 14, 3)
-    monkeypatch.setattr(dr, "true_now", lambda: fake_now)
+    monkeypatch.setattr(dw, "true_now", lambda: fake_now)
     day_floor = fake_now.replace(hour=0, minute=0, second=0, microsecond=0)
 
     # this morning's alert, discovered 7+ hours later: still deliverable
@@ -1050,7 +1052,7 @@ def test_snap_verifies_then_falls_back_to_end_key(monkeypatch):
                         lambda keys, waitTime=None: sent.append(keys))
     # the End key only goes out once discord is verified
     # foreground - otherwise it lands in another window
-    monkeypatch.setattr(dr, "_foreground_discord",
+    monkeypatch.setattr(dw, "_foreground_discord",
                         lambda w, log=print: fg.append(w) or True)
 
     dr.snap_to_bottom(Container(p))
@@ -1103,7 +1105,7 @@ def test_snap_falls_back_to_end_key(monkeypatch):
     fg = []
     monkeypatch.setattr(dr.auto, "SendKeys",
                         lambda keys, waitTime=None: sent.append(keys))
-    monkeypatch.setattr(dr, "_foreground_discord",
+    monkeypatch.setattr(dw, "_foreground_discord",
                         lambda w, log=print: fg.append(w) or True)
 
     logs = []
@@ -1283,7 +1285,7 @@ def test_find_message_container_unnamed_list_strict(monkeypatch):
             (named_sidebar, 1), (unnamed_list, 1),
         ],
     )
-    monkeypatch.setattr(dr, "item_text", lambda it: it.text)
+    monkeypatch.setattr(dw, "item_text", lambda it: it.text)
     # strict: the window title matches the channel
     got = dr.find_message_container(
         object(), "#🚨│player-alerts", strict_title=True

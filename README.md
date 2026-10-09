@@ -150,7 +150,7 @@ your own real fills into the paper ledger at actual prices.
 | **paper** | `PaperExecutor` — simulated fills into the positions ledger, paper equity adjusted (×100 options, FX) | `mode="paper"` rows per account | result embeds (quiet by design) |
 | **live** | `WealthsimpleExecutor` — resolves the option chain, places limit (ask + `limit_offset_pct`) or market orders, books an **estimated** position immediately + a `pending_orders` row | `mode="real"` rows (actual fills, from the mirror) + estimates pending reconciliation | result embeds; the mode badge pulses red |
 
-Sizing core (`trading/executor.py`):
+Sizing core (`trading/sizing.py`):
 
 - `tier_plan`: budget = account value × tier `risk_pct_max`; contracts
   = budget ÷ premium × 100, clamped by tier min/max and
@@ -175,7 +175,7 @@ Sizing core (`trading/executor.py`):
 | min DTE | `min_dte_days` | 0 | skips options expiring sooner |
 | dedupe window | `dedupe_window_minutes` | 10 | a repeat of the same contract+action+premium inside the window is ignored |
 
-### Position caps — `trading/executor.py`
+### Position caps — `trading/risk_gates.py`
 
 | cap | knob | default | behavior |
 |---|---|---|---|
@@ -717,7 +717,8 @@ scripts/
   apply_update.py          # applies a staged release update (called by the launcher)
   build_consumer_zip.py    # builds the consumer release artifact
 reader/
-  discord_reader.py        # UIA Discord watcher (standalone, Windows)
+  discord_reader.py        # reader service: config, posting, lifecycle, main loop
+  discord_window.py        # reading discord's window: text/time parsing, UIA tree walk, scroll, server switch
   inspect_discord.py       # Discord window utilities + CLI diagnostic
   requirements-windows.txt
 core/                      # shared foundation (both apps execute this)
@@ -741,13 +742,18 @@ info/                      # the alert source app (code + runtime + launcher)
 consumer/                  # the trading app (code + runtime + launcher)
   app.py                   # wiring: executors, stops, mirror, feed client
   web.py                   # Flask app: dashboard API, settings, mode, users
+  web_context.py           # PipelineContext: the payload builders' dependency bundle
+  web_payloads.py          # dashboard payload builders + bounded ws fetches
+  web_cards.py             # margin/card math for live + paper accounts
   pipeline.py              # process_alert: parse → dedupe → risk → execute
   settings.py              # settings get/apply/persist + set_mode
   feedclient.py            # long-poll the info server's alert feed
   dashboard.py             # trading dashboard assets
   static/dashboard.{html,css,js}
   trading/
-    executor.py            # sizing core, PaperExecutor, WealthsimpleExecutor
+    executor.py            # order placement: PaperExecutor, WealthsimpleExecutor
+    sizing.py              # tier/budget math + the per-account sizing preview
+    risk_gates.py          # open-risk / cluster caps, lotto budget, position lookups
     risk.py                # RiskEngine pre-trade gates
     paper.py               # PaperAccount, PaperLedger, seeding
     stops.py               # StopMonitor: stops/trailing/TP/B2E
