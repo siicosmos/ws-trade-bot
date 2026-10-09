@@ -155,6 +155,7 @@ def strip_ui_noise(text):
 
 
 _clock_offset = 0.0
+_last_hb_fail_log = 0.0
 
 
 def internet_offset():
@@ -972,11 +973,24 @@ def sync_with_server(base_url, auth_token, channel, ok, verify=True):
     # back (they would override the yaml on every poll)
     headers = {"X-Auth-Token": auth_token} if auth_token else {}
     try:
-        requests.post(
+        resp = requests.post(
             f"{base_url}/api/reader_status",
             json={"channel": channel, "ok": ok},
             headers=headers, timeout=5, verify=verify,
         )
+        # a rejected heartbeat (token mismatch) used to be fully
+        # silent: the reader line showed offline with no reason
+        # anywhere. log it, rate-limited
+        global _last_hb_fail_log
+        if resp.status_code >= 300:
+            now = time.time()
+            if now - _last_hb_fail_log > 60:
+                _last_hb_fail_log = now
+                log(
+                    f"heartbeat rejected by the info server "
+                    f"(HTTP {resp.status_code}) - check that "
+                    f"reader.auth_token matches info.auth_token"
+                )
     except requests.RequestException:
         pass
 

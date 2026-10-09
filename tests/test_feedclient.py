@@ -125,10 +125,13 @@ def test_client_backs_off_on_errors(monkeypatch):
     )
     t.start()
     deadline = time.time() + 3
-    while len(sleeps) < 3 and time.time() < deadline:
+    while time.time() < deadline:
+        # the patched sleep is the global time.sleep - this poll
+        # loop records its own 0.05s naps too; the backoff sleeps
+        # are the >= 1s ones
         time.sleep(0.05)
-    assert len(sleeps) >= 3
+        backoffs = [s for s in sleeps if s >= 1]
+        if len(backoffs) >= 3:
+            break
     # exponential: 2, 4, 8...
-    assert sleeps[0] == 2.0
-    assert sleeps[1] == 4.0
-    assert sleeps[2] == 8.0
+    assert backoffs[:3] == [2.0, 4.0, 8.0]

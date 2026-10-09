@@ -85,6 +85,11 @@ def _loop(cfg, store, on_alert, state=None):
             if state is not None:
                 state["ok"] = False
                 state["error"] = str(e)[:200]
+            # the failure used to be fully silent: a wrong feed
+            # token (401) left the dashboard's reader line offline
+            # with no reason in the log or the ui. the growing
+            # backoff rate-limits the log naturally
+            print(f"feed client: {e} - retrying in {backoff:.0f}s")
             time.sleep(backoff)
             backoff = min(backoff * 2, BACKOFF_MAX)
             continue

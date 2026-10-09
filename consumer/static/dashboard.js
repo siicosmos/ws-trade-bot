@@ -608,12 +608,17 @@ function renderReader() {
       );
   const ageTxt =
     age === null || age > 30 ? "offline" : age + "s ago";
+  // a failing feed (wrong token, server down) says why - the
+  // error used to be captured in the state and never shown
+  const errTxt = r.ok === false && r.error
+    ? " - " + String(r.error).slice(0, 80) : "";
   el.textContent = r.channel
-    ? "watching: " + r.channel + " (" + ageTxt + ")"
+    ? "watching: " + r.channel + " (" + ageTxt + ")" + errTxt
     : "waiting for: " + (r.desired || "any open channel") +
-      " (" + ageTxt + ")";
+      " (" + ageTxt + ")" + errTxt;
   el.style.color =
-    age !== null && age <= 30 ? "var(--green)" : "var(--yellow)";
+    age !== null && age <= 30 && r.ok !== false
+      ? "var(--green)" : "var(--red)";
 }
 
 function renderSummary(data) {

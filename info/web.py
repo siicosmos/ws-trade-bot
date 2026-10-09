@@ -44,6 +44,7 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
     # first allowed channel from there for the "waiting for"
     # display (best effort; the reader and this app share the box)
     app.reader_state = {"channel": None, "ok": False, "last_seen": None}
+    app._last_reject_log = 0.0
     app.reader_desired = ""
     try:
         import yaml as _yaml
@@ -84,6 +85,18 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
         settings POST redirects this app's log webhooks or
         disables its auto-update."""
         if not _reader_token_ok():
+            # a rejected write (token mismatch) used to be fully
+            # silent - werkzeug is quieted and the caller gives no
+            # detail. rate-limited so a scanner cannot flood the log
+            now = time.time()
+            if now - app._last_reject_log > 60:
+                app._last_reject_log = now
+                logging.getLogger("info.write-guard").warning(
+                    "write request rejected (bad or missing "
+                    "X-Auth-Token) on %s %s - check that the "
+                    "caller's token matches info.auth_token",
+                    request.method, request.path,
+                )
             return jsonify({"error": "unauthorized"}), 401
         return None
 
