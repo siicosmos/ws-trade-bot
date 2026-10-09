@@ -403,7 +403,8 @@ _log_hook = None
 
 def _startup_banner():
     """Running commit + whether this start came from an
-    auto-update (the .last_update.json the updater writes)."""
+    auto-update (the info server's .last_update_info.json the
+    updater writes)."""
     root = repo_root()
     try:
         head = subprocess.run(
@@ -422,7 +423,7 @@ def _startup_banner():
         )
     )
     try:
-        with open(os.path.join(root, ".last_update.json"),
+        with open(os.path.join(root, ".last_update_info.json"),
                   encoding="utf-8") as f:
             rec = json.load(f)
         if (
@@ -1030,11 +1031,9 @@ def repo_root():
     return os.path.abspath(os.path.join(here, ".."))
 
 
-# the seen-set lives in db/ - state lives apart from the code
-# dirs an update replaces
+# the seen-set lives at the repo root
 SEEN_FILE = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)),
-    "..", "db", "reader_seen.json"
+    os.path.dirname(os.path.abspath(__file__)), "..", ".reader_seen.json"
 )
 SEEN_RETAIN_SECONDS = 48 * 3600
 

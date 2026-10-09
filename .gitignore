@@ -15,7 +15,8 @@ reader/discord_tree.txt
 .env
 ws_tokens.env
 certs/
-.last_update.json
+.last_update_info.json
+.last_update_consumer.json
 VERSION
 .session_key
 .reader_seen.json

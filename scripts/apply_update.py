@@ -2,7 +2,7 @@
 relaunching the app).
 
 The updater stages the new build in .update_staging/ and writes
-.update_pending.json, then exits so open file handles (sqlite
+the pending marker, then exits so open file handles (sqlite
 wal, logs) are released. This script swaps the code dirs in,
 preserving the state files, and clears the staging area.
 
@@ -26,7 +26,7 @@ from core.ops.release_updater import (  # noqa: E402
     PENDING_FILE,
     STAGING_DIR,
 )
-from core.ops.updater import UPDATE_RECORD  # noqa: E402
+from core.ops.updater import update_record_path  # noqa: E402
 
 # code dirs replaced wholesale on an update
 CODE_DIRS = ("core", "consumer")
@@ -101,7 +101,7 @@ def apply(root):
         from core.ops.updater import atomic_write_json
 
         atomic_write_json(
-            os.path.join(root, UPDATE_RECORD),
+            update_record_path(root, "consumer"),
             {"how": "release", "commit": commit, "ts": time.time()},
         )
     except OSError:

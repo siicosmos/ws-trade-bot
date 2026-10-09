@@ -134,7 +134,7 @@ def test_check_once_stages_and_restarts(tmp_path, monkeypatch):
     assert os.path.isfile(os.path.join(staging, "core", "mod.py"))
     assert os.path.isfile(os.path.join(staging, "consumer", "web.py"))
     assert os.path.isfile(os.path.join(str(tmp_path),
-                                       ".update_pending.json"))
+                                       ru.PENDING_FILE))
     # the downloaded zip is not left in the staging tree
     assert not os.path.exists(os.path.join(staging, "download.zip"))
 
@@ -162,7 +162,7 @@ def test_checksum_mismatch_aborts(tmp_path, monkeypatch):
     assert calls == []
     assert "checksum" in up.last_result
     assert not os.path.exists(os.path.join(str(tmp_path),
-                                           ".update_pending.json"))
+                                           ru.PENDING_FILE))
     assert not os.path.exists(os.path.join(str(tmp_path),
                                            ".update_staging"))
 
@@ -174,7 +174,7 @@ def test_check_once_disabled_and_pending(tmp_path, monkeypatch):
     assert up.check_once() is False
     assert up.last_result == "disabled"
 
-    _write(tmp_path, ".update_pending.json", json.dumps(
+    _write(tmp_path, ru.PENDING_FILE, json.dumps(
         {"staging": ".update_staging", "commit": "bbb", "ts": 1}))
     monkeypatch.setattr(
         ru, "latest_release",
@@ -203,7 +203,7 @@ def test_apply_update_swaps_and_preserves_state(tmp_path):
     os.remove(os.path.join(staging, "x.zip"))
     _write(staging, "scripts/apply_update.py", "# new\n")
     _write(staging, "scripts/start_consumer.bat", "@echo off\n")
-    _write(root, ".update_pending.json", json.dumps(
+    _write(root, ru.PENDING_FILE, json.dumps(
         {"staging": ".update_staging", "commit": "bbb", "ts": 1}))
 
     mod = _load_apply_update()
@@ -224,10 +224,11 @@ def test_apply_update_swaps_and_preserves_state(tmp_path):
         assert f.read() == "T=1\n"
     # VERSION + record + cleanup
     assert read_version(root)["commit"] == "bbb"
-    with open(os.path.join(root, ".last_update.json"), encoding="utf-8") as f:
+    with open(os.path.join(root, ".last_update_consumer.json"),
+              encoding="utf-8") as f:
         rec = json.load(f)
     assert rec["how"] == "release" and rec["commit"] == "bbb"
-    assert not os.path.exists(os.path.join(root, ".update_pending.json"))
+    assert not os.path.exists(os.path.join(root, ru.PENDING_FILE))
     assert not os.path.exists(staging)
     # .bat files are never swapped (cmd re-reads the running file)
     assert not os.path.exists(os.path.join(root, "scripts",
@@ -255,7 +256,7 @@ def test_apply_update_failure_leaves_state_untouched(tmp_path, monkeypatch):
     with zipfile.ZipFile(os.path.join(staging, "x.zip")) as z:
         z.extractall(staging)
     os.remove(os.path.join(staging, "x.zip"))
-    _write(root, ".update_pending.json", json.dumps(
+    _write(root, ru.PENDING_FILE, json.dumps(
         {"staging": ".update_staging", "commit": "bbb", "ts": 1}))
 
     mod = _load_apply_update()
@@ -277,7 +278,7 @@ def test_apply_update_failure_leaves_state_untouched(tmp_path, monkeypatch):
     with open(os.path.join(root, "db", "consumer.trades.db"), encoding="utf-8") as f:
         assert f.read() == "db-bytes"
     # the marker + staging stay - the next launcher pass retries
-    assert os.path.exists(os.path.join(root, ".update_pending.json"))
+    assert os.path.exists(os.path.join(root, ru.PENDING_FILE))
     assert os.path.isdir(staging)
 
 
@@ -315,7 +316,7 @@ def test_incomplete_staged_build_aborts(tmp_path, monkeypatch):
     assert calls == []
     assert "incomplete" in up.last_result
     assert not os.path.exists(os.path.join(str(tmp_path),
-                                           ".update_pending.json"))
+                                           ru.PENDING_FILE))
     assert not os.path.exists(os.path.join(str(tmp_path),
                                            ".update_staging"))
 
@@ -417,4 +418,4 @@ def test_checksum_missing_from_sums_aborts(tmp_path, monkeypatch):
     assert calls == []
     assert "checksum missing" in up.last_result
     assert not os.path.exists(os.path.join(
-        str(tmp_path), ".update_pending.json"))
+        str(tmp_path), ru.PENDING_FILE))

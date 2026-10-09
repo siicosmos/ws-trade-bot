@@ -444,7 +444,7 @@ def test_check_once_records_no_restart_pull(tmp_path):
     import json
     import subprocess
 
-    from core.ops.updater import UPDATE_RECORD, AutoUpdater, _git
+    from core.ops.updater import AutoUpdater, _git, update_record_path
 
     env = {
         **os.environ,
@@ -486,7 +486,7 @@ def test_check_once_records_no_restart_pull(tmp_path):
     assert up.check_once() is False, up.last_result
     assert calls == []
     record = json.loads(
-        (work / UPDATE_RECORD).read_text(encoding="utf-8"))
+        (work / update_record_path(str(work), 'consumer')).read_text(encoding="utf-8"))
     head = _git(str(work), "rev-parse", "HEAD").stdout.strip()
     assert record["commit"] == head[:8]
     assert record["how"] == "auto"
@@ -501,7 +501,7 @@ def test_startup_refreshes_stale_record(tmp_path):
     import json
     import time
 
-    from core.ops.updater import UPDATE_RECORD, AutoUpdater
+    from core.ops.updater import AutoUpdater, update_record_path
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -511,12 +511,12 @@ def test_startup_refreshes_stale_record(tmp_path):
 
     # a stale record: commit does not match the head
     stale = {"how": "pull", "commit": "deadbeef", "ts": 1.0}
-    (repo / UPDATE_RECORD).write_text(
+    (repo / update_record_path(str(repo), "consumer")).write_text(
         json.dumps(stale), encoding="utf-8")
 
     up = AutoUpdater(_cfg(), str(repo), "")
     rec = json.loads(
-        (repo / UPDATE_RECORD).read_text(encoding="utf-8"))
+        (repo / update_record_path(str(repo), "consumer")).read_text(encoding="utf-8"))
     assert rec["commit"] == up._head()[:8]
     assert rec["how"] == "startup"
     assert rec["ts"] > 1.0

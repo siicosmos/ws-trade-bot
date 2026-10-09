@@ -3492,6 +3492,9 @@ def test_updater_heals_dirty_ignored_runtime_file(tmp_path):
     updater.errors = 0
     updater.start_head = None
     updater.branch = "main"
+    updater.update_record = os.path.join(
+        str(work), ".last_update_consumer.json"
+    )
 
     pulled = updater.check_once()
     # no pipeline files changed, so no restart - but the pull
@@ -3576,7 +3579,7 @@ def test_startup_banner(tmp_path, capsys):
     assert "(" not in line
 
     # matching record marks it as auto-updated
-    (origin / ".last_update.json").write_text(
+    (origin / ".last_update_consumer.json").write_text(
         _json.dumps(
             {"how": "auto", "commit": head, "ts": time.time() - 7200}
         )
@@ -3585,7 +3588,7 @@ def test_startup_banner(tmp_path, capsys):
     assert "auto-updated 2h ago" in line
 
     # a record for a different commit is ignored
-    (origin / ".last_update.json").write_text(
+    (origin / ".last_update_consumer.json").write_text(
         _json.dumps({"how": "auto", "commit": "deadbee", "ts": 1})
     )
     line = startup_banner("pipeline", str(origin))

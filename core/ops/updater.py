@@ -5,7 +5,18 @@ import threading
 import time
 
 
-UPDATE_RECORD = ".last_update.json"
+# per-role update records: the info server and the consumer app
+# share a checkout on the owner's box - separate files so their
+# records never overwrite each other
+UPDATE_RECORDS = {
+    "info": ".last_update_info.json",
+    "consumer": ".last_update_consumer.json",
+}
+
+
+def update_record_path(root, role):
+    name = UPDATE_RECORDS.get(role, UPDATE_RECORDS["consumer"])
+    return os.path.join(root, name)
 
 
 PIPELINE_RESTART_FILES = (
@@ -22,8 +33,8 @@ CONSUMER_RESTART_FILES = ("core/*", "consumer/*", "run.py",
 
 def atomic_write_json(path, data):
     """Crash-safe json state write: temp file + os.replace (with
-    the windows permission retry). A torn .update_pending.json
-    made apply_update drop a staged update; .last_update.json is
+    the windows permission retry). A torn pending marker
+    made apply_update drop a staged update; the update record is
     the banner's update provenance."""
     import tempfile
 
@@ -104,7 +115,8 @@ RUNTIME_IGNORED = (
     "pipeline.log*", "reader.log*", "info.log*", "consumer.log*",
     "logs/*", "*.db",
     "db/*",
-    ".last_update.json", "db/reader_seen.json",
+    ".last_update_info.json", ".last_update_consumer.json",
+    ".update_pending_consumer.json", ".reader_seen.json",
     ".session_key",
     "config/consumer.config.yaml", "config/info.config.yaml",
     "config/reader.config.yaml", "config/ws_tokens.env",
@@ -137,8 +149,10 @@ def _is_ignored_runtime_file(root, path):
 def startup_banner(name, root):
     """Startup line for the logs: the commit being run and how it
     got there (auto-update / manual pull)."""
-    from core.ops.release_updater import read_version
+    from core.ops.release_updater import read_version, update_record_path
 
+    role = "info" if name.startswith("info") else "consumer"
+    record_path = update_record_path(root, role)
     ver = read_version(root)
     head = _git(root, "rev-parse", "--short", "HEAD")
     git_commit = head.stdout.strip() if head.returncode == 0 else ""
@@ -159,8 +173,7 @@ def startup_banner(name, root):
         if subject.returncode == 0 and subject.stdout.strip():
             line += f' "{subject.stdout.strip()}"'
     try:
-        with open(os.path.join(root, UPDATE_RECORD),
-                      encoding="utf-8") as f:
+        with open(record_path, encoding="utf-8") as f:
             rec = json.load(f)
         if (
             isinstance(rec, dict)
@@ -194,6 +207,11 @@ class AutoUpdater:
                  restart_files=None):
         self.cfg = cfg
         self.root = root
+        self.role = str(
+            getattr(getattr(cfg, "pipeline", None), "role", "")
+            or "consumer"
+        )
+        self.update_record = update_record_path(root, self.role)
         self.webhook_url = webhook_url
         self.name = app_name(cfg)
         self.restart_files = restart_files or PIPELINE_RESTART_FILES
@@ -245,7 +263,7 @@ class AutoUpdater:
         new = self._head()
         try:
             atomic_write_json(
-                os.path.join(self.root, UPDATE_RECORD),
+                self.update_record,
                 {
                     "how": how,
                     "commit": new[:8] if new else "?",
@@ -257,8 +275,7 @@ class AutoUpdater:
 
     def last_pull(self):
         try:
-            with open(os.path.join(self.root, UPDATE_RECORD),
-                      encoding="utf-8") as f:
+            with open(self.update_record, encoding="utf-8") as f:
                 data = json.load(f)
             if isinstance(data, dict) and data.get("ts"):
                 return data
@@ -280,10 +297,7 @@ class AutoUpdater:
             if "pull" not in msg.lower() or not ts.isdigit():
                 return
             new = self._head()
-            with open(
-                os.path.join(self.root, UPDATE_RECORD), "w",
-                encoding="utf-8",
-            ) as f:
+            with open(self.update_record, "w", encoding="utf-8") as f:
                 json.dump(
                     {
                         "how": "pull",
@@ -514,7 +528,7 @@ class AutoUpdater:
             # does not mistake our own pull for a local change
             self.start_head = new
             # record the move: the code on disk is at `new` now -
-            # an unrecorded pull left .last_update.json (and the
+            # an unrecorded pull left the update record (and the
             # dashboard's last_pull) pointing at the old commit
             self._record_update("auto")
             return False

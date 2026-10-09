@@ -19,13 +19,18 @@ import zipfile
 
 import requests
 
+from core.ops.updater import update_record_path  # noqa: E402
+
 VERSION_FILE = "VERSION"
-PENDING_FILE = ".update_pending.json"
+# the consumer's own pending marker + update record - the info
+# server shares the checkout on the owner's box and must not
+# clobber them
+PENDING_FILE = ".update_pending_consumer.json"
 STAGING_DIR = ".update_staging"
 
 # state files that must survive an update swap - they live inside
 # consumer/, whose code dirs are replaced wholesale. everything at
-# the repo root (logs/, certs/, .last_update.json, ...) is never
+# the repo root (logs/, certs/, the update records, ...) is never
 # touched by the swap
 STATE_FILES = (
     "consumer.config.yaml",
@@ -161,7 +166,7 @@ class ReleaseUpdater:
 
     def last_pull(self):
         try:
-            with open(os.path.join(self.root, ".last_update.json"),
+            with open(update_record_path(self.root, "consumer"),
                       encoding="utf-8") as f:
                 data = json.load(f)
             if isinstance(data, dict) and data.get("ts"):
