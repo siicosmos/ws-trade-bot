@@ -534,7 +534,10 @@ def _foreground_discord(window, log=print):
         try:
             window.SetActive()
         except Exception as e:
-            log(f"discord focus attempt {attempt + 1} failed: {type(e).__name__}: {e}")
+            log(
+                f"discord focus attempt {attempt + 1} failed: "
+                f"{type(e).__name__}: {e}"
+            )
         _time.sleep(0.4)
     if fg() != hwnd:
         # the retry loop calls this every poll - the same warning

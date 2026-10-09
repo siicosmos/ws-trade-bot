@@ -1,3 +1,7 @@
+# The reader is standalone: start_reader.bat runs it from reader/
+# with the reader's own venv and the repo root NOT on sys.path -
+# it must never import core.* (core.redact's error renderers are
+# re-inlined here; do not "helpfully" consolidate).
 import json
 import os
 import re
@@ -8,10 +12,6 @@ import time
 import traceback
 from datetime import datetime, timedelta
 
-# the reader is standalone: start_reader.bat runs it from reader/
-# with the reader's own venv and the repo root NOT on sys.path -
-# it must never import core.* (core.redact's error renderers are
-# re-inlined here; do not "helpfully" consolidate)
 import psutil
 import requests
 import uiautomation as auto
