@@ -329,6 +329,12 @@ def test_lotto_paper_buy_needs_realized_gain():
     store.apply_position("paper", parse_alert("SOLD 0DTE SPY 759c @ 2.5"),
                          -2, premium=2.5, account="default")
     assert abs(store.realized_today("paper") - 200.0) < 0.01
+    # the pipeline records the blocked attempt (releasing the
+    # execution claim) before the next one runs
+    store.record_trade(
+        "paper", lotto.action, lotto.ticker, 0, None,
+        lotto, "skipped", r.detail,
+    )
     r2 = executor.execute(lotto, cfg, store)
     assert r2.ok, r2.detail
 

@@ -187,7 +187,7 @@ function fmtIso(ts) {
 function fmtTime(ts) {
   if (!ts) return "\u2014";
   const d = new Date(fmtIso(ts));
-  if (isNaN(d)) return String(ts);
+  if (isNaN(d)) return "—";
   const pad = (n) => String(n).padStart(2, "0");
   return pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + " " +
     pad(d.getHours()) + ":" + pad(d.getMinutes());
@@ -356,6 +356,12 @@ function openSettings() {
   if (f) f.style.display = "flex";
   loadSettings();
 }
+
+document.addEventListener("keydown", function(e) {
+  if (e.key !== "Escape") return;
+  const el = document.getElementById("settingsBackdrop");
+  if (el && el.style.display === "flex") closeSettings();
+});
 
 function closeSettings() {
   document.getElementById("settingsBackdrop").style.display = "none";

@@ -501,7 +501,10 @@ def apply_settings(cfg, payload: dict, config_path=None) -> tuple:
             cfg.auto_update.interval_seconds = value
             applied["auto_update.interval_seconds"] = value
 
-    if not errors and config_path and applied:
+    # the valid subset persists even when other keys errored -
+    # the in-memory config already applied them (a restart would
+    # otherwise silently revert them)
+    if config_path and applied:
         try:
             with _PERSIST_LOCK:
                 _persist(cfg, config_path)

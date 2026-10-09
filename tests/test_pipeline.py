@@ -269,6 +269,19 @@ def test_multi_account_paper_execution():
     assert store.get_position("paper", buy.contract_key(), "Personal") == 0
 
 
+
+
+def _record_like_pipeline(store, ex, alert, res):
+    """the pipeline records the trade row after execute() returns
+    (releasing the execution claim) - tests that drive the
+    executor directly do the same between executions."""
+    store.record_trade(
+        ex.mode, alert.action, alert.ticker, res.qty or 0,
+        res.price, alert, "executed" if res.ok else "skipped",
+        res.detail,
+    )
+
+
 def test_multi_account_open_risk_cap_skips_only_that_account():
     accounts = [
         WSAccountConfig(account_id="rrsp", label="RRSP", paper_value=50000),
@@ -277,7 +290,8 @@ def test_multi_account_open_risk_cap_skips_only_that_account():
     store = _fresh_store()
     cfg = ConfigStub(
         TradingConfig(mode="paper", risk_per_trade_pct=5,
-                      max_open_risk_pct=30, cooldown_seconds=0),
+                      max_open_risk_pct=30, cooldown_seconds=0,
+                      dedupe_window_minutes=0),
         accounts=accounts,
     )
     account = PaperAccount(cfg, store)
@@ -286,6 +300,7 @@ def test_multi_account_open_risk_cap_skips_only_that_account():
     buy = parse_alert("BOUGHT 0DTE SPY 759c @ 1.5 @everyone big size")
     res = ex.execute(buy, cfg, store)
     assert res.ok
+    _record_like_pipeline(store, ex, buy, res)
     assert res.breakdown["Personal"] == "1x @ 1.5"
     assert res.breakdown["RRSP"] == "10x @ 1.5 (tier max 10, could afford 33)"
 
@@ -2713,6 +2728,52 @@ def test_mirror_real_trades_applies_fills():
     ) == 2
 
 
+def test_mirror_cad_settled_fill_books_once():
+    """a cad-settled activity (the account currency) must not
+    crash the mirror (fx was read before assignment) and must
+    not double-convert: the premium normalizes to usd and the
+    cash delta is the settled amount."""
+    from consumer.trading.mirror import MirrorShim, mirror_real_trades
+    from consumer.ws.account import PaperLedger
+
+    store = _fresh_store()
+    shim = MirrorShim(
+        kind="option", underlying="SPX", expiry="2026-09-25",
+        strike=6000, right="C", action="BUY", premium=1.0,
+        entry=1.0, ts="t",
+    )
+    store.apply_position("paper", shim, 2, premium=1.0,
+                         account="Personal")
+    store.set_paper_equity(500.0, "Personal")
+    store.meta_set("paper_seed:Personal", time.time())
+
+    acts = [
+        {   # cad-settled: bought 1 at 1.10 usd (1.54 cad total)
+            "canonicalId": "c1", "type": "BUY", "status": "COMPLETED",
+            "assetSymbol": "SPX", "strikePrice": "6000",
+            "contractType": "CALL", "expiryDate": "2026-09-25",
+            "assetQuantity": "1", "amount": "154.00",
+            "currency": "CAD", "occurredAt": "2026-09-22T15:00:00Z",
+        },
+    ]
+    ws = _mirror_ws_account(acts)
+    ledger = PaperLedger(cfg=None, store=store, ws_account=None)
+    ledger.fx = lambda: 1.4
+
+    applied = mirror_real_trades(None, store, ws, ledger)
+    assert len(applied) == 1
+    # premium normalized to usd: 154 / (1 x 100 x 1.4) = 1.10
+    # (blended into the position avg: (2x1.0 + 1x1.10)/3)
+    row = [r for r in store.list_positions("paper", "Personal")
+           if r["contract_key"] == "SPX-2026-09-25-6000-C"][0]
+    assert abs(row["avg_premium"] - 1.0333) < 0.01
+    # cash: the settled cad amount, once (500 - 154)
+    assert abs(store.paper_equity("Personal") - 346.0) < 0.01
+    # a second run dedupes - the ids persisted despite the
+    # currency path
+    assert mirror_real_trades(None, store, ws, ledger) == []
+
+
 def test_mirror_skips_unheld_sells():
     from consumer.trading.mirror import mirror_real_trades
     from consumer.ws.account import PaperLedger
@@ -2787,6 +2848,10 @@ def test_summary_includes_paper_when_enabled():
     class Ledger:
         def values(self):
             return {"RRSP": 50000.0, "Personal": 2000.0}
+
+        def positions(self, label):
+            return []   # the paper-ledger marker (a live account
+                        # has no positions method)
 
         def fx(self):
             return 1.4
@@ -4509,23 +4574,27 @@ def test_stock_buys_use_stock_size_tiers():
 
     cfg, store, account, risk = _setup(
         paper_account_value=10000, cooldown_seconds=0,
+        dedupe_window_minutes=0,
     )
     ledger = PaperLedger(cfg, store, account)
     store.set_paper_equity(10000.0, "default")
     ex = PaperExecutor(cfg, store, ledger)
 
     # unsized: the medium tier (10% of 10000 = 1000 / 25.7 -> 38)
-    assert ex.execute(
-        parse_alert("BOUGHT LLYX @ 25.7"), cfg, store
-    ).qty == 38
+    a1 = parse_alert("BOUGHT LLYX @ 25.7")
+    r1 = ex.execute(a1, cfg, store)
+    _record_like_pipeline(store, ex, a1, r1)
+    assert r1.qty == 38
     # small: 5% = 500 / 25.7 -> 19
-    assert ex.execute(
-        parse_alert("BOUGHT LLYX @ 25.7 small size"), cfg, store
-    ).qty == 19
+    a2 = parse_alert("BOUGHT LLYX @ 25.7 small size")
+    r2 = ex.execute(a2, cfg, store)
+    _record_like_pipeline(store, ex, a2, r2)
+    assert r2.qty == 19
     # large: 20% = 2000 / 25.7 -> 77
-    assert ex.execute(
-        parse_alert("BOUGHT LLYX @ 25.7 large size"), cfg, store
-    ).qty == 77
+    a3 = parse_alert("BOUGHT LLYX @ 25.7 large size")
+    r3 = ex.execute(a3, cfg, store)
+    _record_like_pipeline(store, ex, a3, r3)
+    assert r3.qty == 77
 
 
 def test_paper_resize_bring_stock_trades_to_tier_sizing():
@@ -4599,16 +4668,20 @@ def test_loss_streak_breaker_gates_options_only():
 
     cfg, store, account, risk = _setup(
         paper_account_value=10000, max_consecutive_losses=2,
-        cooldown_seconds=0,
+        cooldown_seconds=0, dedupe_window_minutes=0,
     )
     ex = PaperExecutor(cfg, store, account)
 
     # two losing option closes -> the streak hits the cap
     for i, premium in enumerate(("2.0", "2.0")):
         buy = parse_alert(f"BOUGHT 0DTE SPY 759c @ {premium}")
-        assert ex.execute(buy, cfg, store).ok
+        res = ex.execute(buy, cfg, store)
+        assert res.ok
+        _record_like_pipeline(store, ex, buy, res)
         sell = parse_alert(f"SOLD 0DTE SPY 759c @ 1.0")
-        assert ex.execute(sell, cfg, store).ok
+        res = ex.execute(sell, cfg, store)
+        assert res.ok
+        _record_like_pipeline(store, ex, sell, res)
     assert store.loss_streak("paper") == 2
 
     # option buys blocked at the cap

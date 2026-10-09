@@ -566,12 +566,16 @@ def test_heartbeat_status_reports_quiet_allowed_channel():
 
     # quiet allowed channel: report the channel, reader is healthy
     assert heartbeat_status(True, "🚨│player-alerts") == (
-        "🚨│player-alerts", True
+        "🚨│player-alerts", True, None
     )
     # disallowed channel: keep waiting semantics
-    assert heartbeat_status(False, "#pipeline-log") == (None, False)
+    assert heartbeat_status(False, "#pipeline-log")[0:2] == (
+        None, False
+    )
+    assert heartbeat_status(False, "#pipeline-log")[2]
     # allowed but no title: nothing to report
-    assert heartbeat_status(True, "") == (None, False)
+    assert heartbeat_status(True, "")[0:2] == (None, False)
+    assert heartbeat_status(True, "")[2]  # the reason
 
 
 def test_heartbeat_fires_while_channel_quiet(monkeypatch, tmp_path):

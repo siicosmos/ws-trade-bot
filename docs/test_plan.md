@@ -205,6 +205,10 @@ Conventions for every manual step below:
   disabled, pending-guard (staged update waits for the launcher).
 - Download + SHA256 verify; checksum mismatch aborts with no
   staging and no restart.
+- A release with NO `SHA256SUMS` asset — or one that does not
+  list the zip — is refused (no staging, no restart).
+- A git-checkout consumer skips a release older than its head
+  (merge-base check) — no downgrade of the shared checkout.
 - Staging extracts `core/` + `consumer/`, writes
   `.update_pending_consumer.json`, restarts once.
 - `apply_update`: code dirs swapped (staged copy over the live
@@ -312,7 +316,7 @@ Run them directly:
 #### M-5.1 — Push a docs-only commit: info server pulls, posts "Info server updated (no restart)", keeps running. Then verify the update record followed the pull:
 
 ```powershell
-Get-Content .last_update_consumer.json | ConvertFrom-Json
+Get-Content .last_update_info.json | ConvertFrom-Json
 # "commit" must equal the current head:
 git rev-parse --short HEAD
 # "how" is "auto" and "ts" is within the last interval
@@ -521,7 +525,7 @@ id/type/enabled but no label input; a new row has one.
   (`consumer-<8char>.zip`), `SHA256SUMS` matches the zip bytes,
   every client-install file present (`install_consumer.bat`,
   `start_consumer.bat`, `ws_login.py`, `apply_update.py`,
-  `gen_cert.py`, `config/consumer.config.yaml`, `VERSION`, ...),
+  `gen_cert.py`, `config/consumer.example.config.yaml`, `VERSION`, ...),
   no secrets/runtime files (`ws_tokens.env`, `*.db`,
   `__pycache__`), and the shipped template is the aligned one
   (blank accounts, `consumer:` section key, no token in it).

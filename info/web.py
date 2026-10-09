@@ -327,6 +327,7 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
         data = request.get_json(silent=True) or {}
         app.reader_state["channel"] = (data.get("channel") or None)
         app.reader_state["ok"] = bool(data.get("ok"))
+        app.reader_state["error"] = data.get("error")
         app.reader_state["last_seen"] = time.time()
         return jsonify({})
 

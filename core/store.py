@@ -5,6 +5,7 @@ import os
 import re
 import sqlite3
 import threading
+import time
 from datetime import datetime, timedelta, timezone
 
 
@@ -28,6 +29,9 @@ class Store:
         self.path = path
         self.retention_days = retention_days
         self._prune_day = None
+        # advisory execution claims (see claim_execution)
+        self._claim_lock = threading.Lock()
+        self._execution_claims = {}
         self._local = threading.local()
         self._write_lock = threading.Lock()
         self._cache_lock = threading.Lock()
@@ -456,6 +460,38 @@ class Store:
             row = self._conn.execute(query, params).fetchone()
             return row[0] if row else None
 
+    def claim_execution(self, mode: str, dedupe_key: str,
+                        ttl_seconds: float = 30) -> bool:
+        """Advisory in-lock execution claim: the executor books
+        the order under its own lock but the trade ROW is
+        recorded by the pipeline after execute() returns - two
+        concurrent deliveries would otherwise both pass the
+        store-backed gates (trades-today, dedupe window) in that
+        gap. The claim is checked+set under the executor's lock
+        via the risk re-check. In-memory only: the trades table
+        stays the durable record, a restart clears the claims,
+        and a failed execution blocks a duplicate of the same
+        alert for the ttl (conservative)."""
+        now = time.time()
+        with self._claim_lock:
+            claims = self._execution_claims
+            for k in [
+                k for k, ts in claims.items()
+                if now - ts > ttl_seconds
+            ]:
+                del claims[k]
+            key = (mode, dedupe_key)
+            if key in claims:
+                return False
+            claims[key] = now
+            return True
+
+    def release_execution(self, mode: str, dedupe_key: str):
+        """Drop the advisory claim - the trade row is recorded
+        (the durable gates see it now) or the attempt resolved."""
+        with self._claim_lock:
+            self._execution_claims.pop((mode, dedupe_key), None)
+
     def recent_trade(self, dedupe_key: str, window_minutes: int):
         cutoff = (
             datetime.now(timezone.utc) - timedelta(minutes=window_minutes)
@@ -496,6 +532,9 @@ class Store:
                     getattr(alert, "right", None),
                 ),
             )
+        # the row is the durable record now - a legitimate
+        # re-trade of the same key must not wait out the claim ttl
+        self.release_execution(mode, alert.dedupe_key())
 
     def last_buy_contract(self, ticker, expiry):
         """Strike/right of the most recent BUY for this underlying
@@ -540,13 +579,15 @@ class Store:
                 query += " AND account = ?"
                 params.append(account)
             query += " ORDER BY account, updated_ts DESC"
+            # the version is captured BEFORE the select: a writer
+            # bumping between the check and this store would
+            # otherwise pin stale rows under the new version
+            version = self._positions_version
             rows = [
                 dict(zip(keys, r))
                 for r in self._conn.execute(query, params).fetchall()
             ]
-            self._positions_cache[cache_key] = (
-                self._positions_version, rows
-            )
+            self._positions_cache[cache_key] = (version, rows)
             return [dict(r) for r in rows]
 
     def apply_position(

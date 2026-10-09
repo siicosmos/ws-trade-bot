@@ -149,7 +149,7 @@ def process_alert(
                 }
                 store.record_trade(
                     "paper", alert.action, alert.ticker, res.qty or 0,
-                    alert.premium, alert,
+                    res.price or alert.premium, alert,
                     "executed" if res.ok else "skipped",
                     (res.detail or "") + (
                         " | " + mismatch if mismatch else ""

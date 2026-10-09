@@ -83,7 +83,7 @@ digraph db_schema {
       <TR><TD BGCOLOR="#8957e5" COLSPAN="2"><FONT COLOR="white"><B>users</B></FONT></TD></TR>
       <TR><TD ALIGN="LEFT"><B>username</B></TD><TD ALIGN="LEFT">PK</TD></TR>
       <TR><TD ALIGN="LEFT">password_hash</TD><TD ALIGN="LEFT">pbkdf2 · 200k iters</TD></TR>
-      <TR><TD ALIGN="LEFT">role</TD><TD ALIGN="LEFT">TEXT · admin</TD></TR>
+      <TR><TD ALIGN="LEFT">role</TD><TD ALIGN="LEFT">TEXT · admin | viewer</TD></TR>
       <TR><TD ALIGN="LEFT">created_ts / last_login_ts</TD><TD ALIGN="LEFT">TEXT · UTC</TD></TR>
     </TABLE>>];
 

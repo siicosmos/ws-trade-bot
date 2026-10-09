@@ -169,7 +169,15 @@ def _num(value):
 
 
 def _resolve_expiry(raw_expiry: Optional[str]) -> Optional[str]:
-    today = date.today()
+    # the et calendar day: the overnight session runs past
+    # midnight et, and a non-et box's local date would resolve
+    # 0DTE to the wrong expiry (the contract key would never
+    # match the held position)
+    try:
+        from core.store import et_now
+        today = et_now().date()
+    except Exception:
+        today = date.today()
     if not raw_expiry or raw_expiry.upper() == "0DTE":
         return today.isoformat()
     try:

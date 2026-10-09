@@ -69,9 +69,10 @@ def main(cfg, args):
     mode = cfg.trading.mode
 
     # the .bat restart loop writes the exit code; surface it.
-    # the file lives next to the db - each role folder reports
-    # its own last words
-    exit_file = EXIT_FILE
+    # the file lives next to the db (db\pipeline_exit_consumer.txt)
+    exit_file = os.path.join(
+        os.path.dirname(os.path.abspath(args.db)), EXIT_FILE
+    )
     prev_exit = ""
     try:
         with open(exit_file, encoding="utf-8") as f:

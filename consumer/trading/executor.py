@@ -315,6 +315,13 @@ class PaperExecutor:
                     return ExecutionResult(
                         False, f"risk gate: {reason}"
                     )
+                if not store.claim_execution(
+                    self.mode, alert.dedupe_key()
+                ):
+                    return ExecutionResult(
+                        False,
+                        "risk gate: duplicate execution in flight",
+                    )
             if alert.kind == "option":
                 return self._option(alert, cfg, store)
             return self._stock(alert, cfg, store)
@@ -468,7 +475,11 @@ class PaperExecutor:
                     # at the live fx
                     spendable = budget / fx if fx else budget
                 else:
-                    spendable = float(cfg.trading.position_size_cad)
+                    # the cad budget spends at the live fx too
+                    spendable = (
+                        float(cfg.trading.position_size_cad) / fx
+                        if fx else float(cfg.trading.position_size_cad)
+                    )
                 qty = max(0, int(spendable / price))
                 if qty < 1:
                     breakdown[label] = "0 (position size too small)"
@@ -691,6 +702,18 @@ class WealthsimpleExecutor:
                     return ExecutionResult(
                         False, f"risk gate: {reason}"
                     )
+                # the trade row is recorded by the pipeline after
+                # execute() returns - the claim closes that gap
+                # for concurrent deliveries (the gates read the
+                # trades table, which does not know about an
+                # in-flight execution yet)
+                if not store.claim_execution(
+                    self.mode, alert.dedupe_key()
+                ):
+                    return ExecutionResult(
+                        False,
+                        "risk gate: duplicate execution in flight",
+                    )
             if alert.kind == "option":
                 return self._execute_option(alert, cfg, store)
             return self._execute_stock(alert, cfg, store)
@@ -894,9 +917,20 @@ class WealthsimpleExecutor:
 
         quote = ws.get_security_quote(sec_id)
         price = quote.get("ask") or quote.get("price")
+        # the listing's currency sizes the cad budget: a usd
+        # listing spends it at the live fx (the paper path does
+        # the same via the ledger quotes)
+        q_currency = str(
+            (quote.get("quoteV2") or {}).get("currency")
+            or quote.get("currency") or ""
+        ).upper()
+        stock_fx = (
+            self._account_fx() if q_currency == "USD" else 1.0
+        )
         breakdown = {}
         total = 0
         order_ids = []
+        first_error = None
 
         # stock buys size as a percent of the account value per
         # tier - same as the paper path, separate from the
@@ -910,83 +944,96 @@ class WealthsimpleExecutor:
         )
 
         for label, account_id, acct in self._account_ids(ws):
-            if alert.action == "BUY":
-                if not price:
-                    breakdown[label] = "no quote price available"
-                    continue
-                pct = stock_tiers.get(
-                    tier_name, stock_tiers.get("medium")
-                )
-                # fetched on both budget paths: the open-risk cap
-                # check below is skipped when value is None, so a
-                # missing tier must not disable the cap
-                value = self.account.value(label)
-                if pct is not None:
-                    budget = max(
-                        0.0, float(value or 0) * pct / 100.0
+            try:
+                if alert.action == "BUY":
+                    if not price:
+                        breakdown[label] = "no quote price available"
+                        continue
+                    pct = stock_tiers.get(
+                        tier_name, stock_tiers.get("medium")
                     )
+                    # fetched on both budget paths: the open-risk cap
+                    # check below is skipped when value is None, so a
+                    # missing tier must not disable the cap
+                    value = self.account.value(label)
+                    if pct is not None:
+                        budget = max(
+                            0.0, float(value or 0) * pct / 100.0
+                        )
+                    else:
+                        budget = float(cfg.trading.position_size_cad)
+                    # the cad budget spends at the listing's fx
+                    qty = int(budget / stock_fx / price)
+                    if qty < 1:
+                        breakdown[label] = "0 (position size too small)"
+                        continue
+                    # the paper path checks this guard too: a live
+                    # stock buy must respect the open-risk cap
+                    if _at_open_risk_cap(
+                        store, self.mode, label, value, cfg, acct
+                    ):
+                        breakdown[label] = (
+                            f"skipped (open risk cap reached, wanted {qty})"
+                        )
+                        continue
+                    if cfg.trading.order_type == "limit":
+                        order = ws.limit_buy(
+                            account_id, sec_id, qty, self._limit_price(price, "BUY")
+                        )
+                    else:
+                        order = ws.market_buy(account_id, sec_id, qty)
+                    pre_qty, pre_avg = store.position_state(
+                        self.mode, label, alert.ticker
+                    )
+                    store.record_pending_order(
+                        self.mode, label, str(order.get("orderId") or ""),
+                        "stock", alert.ticker, alert.ticker, None, None,
+                        None, alert.action, qty, price,
+                        pre_qty=pre_qty, pre_avg=pre_avg,
+                    )
+                    breakdown[label] = f"{qty} @ ~{price}"
+                    total += qty
+                    order_ids.append(str(order.get("orderId") or ""))
                 else:
-                    budget = float(cfg.trading.position_size_cad)
-                qty = int(budget / price)
-                if qty < 1:
-                    breakdown[label] = "0 (position size too small)"
-                    continue
-                # the paper path checks this guard too: a live
-                # stock buy must respect the open-risk cap
-                if _at_open_risk_cap(
-                    store, self.mode, label, value, cfg, acct
-                ):
-                    breakdown[label] = (
-                        f"skipped (open risk cap reached, wanted {qty})"
+                    held = self._held_quantity(ws, account_id, alert.ticker)
+                    if held < 1:
+                        # no shorting: a sell alert for a name the
+                        # account doesn't hold is skipped (the option
+                        # path is ledger-gated the same way; deriving a
+                        # quantity from position_size_cad would open an
+                        # unintended short at market)
+                        breakdown[label] = "no position to sell"
+                        continue
+                    if cfg.trading.order_type == "limit" and price:
+                        order = ws.limit_sell(
+                            account_id, sec_id, held, self._limit_price(price, "SELL")
+                        )
+                    else:
+                        order = ws.market_sell(account_id, sec_id, held)
+                    pre_qty, pre_avg = store.position_state(
+                        self.mode, label, alert.ticker
                     )
-                    continue
-                if cfg.trading.order_type == "limit":
-                    order = ws.limit_buy(
-                        account_id, sec_id, qty, self._limit_price(price, "BUY")
+                    store.record_pending_order(
+                        self.mode, label, str(order.get("orderId") or ""),
+                        "stock", alert.ticker, alert.ticker, None, None,
+                        None, alert.action, held, price,
+                        pre_qty=pre_qty, pre_avg=pre_avg,
                     )
-                else:
-                    order = ws.market_buy(account_id, sec_id, qty)
-                pre_qty, pre_avg = store.position_state(
-                    self.mode, label, alert.ticker
-                )
-                store.record_pending_order(
-                    self.mode, label, str(order.get("orderId") or ""),
-                    "stock", alert.ticker, alert.ticker, None, None,
-                    None, alert.action, qty, price,
-                    pre_qty=pre_qty, pre_avg=pre_avg,
-                )
-                breakdown[label] = f"{qty} @ ~{price}"
-                total += qty
-                order_ids.append(str(order.get("orderId") or ""))
-            else:
-                held = self._held_quantity(ws, account_id, alert.ticker)
-                if held < 1:
-                    # no shorting: a sell alert for a name the
-                    # account doesn't hold is skipped (the option
-                    # path is ledger-gated the same way; deriving a
-                    # quantity from position_size_cad would open an
-                    # unintended short at market)
-                    breakdown[label] = "no position to sell"
-                    continue
-                if cfg.trading.order_type == "limit" and price:
-                    order = ws.limit_sell(
-                        account_id, sec_id, held, self._limit_price(price, "SELL")
-                    )
-                else:
-                    order = ws.market_sell(account_id, sec_id, held)
-                pre_qty, pre_avg = store.position_state(
-                    self.mode, label, alert.ticker
-                )
-                store.record_pending_order(
-                    self.mode, label, str(order.get("orderId") or ""),
-                    "stock", alert.ticker, alert.ticker, None, None,
-                    None, alert.action, held, price,
-                    pre_qty=pre_qty, pre_avg=pre_avg,
-                )
-                breakdown[label] = f"{held} @ ~{price}" if price else f"{held}"
-                total += held
-                order_ids.append(str(order.get("orderId") or ""))
+                    breakdown[label] = f"{held} @ ~{price}" if price else f"{held}"
+                    total += held
+                    order_ids.append(str(order.get("orderId") or ""))
 
+            except Exception as e:
+                # per-account fault isolation (the option loop
+                # documents the hazard): account #1's order is
+                # already live when account #2 raises
+                breakdown[label] = f"error: {e}"
+                first_error = first_error or e
+        # nothing landed anywhere: raise so the pipeline records
+        # an "error" row (a returned failure records "skipped",
+        # which would mislabel a broker failure)
+        if total == 0 and first_error is not None:
+            raise first_error
         ok = total > 0
         detail = (
             f"{alert.action} {total} {alert.ticker} | "

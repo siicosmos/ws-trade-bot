@@ -115,7 +115,9 @@ function fmtIso(ts) {
 function fmtTime(ts) {
   if (!ts) return "—";
   const d = new Date(fmtIso(ts));
-  if (isNaN(d)) return String(ts);
+  // an unparseable value renders a dash - the raw string is
+  // sunk into innerHTML tables unescaped otherwise
+  if (isNaN(d)) return "—";
   const pad = (n) => String(n).padStart(2, "0");
   return pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + " " +
     pad(d.getHours()) + ":" + pad(d.getMinutes());
@@ -336,7 +338,7 @@ function _padjHoldingsRowData(row) {
   const rightSel = row.querySelector(".padj-h-right");
   const h = {
     underlying: (get("underlying") || "").trim().toUpperCase(),
-    qty: parseInt(get("qty")),
+    qty: parseInt(get("qty")) || 1,
     avg: parseFloat(get("avg")) || 0,
   };
   if (isOpt) {
@@ -1080,7 +1082,13 @@ let lastRefresh = null;
 
 let showIgnored = true;
 
-let cardCurrency = JSON.parse(localStorage.getItem("ws_card_currency") || "{}");
+function _lsJson(key, dflt) {
+  try {
+    return JSON.parse(localStorage.getItem(key) || dflt);
+  } catch (e) { return JSON.parse(dflt); }
+}
+
+let cardCurrency = _lsJson("ws_card_currency", "{}");
 let mbdOpen = null;
 
 function toggleMarginBreakdown(i, label) {
@@ -1090,9 +1098,9 @@ function toggleMarginBreakdown(i, label) {
   const arrow = document.getElementById("mbda-" + i);
   if (arrow) arrow.textContent = mbdOpen === label ? "\u25BC" : "\u25B2";
 }
-let cardHidden = JSON.parse(localStorage.getItem("ws_card_hidden") || "{}");
-let paperHidden = JSON.parse(localStorage.getItem("ws_paper_hidden") || "{}");
-let paperCurrency = JSON.parse(localStorage.getItem("ws_paper_currency") || "{}");
+let cardHidden = _lsJson("ws_card_hidden", "{}");
+let paperHidden = _lsJson("ws_paper_hidden", "{}");
+let paperCurrency = _lsJson("ws_paper_currency", "{}");
 
 const EYE_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>';
 const EYE_OFF_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
@@ -1572,7 +1580,11 @@ async function doModeSwitch(mode) {
       }, 1000);
     } else {
       setSettingsDirty(false);
-      load();
+      load().then(function() {
+        renderSettings(
+          (lastPayload && lastPayload.settings) || lastSettings
+        );
+      });
     }
   } catch (e) {
     alert("mode switch failed: " + e);
@@ -2018,12 +2030,24 @@ async function saveSettings() {
       mirror_interval_seconds: parseInt(val("set-mirror-interval")),
     },
   };
-  const res = await fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-  const data = await res.json();
   const msg = document.getElementById("settings-msg");
+  let res = null;
+  let data = {};
+  try {
+    res = await fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    if (res.status === 401) { location.href = "/login"; return; }
+    data = await res.json().catch(() => ({}));
+  } catch (e) {
+    // a restart mid-save (the mode switch does exactly that) or
+    // a dropped connection must not die as an unhandled
+    // rejection with the dirty state stuck on
+    if (msg) msg.textContent = "";
+    alert("save failed: " + e);
+    return;
+  }
   if (res.status !== 200) {
     if (msg) msg.textContent = "";
-    alert("save failed:\n" + (data.errors || []).join("\n"));
+    alert("save failed:\n" + (data.errors || ["server error " + res.status]).join("\n"));
   } else {
     setSettingsDirty(false);
     await load();
@@ -2121,7 +2145,7 @@ setInterval(tickClock, 1000);
 for (const id of ["hs-q", "hs-ticker"]) {
   document.getElementById(id).addEventListener("input", autoSearch);
 }
-for (const id of ["hs-status", "hs-since", "hs-until"]) {
+for (const id of ["hs-kind", "hs-status", "hs-since", "hs-until"]) {
   document.getElementById(id).addEventListener("change", runHistorySearch);
 }
 

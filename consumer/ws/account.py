@@ -92,10 +92,11 @@ class WealthsimpleAccount:
                     rate = rate / 100.0
         except Exception:
             rate = None
-        # a transient failure caches briefly - a real rate pins
-        # for the full 12h
+        # a transient failure caches ~10 minutes (the timestamp
+        # is backdated so the 12h freshness test expires it
+        # soon) - a real rate pins for the full 12h
         rates[security_id] = (
-            rate, now + (0 if rate is not None else 42600)
+            rate, now - (42600 if rate is None else 0)
         )
         return rate
 

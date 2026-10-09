@@ -988,18 +988,22 @@ def heartbeat_status(allowed, title_channel):
     channel we are on - report it instead of "waiting".
     """
     if allowed and title_channel:
-        return title_channel, True
-    return None, False
+        return title_channel, True, None
+    return None, False, (
+        "no discord channel attached - bring the discord window "
+        "to the foreground"
+    )
 
 
-def sync_with_server(base_url, auth_token, channel, ok, verify=True):
+def sync_with_server(base_url, auth_token, channel, ok, verify=True,
+                     error=None):
     # heartbeat only - the info server no longer pushes settings
     # back (they would override the yaml on every poll)
     headers = {"X-Auth-Token": auth_token} if auth_token else {}
     try:
         resp = requests.post(
             f"{base_url}/api/reader_status",
-            json={"channel": channel, "ok": ok},
+            json={"channel": channel, "ok": ok, "error": error},
             headers=headers, timeout=5, verify=verify,
         )
         # a rejected heartbeat (token mismatch) used to be fully

@@ -1,7 +1,7 @@
 @echo off
 rem info server: reader ingest + alert feed, no trading.
 rem state lives apart from code:
-rem   config\info.config.yaml · db\info.trades.db
+rem   config\info.config.yaml - db\info.trades.db
 rem this launcher lives in scripts\ - it cds into ..\info
 cd /d "%~dp0..\info"
 

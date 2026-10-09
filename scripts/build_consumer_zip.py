@@ -20,9 +20,12 @@ from datetime import datetime, timezone
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # consumer/ files that belong to the user, never to the artifact
+# belt-and-suspenders: state lives in config/ + db/ (never
+# walked) - these names predate that layout and match nothing
+# today, but a stray file under consumer/ must never ship
 CONSUMER_EXCLUDE = (
     "consumer.config.yaml", "ws_tokens.env",
-    "pipeline_exit.txt",
+    "pipeline_exit.txt", "pipeline_exit_consumer.txt",
     "consumer.trades.db", "consumer.trades.db-shm",
     "consumer.trades.db-wal",
 )

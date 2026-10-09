@@ -520,3 +520,65 @@ def test_release_older_than_checkout_head_is_skipped(tmp_path, monkeypatch):
     assert "older than the checkout head" in up.last_result
     assert not os.path.exists(os.path.join(
         str(repo), ru.PENDING_FILE))
+
+
+def test_release_without_sums_asset_is_refused(tmp_path, monkeypatch):
+    """a release that ships no SHA256SUMS at all is refused - the
+    build always uploads one, so its absence means truncation or
+    tampering."""
+    _write(tmp_path, "VERSION", json.dumps(
+        {"commit": "aaa", "repo": "o/r"}
+    ))
+    release = {
+        "tag_name": "consumer-latest",
+        "assets": [
+            {"name": "consumer-bbb.zip",
+             "url": "https://fake/bbb.zip"},
+        ],
+    }
+
+    def download(url, token, dest):
+        _make_zip(dest, "bbb")
+
+    monkeypatch.setattr(ru, "latest_release", lambda *a, **k: release)
+    monkeypatch.setattr(ru, "download_file", download)
+
+    calls = []
+    up = ReleaseUpdater(
+        _cfg(), str(tmp_path), "", restart=lambda *a, **k: calls.append(1)
+    )
+    assert up.check_once() is False
+    assert calls == []
+    assert "no SHA256SUMS" in up.last_result
+    assert not os.path.exists(os.path.join(
+        str(tmp_path), ru.PENDING_FILE))
+
+
+def test_code_swap_marker_restarts_the_other_role(tmp_path, monkeypatch):
+    """a release swap drops .code_swapped.json - an updater whose
+    process started before the swap restarts to load the new
+    code (lazily-imported modules would otherwise mix)."""
+    import time as _time
+
+    from core.ops.updater import AutoUpdater
+
+    (tmp_path / ".code_swapped.json").write_text(
+        json.dumps({"commit": "abc", "ts": _time.time() + 5}),
+        encoding="utf-8",
+    )
+    restarts = []
+    up = AutoUpdater(
+        _cfg(enabled=False), str(tmp_path),
+        restart=lambda *a, **k: restarts.append(1),
+    )
+    assert up._code_swapped_after_start() is True
+    # a marker older than the process start does not restart
+    (tmp_path / ".code_swapped.json").write_text(
+        json.dumps({"commit": "abc", "ts": _time.time() - 9999}),
+        encoding="utf-8",
+    )
+    up2 = AutoUpdater(
+        _cfg(enabled=False), str(tmp_path),
+        restart=lambda *a, **k: restarts.append(1),
+    )
+    assert up2._code_swapped_after_start() is False

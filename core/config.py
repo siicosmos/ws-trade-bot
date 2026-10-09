@@ -291,7 +291,7 @@ def dump_yaml_config(raw, config_path):
             f.write("\n".join(out))
             f.flush()
             os.fsync(f.fileno())
-    except OSError:
+    except (OSError, yaml.YAMLError):
         try:
             os.unlink(tmp)
         except OSError:
@@ -418,12 +418,29 @@ def load_config(path: str) -> Config:
         role = "consumer"
 
     consumers = []
+    seen_labels = set()
     for entry in raw.get("consumers") or []:
         if not isinstance(entry, dict):
             continue
+        label = str(entry.get("label", "")).strip()
+        if not label:
+            print(
+                "config: a consumers[] entry has no label - it is "
+                "skipped (the label keys the feed cursor and the "
+                "dashboard dot)"
+            )
+            continue
+        if label in seen_labels:
+            print(
+                f"config: duplicate consumer label {label!r} - the "
+                f"second entry is skipped (two consumers sharing a "
+                f"label would share one feed cursor)"
+            )
+            continue
+        seen_labels.add(label)
         consumers.append(
             ConsumerEntry(
-                label=str(entry.get("label", "")).strip(),
+                label=label,
                 token=str(entry.get("token", "")).strip(),
                 push_url=str(entry.get("push_url", "")).strip(),
                 push_verify_ssl=bool(entry.get("push_verify_ssl", False)),
@@ -448,11 +465,22 @@ def load_config(path: str) -> Config:
     if mode not in ("notify", "paper", "live"):
         mode = "notify"
 
-    raw_tiers = _get(trading_raw, "size_tiers", None)
+    raw_tiers = trading_raw.get("size_tiers")
     size_tiers = _default_size_tiers()
-    if raw_tiers:
+    if isinstance(raw_tiers, dict):
         for tier_name, tier_raw in raw_tiers.items():
+            if not isinstance(tier_raw, dict):
+                print(
+                    f"config: trading.size_tiers.{tier_name} is not "
+                    f"a mapping - the default tier applies"
+                )
+                continue
             size_tiers[str(tier_name).lower()] = _norm_tier(tier_raw)
+    elif raw_tiers:
+        print(
+            "config: trading.size_tiers is not a mapping - the "
+            "default tiers apply"
+        )
 
     raw_stock_tiers = _section(trading_raw, "stock_size_tiers")
     stock_size_tiers = _default_stock_size_tiers()

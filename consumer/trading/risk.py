@@ -1,6 +1,6 @@
 from datetime import date, datetime, timezone
 
-from core.store import Store
+from core.store import Store, et_now
 
 
 class RiskEngine:
@@ -79,7 +79,8 @@ class RiskEngine:
             ):
                 try:
                     days = (
-                        date.fromisoformat(alert.expiry) - date.today()
+                        date.fromisoformat(alert.expiry)
+                        - et_now().date()
                     ).days
                 except ValueError:
                     days = 0

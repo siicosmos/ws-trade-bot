@@ -270,6 +270,7 @@ def reconcile_pending_fill(store, label, contract_key, action, qty,
             mult=mult,
             underlying=row["underlying"], expiry=row["expiry"],
             strike=row["strike"], opt_right=row["opt_right"],
+            fx=fx,
         )
         est = row["est_price"]
         slip = (
@@ -305,7 +306,9 @@ def mirror_real_trades(cfg, store, ws_account, ledger=None,
         getattr(getattr(cfg, "trading", None),
                 "max_slippage_pct", 0) or 0
     )
-    fx_fn = getattr(ledger, "fx", None)
+    fx_fn = getattr(ledger, "fx", None) or getattr(
+        ws_account, "fx", None
+    )
     try:
         activities_fn = ws_account._client().get_activities
     except Exception:
@@ -349,13 +352,13 @@ def mirror_real_trades(cfg, store, ws_account, ledger=None,
         edges = ((result or {}).get("edges")
                  if isinstance(result, dict) else None) or []
         try:
-            seen = set(json.loads(
+            prev_ids = json.loads(
                 store.meta_get(f"mirror:{label}:ids") or "[]"
-            ))
+            )
+            seen = set(prev_ids)
         except (TypeError, ValueError):
             seen = set()
         new_ids = []
-        latest = since_ts
         for edge in edges:
             act = (edge or {}).get("node") or {}
             cid = act.get("canonicalId")
@@ -387,6 +390,9 @@ def mirror_real_trades(cfg, store, ws_account, ledger=None,
             # the us-listed names this bot trades) - a cad-settled
             # amount divides by fx so the premium matches what the
             # executor would have booked
+            # fetched before first use (a cad-settled fill reads
+            # it in cad_amount below)
+            fx = float(fx_fn()) if callable(fx_fn) else 1.0
             mult = 100 if info["kind"] == "option" else 1
             cad_amount = (
                 str(act.get("currency") or "").upper() == "CAD"
@@ -396,12 +402,11 @@ def mirror_real_trades(cfg, store, ws_account, ledger=None,
             premium = amount / divisor if qty and divisor else None
             occurred = str(act.get("occurredAt") or "")
             shim = MirrorShim(
-                action=action, premium=premium, entry=premium,
+                action=action,
+                premium=premium, entry=premium,
                 stop_loss=None, take_profit=None,
                 ts=occurred or str(time.time()), **info,
             )
-            fx = float(fx_fn()) if callable(fx_fn) else 1.0
-            mult = 100 if info["kind"] == "option" else 1
             delta = int(qty) if action == "BUY" else -int(qty)
             # the real account's own ledger books every fill at
             # its actual price - the real account card's today
@@ -415,9 +420,6 @@ def mirror_real_trades(cfg, store, ws_account, ledger=None,
                     "real", shim, delta, premium=premium, account=label,
                     fx=fx,
                 )
-            # reconcile the live ledger's estimated booking
-            # against this actual fill (no-op when no pending
-            # live order matches)
             # reconcile the live ledger's estimated booking
             # against this actual fill (no-op when no pending
             # live order matches); a fill that slips past the
@@ -446,15 +448,11 @@ def mirror_real_trades(cfg, store, ws_account, ledger=None,
                 "paper", shim, delta, premium=premium, account=label,
                 fx=fx,
             )
-            # the cash delta is the actual settled amount - the
-            # premium times fx again would double-convert
-            # cad-settled fills
-            proceeds = (
-                amount if cad_amount
-                else qty * (premium or 0.0) * mult * (
-                    fx if info["kind"] == "option" else 1.0
-                )
-            )
+            # the cash delta rides the CLAMPED qty (a partial
+            # holding credits only what the ledger held) at the
+            # usd-normalized premium - the settled amount itself
+            # would credit the full raw fill
+            proceeds = qty * (premium or 0.0) * mult * fx
             if action == "BUY":
                 store.adjust_paper_equity(-proceeds, label)
             else:
@@ -473,7 +471,7 @@ def mirror_real_trades(cfg, store, ws_account, ledger=None,
             # insertion-ordered dedupe: trimming an unordered set
             # could evict just-added ids (a >200-fill hour would
             # replay them on the next pass)
-            ordered = list(dict.fromkeys(list(seen) + list(new_ids)))
+            ordered = list(dict.fromkeys(prev_ids + list(new_ids)))
             store.meta_set(
                 f"mirror:{label}:ids",
                 json.dumps(ordered[-200:]),

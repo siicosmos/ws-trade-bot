@@ -232,3 +232,68 @@ def test_dual_delivery_dedupe_race():
     # the position was opened exactly once
     positions = store.list_positions("paper")
     assert len(positions) == 1
+
+
+def test_fanout_cursors_keyed_by_label():
+    """the cursors key by label (the identity everywhere) - a
+    regression to token-keying would make two consumers sharing
+    a token skip each other's rows; the successful consumer's
+    cursor advances past the failed one's row."""
+    entry = __import__("core.config", fromlist=["ConsumerEntry"]) \
+        .ConsumerEntry(
+            label="c1", token="tok1", push_url="http://push-target/alert"
+        )
+    app, store, cfg = _info_app([entry])
+
+    delivered = []
+
+    def _fake_post(url, json=None, headers=None, timeout=0, verify=False):
+        delivered.append((url, json, headers))
+
+        class _Resp:
+            status_code = 200
+
+        return _Resp()
+
+    import requests as _requests
+    orig = _requests.post
+    _requests.post = _fake_post
+    try:
+        fanout.FEED_STATE["consumers"] = {}
+        _record(store, "BOUGHT 0DTE SPY 759c @ 1.5 small")
+        from info.fanout import _tick
+        cursors = {entry.label: 0}
+        _tick(store, [entry], cursors)
+        # the cursor advanced under the LABEL key
+        assert cursors.get(entry.label, 0) > 0
+    finally:
+        _requests.post = orig
+
+
+def test_fanout_duplicate_labels_are_rejected():
+    """two consumers sharing a label would share one feed
+    cursor - the config refuses the duplicate at load."""
+    import os
+    import tempfile as tf
+
+    from core.config import load_config
+
+    yaml_src = (
+        "pipeline:\n"
+        "  role: info\n"
+        "  auth_token: tok\n"
+        "consumers:\n"
+        "  - label: dup\n"
+        "    token: t1\n"
+        "  - label: dup\n"
+        "    token: t2\n"
+    )
+    fd, path = tf.mkstemp(suffix=".yaml")
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(yaml_src)
+    try:
+        cfg = load_config(path)
+        labels = [c.label for c in cfg.consumers if c.label == "dup"]
+        assert len(labels) == 1
+    finally:
+        os.unlink(path)

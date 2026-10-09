@@ -44,7 +44,10 @@ class WebhookBatcher:
         text = ""
         for line in batch:
             if len(text) + len(line) + 1 > 1900:
-                self._post(text)
+                # a single line longer than the cap must not post
+                # an empty payload (discord 400s it)
+                if text.strip():
+                    self._post(text)
                 text = ""
             text += line + "\n"
         if text.strip():

@@ -43,8 +43,16 @@ def apply(root):
     try:
         with open(pending_path, encoding="utf-8") as f:
             pending = json.load(f)
-    except (OSError, ValueError):
-        return False   # nothing pending (or corrupt - ignore it)
+    except OSError:
+        return False   # nothing pending
+    except ValueError:
+        # a torn marker would block staging forever ("staged
+        # update pending restart") - it is garbage, drop it
+        try:
+            os.remove(pending_path)
+        except OSError:
+            pass
+        return False
 
     # the staging name comes from a json file anyone with write
     # access to consumer/ could tamper with - only the literal

@@ -47,6 +47,12 @@ def main():
         db_dir = os.path.join(ROOT, "db")
         os.makedirs(db_dir, exist_ok=True)
         args.db = os.path.join(db_dir, f"{role}.trades.db")
+    else:
+        # an explicit --db creates its parent dir too (the
+        # default path is pre-created above)
+        parent = os.path.dirname(os.path.abspath(args.db))
+        if parent:
+            os.makedirs(parent, exist_ok=True)
 
     if role == "info":
         from info.server import main as info_main

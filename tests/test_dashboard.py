@@ -196,7 +196,7 @@ def test_currency_toggle():
     import consumer.dashboard as dash
 
     js = dash.DASHBOARD_JS
-    assert 'localStorage.getItem("ws_card_currency")' in js
+    assert '_lsJson("ws_card_currency"' in js
     assert "function flipCardCurrency" in js
     assert "cur-toggle" in dash.DASHBOARD_JS
     # usd mode converts open risk with the derived fx rate
@@ -304,13 +304,13 @@ def test_hide_value_eye_toggle():
 
     js = dash.DASHBOARD_JS
     # per-card eye toggle masks value and cash amounts, persisted
-    assert 'localStorage.getItem("ws_card_hidden")' in js
+    assert '_lsJson("ws_card_hidden"' in js
     assert "EYE_SVG" in js and "EYE_OFF_SVG" in js
     assert '"••••••"' in js
     assert "toggleCardHidden" in js
     # currency flip is per card too
     assert "flipCardCurrency" in js
-    assert 'localStorage.getItem("ws_card_currency")' in js
+    assert '_lsJson("ws_card_currency"' in js
     # hidden cash keeps the label but drops the amounts; negative
     # (loan) balances show as zero - the loan lives in margin used
     assert "fmtMoney(Math.max(0, a.cash_cad))" in js

@@ -92,7 +92,7 @@ as thoroughly as the paper paths:
   position queries): option buy sizing + booking + pending-order
   snapshot, sell flattening + realized pnl, open-risk-cap skip,
   lotto-budget gate, stock tier sizing + open-risk cap,
-  sell-only-if-held, rejected-order cleanup (nothing booked, nothing
+  stock sells never short (unconditional), rejected-order cleanup (nothing booked, nothing
   pending), stop-monitor exits riding the live executor, and the kill
   switch.
 - `trading_paused` (settings "trading paused (kill switch)"): a

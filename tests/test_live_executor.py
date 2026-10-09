@@ -13,7 +13,9 @@ from datetime import date
 
 from core.config import TradingConfig, WealthsimpleConfig
 from core.store import Store
-from consumer.trading.executor import WealthsimpleExecutor
+from consumer.trading.executor import (
+    ExecutionResult, WealthsimpleExecutor,
+)
 from core.parser import parse_alert
 from consumer.ws.account import WSAccountConfig
 
@@ -250,6 +252,19 @@ def test_live_lotto_buy_needs_realized_gains(monkeypatch):
     ) == 0
 
 
+
+
+def _record_like_pipeline(store, ex, alert, res):
+    """the pipeline records the trade row after execute() returns
+    (releasing the execution claim) - tests that drive the
+    executor directly do the same between executions."""
+    store.record_trade(
+        ex.mode, alert.action, alert.ticker, res.qty or 0,
+        res.price, alert, "executed" if res.ok else "skipped",
+        res.detail,
+    )
+
+
 def test_live_stock_buy_respects_tier_and_open_risk(monkeypatch):
     """a live stock buy sizes from the stock tier percent and is
     skipped at the open-risk cap (the guard the live path was
@@ -262,11 +277,10 @@ def test_live_stock_buy_respects_tier_and_open_risk(monkeypatch):
     account = StubAccount(_account_values())
     ex = _executor(cfg, store, account)
 
-    res = ex.execute(
-        parse_alert("BOUGHT LLYX shares @ 100.0 medium size"),
-        cfg, store,
-    )
+    alert = parse_alert("BOUGHT LLYX shares @ 100.0 medium size")
+    res = ex.execute(alert, cfg, store)
     assert res.ok
+    _record_like_pipeline(store, ex, alert, res)
     # 5% x 10000 = 500 -> 5 shares @ 100
     assert ws.orders == [("limit_buy", 5, 100.5)] or ws.orders == [
         ("market_buy", 5, 100.0)
@@ -279,7 +293,8 @@ def test_live_stock_buy_respects_tier_and_open_risk(monkeypatch):
         "live", parse_alert("BOUGHT 0DTE SPX 7650c @ 1.0"), 10,
         premium=1.0, account="RRSP",
     )
-    cfg2 = _live_cfg(max_open_risk_pct=5.0)
+    cfg2 = _live_cfg(max_open_risk_pct=5.0, cooldown_seconds=0,
+                     dedupe_window_minutes=0)
     cfg2.trading.stock_size_tiers = {"medium": 5.0}
     ex2 = _executor(cfg2, store, account)
     res2 = ex2.execute(
@@ -408,26 +423,23 @@ def test_live_option_buy_cluster_cap(monkeypatch):
     ex = _executor(cfg, store, account)
 
     # first SPX call: 4 contracts @ 1.0 ask = 400 cluster risk
-    res1 = ex.execute(
-        parse_alert("BOUGHT 0DTE SPX 759c @ 1.0 medium size"),
-        cfg, store,
-    )
+    alert1 = parse_alert("BOUGHT 0DTE SPX 759c @ 1.0 medium size")
+    res1 = ex.execute(alert1, cfg, store)
     assert res1.ok and res1.qty == 4
+    _record_like_pipeline(store, ex, alert1, res1)
 
     # a second SPX buy fills the cluster to 800 (>= the 500 cap)
-    res2 = ex.execute(
-        parse_alert("BOUGHT 0DTE SPX 759c @ 1.0 medium size"),
-        cfg, store,
-    )
+    alert2 = parse_alert("BOUGHT 0DTE SPX 759c @ 1.0 medium size")
+    res2 = ex.execute(alert2, cfg, store)
     assert res2.ok and res2.qty == 4
+    _record_like_pipeline(store, ex, alert2, res2)
     assert len(ws.orders) == 2
 
     # a third SPX buy lands in an already-capped cluster even
     # though the global cap (3000) has plenty of room
-    res3 = ex.execute(
-        parse_alert("BOUGHT 0DTE SPX 759c @ 1.0 medium size"),
-        cfg, store,
-    )
+    alert3 = parse_alert("BOUGHT 0DTE SPX 759c @ 1.0 medium size")
+    res3 = ex.execute(alert3, cfg, store)
+    _record_like_pipeline(store, ex, alert3, res3)
     assert res3.qty == 0
     assert "cluster cap" in res3.detail
     assert len(ws.orders) == 2
@@ -484,13 +496,12 @@ def test_open_risk_cap_per_account(monkeypatch):
         premium=1.0, account="RRSP",
     )
 
-    res = ex.execute(
-        parse_alert("BOUGHT 0DTE SPY 759c @ 1.0 medium size"),
-        cfg, store,
-    )
+    alert = parse_alert("BOUGHT 0DTE SPY 759c @ 1.0 medium size")
+    res = ex.execute(alert, cfg, store)
     # margin: its own 80% cap (1600 of 2000) still has room for
     # the 5% budget's 1 contract; rrsp is at its global cap
     assert res.ok
+    _record_like_pipeline(store, ex, alert, res)
     assert res.breakdown["Margin"].startswith("1x @ 1.0")
     assert "open risk cap reached" in res.breakdown["RRSP"]
     assert len(ws.orders) == 1

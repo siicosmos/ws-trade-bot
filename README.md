@@ -168,12 +168,12 @@ Sizing core (`trading/executor.py`):
 |---|---|---|---|
 | kill switch | `trading_paused` | false | blocks every new BUY; exits stay allowed. Toggled live from settings |
 | ticker whitelist | `ticker_whitelist` | [] | only these tickers; empty = all |
-| daily trade cap | `max_trades_per_day` | 5 | per account, resets midnight |
-| cooldown | `cooldown_seconds` | 60 | between trades on the same contract |
+| daily trade cap | `max_trades_per_day` | 5 | per mode (all accounts), resets at midnight ET |
+| cooldown | `cooldown_seconds` | 60 | min seconds between BUYs (any contract), per mode |
 | loss-streak breaker | `max_consecutive_losses` | 2 | stops option buys for the day after N losses in a row |
 | daily-loss breaker | `max_daily_loss_pct` | 0 (= off) | blocks all new buys once today's realized pnl sinks below this % of account value |
 | min DTE | `min_dte_days` | 0 | skips options expiring sooner |
-| dedupe window | `dedupe_window_minutes` | 10 | same alert text inside the window is ignored |
+| dedupe window | `dedupe_window_minutes` | 10 | a repeat of the same contract+action+premium inside the window is ignored |
 
 ### Position caps — `trading/executor.py`
 
@@ -183,7 +183,6 @@ Sizing core (`trading/executor.py`):
 | cluster cap | `cluster_cap_pct` | 50 | correlation-aware: one (underlying, expiry, right) cluster may never exceed this % of value — a buy into a capped cluster skips even when the global cap has room (`store.open_risk_clusters`) |
 | tier caps | `size_tiers` | lotto 0.5% → full 10% | risk budget + contract count per size keyword |
 | lotto gain cap | `lotto_gain_budget_pct` | — | profits-only alerts cap gains reinvestment |
-| sell-only-if-held | `sell_only_if_held` | true | never sells contracts the account doesn't hold |
 
 ### Stop monitor — `trading/stops.py`
 
@@ -424,7 +423,7 @@ plus every knob from [Safety systems](#safety-systems):
 `min_dte_days` (0), `max_trades_per_day` (5),
 `cooldown_seconds` (60), `dedupe_window_minutes` (10),
 `ticker_whitelist` ([]), `skip_underlyings` ([]),
-`sell_only_if_held` (true), `trading_paused` (false),
+`trading_paused` (false),
 `paper_account_value` (10000), `history_retention_days` (365).
 
 ### `wealthsimple` — accounts
@@ -530,7 +529,7 @@ ws-trade-bot/
    `http://127.0.0.1:8080` (expose via Tailscale for phone access).
 5. **Wealthsimple login** (consumer): `python scripts/ws_login.py` —
    stores tokens in the Windows keyring (primary) plus a gitignored
-   `consumer/ws_tokens.env` fallback, and prints account IDs for
+   `config/ws_tokens.env` fallback, and prints account IDs for
    the consumer config.
 6. **Reader**: `scripts/start_reader.bat` (own venv) and
    `scripts/start_discord.bat` (Discord with
@@ -631,7 +630,7 @@ markers, see `pytest.ini`) — minimum ⊂ essential ⊂ full:
 # dashboard assets (~250 tests)
 .venv/bin/python -m pytest tests -q -m essential
 
-# full: everything (~490 tests, stubs for the reader's UIA) - the default
+# full: everything (~520 tests, stubs for the reader's UIA) - the default
 .venv/bin/python -m pytest tests -q --ignore=tests/scripts
 
 # windows: same commands with .venv\Scripts\python (the suite runs
@@ -664,7 +663,7 @@ incl. the kill switch), `test_settings_update.py`, `test_users.py`,
   server code changed; the **mode slider** exits 77 after persisting;
   `run.py` kills stale copies of itself holding the port
   (`ops/processes.py`) and prints the previous exit code from
-  `pipeline_exit.txt`.
+  `db/pipeline_exit_<role>.txt`.
 - **logs**: one shared folder - `logs/info.log`,
   `logs/consumer.log`, `logs/reader.log` - each optionally
   teed to Discord in 3s batches (`install_log_webhook`).
@@ -672,7 +671,8 @@ incl. the kill switch), `test_settings_update.py`, `test_users.py`,
   every `auto_update.interval_seconds`, dirty runtime files healed;
   the reader restarts off that pull. Consumer: poll the rolling
   GitHub Release, verify + stage the newer build, the launcher
-  applies it on restart. `.last_update.json` records the last
+  applies it on restart. `.last_update_info.json` /
+  `.last_update_consumer.json` record the last
   update; the dashboard shows the running commit/release.
 - **known-exit codes**: 77 = code update or mode-switch restart, 1 =
   watchdog hang detection, anything else = crash (restart loop
@@ -719,6 +719,7 @@ core/                      # shared foundation (both apps execute this)
   ops/
     notify.py loghook.py processes.py supervise.py updater.py watchdog.py
     release_updater.py     # release-install updater (GitHub Releases)
+    remotes.py             # the shared git-origin slug parser
 info/                      # the alert source app (code + runtime + launcher)
   server.py                # wiring: store, fan-out, updater, watchdog, wsgi
   web.py                   # Flask app: ingest, feed, reader heartbeat, levels

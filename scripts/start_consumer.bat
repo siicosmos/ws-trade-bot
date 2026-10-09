@@ -1,7 +1,7 @@
 @echo off
 rem consumer app: the trading pipeline fed by the info server's
 rem alert feed. state lives apart from code:
-rem   config\consumer.config.yaml · db\consumer.trades.db
+rem   config\consumer.config.yaml - db\consumer.trades.db
 rem this launcher lives in scripts\ - it cds into ..\consumer
 cd /d "%~dp0..\consumer"
 

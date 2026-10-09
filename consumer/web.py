@@ -936,7 +936,13 @@ def _account_summaries(ctx):
         getattr(cfg, "paper", None), "enabled", False
     ):
         ledger = getattr(ctx.executor, "account", None)
-        vals_fn = getattr(ledger, "values", None)
+        # only a paper ledger carries positions() - a live
+        # account's values() would paint phantom paper cards
+        vals_fn = (
+            getattr(ledger, "values", None)
+            if callable(getattr(ledger, "positions", None))
+            else None
+        )
         if callable(vals_fn):
             try:
                 paper_values = vals_fn() or {}
@@ -1045,7 +1051,8 @@ def _summary_payload(ctx):
         # line reports the feed, not a (absent) local reader
         reader = {
             "channel": "the alert feed",
-            "ok": True,
+            "ok": bool((ctx.feed_state or {}).get("ok", True)),
+            "error": (ctx.feed_state or {}).get("error"),
             "last_seen": feed_seen,
             "desired": None,
             "age_seconds": round(time.time() - feed_seen, 1),
@@ -1635,8 +1642,8 @@ def create_app(cfg, store: Store, risk, executor, account=None,
         mult = 100 if is_option else 1
         avg = float(row["avg_premium"] or 0.0)
         # the proceeds return to the paper cash the same way an
-        # executed sell books them: options x100 in usd->cad, at
-        # the ledger's fx; stocks per share in cad
+        # executed sell books them: options and usd-listed stocks
+        # convert at the ledger's fx, cad stocks book raw
         fx = 1.0
         ledger = getattr(ctx.executor, "account", None)
         if ledger is not None:
@@ -1644,16 +1651,18 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                 fx = ledger.fx() or 1.0
             except Exception:
                 fx = 1.0
+        usd = bool(row.get("usd", is_option))
+        fx_eff = fx if (is_option or usd) else 1.0
         realized = (
-            round(qty * (price - avg) * mult * fx, 2) if avg else 0.0
+            round(qty * (price - avg) * mult * fx_eff, 2)
+            if avg else 0.0
         )
         store.apply_position(
-            "paper", alert, -qty, premium=price, account=label, fx=fx
+            "paper", alert, -qty, premium=price, account=label,
+            fx=fx_eff,
         )
         credit = qty * price * (100 if is_option else 1)
-        store.adjust_paper_equity(
-            credit * (fx if is_option else 1.0), label
-        )
+        store.adjust_paper_equity(credit * fx_eff, label)
         remaining = store.get_position("paper", contract_key, label)
         detail = (
             f"[PAPER] manual SELL {qty}/{held}x "
