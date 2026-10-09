@@ -9,6 +9,7 @@ adapts the dashboard's payloads to it.
 from consumer.trading.margin import (
     Holding, compute_requirement, resolve_rate,
 )
+from consumer.trading.risk_gates import effective_open_risk_cap
 from consumer.ws.account_types import REGISTERED_ACCOUNT_TYPES
 
 
@@ -428,6 +429,4 @@ def _effective_open_risk_cap(cfg, label):
     """The account's own open-risk cap override when set (a
     small account may deploy a high share of its own value),
     the global cap otherwise."""
-    from consumer.trading.risk_gates import effective_open_risk_cap
-
     return effective_open_risk_cap(_acct_by_label(cfg, label), cfg)
