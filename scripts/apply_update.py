@@ -65,23 +65,41 @@ def apply(root):
     backup = os.path.join(root, ".update_backup")
     shutil.rmtree(backup, ignore_errors=True)
 
-    # 1. move the state files out of the code dirs
+    # 1. move the ENTIRE consumer dir aside with a rename - a
+    # rename is atomic and loses nothing, so no rmtree can ever
+    # touch the user's config/db/tokens before they are safe.
+    # (the old code moved the state files individually and then
+    # rmtree'd the dir - when the state files were not in
+    # consumer/ - e.g. the app was started manually from the repo
+    # root and its db landed there - the backup found nothing and
+    # the rmtree wiped the folder with everything in it)
     consumer = os.path.join(root, "consumer")
-    saved = []
+    old_consumer = os.path.join(backup, "consumer")
+    os.makedirs(backup, exist_ok=True)
+    if os.path.isdir(consumer):
+        shutil.move(consumer, old_consumer)
+    # state files dropped at the repo root by a manual start
+    # (run.py creates the db in its cwd) come along too
+    root_saved = []
     for name in STATE_FILES:
-        src = os.path.join(consumer, name)
+        src = os.path.join(root, name)
         if os.path.exists(src):
-            os.makedirs(backup, exist_ok=True)
-            shutil.move(src, os.path.join(backup, name))
-            saved.append(name)
+            shutil.move(src, os.path.join(backup, "root-" + name))
+            root_saved.append(name)
 
     try:
-        # 2. replace the code dirs
-        for d in CODE_DIRS:
-            shutil.rmtree(os.path.join(root, d), ignore_errors=True)
-            if os.path.isdir(os.path.join(staging, d)):
-                shutil.copytree(os.path.join(staging, d),
-                                os.path.join(root, d))
+        # 2. replace the code dirs: core/ holds no user state -
+        # rmtree + copy. consumer/ was renamed aside above (its
+        # state files ride inside it) - the new code copies in
+        # fresh and the state moves back after
+        if os.path.isdir(os.path.join(staging, "core")):
+            shutil.rmtree(os.path.join(root, "core"),
+                          ignore_errors=True)
+            shutil.copytree(os.path.join(staging, "core"),
+                            os.path.join(root, "core"))
+        if os.path.isdir(os.path.join(staging, "consumer")):
+            shutil.copytree(os.path.join(staging, "consumer"),
+                            os.path.join(root, "consumer"))
         for name in CODE_FILES:
             src = os.path.join(staging, name)
             if os.path.exists(src):
@@ -103,22 +121,34 @@ def apply(root):
         if os.path.exists(ver):
             shutil.copy2(ver, os.path.join(root, "VERSION"))
     except Exception:
-        # put the state files back before giving up - the old
-        # code dirs are gone but the data must survive (the
-        # swap may have died before consumer/ was recreated)
-        os.makedirs(consumer, exist_ok=True)
-        for name in saved:
-            src = os.path.join(backup, name)
-            if os.path.exists(src) and not os.path.exists(
-                os.path.join(consumer, name)
-            ):
-                shutil.move(src, os.path.join(consumer, name))
+        # put the old consumer dir back before giving up - the
+        # data must survive (the swap may have died before the
+        # new code was fully in place)
+        if os.path.isdir(old_consumer) and not os.path.exists(
+            os.path.join(root, "consumer", "run.py")
+        ) and not os.path.isdir(
+            os.path.join(root, "consumer", "trading")
+        ):
+            shutil.rmtree(consumer, ignore_errors=True)
+            shutil.move(old_consumer, consumer)
         raise
 
-    # 3. restore the state files
-    for name in saved:
-        shutil.move(os.path.join(backup, name),
-                    os.path.join(consumer, name))
+    # 3. restore the state files from the old consumer dir: the
+    # new code dirs are in place - everything the user owns
+    # (config, tokens, db, exit marker) moves back in; files at
+    # the repo root from a manual start come home too
+    old_dir = os.path.join(backup, "consumer")
+    if os.path.isdir(old_dir):
+        for name in os.listdir(old_dir):
+            src = os.path.join(old_dir, name)
+            dst = os.path.join(consumer, name)
+            if not os.path.exists(dst):
+                shutil.move(src, dst)
+    for name in root_saved:
+        src = os.path.join(backup, "root-" + name)
+        dst = os.path.join(consumer, name)
+        if not os.path.exists(dst):
+            shutil.move(src, dst)
     shutil.rmtree(backup, ignore_errors=True)
 
     # 4. record + clear the staging area
