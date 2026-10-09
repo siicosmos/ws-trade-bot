@@ -7,3 +7,4 @@ cryptography
 psutil
 waitress
 moomoo-api   # option quotes via moomoo OpenD (needs OpenD running)
+tzdata       # zoneinfo data for the us session clock (windows needs the pip package)

@@ -698,3 +698,74 @@ def test_cooldown_is_mode_scoped():
 
     ok, reason = risk.evaluate(parse_alert("BOUGHT 0DTE SPY 760c @ 1.5"))
     assert ok, f"paper buy leaked into the live cooldown: {reason}"
+
+
+def test_us_session_clock():
+    """the extended-session clock drives the ladder's spy spot:
+    post 16:00-20:00 et, overnight 20:00-04:00 (sun evening on,
+    friday night OFF), pre 04:00-09:30."""
+    from datetime import datetime, timezone
+
+    from consumer.trading.quotes import us_session
+
+    cases = [
+        (datetime(2026, 10, 7, 18, 0, tzinfo=timezone.utc),
+         "regular", "wed 14:00 et"),
+        (datetime(2026, 10, 7, 21, 0, tzinfo=timezone.utc),
+         "post", "wed 17:00 et"),
+        (datetime(2026, 10, 8, 1, 0, tzinfo=timezone.utc),
+         "overnight", "wed 21:00 et"),
+        (datetime(2026, 10, 7, 12, 0, tzinfo=timezone.utc),
+         "pre", "wed 08:00 et"),
+        (datetime(2026, 10, 9, 21, 0, tzinfo=timezone.utc),
+         "post", "fri 17:00 et"),
+        (datetime(2026, 10, 10, 1, 0, tzinfo=timezone.utc),
+         None, "fri 21:00 et - no overnight friday night"),
+        (datetime(2026, 10, 12, 1, 0, tzinfo=timezone.utc),
+         "overnight", "sun 21:00 et"),
+        (datetime(2026, 10, 10, 12, 0, tzinfo=timezone.utc),
+         None, "sat 08:00 et"),
+        (datetime(2026, 10, 9, 7, 59, tzinfo=timezone.utc),
+         "overnight", "fri 03:59 et"),
+        (datetime(2026, 10, 9, 8, 0, tzinfo=timezone.utc),
+         "pre", "fri 04:00 et"),
+    ]
+    for dt, want, label in cases:
+        assert q_us_session(dt) == want, label
+
+
+def q_us_session(dt):
+    from consumer.trading.quotes import us_session
+    return us_session(dt)
+
+
+def test_extract_price_follows_the_active_session():
+    """the snapshot carries each extended session's own price -
+    the active session's price is the live one (the regular
+    last_price freezes at the close)."""
+    import types
+
+    from consumer.trading.quotes import MoomooQuoteProvider
+
+    def row(**kw):
+        return types.SimpleNamespace(get=lambda k, d=None: kw.get(k, d))
+
+    full = dict(last_price=774.45, after_price=775.10,
+                overnight_price=776.00)
+    assert MoomooQuoteProvider.extract_price(
+        row(**full), session="post") == 775.10
+    assert MoomooQuoteProvider.extract_price(
+        row(**full), session="overnight") == 776.00
+    # overnight falls back to the after price when the overnight
+    # session has not traded yet
+    assert MoomooQuoteProvider.extract_price(
+        row(last_price=774.45, after_price=775.10),
+        session="overnight") == 775.10
+    assert MoomooQuoteProvider.extract_price(
+        row(last_price=774.45, pre_price=773.80), session="pre") == 773.80
+    # regular / no session: the old bid-then-last behaviour
+    assert MoomooQuoteProvider.extract_price(
+        row(bid_price=774.40, last_price=774.45),
+        session="regular") == 774.40
+    assert MoomooQuoteProvider.extract_price(
+        row(bid_price=774.40, last_price=774.45)) == 774.40

@@ -1787,7 +1787,10 @@ def create_app(cfg, store: Store, risk, executor, account=None,
         spy_status = None
         if provider is not None and hasattr(provider, "stock_quote"):
             try:
-                spy = provider.stock_quote("SPY")
+                # extended=True: the ladder's spy spot follows the
+                # active extended session (post / overnight) instead
+                # of freezing at the regular close
+                spy = provider.stock_quote("SPY", extended=True)
             except Exception:
                 spy = None
         if not spy:

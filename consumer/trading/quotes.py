@@ -71,6 +71,50 @@ def make_ws_quote_provider(cfg, account):
         return None
 
 
+def us_session(now=None):
+    """The active US equity session in ET, from the wall clock:
+    regular (9:30-16:00), post (16:00-20:00), overnight
+    (20:00-04:00, sunday evening through friday morning), pre
+    (04:00-09:30) - or None outside them (weekends, friday
+    evening). Holidays are not modeled: the clock says regular
+    and the frozen close shows, same as today."""
+    from datetime import datetime, timezone
+    try:
+        from zoneinfo import ZoneInfo
+
+        local = (now or datetime.now(timezone.utc)).astimezone(
+            ZoneInfo("America/New_York")
+        )
+    except Exception:
+        return None
+    wd = local.weekday()          # mon=0 .. sun=6
+    mins = local.hour * 60 + local.minute
+    if wd <= 3:                   # mon-thu
+        if 570 <= mins < 960:
+            return "regular"      # 09:30-16:00
+        if 960 <= mins < 1200:
+            return "post"         # 16:00-20:00
+        if mins < 240 or mins >= 1200:
+            return "overnight"    # 20:00-04:00
+        return "pre"              # 04:00-09:30
+    if wd == 4:                   # friday
+        if mins < 240:
+            return "overnight"    # the thu 20:00 session's tail
+        if mins < 570:
+            return "pre"          # 04:00-09:30
+        if mins < 960:
+            return "regular"      # 09:30-16:00
+        if mins < 1200:
+            return "post"         # 16:00-20:00
+        return None               # friday evening: no overnight
+    if wd == 6 and mins >= 1200:  # sunday from 20:00
+        return "overnight"
+    return None                   # saturday
+    if wd == 6 and mins >= 1200:  # sunday from 20:00
+        return "overnight"
+    return None                   # saturday
+
+
 class MoomooQuoteProvider:
     def __init__(self, cfg):
         self.cfg = cfg
@@ -88,15 +132,19 @@ class MoomooQuoteProvider:
         self._index_last = None
         self._stock_cache = {}   # symbol -> (ts, price)
 
-    def stock_quote(self, symbol, ttl=5.0):
+    def stock_quote(self, symbol, ttl=5.0, extended=False):
         """Realtime stock/etf spot from the snapshot, cached
         briefly like the index quote. US stocks keep trading in
         the overnight and post-market sessions, so this stays
         live when the index itself is closed - the spy ladder
-        rides it instead of the slow ws quote api."""
+        rides it instead of the slow ws quote api. extended=True
+        picks the active extended session's price (the ladder
+        display); trading pricing keeps the regular-session
+        quote."""
         sym = str(symbol or "").upper()
         if not sym:
             return None
+        session = us_session() if extended else None
         now = time.time()
         hit = self._stock_cache.get(sym)
         if hit and now - hit[0] < ttl:
@@ -296,7 +344,7 @@ class MoomooQuoteProvider:
         return [f"US.{core}"]
 
     @staticmethod
-    def extract_price(row):
+    def extract_price(row, session=None):
         def as_float(value):
             try:
                 v = float(value)
@@ -305,30 +353,41 @@ class MoomooQuoteProvider:
                 return None
 
         get = row.get if hasattr(row, "get") else None
-        if get is not None:
-            # the regular-session last_price freezes at the close,
-            # but spy keeps trading after hours - futu stamps the
-            # extended-session price with its own time, so when the
-            # after-hours stamp is fresher than the regular quote's,
-            # the after price is the live one
+        if get is None:
+            return None
+
+        # the regular-session last_price freezes at the close, but
+        # spy trades two extended sessions (post 16:00-20:00 et,
+        # overnight 20:00-04:00) - the snapshot carries each
+        # session's own price, so the active session's price is the
+        # live one (the snapshot has no per-session timestamps, the
+        # et wall clock decides)
+        if session == "post":
             after = as_float(get("after_price"))
             if after:
-                after_time = str(get("after_time") or "")
-                quote_time = str(
-                    get("latest_time") or get("update_time") or ""
-                )
-                if after_time and after_time > quote_time:
-                    return after
+                return after
+        elif session == "overnight":
+            overnight = as_float(get("overnight_price"))
+            if overnight:
+                return overnight
+            after = as_float(get("after_price"))
+            if after:
+                return after
+        elif session == "pre":
+            pre = as_float(get("pre_price"))
+            if pre:
+                return pre
+
+        for key in ("bid_price", "last_price"):
+            v = as_float(get(key))
+            if v is not None:
+                return v
+        option = get("option_data")
+        if isinstance(option, dict):
             for key in ("bid_price", "last_price"):
-                v = as_float(get(key))
+                v = as_float(option.get(key))
                 if v is not None:
                     return v
-            option = get("option_data")
-            if isinstance(option, dict):
-                for key in ("bid_price", "last_price"):
-                    v = as_float(option.get(key))
-                    if v is not None:
-                        return v
         return None
 
     def quote(self, pos):
@@ -355,6 +414,8 @@ class MoomooQuoteProvider:
             row = data.iloc[0] if hasattr(data, "iloc") else data[0]
         except Exception:
             return None
+        # trading pricing: the regular-session quote (no session
+        # override - the ladder's extended spot is display-only)
         return self.extract_price(row)
 
     def __call__(self, pos):

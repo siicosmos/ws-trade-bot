@@ -889,7 +889,7 @@ def test_spx_endpoint_prefers_moomoo_spy(monkeypatch):
         def index_quote(self, symbol="SPX"):
             return 7683.69
 
-        def stock_quote(self, symbol):
+        def stock_quote(self, symbol, extended=False):
             assert symbol == "SPY"
             return 764.85
 
@@ -968,7 +968,7 @@ def test_spx_proxy_only_as_last_resort(monkeypatch):
         def index_quote(self, symbol="SPX"):
             return 7686.4          # spy x 10.0391
 
-        def stock_quote(self, symbol):
+        def stock_quote(self, symbol, extended=False):
             return 764.85
 
     class WSAccount:
