@@ -176,3 +176,73 @@ def test_wrong_token_is_reported_specifically(monkeypatch):
     assert state.get("ok") is False
     assert "feed token rejected (401)" in state.get("error", "")
     t.join(timeout=1)
+
+
+def test_backfill_claims_recent_signals_without_executing(monkeypatch):
+    """a wiped/rebuilt consumer db backfills the info server's
+    recent signals as ALREADY-CLAIMED rows: the dashboard's recent
+    alerts list survives, and an old alert can never re-trade
+    (the claim is the dedupe)."""
+    import requests as _requests
+
+    store = _fresh_store()
+    cfg = _FeedCfg()
+    executed = []
+
+    class _Resp:
+        status_code = 200
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            if not executed:   # the anchor call
+                return {"alerts": [], "cursor": 41, "levels": ""}
+            return {"alerts": [], "cursor": 41, "levels": ""}
+
+    # the anchor + the backfill's /api/signals call
+    signals = [{
+        "message_key": "k-backfill-1",
+        "ts": "2026-10-06T14:30:00+00:00",
+        "author": "a",
+        "text": "BOUGHT 0DTE SPY 759c @ 1.5 small",
+        "parsed": True,
+        "correction": False,
+        "channel": "player-alerts",
+    }]
+
+    def _fake_get(url, params=None, headers=None, timeout=0,
+                  verify=False):
+        if "/api/signals" in url:
+            return _Resp2(signals)
+        return _Resp()
+
+    class _Resp2(_Resp):
+        def __init__(self, rows):
+            self._rows = rows
+
+        def json(self):
+            return self._rows
+
+    monkeypatch.setattr(_requests, "get", _fake_get)
+    monkeypatch.setattr(feedclient.time, "sleep", lambda s: None)
+
+    def on_alert(text, author, ts, channel):
+        executed.append(text)   # would trade
+
+    t = feedclient.start_feed_client(cfg, store, on_alert)
+    deadline = time.time() + 2
+    while time.time() < deadline:
+        if store.seen_signal("k-backfill-1"):
+            break
+        time.sleep(0.05)
+
+    # the backfilled signal is claimed (visible + deduped)...
+    assert store.seen_signal("k-backfill-1")
+    # the recent-signals view carries the text (no keys) - the
+    # dashboard's list is what we are asserting on
+    rows = store.recent_signals(limit=10)
+    assert any("SPY 759c" in r["text"] for r in rows)
+    # ...and was NOT executed (no on_alert call, no trade)
+    assert executed == []
+    t.join(timeout=1)

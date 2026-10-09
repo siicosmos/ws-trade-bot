@@ -2,7 +2,7 @@ import os
 
 _TOKEN_PATH = os.path.abspath(
     os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                 "..", "..", "config", "ws_tokens.env")
+                 "..", "config", "ws_tokens.env")
 )
 _last_written = None
 

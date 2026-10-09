@@ -29,6 +29,48 @@ def _epoch(iso_ts):
         return None
 
 
+def _backfill_signals(base, store, limit=50):
+    """Pull the info server's recent signals into the consumer's
+    signals table as ALREADY-CLAIMED rows: the dashboard's recent
+    alerts survive a wiped/rebuilt consumer db, and the dedupe
+    memory covers anything the info server still holds. Claimed
+    without executing - old alerts must never re-trade."""
+    try:
+        r = requests.get(f"{base}/api/signals?limit={limit}",
+                         timeout=10)
+        r.raise_for_status()
+        rows = r.json() if isinstance(r.json(), list) else []
+    except Exception:
+        return 0
+    added = 0
+    for row in rows:
+        try:
+            from datetime import datetime
+
+            ts = row.get("ts")
+            ts_epoch = (
+                datetime.fromisoformat(ts).timestamp() if ts else None
+            )
+            key = row.get("message_key")
+            text = row.get("text") or ""
+            if not key or not text:
+                continue
+            if store.record_signal(
+                key, row.get("author") or "", text,
+                bool(row.get("parsed")),
+                correction=bool(row.get("correction")),
+                channel=row.get("channel") or "",
+                ts_epoch=ts_epoch,
+            ):
+                added += 1
+        except Exception:
+            continue
+    if added:
+        print(f"feed client: backfilled {added} recent alerts "
+              f"from the info server")
+    return added
+
+
 def _loop(cfg, store, on_alert, state=None):
     base = cfg.feed.url.rstrip("/")
     headers = {"X-Auth-Token": cfg.feed.token}
@@ -56,6 +98,11 @@ def _loop(cfg, store, on_alert, state=None):
                     state["last_seen"] = time.time()
                     state["ok"] = True
                     state["cursor"] = cursor
+                # a fresh/wiped consumer db: pull the info server's
+                # recent signals in as claimed rows - the dashboard's
+                # recent alerts list is not empty and the dedupe
+                # memory covers the info server's window
+                _backfill_signals(base, store)
             else:
                 r = requests.get(
                     f"{base}/api/feed",
