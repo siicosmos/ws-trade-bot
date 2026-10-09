@@ -577,7 +577,7 @@ id/type/enabled but no label input; a new row has one.
 2. Restore: `Rename-Item consumer.config.yaml.bak consumer.config.yaml`
    and start normally.
 
-#### M-9.2 — Crash loop: kill the python process — the loop restarts in 5s, writes `pipeline_exit.txt`, and the next start surfaces "previous run: ...".
+#### M-9.2 — Crash loop: kill the python process — the loop restarts in 5s, writes `db\pipeline_exit_consumer.txt`, and the next start surfaces "previous run: ...".
 
 **Steps:**
 
