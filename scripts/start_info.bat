@@ -22,15 +22,15 @@ if errorlevel 1 (
 )
 
 
-if not exist info.config.yaml (
-  echo info.config.yaml missing - copy ..\config\info.config.yaml here
+if not exist ..\config\info.config.yaml (
+  echo config\info.config.yaml missing - copy ..\config\info.example.config.yaml there
   pause
   exit /b 1
 )
 
 :start
 rem the db name (info.trades.db) is derived from the role in run.py
-..\.venv\Scripts\python.exe ..\run.py -c info.config.yaml
+..\.venv\Scripts\python.exe ..\run.py -c ..\config\info.config.yaml
 set EXITCODE=%errorlevel%
 if %EXITCODE% == 0 (
   echo info server stopped cleanly

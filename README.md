@@ -52,8 +52,8 @@ owner's box typically runs all three).
 | component | process | what it does |
 |---|---|---|
 | **reader** | `reader/discord_reader.py` (own venv, Windows only) | Polls the Discord desktop client via UI Automation (uiautomation), auto-scrolls the message pane, strips UI noise, dedupes, and POSTs new messages to the info server. Auto-starts/restarts Discord, navigates servers/channels, follows a channel allowlist. Sends a channel/ok heartbeat every ~10 polls. |
-| **info server** | `run.py -c info/info.config.yaml` (`info:` section) | The alert source: reader ingest (`POST /alert`), parse + dedupe + record, the **alert feed** for consumers (long-poll `GET /api/feed` + push fan-out to registered consumers), the SPX levels text, and a lean admin dashboard (consumer health, feed activity, reader line, levels editor). **No trading wiring** — no executors, no stop monitor, no mirror, no quotes. |
-| **consumer app** | `run.py -c consumer/consumer.config.yaml` (`consumer:` section) | The trading app — everything downstream of parsing, local to each user: risk engine, sizing, paper/live executors against **their own Wealthsimple login**, stop monitor, fill reconciliation, own SQLite store, own Discord webhook, and the full dashboard on localhost. Alert sources: the server's push (its `/alert` endpoint) and its own feed client (long-poll) — dual delivery is idempotent via the atomic signal claim. |
+| **info server** | `run.py -c config/info.config.yaml` (`info:` section) | The alert source: reader ingest (`POST /alert`), parse + dedupe + record, the **alert feed** for consumers (long-poll `GET /api/feed` + push fan-out to registered consumers), the SPX levels text, and a lean admin dashboard (consumer health, feed activity, reader line, levels editor). **No trading wiring** — no executors, no stop monitor, no mirror, no quotes. |
+| **consumer app** | `run.py -c config/consumer.config.yaml` (`consumer:` section) | The trading app — everything downstream of parsing, local to each user: risk engine, sizing, paper/live executors against **their own Wealthsimple login**, stop monitor, fill reconciliation, own SQLite store, own Discord webhook, and the full dashboard on localhost. Alert sources: the server's push (its `/alert` endpoint) and its own feed client (long-poll) — dual delivery is idempotent via the atomic signal claim. |
 
 Restart loops (`scripts/start_*.bat`) relaunch their process 5s after
 any nonzero exit. The watchdog exits 1 on a 5-minute hang; the
@@ -341,7 +341,7 @@ dashboard has no login). Admin-gated routes check the session role.
 | POST | `/api/settings` | admin | validate + apply + persist settings (no restart) |
 | POST | `/api/mode` | admin | the mode slider: validate + persist `trading.mode` + restart the app |
 | GET | `/api/update_status` | any | auto-updater status (last check/result/commit/branch) |
-| POST | `/api/reader_status` | token | reader heartbeat (`{channel, ok}`); returns `{}` — reader settings live in `reader/reader.config.yaml` (an edit applies on the reader's restart) |
+| POST | `/api/reader_status` | token | reader heartbeat (`{channel, ok}`); returns `{}` — reader settings live in `config/reader.config.yaml` (an edit applies on the reader's restart) |
 | GET | `/api/reader_status` | any | current reader heartbeat state (dashboard reader line) |
 | GET | `/api/users` | admin | list users (no hashes) |
 | POST | `/api/users` | admin | create/delete/set_password (self-change needs current password; cannot delete self or last admin) |
@@ -374,7 +374,7 @@ prune of rows past `history_retention_days` (365) rides the write
 paths and the watchdog; the file plateaus by design (freed pages are
 reused, no automated VACUUM).
 
-Backups: `sqlite3 consumer/consumer.trades.db ".backup backup.db"`
+Backups: `sqlite3 db/consumer.trades.db ".backup backup.db"`
 while running (a raw
 copy can miss WAL contents). Clean slate: `scripts/clean_start.py`
 (wipes the db's signals/trades + that role's log files only —
@@ -458,7 +458,7 @@ the info server's `info.auth_token`**),
 (15), `discord_restart_seconds` (90), `discord_start_command`,
 `channels` allowlist (**never** include your webhook output channel;
 the first entry is the channel the reader sits in).
-Reader knobs are edited in `reader/reader.config.yaml` directly — the
+Reader knobs are edited in `config/reader.config.yaml` directly — the
 reader watches the file's mtime and restarts to apply an edit.
 
 ### `discord` — webhooks
@@ -467,7 +467,7 @@ your phone), `consumer_log_webhook_url` (this app's log tail),
 `update_webhook_url` (empty = off — no fallback webhook anywhere).
 The reader's webhooks
 (`reader_log_webhook_url`, `raw_alert_webhook_url`,
-`update_webhook_url`) live in `reader/reader.config.yaml`; the info
+`update_webhook_url`) live in `config/reader.config.yaml`; the info
 server only uses `consumer_log_webhook_url` + `update_webhook_url`.
 
 ### `auto_update`
@@ -490,15 +490,21 @@ parser misses.
 
 ### The owner's box (Windows) — reader + info server + your consumer app
 
-Each role lives in its **own folder** with its own
-`<role>.config.yaml` and `<role>.trades.db`; the launchers live in
-`scripts/` and every log
-lands in the shared `logs/` folder:
+State lives apart from code: the live configs in **`config/`** and
+the ledgers in **`db/`** — the two folders an update swap never
+touches. The launchers live in `scripts/` and every log lands in
+the shared `logs/` folder:
 
 ```
 ws-trade-bot/
-  info/        info.config.yaml · info.trades.db
-  consumer/    consumer.config.yaml · consumer.trades.db
+  config/      the live configs (consumer/info/reader.config.yaml)
+               + the shipped examples (*.example.config.yaml)
+               + ws_tokens.env
+  db/          consumer.trades.db · info.trades.db · the reader's
+               seen-set - state lives apart from code, an update
+               swap never touches it
+  info/        the info server's code
+  consumer/    the consumer app's code
   reader/      the Discord watcher (own venv)
   scripts/     start_info.bat · start_consumer.bat · the rest
   logs/        info.log · consumer.log · reader.log
@@ -509,10 +515,10 @@ ws-trade-bot/
    SSH deploy key for the info server's unattended auto-update
    pulls — consumer-only machines don't need it, they follow the
    GitHub release channel with a token instead).
-2. **Role configs** (once): copy `config/info.config.yaml` to
-   `info/info.config.yaml` (port 8081 is already set — add an
+2. **Role configs** (once): copy `config/info.example.config.yaml`
+   to `config/info.config.yaml` (port 8081 is already set — add an
    `auth_token` and register consumers under `consumers[]`) and
-   `config/consumer.config.yaml` to `consumer/consumer.config.yaml`
+   `config/consumer.example.config.yaml` to `config/consumer.config.yaml`
    (port 8080 is already set — add an `auth_token`, a `feed:`
    section pointing at the info server, and your
    `wealthsimple.accounts[]`).
@@ -551,9 +557,9 @@ Two install types — both auto-update:
 1. Download the newest `consumer-<commit>.zip` from the repo's
    GitHub Releases (`consumer-latest`) and unzip it to a folder.
 2. Run `scripts\install_consumer.bat` once — creates the venv,
-   installs dependencies, seeds `consumer/consumer.config.yaml` from the
+   installs dependencies, seeds `config/consumer.config.yaml` from the
    example.
-3. Edit `consumer/consumer.config.yaml`: a local
+3. Edit `config/consumer.config.yaml`: a local
    `auth_token`, the `feed:` section (the info server's URL
    + their consumer token), and their `wealthsimple.accounts[]`.
    While the repo is private also set
@@ -571,7 +577,7 @@ Two install types — both auto-update:
 
 1. `pip install -r requirements.txt` (or run
    `scripts\start_consumer.bat`, which does it).
-2. Copy `config/consumer.config.yaml` → `consumer/consumer.config.yaml`; set
+2. Copy `config/consumer.example.config.yaml` → `config/consumer.config.yaml`; set
    a local `auth_token`, the `feed:` section (the info server's URL + their consumer token),
    and their `wealthsimple.accounts[]`.
 3. `python scripts/ws_login.py` with THEIR Wealthsimple login.

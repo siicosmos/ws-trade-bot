@@ -20,16 +20,16 @@ if errorlevel 1 (
   exit /b 1
 )
 
-if not exist consumer\consumer.config.yaml (
-  copy config\consumer.config.yaml consumer\consumer.config.yaml >nul
-  echo created consumer\consumer.config.yaml - edit it:
+if not exist config\consumer.config.yaml (
+  copy config\consumer.example.config.yaml config\consumer.config.yaml >nul
+  echo created config\consumer.config.yaml - edit it:
   echo   pipeline.auth_token, feed url + token,
   echo   auto_update.github_token ^(a read-only GitHub token, needed
   echo   while the repo is private^)
 )
 
-if not exist consumer\ws_tokens.env (
-  echo add your Wealthsimple tokens to consumer\ws_tokens.env
+if not exist config\ws_tokens.env (
+  echo add your Wealthsimple tokens to config\ws_tokens.env
   echo ^(see config\consumer.config.yaml and scripts\ws_login.py^)
 )
 

@@ -18,12 +18,12 @@ def main():
     access = os.environ.get("WS_ACCESS_TOKEN") or getattr(ws, "access_token", None)
     refresh = os.environ.get("WS_REFRESH_TOKEN") or getattr(ws, "refresh_token", None)
 
-    # save where the consumer app reads: consumer/ws_tokens.env
+    # save where the consumer app reads: config/ws_tokens.env
     # (the keyring stays the primary store - this is the headless
     # fallback)
     token_path = os.path.join(
         os.path.dirname(os.path.abspath(__file__)),
-        "..", "consumer", "ws_tokens.env",
+        "..", "config", "ws_tokens.env",
     )
     if access and refresh:
         with open(token_path, "w", encoding="utf-8") as f:

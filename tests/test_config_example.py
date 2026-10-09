@@ -24,7 +24,7 @@ pytestmark = pytest.mark.essential
 
 
 def test_consumer_example_role_and_defaults():
-    cfg = _load("consumer.config.yaml")
+    cfg = _load("consumer.example.config.yaml")
     # the section key IS the role - no explicit role: field needed
     assert cfg.pipeline.role == "consumer"
     assert cfg.pipeline.port == 8080
@@ -34,7 +34,7 @@ def test_consumer_example_role_and_defaults():
 
 
 def test_consumer_example_has_all_size_tiers():
-    tiers = _load("consumer.config.yaml").trading.size_tiers
+    tiers = _load("consumer.example.config.yaml").trading.size_tiers
     assert set(tiers) == {
         "lotto", "micro", "tiny", "small", "medium", "large", "big", "full"
     }
@@ -44,7 +44,7 @@ def test_consumer_example_has_all_size_tiers():
 
 
 def test_consumer_example_float_fields_are_floats():
-    cfg = _load("consumer.config.yaml")
+    cfg = _load("consumer.example.config.yaml")
     for tier in cfg.trading.size_tiers.values():
         assert isinstance(tier["risk_pct_max"], float)
     for acct in cfg.wealthsimple.accounts:
@@ -53,7 +53,7 @@ def test_consumer_example_float_fields_are_floats():
 
 
 def test_consumer_example_ships_no_secrets():
-    raw = _raw("consumer.config.yaml")
+    raw = _raw("consumer.example.config.yaml")
     text = yaml.safe_dump(raw)
     assert not (raw.get("auto_update") or {}).get("github_token")
     for secret in ("ws_tokens", "trades.db"):
@@ -61,7 +61,7 @@ def test_consumer_example_ships_no_secrets():
 
 
 def test_info_example_role_and_no_trading_sections():
-    cfg = _load("info.config.yaml")
+    cfg = _load("info.example.config.yaml")
     assert cfg.pipeline.role == "info"
     assert cfg.pipeline.port == 8081
     # sections that do not apply to the info role stay defaulted
@@ -72,7 +72,7 @@ def test_info_example_role_and_no_trading_sections():
 
 @pytest.mark.minimum
 def test_reader_example_flat_keys():
-    raw = _raw("reader.config.yaml")
+    raw = _raw("reader.example.config.yaml")
     # the reader reads flat keys (no nesting)
     assert raw["pipeline_url"].startswith("http")
     assert raw["channels"]
@@ -88,7 +88,7 @@ def test_reader_example_flat_keys():
 @pytest.mark.minimum
 def test_examples_load_through_core_config():
     # the info + consumer examples must survive the real loader
-    for name in ("consumer.config.yaml", "info.config.yaml"):
+    for name in ("consumer.example.config.yaml", "info.example.config.yaml"):
         cfg = _load(name)
         assert cfg.pipeline.role in ("consumer", "info")
 
@@ -196,16 +196,16 @@ def test_example_keys_are_all_read_by_the_loader():
         return stale
 
     stale = audit(
-        "consumer.config.yaml", loader,
+        "consumer.example.config.yaml", loader,
         sections={"paper", "consumer", "feed", "auto_update", "quotes",
                   "discord", "trading", "wealthsimple", "parser"},
     )
     stale += audit(
-        "info.config.yaml", loader,
+        "info.example.config.yaml", loader,
         sections={"info", "consumers", "auto_update", "discord",
                   "trading", "parser"},
     )
-    stale += audit("reader.config.yaml", reader_src)
+    stale += audit("reader.example.config.yaml", reader_src)
     assert stale == [], stale
 
 
@@ -213,6 +213,6 @@ def test_reader_example_dropped_keys_stay_gone():
     # channel_marker/discord_server were removed - the channels
     # allowlist (first entry = where the reader sits) is the only
     # pinning mechanism now
-    raw = _raw("reader.config.yaml")
+    raw = _raw("reader.example.config.yaml")
     assert "channel_marker" not in raw
     assert "discord_server" not in raw

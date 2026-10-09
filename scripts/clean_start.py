@@ -54,9 +54,9 @@ def main() -> int:
     parser.add_argument(
         "--db",
         default=os.path.join(REPO_ROOT, "consumer",
-                             "consumer.trades.db"),
+                             os.path.join("db", "consumer.trades.db")),
         help="path to the role's trades db "
-             "(default: consumer/consumer.trades.db)",
+             "(default: db/consumer.trades.db)",
     )
     parser.add_argument(
         "--yes", "-y", action="store_true",

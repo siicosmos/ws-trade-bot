@@ -143,7 +143,7 @@ NameError when a stock tier was configured) is fixed to
 
 ### Paper expectancy report
 
-`scripts/expectancy.py [--db consumer/consumer.trades.db] [--mode paper]`: closes round
+`scripts/expectancy.py [--db db/consumer.trades.db] [--mode paper]`: closes round
 trips from the positions ledger and reports per account + size tier -
 trade count, win rate, avg win, avg loss, expectancy per trade,
 realized total - plus a best-effort slippage section (alert premium vs

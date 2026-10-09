@@ -39,12 +39,12 @@ def main():
         result(WARN, "wealthsimple-python not installed",
                "live mode unavailable; notify sizing falls back to paper values")
 
-    config_path = os.path.join(ROOT, "consumer", "consumer.config.yaml")
+    config_path = os.path.join(ROOT, "config", "consumer.config.yaml")
     if not os.path.exists(config_path):
         result(FAIL, "consumer config exists",
-               "run: copy config/consumer.config.yaml "
-               "consumer/consumer.config.yaml")
-        print("\ncreate consumer/consumer.config.yaml first, then rerun")
+               "run: copy config/consumer.example.config.yaml "
+               "config/consumer.config.yaml")
+        print("\ncreate config/consumer.config.yaml first, then rerun")
         sys.exit(1)
 
     try:
@@ -61,7 +61,7 @@ def main():
         result(FAIL, "consumer config loads", f"{type(e).__name__}: {e}")
         sys.exit(1)
 
-    db_path = os.path.join(ROOT, "consumer", "consumer.trades.db")
+    db_path = os.path.join(ROOT, "db", "consumer.trades.db")
     try:
         import sqlite3
 

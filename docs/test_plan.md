@@ -34,10 +34,10 @@ Windows UIA); it needs `requirements.txt` installed
 
 Conventions for every manual step below:
 
-- `<info-token>` = `info.auth_token` from `info/info.config.yaml`
+- `<info-token>` = `info.auth_token` from `config/info.config.yaml`
   (also the reader's credential and the info write-route token).
 - `<consumer-token>` = `consumer.auth_token` from
-  `consumer/consumer.config.yaml` (seeds the dashboard's admin).
+  `config/consumer.config.yaml` (seeds the dashboard's admin).
 - `curl.exe` ships with windows 10+; `-s` silences progress,
   `-o NUL -w "%{http_code}"` prints just the status code.
 
@@ -62,7 +62,7 @@ Conventions for every manual step below:
 
 **Manual**
 
-#### M-1.1 — Start each role once from its config (`consumer/consumer.config.yaml`, `info/info.config.yaml`) and confirm the dashboard + role dispatch work.
+#### M-1.1 — Start each role once from its config (`config/consumer.config.yaml`, `config/info.config.yaml`) and confirm the dashboard + role dispatch work.
 
 **Steps:**
 
@@ -261,7 +261,7 @@ Conventions for every manual step below:
 **Steps:**
 
 1. Comment out `auto_update.github_token` in
-   `consumer/consumer.config.yaml`, restart.
+   `config/consumer.config.yaml`, restart.
 2. ```powershell
    Select-String "release check failed" logs\consumer.log | Select-Object -Last 2
    # expect: release check failed: 401 / 404 - and the app keeps running
@@ -399,7 +399,7 @@ by stubs (`test_reader.py` timing tests).
    # expect: repo updated (no reader changes) - staying up
    ```
 
-#### M-6.3 — Edit `reader/reader.config.yaml` while running → reader restarts to apply it.
+#### M-6.3 — Edit `config/reader.config.yaml` while running → reader restarts to apply it.
 
 **Steps:**
 
@@ -451,7 +451,7 @@ only for the read-only checks shown.
 1. Dashboard → settings → accounts → + add: label, account
    id (from `scripts\ws_login.py` output), type
    `non_margin`. Save (persists to
-   `consumer/consumer.config.yaml`).
+   `config/consumer.config.yaml`).
 2. Restart the consumer (`scripts\start_consumer.bat`).
 3. The card appears:
    ```powershell
@@ -546,7 +546,7 @@ id/type/enabled but no label input; a new row has one.
    # matches the hash line in SHA256SUMS
    ```
 
-#### M-8.2 — Unzip a fresh artifact into a temp dir and run `install_consumer.bat` on a clean Windows box (or a new folder): venv created, `consumer/consumer.config.yaml` seeded, app starts against the info server.
+#### M-8.2 — Unzip a fresh artifact into a temp dir and run `install_consumer.bat` on a clean Windows box (or a new folder): venv created, `config/consumer.config.yaml` seeded, app starts against the info server.
 
 **Steps:**
 

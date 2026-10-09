@@ -1,10 +1,11 @@
 """Entry point for both apps - a thin dispatcher.
 
-Each role folder is a self-contained app (code + <role>.config.yaml
-+ <role>.trades.db + start.bat), like reader/:
+State lives apart from code so an update swap can never touch it:
 
-  info/     the alert source: reader ingest + feed, no trading
-  consumer/ the trading app: risk, sizing, paper/live executors
+  config/   the live configs (config/<role>.config.yaml) + the
+            shipped examples (<role>.example.config.yaml)
+  db/       the ledgers (<role>.trades.db) + the reader's
+            seen-set
 
 run.py loads the config, cleans up stale instances of the same
 config, and hands off to the role's main.
@@ -39,10 +40,13 @@ def main():
     cfg = load_config(args.config)
     role = getattr(cfg.pipeline, "role", "consumer") or "consumer"
 
-    # the db name follows the role: consumer.trades.db /
-    # info.trades.db (an explicit --db always wins)
+    # the db name follows the role, in db/ - state lives apart
+    # from the code dirs an update swap replaces (an explicit
+    # --db always wins)
     if not args.db:
-        args.db = f"{role}.trades.db"
+        db_dir = os.path.join(ROOT, "db")
+        os.makedirs(db_dir, exist_ok=True)
+        args.db = os.path.join(db_dir, f"{role}.trades.db")
 
     if role == "info":
         from info.server import main as info_main

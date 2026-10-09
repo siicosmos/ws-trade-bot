@@ -43,7 +43,7 @@ def test_build_zip_artifact(tmp_path):
     # everything a client install needs
     required = [
         "run.py", "requirements.txt", "VERSION",
-        "config/consumer.config.yaml",
+        "config/consumer.example.config.yaml",
         "scripts/install_consumer.bat",
         "scripts/start_consumer.bat",
         "scripts/apply_update.py",
@@ -79,7 +79,7 @@ def test_build_zip_artifact(tmp_path):
 
     # the shipped template is the aligned one: blank accounts,
     # the section key is the role, and no token ships in it
-    template = z.read("config/consumer.config.yaml").decode()
+    template = z.read("config/consumer.example.config.yaml").decode()
     assert "accounts: []" in template
     assert re.search(r"^consumer:", template, re.M)
     assert not re.search(r"^pipeline:", template, re.M)

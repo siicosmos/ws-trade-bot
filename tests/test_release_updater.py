@@ -187,10 +187,11 @@ def test_check_once_disabled_and_pending(tmp_path, monkeypatch):
 
 def test_apply_update_swaps_and_preserves_state(tmp_path):
     root = str(tmp_path)
-    # the old install
-    _write(root, "consumer/consumer.config.yaml", "role: consumer\n")
-    _write(root, "consumer/ws_tokens.env", "T=1\n")
-    _write(root, "consumer/consumer.trades.db", "db-bytes")
+    # the old install: state lives in config/ + db/, apart from
+    # the code dirs the swap replaces
+    _write(root, "config/consumer.config.yaml", "role: consumer\n")
+    _write(root, "config/ws_tokens.env", "T=1\n")
+    _write(root, "db/consumer.trades.db", "db-bytes")
     _write(root, "core/old.py", "old\n")
     _write(root, "run.py", "old run\n")
     # the staged build
@@ -214,11 +215,13 @@ def test_apply_update_swaps_and_preserves_state(tmp_path):
     assert not os.path.exists(os.path.join(root, "core", "old.py"))
     with open(os.path.join(root, "run.py"), encoding="utf-8") as f:
         assert f.read() == "print('hi')\n"
-    # state preserved
-    with open(os.path.join(root, "consumer", "consumer.config.yaml"), encoding="utf-8") as f:
+    # state untouched - the swap never touches config/ or db/
+    with open(os.path.join(root, "config", "consumer.config.yaml"), encoding="utf-8") as f:
         assert f.read() == "role: consumer\n"
-    with open(os.path.join(root, "consumer", "consumer.trades.db"), encoding="utf-8") as f:
+    with open(os.path.join(root, "db", "consumer.trades.db"), encoding="utf-8") as f:
         assert f.read() == "db-bytes"
+    with open(os.path.join(root, "config", "ws_tokens.env"), encoding="utf-8") as f:
+        assert f.read() == "T=1\n"
     # VERSION + record + cleanup
     assert read_version(root)["commit"] == "bbb"
     with open(os.path.join(root, ".last_update.json"), encoding="utf-8") as f:
@@ -238,12 +241,13 @@ def test_apply_update_noop_without_pending(tmp_path):
     assert mod.apply(str(tmp_path)) is False
 
 
-def test_apply_update_failure_restores_state(tmp_path, monkeypatch):
-    # a swap that dies mid-way must put the state files back -
-    # the code dirs may be gone but the data has to survive
+def test_apply_update_failure_leaves_state_untouched(tmp_path, monkeypatch):
+    # a swap that dies mid-way may leave the code broken, but the
+    # state lives in config/ + db/ which the swap never touches -
+    # the data survives no matter where the failure lands
     root = str(tmp_path)
-    _write(root, "consumer/consumer.config.yaml", "role: consumer\n")
-    _write(root, "consumer/consumer.trades.db", "db-bytes")
+    _write(root, "config/consumer.config.yaml", "role: consumer\n")
+    _write(root, "db/consumer.trades.db", "db-bytes")
     _write(root, "core/old.py", "old\n")
     staging = os.path.join(root, ".update_staging")
     os.makedirs(staging)
@@ -267,10 +271,10 @@ def test_apply_update_failure_restores_state(tmp_path, monkeypatch):
     with pytest.raises(OSError):
         mod.apply(root)
 
-    # the state files are back (consumer/ recreated if needed)
-    with open(os.path.join(root, "consumer", "consumer.config.yaml"), encoding="utf-8") as f:
+    # the state files are untouched
+    with open(os.path.join(root, "config", "consumer.config.yaml"), encoding="utf-8") as f:
         assert f.read() == "role: consumer\n"
-    with open(os.path.join(root, "consumer", "consumer.trades.db"), encoding="utf-8") as f:
+    with open(os.path.join(root, "db", "consumer.trades.db"), encoding="utf-8") as f:
         assert f.read() == "db-bytes"
     # the marker + staging stay - the next launcher pass retries
     assert os.path.exists(os.path.join(root, ".update_pending.json"))

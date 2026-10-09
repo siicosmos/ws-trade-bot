@@ -1,7 +1,7 @@
 @echo off
 rem consumer app: the trading pipeline fed by the info server's
-rem alert feed. everything this role needs lives in the consumer
-rem folder: consumer.config.yaml · consumer.trades.db · consumer.log
+rem alert feed. state lives apart from code:
+rem   config\consumer.config.yaml · db\consumer.trades.db
 rem this launcher lives in scripts\ - it cds into ..\consumer
 cd /d %~dp0..\consumer
 
@@ -22,8 +22,8 @@ if errorlevel 1 (
 )
 
 
-if not exist consumer.config.yaml (
-  echo consumer.config.yaml missing - copy ..\config\consumer.config.yaml here
+if not exist ..\config\consumer.config.yaml (
+  echo config\consumer.config.yaml missing - copy ..\config\consumer.example.config.yaml there
   pause
   exit /b 1
 )
@@ -35,7 +35,7 @@ if errorlevel 1 (
   echo warning: apply_update failed - running the existing code
 )
 rem the db name (consumer.trades.db) is derived from the role in run.py
-..\.venv\Scripts\python.exe ..\run.py -c consumer.config.yaml
+..\.venv\Scripts\python.exe ..\run.py -c ..\config\consumer.config.yaml
 set EXITCODE=%errorlevel%
 if %EXITCODE% == 0 (
   echo consumer app stopped cleanly

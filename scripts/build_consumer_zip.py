@@ -3,7 +3,7 @@
 The artifact contains everything a release install needs to run:
 core/, consumer/ (code only - config, tokens and the db are the
 user's), scripts/, run.py, requirements.txt,
-config/consumer.config.yaml and a VERSION marker the client
+config/consumer.example.config.yaml and a VERSION marker the client
 updater compares against.
 
 usage: python scripts/build_consumer_zip.py [output_dir]
@@ -90,7 +90,7 @@ def collect():
                 if include_file(rel):
                     files.append((full, rel))
     for name in ("run.py", "requirements.txt",
-                 os.path.join("config", "consumer.config.yaml")):
+                 os.path.join("config", "consumer.example.config.yaml")):
         full = os.path.join(ROOT, name)
         if os.path.exists(full):
             rel = name.replace(os.sep, "/")

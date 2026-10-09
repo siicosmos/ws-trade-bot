@@ -8,7 +8,7 @@ compares the alert's premium (paper-executed rows) against the
 mirrored real fill's price for the same contract/action/day.
 
 Usage:
-    python scripts/expectancy.py [--db consumer/consumer.trades.db] [--mode paper]
+    python scripts/expectancy.py [--db db/consumer.trades.db] [--mode paper]
 
 Decision rule (see docs/live_readiness_plan.md): a tier with a
 negative expectancy over >= 30 closed trades is a candidate for
@@ -160,7 +160,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument(
         "--db",
-        default=os.path.join(ROOT, "consumer", "consumer.trades.db"),
+        default=os.path.join(ROOT, "db", "consumer.trades.db"),
     )
     ap.add_argument("--mode", default="paper",
                     choices=["paper", "live", "real"])

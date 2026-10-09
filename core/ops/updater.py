@@ -102,14 +102,12 @@ def _clear_stale_lock(root):
 
 RUNTIME_IGNORED = (
     "pipeline.log*", "reader.log*", "info.log*", "consumer.log*",
-    "logs/*", "trades.db*", "*.db",
-    "consumer/consumer.trades.db*", "info/info.trades.db*",
-    "consumer/trades.db*", "info/trades.db*",
-    ".last_update.json", "reader/.reader_seen.json",
+    "logs/*", "*.db",
+    "db/*",
+    ".last_update.json", "db/reader_seen.json",
     ".session_key",
-    "config.yaml", "consumer/ws_tokens.env",
-    "consumer/consumer.config.yaml", "info/info.config.yaml",
-    "reader/reader.config.yaml",
+    "config/consumer.config.yaml", "config/info.config.yaml",
+    "config/reader.config.yaml", "config/ws_tokens.env",
     "*.pyc", "__pycache__/*",
 )
 

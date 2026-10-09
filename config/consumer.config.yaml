@@ -1,219 +1,136 @@
-# ---------------------------------------------------------------------------
-# consumer app example config - copy to consumer/consumer.config.yaml
-# and edit
-#
-# the trading app: pulls the alert feed from the info server, runs
-# the risk gates + sizing, and executes in the trading.mode below
-# (notify / paper / live) against your own Wealthsimple login.
-# sections that do not apply to this role are omitted - they get
-# safe defaults.
-# ---------------------------------------------------------------------------
-
-# ---------------------------------------------------------------------------
-# Execution model - two axes:
-#   trading.mode: notify (no execution, alerts to your phone) |
-#                 paper (simulated execution, quiet) | live (real orders)
-#   paper.enabled below: adds simulated execution to notify mode,
-#                 i.e. notify + paper.enabled == paper mode, but with
-#                 phone notifications. Both seed each account once
-#                 from its live value and positions; sells of unheld
-#                 contracts are ignored, and a paper card appears
-#                 under the real account card.
-# ---------------------------------------------------------------------------
-paper:
-  enabled: false
-  # mirror your own real fills (activity feed) into the paper
-  # ledger at their actual execution prices
-  mirror: true
-  mirror_interval_seconds: 60
-
-# ---------------------------------------------------------------------------
-# consumer - this app's web server: the dashboard + the /alert route.
-# the section name IS the role (the info server's config uses info:)
-# ---------------------------------------------------------------------------
-consumer:
-  host: "0.0.0.0"            # what to bind to; 127.0.0.1 = this PC only
-  port: 8080                 # the info server runs on 8081
-  auth_token: ""             # dashboard + alert password. REQUIRED (the
-                             # server refuses to start without it; it seeds
-                             # the admin account).
-                             # generate: python -c "import secrets; print(secrets.token_urlsafe(24))"
-  tls_cert: ""               # HTTPS: paths from scripts/gen_cert.py, e.g.
-  tls_key: ""                # "certs/dashboard.crt" / "certs/dashboard.key".
-                             # empty = plain HTTP
-
-# ---------------------------------------------------------------------------
-# feed - where the info server's alert feed lives. the token must
-# match a consumers[] entry on the server.
-# ---------------------------------------------------------------------------
-feed:
-  url: "http://127.0.0.1:8081"
-  token: "THE_MATCHING_TOKEN"
-  poll_seconds: 1.0
-  verify_ssl: false         # the info server usually runs a self-signed cert
-
-# ---------------------------------------------------------------------------
-# auto_update - the consumer follows the rolling GitHub Release
-# (no git needed): the updater polls the release below, downloads
-# a newer asset, verifies its checksum and stages the swap for
-# the launcher to apply on restart
-# ---------------------------------------------------------------------------
 auto_update:
   enabled: true
-  interval_seconds: 600      # how often to check GitHub for updates
-  # github_token: ""         # release installs on a private repo need a
-                             # read-only token (contents:read) - or set
-                             # the GITHUB_TOKEN env var instead
-  # release_tag: "consumer-latest"   # the rolling release tag to poll
+  interval_seconds: 60
+  github_token: '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'
 
-# ---------------------------------------------------------------------------
-# quotes - live option prices (used by the stop-loss monitor)
-# ---------------------------------------------------------------------------
-quotes:
-  enabled: false             # false = stop monitor stays off until you turn
-                             # this on (portal settings toggle does it live)
-  provider: ws               # ws = Wealthsimple, moomoo = local moomoo terminal
-  moomoo_host: "127.0.0.1"
-  moomoo_port: 11111
-
-# ---------------------------------------------------------------------------
-# discord - webhooks that send notifications to your private server
-# ---------------------------------------------------------------------------
 discord:
-  # master switch for parsed-alert notifications to the webhook
-  # (the settings "notify" checkbox)
   notify: true
-  trade_alert_webhook_url: "YOUR_PRIVATE_SERVER_WEBHOOK_URL"  # trade alerts to your phone
-  consumer_log_webhook_url: ""  # this app's log tail (consumer.log) posted
-                                # to discord; empty = off
-  update_webhook_url: ""        # app update/restart notices; empty = off
+  consumer_log_webhook_url: https://discord.com/api/webhooks/1550423810149453856/SJG_9IbBLTNkJz-EKr0bEYvcHyiQ9Ac6pstbTnLAtgcnmE99NUolnEZ4LyYZOv_22Xe5
+  update_webhook_url: https://discord.com/api/webhooks/1550556706680078336/C1QevSs1yVzlecIoi2ekS85CLIPy10ZdpImRTMSt4eUtYQ5axBiZAG8rZ4ql-9SjODef
+  trade_alert_webhook_url: https://discord.com/api/webhooks/1550369818958372955/8x9sM_xe1c9karzS5LglaMaldfI2ZLjDhJXy9k6akuYRV0LqV8rBSvjcJ9FTSbkxhInO
 
-# ---------------------------------------------------------------------------
-# trading - how alerts are sized, executed, and risk-managed
-# ---------------------------------------------------------------------------
-trading:
-  mode: notify               # notify = phone alerts only, paper = simulated
-                             # fills, live = real Wealthsimple orders
-  order_type: limit          # limit or market
-  limit_offset_pct: 0.5      # limit orders: pay up to this % above ask
-  position_size_cad: 100     # flat per-trade dollars; used when no size tier
-                             # matches the alert
-  risk_per_trade_pct: 5     # fallback % of account value per trade when the
-                             # alert names no size tier
+paper:
+  enabled: true
+  mirror: false
+  mirror_interval_seconds: 60
 
-  # size tiers - risk caps by the size word in the alert
-  # (any tiers you omit inherit these defaults; you can add custom names)
-  # stop_loss_pct: per-size stop loss override (empty/omitted = the
-  #   global stop_loss_pct applies); back_to_entry: per-size
-  #   0dte back-to-entry override (omitted = the global toggle)
-  # percent of account value per size keyword for STOCK buys
-  # (separate from the option size tiers); unsized stock
-  # alerts default to the medium tier
-  stock_size_tiers:
-    tiny: 2.5
-    small: 5
-    medium: 10
-    large: 20
-    full: 50
-  size_tiers:
-    lotto:  { risk_pct_max: 0.5,  contracts_min: 1, contracts_max: 1,  stop_loss_pct: 50 }
-    micro:  { risk_pct_max: 0.5,  contracts_min: 1, contracts_max: 1,  stop_loss_pct: 50 }
-    tiny:   { risk_pct_max: 1.0,  contracts_min: 1, contracts_max: 1,  stop_loss_pct: 40 }
-    small:  { risk_pct_max: 2.0,  contracts_min: 1, contracts_max: 2,  stop_loss_pct: 30 }
-    medium: { risk_pct_max: 5.0,  contracts_min: 1, contracts_max: 5,  stop_loss_pct: 25 }
-    large:  { risk_pct_max: 10.0, contracts_min: 1, contracts_max: 10, stop_loss_pct: 20 }
-    big:    { risk_pct_max: 10.0, contracts_min: 1, contracts_max: 10, stop_loss_pct: 20 }
-    full:   { risk_pct_max: 10.0, contracts_min: 1, contracts_max: 10, stop_loss_pct: 20 }
-
-  max_contracts_per_trade: 10   # global cap regardless of tier
-  max_open_risk_pct: 30          # per account: max % of account value in open
-                                  # positions at once; new buys skip at the cap
-  cluster_cap_pct: 50           # correlation-aware risk: one underlying+expiry+
-                                # direction cluster (e.g. several SPX 0dte calls)
-                                # may never exceed this % of account value; a buy
-                                # into a capped cluster skips even when the global
-                                # cap has room (0 = off)
-  max_slippage_pct: 2           # notice when an actual fill lands this % away
-                                # from the order's estimated price (discord
-                                # notice only - data first, no auto-pause)
-  partial_fill_cancel_pct: 10   # a partially-filled order whose price runs this
-                                # % away from the estimate gets its remainder
-                                # cancelled - the filled part stays as the
-                                # position for future alerts (0 = off)
-  stop_loss_pct: 25          # % drop from entry premium that triggers a sell
-                             # (paper/live only, needs quotes enabled)
-  trailing_stop_pct: 0       # % off the peak premium; 0 = off
-  stop_check_seconds: 30     # how often positions are checked
-  back_to_entry_enabled: true  # 0dte protection: sell back to entry when
-                               # the day's gain evaporates (per-tier
-                               # override via size_tiers)
-  lotto_gain_budget_pct: 75  # "hero or zero" / "profits only" alerts spend
-                             # at most this fraction of today's realized
-                             # sell gains
-  max_consecutive_losses: 2  # stop trading for the day after N losses in a row
-  min_dte_days: 0            # skip options expiring sooner than this
-  paper_account_value: 10000 # starting value for paper mode
-  skip_underlyings: []       # never trade these tickers, e.g. [SPX]
-  max_trades_per_day: 5      # per account, resets at midnight
-  cooldown_seconds: 60       # min seconds between trades on the same contract
-  dedupe_window_minutes: 10  # same alert text inside this window is ignored
-  history_retention_days: 365 # daily prune of recorded signals/trades older
-                             # than this; 0 = keep forever. the dashboard
-                             # shows the latest 50 of each - older rows
-                             # stay queryable via the history search
-  ticker_whitelist: []       # only trade these tickers; empty = allow all
-  sell_only_if_held: true    # only sell contracts the account actually holds
-  max_daily_loss_pct: 0      # hard daily-loss breaker: pause new buys once
-                             # today's realized pnl sinks below this % of
-                             # account value (0 = off)
-  trading_paused: false      # kill switch: blocks every new BUY until cleared
-                             # (toggle it live from the dashboard settings)
-
-# ---------------------------------------------------------------------------
-# wealthsimple - your accounts. blank by default: add them from the
-# dashboard's settings (or here). get IDs from scripts/ws_login.py.
-# type models how the account trades:
-#   margin      - borrows against holdings (the margin requirement
-#                 is real, shown on the account card)
-#   non_margin  - registered plans: RRSP, TFSA, FHSA (cash covers
-#                 the position - no borrowing, margin exempt)
-#   ""          - auto-detect from the Wealthsimple account type
-# ---------------------------------------------------------------------------
-wealthsimple:
-  accounts: []
-  # accounts:
-  #   - account_id: "YOUR_MARGIN_ACCOUNT_ID"
-  #     label: "Margin"                  # name shown in the dashboard
-  #     type: margin                     # margin | non_margin | "" (auto)
-  #     enabled: true                    # include this account in trading
-  #     risk_per_trade_pct: null         # null = use the global 5
-  #     max_contracts_per_trade: 20      # override for this account
-  #     max_open_risk_pct: null          # per-account open-risk cap; null = use
-  #                                      # the global 30. a small account may need
-  #                                      # a high share of its own value (e.g. 60)
-  #                                      # without raising the cap elsewhere
-  #     paper_value: 50000.0             # sizing value in paper mode
-  #   - account_id: "YOUR_RRSP_ACCOUNT_ID"
-  #     label: "RRSP"
-  #     type: non_margin                 # registered plan - no borrowing
-  #     enabled: true
-  #     risk_per_trade_pct: null
-  #     max_contracts_per_trade: 5
-  #     max_open_risk_pct: 60            # small account: a high share of a
-  #                                      # small value is still a small $ exposure
-  #     paper_value: 2000.0
-  exchange_hint: ""           # e.g. "SPX" to force an exchange on order placement
-  stock_margin_rate: 0.30     # maintenance margin rate for stock holdings
-                              # in margin accounts (WS uses 30% for most
-                              # listings); registered plans are exempt
-  margin_rate_overrides: {}   # e.g. {RDDT: 0.50} per-symbol rates
-  positions_refresh_seconds: 30   # dashboard: how often live option
-                                  # positions (price + return) refresh
-  values_refresh_seconds: 60     # dashboard: how often account values
-                                 # (net-liquidation) refresh
-
-# ---------------------------------------------------------------------------
-# parser - extra regex patterns for alert formats the built-in parser misses
-# ---------------------------------------------------------------------------
 parser:
   custom_patterns: []
+
+consumer:
+  auth_token: dOPva78pZ1XyaMacAfVgpop3eGBhBwUl
+  host: 127.0.0.1
+  port: 8080
+  tls_cert: ''
+  tls_key: ''
+
+quotes:
+  enabled: true
+  moomoo_host: 127.0.0.1
+  moomoo_port: 11111
+  provider: moomoo
+
+trading:
+  back_to_entry_enabled: true
+  cluster_cap_pct: 50.0
+  cooldown_seconds: 60
+  dedupe_window_minutes: 10
+  history_retention_days: 365
+  limit_offset_pct: 0.5
+  lotto_gain_budget_pct: 75.0
+  max_consecutive_losses: 2
+  max_contracts_per_trade: 10
+  max_daily_loss_pct: 3.0
+  max_open_risk_pct: 30.0
+  max_slippage_pct: 2.0
+  max_trades_per_day: 5
+  min_dte_days: 0
+  mode: paper
+  order_type: limit
+  paper_account_value: 10000.0
+  partial_fill_cancel_pct: 10.0
+  position_size_cad: 100.0
+  risk_per_trade_pct: 5.0
+  sell_only_if_held: true
+  size_tiers:
+    lotto:
+      risk_pct_max: 0.5
+      contracts_min: 1
+      contracts_max: 1
+      stop_loss_pct: 60.0
+    micro:
+      risk_pct_max: 0.5
+      contracts_min: 1
+      contracts_max: 1
+      stop_loss_pct: 60.0
+    tiny:
+      risk_pct_max: 1.0
+      contracts_min: 1
+      contracts_max: 1
+      stop_loss_pct: 50.0
+    small:
+      risk_pct_max: 2.0
+      contracts_min: 1
+      contracts_max: 2
+      stop_loss_pct: 40.0
+    medium:
+      risk_pct_max: 5.0
+      contracts_min: 1
+      contracts_max: 5
+      stop_loss_pct: 35.0
+    large:
+      risk_pct_max: 10.0
+      contracts_min: 1
+      contracts_max: 10
+      stop_loss_pct: 30.0
+    big:
+      risk_pct_max: 15.0
+      contracts_min: 1
+      contracts_max: 15
+      stop_loss_pct: 25.0
+    full:
+      risk_pct_max: 20.0
+      contracts_min: 1
+      contracts_max: 20
+      stop_loss_pct: 20.0
+  skip_underlyings: []
+  stock_size_tiers:
+    tiny: 2.5
+    small: 5.0
+    medium: 10.0
+    large: 20.0
+    full: 50.0
+  stop_check_seconds: 30
+  stop_loss_pct: 35.0
+  ticker_whitelist: []
+  trading_paused: false
+  trailing_stop_pct: 10.0
+
+wealthsimple:
+  accounts:
+  - account_id: rrsp-e0qpetVAFQ
+    label: RRSP
+    type: ''
+    risk_per_trade_pct: 5.0
+    max_contracts_per_trade: 20
+    max_open_risk_pct: 30.0
+    paper_value: 15000.0
+    enabled: true
+  - account_id: non-registered-e6AHkgKBcQ
+    label: Non Registered -Margin
+    type: ''
+    risk_per_trade_pct: 15.0
+    max_contracts_per_trade: 2
+    max_open_risk_pct: 60.0
+    paper_value: 1700.0
+    enabled: true
+  exchange_hint: ''
+  positions_refresh_seconds: 15
+  stock_margin_rate: 0.3
+  values_refresh_seconds: 60
+  margin_rate_overrides: {}
+
+feed:
+  url: http://127.0.0.1:8081
+  token: dOPva78pZ1XyaMacAfVgpop3eGBhBwUl
+  poll_seconds: 1.0

@@ -463,11 +463,11 @@ def log(msg):
 
 
 def own_config_path():
-    """The reader's own yaml in the reader folder - the single
-    source of truth for reader settings and the reader's
-    webhooks (reader log, raw alerts)."""
+    """The reader's yaml in config/ - the single source of
+    truth for reader settings and the reader's webhooks (reader
+    log, raw alerts)."""
     here = os.path.dirname(os.path.abspath(__file__))
-    return os.path.join(here, "reader.config.yaml")
+    return os.path.join(here, "..", "config", "reader.config.yaml")
 
 
 def find_config_path():
@@ -481,8 +481,9 @@ def load_config():
 
     path = find_config_path()
     if path is None:
-        log("reader/reader.config.yaml not found - copy "
-            "config/reader.config.yaml to reader/reader.config.yaml")
+        log("config/reader.config.yaml not found - copy "
+            "config/reader.example.config.yaml to "
+            "config/reader.config.yaml")
         sys.exit(1)
     with open(path, "r", encoding="utf-8") as f:
         return yaml.safe_load(f) or {}
@@ -1029,10 +1030,11 @@ def repo_root():
     return os.path.abspath(os.path.join(here, ".."))
 
 
-# the seen-set lives in the reader's own folder, next to its
-# config
+# the seen-set lives in db/ - state lives apart from the code
+# dirs an update replaces
 SEEN_FILE = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), ".reader_seen.json"
+    os.path.dirname(os.path.abspath(__file__)),
+    "..", "db", "reader_seen.json"
 )
 SEEN_RETAIN_SECONDS = 48 * 3600
 
@@ -1051,6 +1053,7 @@ def load_seen():
 
 def save_seen(seen_at):
     try:
+        os.makedirs(os.path.dirname(SEEN_FILE), exist_ok=True)
         tmp = SEEN_FILE + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(seen_at, f)
@@ -1347,7 +1350,7 @@ def main():
 
         if time.time() - last_head_check > 10:
             last_head_check = time.time()
-            # an edited reader/reader.config.yaml applies on restart -
+            # an edited config/reader.config.yaml applies on restart -
             # the .bat loop brings the reader back in 5s
             if config_path:
                 try:
@@ -1358,7 +1361,7 @@ def main():
                     # a config created AFTER startup (mtime was
                     # None) must be watched too - the old guard
                     # `config_mtime and ...` never watched it
-                    log("reader/reader.config.yaml changed - restarting "
+                    log("config/reader.config.yaml changed - restarting "
                         "reader to apply it")
                     notify_restart(
                         update_webhook_url,

@@ -18,8 +18,8 @@ if errorlevel 1 (
   )
 )
 
-if not exist reader.config.yaml (
-  echo reader\reader.config.yaml not found - copy config\reader.config.yaml to reader\reader.config.yaml
+if not exist ..\config\reader.config.yaml (
+  echo config\reader.config.yaml missing - copy ..\config\reader.example.config.yaml there
   pause
   exit /b 1
 )
