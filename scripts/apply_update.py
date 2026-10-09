@@ -69,15 +69,6 @@ def apply(root):
     # consumer/ individually and rmtree'd the dir - when the
     # state files were not in consumer/ the wipe took the config,
     # tokens and ledger with it)
-    # the consumer's session key rides inside consumer/ - move it
-    # out before the swap and back in after (login sessions
-    # survive the update)
-    session_key = os.path.join(root, "consumer", ".consumer_session_key")
-    key_saved = None
-    if os.path.exists(session_key):
-        key_saved = os.path.join(root, ".consumer_session_key.saved")
-        shutil.move(session_key, key_saved)
-
     for d in CODE_DIRS:
         shutil.rmtree(os.path.join(root, d), ignore_errors=True)
         if os.path.isdir(os.path.join(staging, d)):
@@ -86,9 +77,6 @@ def apply(root):
             # the staged content fully overwrites whatever survived
             shutil.copytree(os.path.join(staging, d),
                             os.path.join(root, d), dirs_exist_ok=True)
-
-    if key_saved:
-        shutil.move(key_saved, session_key)
     for name in CODE_FILES:
         src = os.path.join(staging, name)
         if os.path.exists(src):
