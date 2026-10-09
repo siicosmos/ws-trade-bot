@@ -3996,7 +3996,7 @@ def test_supervised_thread_relaunches():
     # crash + unexpected return both relaunched the target
     assert calls["n"] >= 3
     assert state["restarts"] >= 2
-    assert any("crashed: boom" in l for l in logs)
+    assert any("crashed: RuntimeError: boom" in l for l in logs)
     assert any("exited unexpectedly" in l for l in logs)
 
 

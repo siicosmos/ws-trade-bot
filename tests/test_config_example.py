@@ -216,3 +216,42 @@ def test_reader_example_dropped_keys_stay_gone():
     raw = _raw("reader.example.config.yaml")
     assert "channel_marker" not in raw
     assert "discord_server" not in raw
+
+
+def test_load_config_warns_on_deprecated_keys(tmp_path, capsys):
+    """a removed key still present in a live config is flagged at
+    load time - the loader ignores it, so without the warning a
+    renamed knob silently stops working."""
+    from core.config import _DEPRECATED_KEYS, load_config
+
+    # drive the test from the table so it cannot silently pass
+    # when the table's entries change
+    section = next(iter(_DEPRECATED_KEYS))
+    key = _DEPRECATED_KEYS[section][0]
+    path = tmp_path / "c.yaml"
+    path.write_text(
+        f"{section}:\n"
+        f"  {key}: old_value\n"
+        f"consumer:\n"
+        f"  auth_token: t\n"
+    )
+    cfg = load_config(str(path))
+    out = capsys.readouterr().out
+    assert f"{section}.{key}" in out
+    assert "no longer used" in out
+    # the stale key is ignored: the config still loads
+    assert cfg.pipeline.role == "consumer"
+
+
+def test_load_config_stays_quiet_without_deprecated_keys(tmp_path, capsys):
+    from core.config import load_config
+
+    path = tmp_path / "c.yaml"
+    path.write_text(
+        "consumer:\n"
+        "  auth_token: t\n"
+        "trading:\n"
+        "  mode: paper\n"
+    )
+    load_config(str(path))
+    assert "no longer used" not in capsys.readouterr().out

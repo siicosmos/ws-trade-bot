@@ -9,6 +9,7 @@ logs it, and reports to the webhook so it is never a surprise.
 
 import threading
 import time
+import traceback
 
 
 def supervised(
@@ -61,10 +62,17 @@ def supervised(
                 return
             except Exception as e:
                 state["restarts"] += 1
-                state["last_error"] = str(e)
+                # type + message lead the report: the webhook
+                # truncates at 1000 chars and the traceback follows
+                # - the identification must survive the cut (the
+                # console/file log gets the whole thing)
+                tb = traceback.format_exc()
+                state["last_error"] = f"{type(e).__name__}: {e}"
                 _report(
-                    f"{name} thread crashed: {e} - "
-                    f"restarting in {restart_delay}s"
+                    f"{name} thread crashed: "
+                    f"{type(e).__name__}: {e}\n"
+                    f"{tb}"
+                    f"- restarting in {restart_delay}s"
                 )
             time.sleep(restart_delay)
 

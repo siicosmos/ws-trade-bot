@@ -351,6 +351,39 @@ def _get(d, key, default):
     return default if value is None else value
 
 
+# config keys removed from the codebase - kept here so a stale
+# config.yaml is flagged at load time instead of the value
+# silently doing nothing. add a key here when you remove (or
+# rename) a feature's knob.
+_DEPRECATED_KEYS = {
+    "trading": [
+        "sell_only_if_held",   # sells are ledger-gated since the position model
+    ],
+    "reader": [
+        "pipeline_url",        # renamed to info_server_url
+        "channel_marker",
+        "discord_server",
+    ],
+}
+
+
+def _warn_deprecated(raw, path):
+    """Flag removed keys still present in the live config - the
+    loader ignores them, so without this a renamed knob just
+    stops working with no hint why."""
+    for section, keys in _DEPRECATED_KEYS.items():
+        section_raw = raw.get(section)
+        if not isinstance(section_raw, dict):
+            continue
+        for key in keys:
+            if key in section_raw:
+                print(
+                    f"config: [{path}] {section}.{key} is no "
+                    f"longer used - remove it (the value is "
+                    f"ignored)"
+                )
+
+
 def _str_list(value):
     """A list-of-strings setting tolerates a scalar (a yaml
     string would otherwise iterate per character: "ABC" ->
@@ -438,14 +471,15 @@ def _load_accounts(ws_raw: dict) -> List[WSAccountConfig]:
 def load_config(path: str) -> Config:
     with open(path, "r", encoding="utf-8") as f:
         raw = yaml.safe_load(f) or {}
+    _warn_deprecated(raw, path)
 
     # the web-server section is named for the role (consumer: /
     # info: - the section key IS the role); a config with neither
     # defaults to the consumer role with default host/port
     pipeline_raw = None
     role = "consumer"
-    for key, section_role in (("info", "info"), ("consumer", "consumer")):
-        section = raw.get(key)
+    for section_role in ("info", "consumer"):
+        section = raw.get(section_role)
         if isinstance(section, dict) and section:
             pipeline_raw = section
             role = section_role
