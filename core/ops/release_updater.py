@@ -58,9 +58,20 @@ def _headers(token):
 
 
 def latest_release(repo, token, timeout=30):
-    """The latest published release, None when none exists."""
+    """The latest published release, None when none exists.
+
+    A 404 on a repo that IS reachable otherwise means the token is
+    missing (a private repo hides its releases from anonymous
+    calls) - raise instead of reporting "no release published
+    yet", which sent the user chasing a release that could never
+    be seen."""
     url = f"https://api.github.com/repos/{repo}/releases/latest"
     r = requests.get(url, headers=_headers(token), timeout=timeout)
+    if r.status_code == 404 and not token:
+        raise requests.RequestException(
+            "404 - the repo is private and auto_update.github_token "
+            "is not set"
+        )
     if r.status_code == 404:
         return None
     r.raise_for_status()
