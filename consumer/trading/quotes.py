@@ -306,6 +306,19 @@ class MoomooQuoteProvider:
 
         get = row.get if hasattr(row, "get") else None
         if get is not None:
+            # the regular-session last_price freezes at the close,
+            # but spy keeps trading after hours - futu stamps the
+            # extended-session price with its own time, so when the
+            # after-hours stamp is fresher than the regular quote's,
+            # the after price is the live one
+            after = as_float(get("after_price"))
+            if after:
+                after_time = str(get("after_time") or "")
+                quote_time = str(
+                    get("latest_time") or get("update_time") or ""
+                )
+                if after_time and after_time > quote_time:
+                    return after
             for key in ("bid_price", "last_price"):
                 v = as_float(get(key))
                 if v is not None:

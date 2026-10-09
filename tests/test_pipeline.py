@@ -4655,10 +4655,19 @@ def test_index_quote_reads_us_spx():
             sys.modules.pop("moomoo", None)
 
 
-def test_spx_levels_text_roundtrip():
+def test_spx_levels_text_roundtrip(monkeypatch):
     """the levels text is feed-owned on a consumer: the
     feedclient writes the info server's copy into the store and
     /api/spx serves it to every device's popup."""
+    import consumer.trading.quotes as _q
+
+    # other tests leave a moomoo provider in the module global -
+    # this test wants the no-provider, no-ws-spot path
+    monkeypatch.setattr(_q, "ACTIVE_QUOTE_PROVIDER", None)
+    import consumer.web as _web
+
+    monkeypatch.setattr(_web, "_ws_stock_quote",
+                        lambda account, ticker: None)
     from core.config import (
         AutoUpdateConfig, DiscordConfig, QuotesConfig, ReaderConfig,
         TradingConfig, WealthsimpleConfig,
