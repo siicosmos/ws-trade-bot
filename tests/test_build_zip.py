@@ -59,10 +59,13 @@ def test_build_zip_artifact(tmp_path):
     for n in required:
         assert n in names, f"missing from artifact: {n}"
 
-    # nothing that belongs to the user or the build machine
+    # nothing that belongs to the user or the build machine, and
+    # none of the other roles' launchers
     forbidden_fragments = (
         "ws_tokens.env", ".db", "__pycache__", ".pyc",
         "config.example.yaml", ".update_staging", ".update_backup",
+        "start_info.bat", "start_reader.bat", "start_discord.bat",
+        "setup_info_server_git_pull.ps1",
     )
     leaks = [
         n for n in names

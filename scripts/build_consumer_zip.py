@@ -28,8 +28,13 @@ CONSUMER_EXCLUDE = (
 )
 EXCLUDE_DIRS = {"__pycache__", ".update_staging", ".update_backup"}
 EXCLUDE_EXT = (".pyc", ".pyo")
-# the build script itself has no business on the client
-SCRIPTS_EXCLUDE = ("build_consumer_zip.py",)
+# the build script itself has no business on the client; the
+# info/reader/launcher scripts belong to the other roles
+SCRIPTS_EXCLUDE = (
+    "build_consumer_zip.py",
+    "start_info.bat", "start_reader.bat", "start_discord.bat",
+    "setup_info_server_git_pull.ps1",
+)
 
 
 def _git(*args):
