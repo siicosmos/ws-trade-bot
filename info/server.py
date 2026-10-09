@@ -58,7 +58,8 @@ def main(cfg, args):
     # the file lives next to the db - each role folder reports
     # its own last words
     exit_file = os.path.join(
-        os.path.dirname(os.path.abspath(args.db)), "pipeline_exit.txt"
+        os.path.dirname(os.path.abspath(args.db)),
+        "pipeline_exit_info.txt",
     )
     prev_exit = ""
     try:

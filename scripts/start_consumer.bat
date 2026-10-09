@@ -46,7 +46,7 @@ if %EXITCODE% == -1073741510 (
   goto end
 )
 echo consumer app exited with code %EXITCODE% - restarting in 5s
-(echo consumer app exited with code %EXITCODE%)> pipeline_exit.txt
+(echo consumer app exited with code %EXITCODE%)> ..\db\pipeline_exit_consumer.txt
 echo details in logs\consumer.log in the repo root ^(an external kill ^(exit 15^) leaves no traceback^)
 ping -n 6 127.0.0.1 >nul
 goto start

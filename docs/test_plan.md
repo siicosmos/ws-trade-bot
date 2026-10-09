@@ -590,7 +590,7 @@ id/type/enabled but no label input; a new row has one.
 2. `taskkill /F /PID <pid>` — the launcher window restarts
    it within 5s.
 3. ```powershell
-   Get-Content consumer\pipeline_exit.txt
+   Get-Content db\pipeline_exit_consumer.txt
    # -> consumer app exited with code <n>
    Get-Content logs\consumer.log -Tail 2
    # -> previous run: consumer app exited with code <n>

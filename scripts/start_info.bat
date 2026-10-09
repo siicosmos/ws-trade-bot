@@ -41,7 +41,7 @@ if %EXITCODE% == -1073741510 (
   goto end
 )
 echo info server exited with code %EXITCODE% - restarting in 5s
-(echo info server exited with code %EXITCODE%)> pipeline_exit.txt
+(echo info server exited with code %EXITCODE%)> ..\db\pipeline_exit_info.txt
 echo details in logs\info.log in the repo root ^(an external kill ^(exit 15^) leaves no traceback^)
 ping -n 6 127.0.0.1 >nul
 goto start
