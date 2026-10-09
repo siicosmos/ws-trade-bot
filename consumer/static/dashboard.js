@@ -1276,7 +1276,7 @@ let historyOffset = 0;
 
 function historyQuery(offset) {
   const p = new URLSearchParams();
-  p.set("kind", "both");
+  p.set("kind", document.getElementById("hs-kind").value);
   for (const [id, k] of [["hs-q","q"],["hs-ticker","ticker"],["hs-status","status"],["hs-since","since"],["hs-until","until"]]) {
     const v = document.getElementById(id).value.trim();
     if (v) p.set(k, v);
@@ -1377,7 +1377,7 @@ function renderHistoryResults(data) {
 
 function clearHistorySearch() {
   clearTimeout(_searchDebounce);
-  for (const id of ["hs-q","hs-ticker","hs-status","hs-since","hs-until"]) document.getElementById(id).value = "";
+  for (const id of ["hs-q","hs-ticker","hs-kind","hs-status","hs-since","hs-until"]) document.getElementById(id).value = "";
   document.getElementById("history-results").innerHTML = "";
   historyOffset = 0;
 }

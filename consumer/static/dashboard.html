@@ -51,6 +51,11 @@
 <div class="card" id="history-search" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:10px">
   <input id="hs-q" type="search" placeholder="free text" autocomplete="off" readonly onfocus="this.removeAttribute('readonly')" onkeydown="if(event.key==='Enter')runHistorySearch()" style="min-width:140px">
   <input id="hs-ticker" type="search" placeholder="ticker" autocomplete="off" readonly onfocus="this.removeAttribute('readonly')" onkeydown="if(event.key==='Enter')runHistorySearch()" style="width:70px;text-transform:uppercase">
+  <select id="hs-kind" title="what to search: alerts, trades, or both merged">
+    <option value="both">alerts + trades</option>
+    <option value="signals">alerts only</option>
+    <option value="trades">trades only</option>
+  </select>
   <select id="hs-status" title="filter trades by result status (alerts are unaffected)">
     <option value="">any status</option>
     <option value="executed">executed</option>
