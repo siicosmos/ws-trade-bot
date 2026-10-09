@@ -582,3 +582,46 @@ def test_code_swap_marker_restarts_the_other_role(tmp_path, monkeypatch):
         restart=lambda *a, **k: restarts.append(1),
     )
     assert up2._code_swapped_after_start() is False
+
+
+def test_apply_update_purge_keeps_subdirectory_files(tmp_path):
+    """the purge compares PATH-QUALIFIED names: the bare-name
+    comparison stripped every subdirectory file (core/ops,
+    consumer/trading, ...) and left the package dirs empty - the
+    install could not import after the swap."""
+    root = str(tmp_path)
+    # the old install carries subdirectory files the new release
+    # keeps (ops/helpers.py) and one it drops (ops/legacy.py)
+    _write(root, "core/ops/helpers.py", "old helpers\n")
+    _write(root, "core/ops/legacy.py", "old legacy\n")
+    _write(root, "core/mod.py", "old\n")
+    _write(root, ru.PENDING_FILE, json.dumps(
+        {"staging": ".update_staging", "commit": "bbb", "ts": 1}))
+    staging = os.path.join(root, ".update_staging")
+    os.makedirs(staging)
+    _make_zip(os.path.join(staging, "x.zip"), "bbb")
+    with zipfile.ZipFile(os.path.join(staging, "x.zip")) as z:
+        z.extractall(staging)
+    os.remove(os.path.join(staging, "x.zip"))
+    # the new release keeps core/ops/helpers.py (changed) and
+    # adds core/ops/deep/impl.py; core/ops/legacy.py is gone
+    _write(staging, "core/ops/helpers.py", "new helpers\n")
+    _write(staging, "core/ops/deep/impl.py", "new deep\n")
+
+    mod = _load_apply_update()
+    assert mod.apply(root) is True
+
+    # subdirectory files SURVIVE the purge
+    with open(os.path.join(root, "core", "ops", "helpers.py"),
+              encoding="utf-8") as f:
+        assert f.read() == "new helpers\n"
+    with open(os.path.join(root, "core", "ops", "deep", "impl.py"),
+              encoding="utf-8") as f:
+        assert f.read() == "new deep\n"
+    # dropped files are still purged
+    assert not os.path.exists(
+        os.path.join(root, "core", "ops", "legacy.py"))
+    # top-level swap still works
+    with open(os.path.join(root, "core", "mod.py"),
+              encoding="utf-8") as f:
+        assert f.read() == "x = 1\n"

@@ -541,6 +541,34 @@ def notify_restart(webhook_url, reason, commits=""):
         pass
 
 
+_reader_log_webhook = ""
+_last_misconfig_notice = 0.0
+
+
+def notify_reader(webhook_url, title, value, color=15844367):
+    """A one-shot embed notice to the reader's log webhook -
+    misconfigurations and stalls must reach the phone, not die
+    in a log batch."""
+    if not webhook_url:
+        return
+    try:
+        requests.post(
+            webhook_url,
+            timeout=10,
+            json={"embeds": [{
+                "title": title,
+                "color": color,
+                "fields": [{
+                    "name": "detail",
+                    "value": str(value)[:1000],
+                    "inline": True,
+                }],
+            }]},
+        )
+    except requests.RequestException:
+        pass
+
+
 def status_base_url(info_server_url):
     if info_server_url.endswith("/alert"):
         return info_server_url[: -len("/alert")]
@@ -1212,6 +1240,8 @@ def _log_previous_exit():
 
 
 def main():
+    global _last_stall_notice
+    _last_stall_notice = time.time()
     _log_previous_exit()
     _terminate_stale_reader()
     raw_cfg = load_config()
@@ -1263,9 +1293,11 @@ def main():
         log("pipeline URL is https - skipping certificate verification")
 
     global _log_hook
-    _log_hook = WebhookLog(
-        str(discord_cfg.get("reader_log_webhook_url") or "")
+    global _reader_log_webhook
+    _reader_log_webhook = str(
+        discord_cfg.get("reader_log_webhook_url") or ""
     )
+    _log_hook = WebhookLog(_reader_log_webhook)
 
     _startup_banner()
 
@@ -1289,6 +1321,7 @@ def main():
     tail = []
     pending = []   # (text, ts, channel) awaiting successful delivery
     last_read_summary = None
+    last_pane_read = time.time()
 
     def mark_seen(text):
         seen.add(text)
@@ -1674,6 +1707,33 @@ def main():
             if summary != last_read_summary:
                 log(f"pane: {summary}")
                 last_read_summary = summary
+            # the stall watchdog: a dead pane attach (the discord
+            # window lost focus / re-rendered) reads nothing while
+            # alerts pile up unseen - the 10:22 incident ran 1.5h
+            # with only a log line nobody watches
+            if msgs:
+                last_pane_read = time.time()
+            elif (
+                time.time() - last_pane_read > 600
+                and time.time() - _last_stall_notice > 3600
+            ):
+                _last_stall_notice = time.time()
+                stalled_min = int(
+                    (time.time() - last_pane_read) // 60
+                )
+                log(
+                    f"no pane reads for {stalled_min}min - alerts "
+                    f"are NOT flowing (discord window detached?)"
+                )
+                notify_reader(
+                    _reader_log_webhook,
+                    f"Reader stalled: no pane reads for "
+                    f"{stalled_min}min",
+                    "alerts are not flowing - the discord window "
+                    "may be detached or unfocused; alerts posted "
+                    "when it re-attaches",
+                    color=15158332,
+                )
             if not msgs:
                 # a minimized or hidden discord renders nothing -
                 # restore it. the window's readability is the
@@ -1701,6 +1761,8 @@ def main():
             # would silently swallow alerts
             if pending:
                 retry = []
+                late_count = 0
+                late_oldest = 0.0
                 for text, ts, chan in pending:
                     if post_message(
                         info_server_url, text, auth_token, ts,
@@ -1708,9 +1770,29 @@ def main():
                     ):
                         mark_seen(text)
                         post_raw_alert(raw_alert_webhook_url, text)
+                        if ts is not None:
+                            delay = time.time() - ts.timestamp()
+                            if delay > 300:
+                                late_count += 1
+                                late_oldest = max(late_oldest, delay)
                     else:
                         retry.append((text, ts, chan))
                 pending = retry
+                if late_count and time.time() - _last_stall_notice > 60:
+                    _last_stall_notice = time.time()
+                    log(
+                        f"delivered {late_count} alert(s) late "
+                        f"(oldest {int(late_oldest // 60)}min) - the "
+                        f"discord pane attach was down"
+                    )
+                    notify_reader(
+                        _reader_log_webhook,
+                        f"Reader delivered {late_count} alert(s) late",
+                        f"oldest {int(late_oldest // 60)}min - the "
+                        f"discord pane attach was down; the consumer "
+                        f"executed them on receipt",
+                        color=15844367,
+                    )
 
             if resync:
                 fresh = [
@@ -1723,6 +1805,8 @@ def main():
                 fresh = new_messages(msgs, tail, seen)
             if fresh:
                 tail = msgs
+                late_count = 0
+                late_oldest = 0.0
                 for text, ts in fresh:
                     if text in seen:
                         continue
@@ -1732,8 +1816,31 @@ def main():
                     ):
                         mark_seen(text)
                         post_raw_alert(raw_alert_webhook_url, text)
+                        # a fresh message with an old timestamp is
+                        # the re-attach backlog drain (the pane
+                        # was unreadable while the alerts piled up)
+                        if ts is not None:
+                            delay = time.time() - ts.timestamp()
+                            if delay > 300:
+                                late_count += 1
+                                late_oldest = max(late_oldest, delay)
                     else:
                         pending.append((text, ts, current_channel or ""))
+                if late_count and time.time() - _last_stall_notice > 60:
+                    _last_stall_notice = time.time()
+                    log(
+                        f"delivered {late_count} alert(s) late "
+                        f"(oldest {int(late_oldest // 60)}min) - the "
+                        f"discord pane attach was down"
+                    )
+                    notify_reader(
+                        _reader_log_webhook,
+                        f"Reader delivered {late_count} alert(s) late",
+                        f"oldest {int(late_oldest // 60)}min - the "
+                        f"discord pane attach was down; the consumer "
+                        f"executed them on receipt",
+                        color=15844367,
+                    )
             elif msgs != tail:
                 tail = msgs
         except UIAError as e:

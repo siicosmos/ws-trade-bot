@@ -118,12 +118,51 @@ def test_stop_price_fixed_and_trailing():
     monitor = StopMonitor(cfg, store, None, lambda pos: None)
     assert abs(monitor.stop_price(2.0, 2.0) - 1.5) < 1e-9
 
+    # the flat trail: adaptive off (the stepped ratchet would
+    # tighten the trail as the gain grows)
     cfg_t = ConfigStub(TradingConfig(mode="paper", stop_loss_pct=25,
-                                     trailing_stop_pct=20))
+                                     trailing_stop_pct=20,
+                                     adaptive_trail=False))
     monitor_t = StopMonitor(cfg_t, store, None, lambda pos: None)
     assert abs(monitor_t.stop_price(2.0, 3.0) - 2.4) < 1e-9
     assert abs(monitor_t.stop_price(2.0, 2.1) - 1.68) < 1e-9
     assert abs(monitor_t.stop_price(2.0, 2.0) - 1.5) < 1e-9
+
+
+def test_adaptive_trail_steps():
+    """the stepped ratchet: the trail tightens as the gain at the
+    peak grows (ride the run-up wide, lock in more near the
+    top); a ui-pinned per-position trail still wins."""
+    cfg = ConfigStub(TradingConfig(
+        mode="paper", stop_loss_pct=25, trailing_stop_pct=10,
+        adaptive_trail=True,
+        adaptive_trail_steps={"10": 10, "25": 7, "50": 5, "999": 3},
+        adaptive_trail_min_pct=3, adaptive_trail_expiry_tighten=0,
+    ))
+    store = _fresh_store()
+    monitor = StopMonitor(cfg, store, None, lambda pos: None)
+
+    # +50% gain at the peak -> the 5% step
+    assert abs(monitor.stop_price(2.0, 3.0, pos={}) - 2.85) < 1e-9
+    # +12.5% gain -> the 7% step
+    assert abs(monitor.stop_price(2.0, 2.25, pos={}) - 2.0925) < 1e-9
+    # +5% gain -> the 10% step (the widest)
+    assert abs(monitor.stop_price(2.0, 2.10, pos={}) - 1.89) < 1e-9
+    # +100% gain -> the 999 ceiling -> 3%
+    assert abs(monitor.stop_price(2.0, 4.0, pos={}) - 3.88) < 1e-9
+    # a ui-pinned trail wins over the steps
+    assert abs(monitor.stop_price(
+        2.0, 3.0, pos={"trail_pct": 20}) - 2.4) < 1e-9
+    # a pinned 0 = trailing off for that position
+    assert abs(monitor.stop_price(
+        2.0, 3.0, pos={"trail_pct": 0}) - 1.5) < 1e-9
+    # adaptive off = the flat global trail
+    cfg_off = ConfigStub(TradingConfig(
+        mode="paper", stop_loss_pct=25, trailing_stop_pct=20,
+        adaptive_trail=False,
+    ))
+    monitor_off = StopMonitor(cfg_off, store, None, lambda pos: None)
+    assert abs(monitor_off.stop_price(2.0, 3.0, pos={}) - 2.4) < 1e-9
 
 
 @pytest.mark.minimum
@@ -842,3 +881,48 @@ def test_stock_quote_extended_uses_the_session_price(monkeypatch):
     p._stock_cache.clear()
     monkeypatch.setattr(_q, "us_session", lambda now=None: "pre")
     assert p.stock_quote("SPY", extended=True) == 773.80
+
+
+def test_adaptive_trail_expiry_day_tighten(monkeypatch):
+    """on 0dte expiry days the trail tightens through the
+    session (-1%/h after 13:00 et, floored at the min); a
+    non-0dte position ignores the clock."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    import core.store as cs
+    import consumer.trading.stops as stops_mod
+
+    cfg = ConfigStub(TradingConfig(
+        mode="paper", stop_loss_pct=25, trailing_stop_pct=10,
+        adaptive_trail=True,
+        adaptive_trail_steps={"10": 10, "25": 7, "50": 5, "999": 3},
+        adaptive_trail_min_pct=3, adaptive_trail_expiry_tighten=1.0,
+    ))
+    store = _fresh_store()
+    monitor = StopMonitor(cfg, store, None, lambda pos: None)
+
+    today = cs.et_now().date().isoformat()
+    pos_today = {"expiry": today}
+    pos_0dte_off = {"expiry": "2026-01-01"}   # not expiry day
+
+    # 14:00 et: 1h past the 13:00 cutoff -> -1
+    monkeypatch.setattr(
+        stops_mod, "et_now",
+        lambda: datetime(2026, 10, 9, 14, 0,
+                         tzinfo=ZoneInfo("America/New_York")),
+    )
+    # +50% gain -> the 5% step, tightened to 4%
+    assert abs(monitor.stop_price(2.0, 3.0, pos=pos_today) - 2.88) < 1e-9
+    # the same gain on a non-expiry day: no tighten
+    assert abs(
+        monitor.stop_price(2.0, 3.0, pos=pos_0dte_off) - 2.85) < 1e-9
+
+    # 17:30 et: 4.5h past -> -4.5 but the 3% floor holds
+    monkeypatch.setattr(
+        stops_mod, "et_now",
+        lambda: datetime(2026, 10, 9, 17, 30,
+                         tzinfo=ZoneInfo("America/New_York")),
+    )
+    # the 5% step tightened to 0.5 -> floored at 3%
+    assert abs(monitor.stop_price(2.0, 3.0, pos=pos_today) - 2.91) < 1e-9

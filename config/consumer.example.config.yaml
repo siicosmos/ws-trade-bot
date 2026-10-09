@@ -146,6 +146,21 @@ trading:
                              # (paper/live only; the stop monitor runs
                              # without quotes.enabled too)
   trailing_stop_pct: 0       # % off the peak premium; 0 = off
+  adaptive_trail: true       # stepped ratchet: the trail tightens as the
+                             # gain at the peak grows (ride the run-up
+                             # wide, lock in more near the top); a
+                             # position's own trail (set in the ui)
+                             # still wins when pinned
+  adaptive_trail_steps: { "10": 10, "25": 7, "50": 5, "999": 3 }
+  # gain-at-peak ceiling -> trail %; the first ceiling >= the gain wins
+  adaptive_trail_expiry_tighten: 1.0  # extra %/h on 0dte after 13:00 et
+                             # (the air pocket before the close); 0 = off
+  adaptive_trail_min_pct: 3.0  # the trail never tightens past this
+  unparsed_sell_action: trail  # a sell whose price does not parse never
+                             # books blind: trail = the adaptive trail
+                             # takes the position out (the stop floor
+                             # sells marketable when it collapses);
+                             # skip = record + notify only
   stop_check_seconds: 30     # how often positions are checked
   back_to_entry_enabled: true  # 0dte protection: sell back to entry when
                                # the day's gain evaporates (per-tier

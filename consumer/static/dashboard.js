@@ -822,7 +822,11 @@ function renderSummary(data) {
                   (r.trail_pct > 0
                     ? "auto-sell once the bid falls this % off its peak"
                     : "trailing disabled for this position") + '">TS ' +
-                  r.trail_pct + '%</span>' : "");
+                  r.trail_pct + '%</span>'
+                : (r.eff_trail != null
+                   ? ' <span class="tag ignored mini" title="adaptive trailing stop (stepped ratchet by gain)">TS ' +
+                     r.eff_trail + '%</span>'
+                   : ""));
             const actionCell = isAdmin() && r.qty > 0
               ? '<td class=num>' +
                 (isOpt ? '<button class="mini-toggle" title="take-profit / trailing for this position" onclick="setTp(\'paper\', \'' + jsq(a.label) + '\', \'' + jsq(r.contract_key) + '\', ' + (r.tp_gain_pct == null ? "null" : r.tp_gain_pct) + ', ' + (r.trail_pct == null ? "null" : r.trail_pct) + ')">tp</button> ' : '') +

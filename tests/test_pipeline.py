@@ -5344,3 +5344,40 @@ def test_refuses_start_without_token_info_role(tmp_path):
     )
     assert r.returncode != 0
     assert "auth_token" in (r.stdout + r.stderr)
+
+
+def test_paper_sell_without_price_never_books_blind():
+    """a sell whose price does not parse must not decrement the
+    ledger with no cash and no realized (the ..95 incident) -
+    the trailing stop takes the position out instead."""
+    from consumer.trading.paper import PaperLedger
+
+    cfg, store, account, risk = _setup(paper_account_value=10000)
+    ledger = PaperLedger(cfg, store, account)
+    store.set_paper_equity(10000.0, "default")
+    ex = PaperExecutor(cfg, store, ledger)
+
+    buy = parse_alert("BOUGHT 0DTE SPY 759c @ 1.0")
+    assert ex.execute(buy, cfg, store).ok
+    equity_after_buy = store.paper_equity("default")
+
+    # the ledger prices the contract (the dashboard's pricing)
+    ledger._quotes = lambda: {
+        buy.contract_key(): {"price": 1.2, "usd": True},
+    }
+    ledger._quote_ts = 1e18
+
+    broken = parse_alert("SOLD 0DTE SPY 759c")
+    assert broken.premium is None
+    res = ex.execute(broken, cfg, store)
+    assert not res.ok
+    assert "price unparseable" in res.detail
+    # the ledger untouched: same qty, same equity (no blind
+    # decrement, no phantom cash)
+    assert store.get_position(
+        "paper", buy.contract_key(), "default"
+    ) == 5
+    assert abs(
+        store.paper_equity("default") - equity_after_buy
+    ) < 1e-9
+    assert res.price == 1.2   # the quote the trail rides from

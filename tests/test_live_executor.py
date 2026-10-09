@@ -685,3 +685,33 @@ def test_live_stock_budget_converts_at_the_listing_fx(monkeypatch):
     assert ws2.orders == [("limit_buy", 5, 100.5)] or ws2.orders == [
         ("market_buy", 5, 100.0)
     ], ws2.orders
+
+
+
+def test_live_sell_without_price_skips_to_trail(monkeypatch):
+    """the live sell with no parsed premium skips instead of
+    selling at the raw bid - the trail + floor take it out."""
+    ws = FakeWS(ask=1.5, bid=0.90)
+    _patch_client(monkeypatch, ws)
+    cfg = _live_cfg()
+    store = _store()
+    account = StubAccount(_account_values())
+    ex = _executor(cfg, store, account)
+
+    buy = parse_alert("BOUGHT 0DTE SPY 759c @ 1.2 medium size")
+    assert ex.execute(buy, cfg, store).ok
+    ws.orders.clear()
+
+    # a sell with no price at all (the "..95" typo class now
+    # parses - the parser fix - so the surviving case is a
+    # missing price group)
+    broken = parse_alert("SOLD 0DTE SPY 759c")
+    assert broken.premium is None
+    res = ex.execute(broken, cfg, store)
+    assert not res.ok
+    assert "price unparseable" in res.detail
+    assert ws.orders == []   # no order placed
+    # the ledger position untouched
+    assert store.get_position(
+        "live", buy.contract_key(), "RRSP"
+    ) == 4

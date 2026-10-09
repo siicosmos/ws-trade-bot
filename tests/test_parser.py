@@ -285,3 +285,20 @@ def test_custom_pattern_no_match_falls_through_to_builtins():
 def test_custom_pattern_empty_list_uses_builtins():
     assert parse_alert("BOUGHT 0DTE SPX 7645c @ .65", []) is not None
     assert parse_alert("BOUGHT 0DTE SPX 7645c @ .65", None) is not None
+
+
+def test_leading_dot_price_typos():
+    """a dropped digit leaves two dots ("@ ..95" for ".95") - the
+    price still parses (the ..95 alert executed with premium
+    None and the paper ledger booked nothing)."""
+    a = parse_alert(
+        "SOLD 1/4 10/09 TSLA 385c @ ..95 @everyone +50% SCALED"
+    )
+    assert a is not None and a.premium == 0.95
+    assert a.scale == 0.25 and a.gain_pct == 50.0
+    # one leading dot keeps parsing
+    assert parse_alert("BOUGHT 10/09 TSLA 385c @ .62").premium == 0.62
+    # a normal price is untouched
+    assert parse_alert("BOUGHT 10/09 TSLA 385c @ 1.24").premium == 1.24
+    # stock prices too
+    assert parse_alert("SOLD TSLA shares @ ..50").premium == 0.5

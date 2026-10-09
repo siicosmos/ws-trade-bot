@@ -29,8 +29,14 @@ if not exist ..\config\consumer.config.yaml (
 )
 
 :start
-rem apply a staged release update (no-op without .update_pending_consumer.json)
-..\.venv\Scripts\python.exe ..\scripts\apply_update.py ..
+rem apply a staged release update (no-op without .update_pending_consumer.json).
+rem prefer the STAGED updater: the new release's apply_update applies itself,
+rem so a bug in the live updater cannot brick the install it is meant to fix
+set APPLY_SCRIPT=..\scripts\apply_update.py
+if exist ..\.update_staging\scripts\apply_update.py (
+  if exist ..\.update_pending_consumer.json set APPLY_SCRIPT=..\.update_staging\scripts\apply_update.py
+)
+..\.venv\Scripts\python.exe %APPLY_SCRIPT% ..
 if errorlevel 1 (
   echo warning: apply_update failed - running the existing code
 )

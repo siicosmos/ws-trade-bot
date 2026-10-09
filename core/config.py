@@ -33,6 +33,10 @@ class DiscordConfig:
 
 
 
+def _default_adaptive_trail_steps() -> dict:
+    return {"10": 10.0, "25": 7.0, "50": 5.0, "999": 3.0}
+
+
 def _default_size_tiers() -> dict:
     # stop_loss_pct: per-size stop loss - wider for lotto plays
     # (they are meant to go to zero) and tighter for big sizes
@@ -114,6 +118,25 @@ class TradingConfig:
     size_tiers: dict = field(default_factory=_default_size_tiers)
     stop_loss_pct: float = 25.0
     trailing_stop_pct: float = 0.0
+    # adaptive trailing stop (stepped ratchet): the trail distance
+    # tightens as the position's gain grows (ride the run-up wide,
+    # lock in more near the top), and on 0dte positions tightens
+    # through the expiry-day session. a position's own trail_pct
+    # (set in the ui) still wins when set
+    adaptive_trail: bool = True
+    # gain-at-peak ceiling -> trail distance (the first ceiling
+    # >= the gain wins; "999" = anything above the last step)
+    adaptive_trail_steps: dict = field(
+        default_factory=lambda: {
+            "10": 10.0, "25": 7.0, "50": 5.0, "999": 3.0
+        }
+    )
+    adaptive_trail_expiry_tighten: float = 1.0
+    adaptive_trail_min_pct: float = 3.0
+    # a sell whose price does not parse: trail = the adaptive
+    # trail takes the position out (never books blind); skip =
+    # record + notify only
+    unparsed_sell_action: str = "trail"
     stop_check_seconds: int = 30
     max_contracts_per_trade: int = 10
     max_open_risk_pct: float = 30.0
@@ -531,7 +554,31 @@ def load_config(path: str) -> Config:
             _get(trading_raw, "partial_fill_cancel_pct", 10.0)
         ),
         stop_loss_pct=float(_get(trading_raw, "stop_loss_pct", 25.0)),
-        trailing_stop_pct=float(_get(trading_raw, "trailing_stop_pct", 0.0)),
+        trailing_stop_pct=float(
+            _get(trading_raw, "trailing_stop_pct", 0.0)
+        ),
+        adaptive_trail=bool(
+            _get(trading_raw, "adaptive_trail", True)
+        ),
+        adaptive_trail_steps=(
+            {
+                str(k): float(v)
+                for k, v in (
+                    trading_raw.get("adaptive_trail_steps") or {}
+                ).items()
+            }
+            if trading_raw.get("adaptive_trail_steps")
+            else _default_adaptive_trail_steps()
+        ),
+        adaptive_trail_expiry_tighten=float(
+            _get(trading_raw, "adaptive_trail_expiry_tighten", 1.0)
+        ),
+        adaptive_trail_min_pct=float(
+            _get(trading_raw, "adaptive_trail_min_pct", 3.0)
+        ),
+        unparsed_sell_action=str(
+            _get(trading_raw, "unparsed_sell_action", "trail")
+        ).strip().lower(),
         stop_check_seconds=int(_get(trading_raw, "stop_check_seconds", 30)),
         lotto_gain_budget_pct=float(
             _get(trading_raw, "lotto_gain_budget_pct", 75.0)

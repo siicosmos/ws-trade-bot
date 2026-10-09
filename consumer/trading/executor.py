@@ -226,6 +226,40 @@ def sell_quantity(held: int, scale: Optional[float]) -> int:
     return min(held, max(1, qty))
 
 
+def _ledger_quote_price(account, key):
+    """The ledger's live quote for a contract (the same pricing
+    the dashboard uses); None when unavailable."""
+    quotes_fn = getattr(account, "_quotes", None)
+    if not callable(quotes_fn):
+        return None
+    try:
+        quote = quotes_fn().get(key)
+        if quote and quote.get("price"):
+            return float(quote["price"])
+    except Exception:
+        pass
+    return None
+
+
+def _position_row(store, mode, label, key):
+    for r in store.list_positions(mode, label):
+        if r.get("contract_key") == key:
+            return r
+    return None
+
+
+def _stop_floor(t, entry, pos):
+    """The position's effective stop floor (the tier's or the
+    global stop_loss_pct) - the same math the stop monitor
+    prices the floor from."""
+    stop_pct = float(t.stop_loss_pct)
+    size = str((pos or {}).get("size") or "").lower()
+    tier = (t.size_tiers or {}).get(size) if size else None
+    if tier is not None and tier.get("stop_loss_pct") is not None:
+        stop_pct = float(tier["stop_loss_pct"])
+    return round(entry * (1 - stop_pct / 100.0), 4) if entry else None
+
+
 def _at_open_risk_cap(store, mode, label, value, cfg, acct=None) -> bool:
     cap_pct = effective_open_risk_cap(acct, cfg)
     if cap_pct <= 0 or value is None or value <= 0:
@@ -427,6 +461,53 @@ class PaperExecutor:
 
         breakdown = {}
         total = 0
+        # a sell with no usable price must never book blind: the
+        # ..95-class typo executed with premium=None - the ledger
+        # lost a contract with no cash and no realized. the
+        # adaptive trail (already riding every position) takes
+        # over instead: it sells on the fall from the peak, and
+        # the stop floor sells marketable when it collapses
+        if not alert.premium:
+            price_now = _ledger_quote_price(self.account, key)
+            trail_mode = (
+                getattr(cfg.trading, "unparsed_sell_action", "trail")
+                == "trail"
+            )
+            for acct in effective_accounts(cfg):
+                label = account_label(acct)
+                held = store.get_position(self.mode, key, label)
+                if held < 1:
+                    breakdown[label] = "no position"
+                    continue
+                if trail_mode:
+                    pos = _position_row(store, self.mode, label, key)
+                    peak = (
+                        float(pos.get("peak_bid") or 0) if pos else 0.0
+                    )
+                    entry = (
+                        float(pos.get("avg_premium") or 0) if pos
+                        else 0.0
+                    )
+                    floor = _stop_floor(cfg.trading, entry, pos)
+                    breakdown[label] = (
+                        f"price unparseable - trailing stop active "
+                        f"(now ~{price_now or '?'}, peak {peak or '?'}, "
+                        f"floor {floor or '?'})"
+                    )
+                else:
+                    breakdown[label] = (
+                        f"price unparseable - skipped "
+                        f"(unparsed_sell_action: skip)"
+                    )
+            detail = (
+                f"[PAPER] SELL {key} skipped - price unparseable; "
+                f"the trailing stop takes it | "
+                + "; ".join(f"{k}: {v}" for k, v in breakdown.items())
+            )
+            return ExecutionResult(
+                False, detail, qty=0, price=price_now,
+                breakdown=breakdown,
+            )
         for acct in effective_accounts(cfg):
             label = account_label(acct)
             held = store.get_position(self.mode, key, label)
@@ -758,6 +839,47 @@ class WealthsimpleExecutor:
         total = 0
         order_ids = []
         first_error = None
+
+        # a sell with no usable price never books blind (the
+        # paper path documents the ..95 incident): the adaptive
+        # trail already riding the position takes it instead -
+        # it sells on the fall from the peak, and the stop
+        # floor sells marketable when it collapses
+        if alert.action == "SELL" and not alert.premium:
+            bid = quote.get("bid")
+            trail_mode = (
+                getattr(cfg.trading, "unparsed_sell_action", "trail")
+                == "trail"
+            )
+            for label, account_id, acct in self._account_ids(ws):
+                held = store.get_position(self.mode, key, label)
+                if held < 1:
+                    breakdown[label] = "no position"
+                    continue
+                if trail_mode:
+                    pos = _position_row(store, self.mode, label, key)
+                    entry = (
+                        float(pos.get("avg_premium") or 0) if pos else 0
+                    )
+                    floor = _stop_floor(cfg.trading, entry, pos)
+                    breakdown[label] = (
+                        f"price unparseable - trailing stop active "
+                        f"(bid ~{bid or '?'}, floor {floor or '?'})"
+                    )
+                else:
+                    breakdown[label] = (
+                        f"price unparseable - skipped "
+                        f"(unparsed_sell_action: skip)"
+                    )
+            detail = (
+                f"[LIVE] SELL {key} skipped - price unparseable; "
+                f"the trailing stop takes it | "
+                + "; ".join(f"{k}: {v}" for k, v in breakdown.items())
+            )
+            return ExecutionResult(
+                False, detail, qty=0, price=bid,
+                breakdown=breakdown,
+            )
 
         for label, account_id, acct in self._account_ids(ws):
             try:

@@ -98,6 +98,11 @@ def apply(root):
             continue
         dst_dir = os.path.join(root, d)
         shutil.copytree(src_dir, dst_dir, dirs_exist_ok=True)
+        # both sides compare PATH-QUALIFIED names: the bare-name
+        # comparison stripped every subdirectory file (a subdir
+        # file's bare name is never in the staged set) and left
+        # the package dirs empty - the install could not even
+        # import after the swap
         staged = set()
         for dirpath, _dirnames, filenames in os.walk(src_dir):
             rel = os.path.relpath(dirpath, src_dir)
@@ -107,16 +112,28 @@ def apply(root):
                 )
         for dirpath, _dirnames, filenames in os.walk(dst_dir):
             rel = os.path.relpath(dirpath, dst_dir)
+            if "__pycache__" in rel.split(os.sep):
+                continue
             for fn in filenames:
-                if rel != "." and "__pycache__" in rel.split(os.sep):
-                    continue
                 if fn.endswith(".pyc"):
                     continue
-                if fn not in staged:
+                rel_path = fn if rel == "." else os.path.join(rel, fn)
+                if rel_path not in staged:
                     try:
                         os.remove(os.path.join(dirpath, fn))
                     except OSError:
                         pass
+        # subdirs the new release dropped: the files are gone -
+        # remove the now-empty dirs too (deepest first)
+        for dirpath, dirnames, filenames in os.walk(
+            dst_dir, topdown=False
+        ):
+            if dirpath == dst_dir or "__pycache__" in dirpath:
+                continue
+            try:
+                os.rmdir(dirpath)   # fails when not empty - fine
+            except OSError:
+                pass
 
     for name in CODE_FILES:
         src = os.path.join(staging, name)

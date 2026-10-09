@@ -1108,6 +1108,18 @@ def _positions_payload(ctx):
     rows = [dict(r) for r in store.list_positions(mode)]
     for r in rows:
         r.setdefault("kind", "option")
+        # the live trail distance (the stepped ratchet or the
+        # pinned trail) - the dashboard shows it beside the stop
+        if r.get("right"):
+            try:
+                from consumer.trading.stops import adaptive_trail_pct
+                r["eff_trail"] = adaptive_trail_pct(
+                    ctx.cfg.trading, r,
+                    r.get("peak_bid") or 0,
+                    r.get("avg_premium") or 0,
+                )
+            except Exception:
+                r["eff_trail"] = None
     real = _real_positions(ctx) or {}
     stocks = _real_stocks(ctx) or {}
     fetched = {

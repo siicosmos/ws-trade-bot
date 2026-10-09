@@ -7,6 +7,49 @@ from core.parser import Alert
 from core.store import et_now
 
 
+def adaptive_trail_pct(t, pos, peak, entry):
+    """The effective trail distance for a position: the
+    position's own trail_pct when pinned in the ui (0 = off for
+    it), otherwise the stepped ratchet - the trail tightens as
+    the gain at the peak grows (ride the run-up wide, lock in
+    more near the top) and on 0dte expiry days tightens through
+    the session. Returns None when trailing is off."""
+    per_trail = (pos or {}).get("trail_pct") if pos else None
+    if per_trail is not None:
+        per_trail = float(per_trail)
+        return per_trail if per_trail > 0 else None
+    base = float(t.trailing_stop_pct)
+    if not getattr(t, "adaptive_trail", False):
+        return base if base > 0 else None
+    if not peak or not entry or peak <= entry:
+        return base if base > 0 else None
+
+    gain = (peak / entry - 1.0) * 100.0
+    steps = getattr(t, "adaptive_trail_steps", None) or {}
+    trail = base if base > 0 else None
+    for ceiling_key in sorted(steps, key=float):
+        if gain <= float(ceiling_key):
+            trail = float(steps[ceiling_key])
+            break
+
+    if trail is None:
+        return None
+    # 0dte: tighten through the expiry-day session (the air
+    # pocket before the close)
+    tighten = float(
+        getattr(t, "adaptive_trail_expiry_tighten", 0) or 0
+    )
+    expiry = str((pos or {}).get("expiry") or "")[:10]
+    if tighten and expiry == et_now().date().isoformat():
+        now_et = et_now()
+        hours_past = now_et.hour + now_et.minute / 60.0 - 13.0
+        if hours_past > 0:
+            trail -= tighten * hours_past
+    return max(
+        float(getattr(t, "adaptive_trail_min_pct", 0) or 0), trail
+    )
+
+
 class StopMonitor:
     """Watches open option positions and sells them when their
     stop is hit.
@@ -60,18 +103,15 @@ class StopMonitor:
         stop_pct = float(t.stop_loss_pct)
         if tier is not None and tier.get("stop_loss_pct") is not None:
             stop_pct = float(tier["stop_loss_pct"])
-        per_trail = (
-            pos.get("trail_pct") if pos else None
-        )
         stop = (
             entry * (1 - stop_pct / 100.0)
             if stop_pct > 0 else None
         )
-        trail_pct = (
-            float(per_trail) if per_trail is not None
-            else float(t.trailing_stop_pct)
-        )
-        if trail_pct > 0 and peak and peak > entry:
+        # the adaptive stepped ratchet (or the position's own
+        # pinned trail) - shared with the positions payload so
+        # the dashboard shows the same distance
+        trail_pct = adaptive_trail_pct(t, pos, peak, entry)
+        if trail_pct is not None and trail_pct > 0 and peak and peak > entry:
             trail = peak * (1 - trail_pct / 100.0)
             if stop is None or trail > stop:
                 return trail

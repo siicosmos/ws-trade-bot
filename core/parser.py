@@ -66,7 +66,7 @@ OPT_BUY_RE = re.compile(
     r"(?:(?P<expiry>0DTE|\d{1,2}/\d{1,2})\s+)?"
     r"(?P<underlying>[A-Z]{2,5})\s+"
     r"(?P<strike>\d+(?:\.\d+)?)\s*(?P<right>[cCpP])\b"
-    r"(?:\s*@\s*(?P<premium>\d*\.?\d+))?"
+    r"(?:\s*@\s*(?P<premium>\.*\d+(?:\.\d+)?))?"
 )
 
 OPT_SELL_RE = re.compile(
@@ -75,13 +75,13 @@ OPT_SELL_RE = re.compile(
     r"(?:(?P<expiry>0DTE|\d{1,2}/\d{1,2})\s+)?"
     r"(?P<underlying>[A-Z]{2,5})\s+"
     r"(?P<strike>\d+(?:\.\d+)?)\s*(?P<right>[cCpP])\b"
-    r"(?:\s*@\s*(?P<premium>\d*\.?\d+))?"
+    r"(?:\s*@\s*(?P<premium>\.*\d+(?:\.\d+)?))?"
 )
 
 STOCK_SERVICE_RE = re.compile(
     r"\b(?P<verb>BOUGHT|SOLD|ALL\s+OUT)\s+"
     r"(?P<underlying>[A-Z]{2,5})\s+shares\b"
-    r"(?:\s*@\s*(?P<price>\d*\.?\d+))?"
+    r"(?:\s*@\s*(?P<price>\.*\d+(?:\.\d+)?))?"
 )
 
 SIZE_RE = re.compile(
@@ -162,6 +162,10 @@ def is_correction(text: str) -> bool:
 def _num(value):
     if value is None:
         return None
+    # a leading-dot typo ("..95" for ".95") normalizes to ".95" -
+    # float() accepts one leading dot but not two
+    if isinstance(value, str):
+        value = re.sub(r"^\.+", ".", value)
     try:
         return float(value)
     except (TypeError, ValueError):
