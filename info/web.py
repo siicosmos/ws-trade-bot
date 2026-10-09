@@ -73,7 +73,10 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
         (dashboard password)."""
         token = cfg.pipeline.auth_token
         supplied = request.headers.get("X-Auth-Token", "")
-        return bool(token) and hmac.compare_digest(supplied, token)
+        return bool(token) and hmac.compare_digest(
+            supplied.encode("utf-8", "ignore"),
+            token.encode("utf-8", "ignore"),
+        )
 
     def _write_guard():
         """The other write routes guard the same way: a fake
@@ -159,7 +162,10 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
     # --------------------------------------------------------
     def _consumer_by_token(token):
         for c in getattr(cfg, "consumers", None) or []:
-            if c.token and hmac.compare_digest(c.token, token):
+            if c.token and hmac.compare_digest(
+                c.token.encode("utf-8", "ignore"),
+                token.encode("utf-8", "ignore"),
+            ):
                 return c
         return None
 
@@ -270,6 +276,11 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
     # --------------------------------------------------------
     @app.post("/api/reader_status")
     def api_reader_status():
+        # a fake heartbeat would mask a dead reader on the
+        # dashboard - the same guard as the other write routes
+        denied = _write_guard()
+        if denied is not None:
+            return denied
         data = request.get_json(silent=True) or {}
         app.reader_state["channel"] = (data.get("channel") or None)
         app.reader_state["ok"] = bool(data.get("ok"))
@@ -321,16 +332,28 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
     # --------------------------------------------------------
     @app.get("/api/settings")
     def api_settings_get():
+        # the dashboard is open-read, but the webhook urls are
+        # bearer credentials - only a request carrying the valid
+        # write token (the settings editor sends it) sees the real
+        # values; everyone else gets a placeholder
+        trusted = _reader_token_ok()
+        mask = "••••••••"
+
+        def webhook(value):
+            return value if trusted else (mask if value else "")
+
         return jsonify({
             "auto_update": {
                 "enabled": cfg.auto_update.enabled,
                 "interval_seconds": cfg.auto_update.interval_seconds,
             },
             "discord": {
-                "consumer_log_webhook_url": (
+                "consumer_log_webhook_url": webhook(
                     cfg.discord.consumer_log_webhook_url
                 ),
-                "update_webhook_url": cfg.discord.update_webhook_url,
+                "update_webhook_url": webhook(
+                    cfg.discord.update_webhook_url
+                ),
             },
         })
 
@@ -342,6 +365,10 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
         data = request.get_json(silent=True) or {}
         errors = []
         applied = {}
+
+        # a masked placeholder round-tripping from a client that
+        # loaded the settings without the token means "unchanged"
+        mask = "••••••••"
 
         au = data.get("auto_update") or {}
         if "enabled" in au:
@@ -367,6 +394,8 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
         ):
             if field in dc:
                 url = str(dc[field]).strip()
+                if url == mask:
+                    continue   # masked round-trip: leave as-is
                 if url and not url.startswith("https://"):
                     errors.append(
                         f"discord.{field}: must be an https URL"

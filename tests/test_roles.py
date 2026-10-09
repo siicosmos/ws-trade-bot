@@ -405,3 +405,77 @@ def test_info_write_routes_are_token_guarded():
     client2 = app2.test_client()
     r = client2.post("/api/spx-levels", json={"text": "x"})
     assert r.status_code == 401
+
+
+def test_info_reader_status_is_token_guarded():
+    """a fake heartbeat would mask a dead reader on the dashboard -
+    the POST carries the same guard as the other write routes."""
+    app, store = _make_info_app(auth_token="t")
+    client = app.test_client()
+
+    r = client.post("/api/reader_status",
+                    json={"channel": "fake", "ok": True})
+    assert r.status_code == 401
+    r = client.post("/api/reader_status", json={"channel": "fake",
+                                                "ok": True},
+                    headers=_headers("wrong"))
+    assert r.status_code == 401
+    r = client.post("/api/reader_status", json={"channel": "real",
+                                                "ok": True},
+                    headers=_headers("t"))
+    assert r.status_code == 200
+    # the state was only touched by the authenticated post
+    state = client.get("/api/reader_status").get_json()
+    assert state["channel"] == "real"
+
+
+def test_info_settings_get_masks_webhooks_without_token():
+    """the info dashboard is open-read, but webhook urls are
+    bearer credentials - only a request carrying the write token
+    sees the real values."""
+    app, store = _make_info_app(auth_token="t")
+    client = app.test_client()
+
+    anon = client.get("/api/settings").get_json()
+    assert anon["discord"]["consumer_log_webhook_url"] == ""
+    assert anon["discord"]["update_webhook_url"] == ""
+
+    # set real values through the guarded POST
+    r = client.post("/api/settings", json={"discord": {
+        "consumer_log_webhook_url":
+            "https://discord.com/api/webhooks/log123",
+        "update_webhook_url":
+            "https://discord.com/api/webhooks/upd456",
+    }}, headers=_headers("t"))
+    assert r.status_code == 200
+
+    anon = client.get("/api/settings").get_json()
+    assert anon["discord"]["consumer_log_webhook_url"] == "••••••••"
+    assert anon["discord"]["update_webhook_url"] == "••••••••"
+
+    trusted = client.get("/api/settings", headers=_headers("t")).get_json()
+    assert trusted["discord"]["consumer_log_webhook_url"] == (
+        "https://discord.com/api/webhooks/log123")
+    assert trusted["discord"]["update_webhook_url"] == (
+        "https://discord.com/api/webhooks/upd456")
+
+    # a masked value round-tripping in a POST means "unchanged"
+    r = client.post("/api/settings", json={"discord": {
+        "consumer_log_webhook_url": "••••••••",
+        "update_webhook_url": "••••••••",
+    }}, headers=_headers("t"))
+    assert r.status_code == 200
+    trusted = client.get("/api/settings", headers=_headers("t")).get_json()
+    assert trusted["discord"]["consumer_log_webhook_url"] == (
+        "https://discord.com/api/webhooks/log123")
+
+
+def test_non_ascii_token_header_is_401_not_500():
+    """headers decode as latin-1 - a non-ascii token value used to
+    raise a TypeError inside compare_digest (a 500) instead of a
+    clean 401."""
+    app, store = _make_info_app(auth_token="t")
+    client = app.test_client()
+    r = client.post("/alert", json={"text": "x"},
+                    headers={"X-Auth-Token": "tökën"})
+    assert r.status_code == 401

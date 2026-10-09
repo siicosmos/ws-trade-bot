@@ -4,6 +4,10 @@ import yaml
 
 from core.config import dump_yaml_config
 
+# shown to non-admin readers of /api/settings in place of the real
+# webhook urls (bearer credentials for the discord channels)
+WEBHOOK_MASK = "••••••••"
+
 EDITABLE_SCALARS = {
     "risk_per_trade_pct": ("float", 0, 100),
     "max_contracts_per_trade": ("int", 0, 1000),
@@ -39,7 +43,7 @@ EDITABLE_ACCOUNT_NUMERIC = {
 }
 
 
-def get_settings(cfg) -> dict:
+def get_settings(cfg, mask_secrets=False) -> dict:
     trading = {k: getattr(cfg.trading, k) for k in EDITABLE_SCALARS}
     # mode is display-only here - it changes through /api/mode
     # (persist + restart), not the settings form
@@ -67,7 +71,7 @@ def get_settings(cfg) -> dict:
         }
         for a in cfg.wealthsimple.accounts
     ]
-    return {
+    payload = {
         "trading": trading,
         "accounts": accounts,
         "auto_update": {
@@ -116,6 +120,16 @@ def get_settings(cfg) -> dict:
             "update_webhook_url": cfg.discord.update_webhook_url,
         },
     }
+    if mask_secrets:
+        # webhook urls are bearer credentials (anyone holding one
+        # can post to the channel) - viewers get a placeholder
+        # instead; admins and the machine token get the real values
+        for field in ("trade_alert_webhook_url",
+                      "consumer_log_webhook_url",
+                      "update_webhook_url"):
+            if payload["discord"][field]:
+                payload["discord"][field] = WEBHOOK_MASK
+    return payload
 
 
 def apply_settings(cfg, payload: dict, config_path=None) -> tuple:
@@ -427,6 +441,10 @@ def apply_settings(cfg, payload: dict, config_path=None) -> tuple:
     ):
         if field in discord_payload:
             url = str(discord_payload[field]).strip()
+            if url == WEBHOOK_MASK:
+                # a masked placeholder round-tripping from a
+                # non-admin client means "unchanged"
+                continue
             if url and not url.startswith("https://"):
                 errors.append(
                     f"discord.{field}: must be an https URL"

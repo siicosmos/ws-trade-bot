@@ -1845,7 +1845,8 @@ def create_app(cfg, store: Store, risk, executor, account=None,
     def api_settings_get():
         from consumer.settings import get_settings
 
-        return jsonify(get_settings(cfg))
+        # webhook urls are credentials - viewers get a masked view
+        return jsonify(get_settings(cfg, mask_secrets=not _is_admin()))
 
     @app.get("/api/dashboard")
     def api_dashboard():
@@ -1864,7 +1865,7 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                 "positions": positions,
                 "signals": store.recent_signals(50),
                 "trades": store.recent_trades(50),
-                "settings": get_settings(cfg),
+                "settings": get_settings(cfg, mask_secrets=not _is_admin()),
                 "update_status": update_status_payload(app),
                 "me": _me(),
             }
@@ -2122,6 +2123,12 @@ def create_app(cfg, store: Store, risk, executor, account=None,
 
     @app.post("/alert")
     def alert():
+        # alerts execute real orders in live mode - viewers (and
+        # any authenticated-but-not-owner session) must not post
+        # them; the machine token (the info server's push) and
+        # admin sessions pass
+        if not _is_admin():
+            return jsonify({"error": "admin required"}), 403
         data = request.get_json(silent=True) or {}
         text = data.get("text", "")
         author = data.get("author", "")

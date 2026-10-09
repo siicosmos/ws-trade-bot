@@ -390,14 +390,23 @@ def test_reader_status_endpoints():
     # "desired" line reads reader/config.yaml at app build time
     from info.web import create_app
 
-    cfg = ConfigStub(TradingConfig(mode="notify"))
+    cfg = ConfigStub(TradingConfig(mode="notify"), auth_token="t")
     store = _fresh_store()
     app = create_app(cfg, store)
     client = app.test_client()
+    hdr = {"X-Auth-Token": "t"}
+
+    # the heartbeat POST is token-guarded
+    resp = client.post(
+        "/api/reader_status",
+        json={"channel": "🚨│player-alerts", "ok": True},
+    )
+    assert resp.status_code == 401
 
     resp = client.post(
         "/api/reader_status",
         json={"channel": "🚨│player-alerts", "ok": True},
+        headers=hdr,
     )
     assert resp.status_code == 200
     assert resp.get_json() == {}
@@ -406,7 +415,8 @@ def test_reader_status_endpoints():
     # reader's own yaml (surfaced here for the dashboard line)
     app.reader_desired = "player-alerts"
     resp = client.post(
-        "/api/reader_status", json={"channel": "test", "ok": True}
+        "/api/reader_status", json={"channel": "test", "ok": True},
+        headers=hdr,
     )
     assert resp.get_json() == {}
 

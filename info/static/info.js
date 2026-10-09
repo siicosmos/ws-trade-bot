@@ -53,10 +53,12 @@ function showReconnect(on) {
   if (el) el.style.display = on ? "block" : "none";
 }
 
-async function jget(url) {
+async function jget(url, auth=false) {
   let r;
   try {
-    r = await fetch(url);
+    r = await fetch(url, auth ? {
+      headers: {"X-Auth-Token": writeToken()},
+    } : undefined);
   } catch (e) {
     showReconnect(true);
     throw e;
@@ -348,7 +350,11 @@ function closeSettings() {
 }
 
 function loadSettings() {
-  return jget("/api/settings").then(function (s) {
+  // the real webhook values are only served to a request carrying
+  // the write token - send it when it is already stored (no
+  // prompt on open; the save flow prompts when needed)
+  const token = localStorage.getItem("info_write_token") || "";
+  return jget("/api/settings", !!token).then(function (s) {
     lastSettings = s;
     renderSettings(s);
     setSettingsDirty(false);

@@ -242,3 +242,54 @@ def test_tokenless_install_cannot_claim_or_bare_token_login():
     }, follow_redirects=False)
     assert r.status_code == 200   # login rejected, form re-rendered
     assert c2.get("/api/settings").status_code == 401
+
+
+def test_viewer_sees_masked_webhooks_and_cannot_post_alerts():
+    """webhook urls are bearer credentials - viewers get a masked
+    settings view (admins and the machine token see the real
+    values), and /alert executes real orders so it is
+    admin/machine-token only."""
+    s = _fresh_store()
+    s.create_user("liam", "ownerpw", "admin")
+    s.create_user("friend", "friendpw", "viewer")
+    app, cfg = _make_app(s)
+    admin, viewer = app.test_client(), app.test_client()
+    _login(admin, "liam", "ownerpw")
+    _login(viewer, "friend", "friendpw")
+    # set a real webhook through the admin API
+    r = admin.post("/api/settings", json={
+        "discord": {"trade_alert_webhook_url":
+                    "https://discord.com/api/webhooks/secret123"}})
+    assert r.status_code == 200
+
+    # the admin sees the real url
+    s_admin = admin.get("/api/settings").get_json()
+    assert s_admin["discord"]["trade_alert_webhook_url"] == (
+        "https://discord.com/api/webhooks/secret123")
+    # the viewer sees the mask, in /api/settings and the poll
+    s_view = viewer.get("/api/settings").get_json()
+    assert s_view["discord"]["trade_alert_webhook_url"] == "••••••••"
+    dash = viewer.get("/api/dashboard").get_json()
+    assert dash["settings"]["discord"]["trade_alert_webhook_url"] == (
+        "••••••••")
+    # the machine token sees the real values too
+    tok = app.test_client()
+    tok.get("/api/settings", headers={"X-Auth-Token": "servicetoken"})
+    s_tok = tok.get("/api/settings",
+                    headers={"X-Auth-Token": "servicetoken"}).get_json()
+    assert s_tok["discord"]["trade_alert_webhook_url"] == (
+        "https://discord.com/api/webhooks/secret123")
+
+    # a masked value round-tripping in a POST means "unchanged"
+    r = admin.post("/api/settings", json={
+        "discord": {"trade_alert_webhook_url": "••••••••"}})
+    assert r.status_code == 200
+    s_admin2 = admin.get("/api/settings").get_json()
+    assert s_admin2["discord"]["trade_alert_webhook_url"] == (
+        "https://discord.com/api/webhooks/secret123")
+
+    # /alert: the viewer is rejected, the machine token passes
+    alert_payload = {"text": "BOUGHT 0DTE SPY 6000c @ 1.0"}
+    assert viewer.post("/alert", json=alert_payload).status_code == 403
+    ok = admin.post("/alert", json=alert_payload)
+    assert ok.status_code == 200
