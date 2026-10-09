@@ -64,7 +64,11 @@ def dashboard_css():
         _css_mtime = mtime
         DASHBOARD_CSS = _read("dashboard.css", _CORE_STATIC)
     return DASHBOARD_CSS
-DASHBOARD_JS = _read("dashboard.js")
 
 # the login page is shared with the info server (core.web_common)
 from core.web_common import LOGIN_HTML  # noqa: E402, F401
+
+# served from static/ (the route reads the file live); the module
+# attribute exists for the tests that assert on the script's
+# content
+DASHBOARD_JS = _read("dashboard.js")

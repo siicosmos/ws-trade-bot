@@ -70,7 +70,7 @@
 <div id="history-results"></div>
 </main>
 
-<div id="levelsBackdrop" onclick="if(event.target===this) closeLevels()">
+<div id="levelsBackdrop" onclick="if(event.target===this && !backdropTouchMoved) closeLevels()">
   <div id="levelsPanel">
     <div id="levelsHead"><span>SPX Levels</span><button id="levelsClose" class="btn" onclick="closeLevels()">&#215;</button></div>
     <div id="levelsScroll">
@@ -79,7 +79,7 @@
     </div>
   </div>
 </div>
-<div id="usersBackdrop" onclick="if(event.target===this) closeUsers()">
+<div id="usersBackdrop" onclick="if(event.target===this && !backdropTouchMoved) closeUsers()">
   <div id="usersPanel">
     <div id="usersHead"><span>Users</span><button id="usersClose" class="btn" onclick="closeUsers()">&#215;</button></div>
     <div id="usersScroll">
@@ -87,8 +87,8 @@
       <div id="users-form" class="set-section">
         <div class="set-title">add user</div>
         <div class="set-grid">
-          <div class="set-field"><label>username</label><input id="nu-name" maxlength="32"></div>
-          <div class="set-field"><label>password (min 6)</label><input id="nu-pass" type="password"></div>
+          <div class="set-field"><label>username</label><input id="nu-name" maxlength="32" autocomplete="off"></div>
+          <div class="set-field"><label>password (min 6)</label><input id="nu-pass" type="password" autocomplete="new-password"></div>
           <div class="set-field"><label>role</label><select id="nu-role"><option value="viewer">viewer</option><option value="admin">admin</option></select></div>
         </div>
         <div style="margin-top:10px"><button onclick="createUser()" class="btn sm">add user</button></div>
@@ -97,8 +97,8 @@
       <div id="pw-form" class="set-section">
         <div class="set-title">change my password</div>
         <div class="set-grid">
-          <div class="set-field"><label>current password</label><input id="pw-current" type="password"></div>
-          <div class="set-field"><label>new password (min 6)</label><input id="pw-new" type="password"></div>
+          <div class="set-field"><label>current password</label><input id="pw-current" type="password" autocomplete="current-password"></div>
+          <div class="set-field"><label>new password (min 6)</label><input id="pw-new" type="password" autocomplete="new-password"></div>
         </div>
         <div style="margin-top:10px"><button onclick="changeMyPassword()" class="btn sm">change password</button></div>
         <div class="set-hint" id="pw-msg"></div>
@@ -126,7 +126,7 @@
     </div>
   </div>
 </div>
-<div id="modalBackdrop" onclick="if(event.target===this) closeModal()">
+<div id="modalBackdrop" onclick="if(event.target===this && !backdropTouchMoved) closeModal()">
   <div id="modalBox">
     <div class="mtitle" id="mTitle"></div>
     <div class="mtext" id="mText"></div>

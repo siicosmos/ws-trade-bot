@@ -69,7 +69,7 @@ def main():
     print(f"private key: {key_path}")
     print(f"valid for: {', '.join(dns_names + ips)}")
     print(
-        "config.yaml:\n"
+        "config/<role>.config.yaml:\n"
         "pipeline:\n"
         '  tls_cert: "certs/dashboard.crt"\n'
         '  tls_key: "certs/dashboard.key"'

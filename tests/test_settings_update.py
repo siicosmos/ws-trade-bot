@@ -266,7 +266,7 @@ def test_updater_skips_when_dirty():
     def fake_git(root_dir, *args):
         # dirty tree whose content does NOT match the remote:
         # the pull stays blocked (local edits are never clobbered)
-        if args[0] == "status":
+        if "status" in args:
             return R(" M file.py\n")
         if args[:2] == ("rev-parse", "HEAD"):
             return R("aaa\n")
@@ -310,7 +310,7 @@ def test_updater_pulls_and_restarts():
 
         r = R()
         r.returncode = 0
-        if args[0] == "status":
+        if "status" in args:
             r.stdout = ""
         elif args[0] == "fetch":
             r.stdout = ""
@@ -319,7 +319,7 @@ def test_updater_pulls_and_restarts():
         elif args[0] == "log":
             r.stdout = "abc123 new commit\n"
         elif args[0] == "diff":
-            r.stdout = "trader/server.py\n"
+            r.stdout = "core/server.py\n"
         else:
             r.stdout = outputs.get(tuple(args[1:]), "aaa\n")
         r.stderr = ""
@@ -354,7 +354,7 @@ def test_updater_up_to_date_no_restart():
         r = R()
         r.returncode = 0
         r.stderr = ""
-        if args[0] == "status":
+        if "status" in args:
             r.stdout = ""
         elif args[0] == "log":
             r.stdout = ""
@@ -540,7 +540,7 @@ def test_quotes_disabled_by_default(tmp_path):
         f.write("quotes:\n  provider: ws\n")
     cfg = load_config(str(cfg_path))
     assert cfg.quotes.enabled is False
-    assert make_quote_provider(cfg, None) is None
+    assert make_quote_provider(cfg, None) == (None, None)
 
     applied, errors = apply_settings(
         cfg, {"quotes": {"enabled": True}}, str(cfg_path)
@@ -792,7 +792,6 @@ def test_new_settings_fields_roundtrip():
             "order_type": "limit",
             "limit_offset_pct": 0.75,
             "max_daily_loss_pct": 3.0,
-            "sell_only_if_held": False,
             "history_retention_days": 365,
         },
         "wealthsimple": {"stock_margin_rate": 0.35},
@@ -806,7 +805,6 @@ def test_new_settings_fields_roundtrip():
     assert cfg.trading.order_type == "limit"
     assert cfg.trading.limit_offset_pct == 0.75
     assert cfg.trading.max_daily_loss_pct == 3.0
-    assert cfg.trading.sell_only_if_held is False
     assert cfg.trading.history_retention_days == 365
     assert cfg.wealthsimple.stock_margin_rate == 0.35
     assert cfg.paper.mirror_interval_seconds == 120
@@ -818,7 +816,6 @@ def test_new_settings_fields_roundtrip():
     assert s["trading"]["order_type"] == "limit"
     assert s["trading"]["limit_offset_pct"] == 0.75
     assert s["trading"]["max_daily_loss_pct"] == 3.0
-    assert s["trading"]["sell_only_if_held"] is False
     assert s["trading"]["history_retention_days"] == 365
     assert s["wealthsimple"]["stock_margin_rate"] == 0.35
     assert s["paper"]["mirror_interval_seconds"] == 120
@@ -848,7 +845,7 @@ def test_new_settings_fields_roundtrip():
 
 
 def test_new_fields_persist_to_config_file():
-    """order_type / max_daily_loss_pct / sell_only_if_held
+    """order_type / max_daily_loss_pct
     applied at runtime must also land in config.yaml - they once
     silently reverted on restart."""
     import yaml
@@ -865,7 +862,6 @@ def test_new_fields_persist_to_config_file():
         "trading": {
             "order_type": "limit",
             "max_daily_loss_pct": 2.5,
-            "sell_only_if_held": False,
         }
     }, config_path=cfg_path)
     assert ok and not errors
@@ -874,7 +870,6 @@ def test_new_fields_persist_to_config_file():
         raw = yaml.safe_load(f)
     assert raw["trading"]["order_type"] == "limit"
     assert raw["trading"]["max_daily_loss_pct"] == 2.5
-    assert raw["trading"]["sell_only_if_held"] is False
     os.unlink(cfg_path)
 
 

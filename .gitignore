@@ -27,4 +27,5 @@ logs/
 dist/
 .update_staging/
 .update_backup/
-.update_pending.json
+.update_pending*.json
+.code_swapped.json

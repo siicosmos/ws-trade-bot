@@ -1,7 +1,7 @@
 @echo off
 rem first-time install of the consumer client from a release zip.
 rem run this once from the unzipped folder: scripts\install_consumer.bat
-cd /d %~dp0..
+cd /d "%~dp0.."
 
 if not exist .venv (
   echo creating venv...
@@ -23,7 +23,7 @@ if errorlevel 1 (
 if not exist config\consumer.config.yaml (
   copy config\consumer.example.config.yaml config\consumer.config.yaml >nul
   echo created config\consumer.config.yaml - edit it:
-  echo   pipeline.auth_token, feed url + token,
+  echo   auth_token, feed url + token,
   echo   auto_update.github_token ^(a read-only GitHub token, needed
   echo   while the repo is private^)
 )

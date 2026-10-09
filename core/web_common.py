@@ -82,16 +82,20 @@ def _purge_login_fails(now):
         _LOGIN_FAILS.pop(ip, None)
 
 
-def load_secret_key(config_path):
-    if not config_path:
-        return secrets.token_hex(32)
-    # the consumer's login-session signing key - at the repo
-    # root, outside the code dirs an update swap replaces (the
-    # info server has no sessions)
-    key_file = os.path.join(
+def _session_key_file():
+    """The consumer's login-session signing key - at the repo
+    root, outside the code dirs an update swap replaces (the
+    info server has no sessions)."""
+    return os.path.join(
         os.path.dirname(os.path.abspath(__file__)),
         "..", ".consumer_session_key"
     )
+
+
+def load_secret_key(config_path):
+    if not config_path:
+        return secrets.token_hex(32)
+    key_file = _session_key_file()
     try:
         with open(key_file, encoding="utf-8") as f:
             key = f.read().strip()
@@ -262,7 +266,14 @@ def install_auth(app, cfg, store, login_html, exempt_paths=()):
 
             def _fail(label):
                 nonlocal error
-                count = (entry or {}).get("count", 0) + 1
+                # a lockout that already expired starts a fresh
+                # window: the stale count would otherwise re-lock
+                # forever on the next single wrong attempt
+                prev = entry or {}
+                count = 1 if (
+                    prev.get("locked_until", 0)
+                    and prev.get("locked_until", 0) <= now
+                ) else prev.get("count", 0) + 1
                 if count >= LOGIN_FAIL_LIMIT:
                     _LOGIN_FAILS[ip] = {
                         "count": count,

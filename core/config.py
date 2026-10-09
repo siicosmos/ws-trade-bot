@@ -144,7 +144,6 @@ class TradingConfig:
     dedupe_window_minutes: int = 10
     history_retention_days: int = 365
     ticker_whitelist: List[str] = field(default_factory=list)
-    sell_only_if_held: bool = True
     # hard daily-loss circuit breaker: stop taking new BUY alerts
     # once today's realized pnl sinks below this % of account
     # value (0 = off). exits (alert sells, stops, b2e) stay
@@ -271,24 +270,33 @@ def dump_yaml_config(raw, config_path):
     top-level sections."""
     directory = os.path.dirname(os.path.abspath(config_path))
     fd, tmp = tempfile.mkstemp(dir=directory, suffix=".yaml.tmp")
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        text = yaml.safe_dump(
-            raw, default_flow_style=False, sort_keys=False,
-            allow_unicode=True, width=4096,
-        )
-        out = []
-        for line in text.split("\n"):
-            if (
-                out
-                and line
-                and not line[0].isspace()
-                and not line.startswith("- ")
-                and line not in ("---", "...")
-                and out[-1] != ""
-            ):
-                out.append("")
-            out.append(line)
-        f.write("\n".join(out))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            text = yaml.safe_dump(
+                raw, default_flow_style=False, sort_keys=False,
+                allow_unicode=True, width=4096,
+            )
+            out = []
+            for line in text.split("\n"):
+                if (
+                    out
+                    and line
+                    and not line[0].isspace()
+                    and not line.startswith("- ")
+                    and line not in ("---", "...")
+                    and out[-1] != ""
+                ):
+                    out.append("")
+                out.append(line)
+            f.write("\n".join(out))
+            f.flush()
+            os.fsync(f.fileno())
+    except OSError:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
     # windows: the destination can be briefly locked (an open
     # handle or a real-time scanner) - os.replace then fails with
     # permission denied; retry briefly before giving up
@@ -308,6 +316,38 @@ def dump_yaml_config(raw, config_path):
 def _get(d, key, default):
     value = d.get(key, default)
     return default if value is None else value
+
+
+def _valid_custom_patterns(patterns):
+    """Compile each custom pattern once at load - an invalid
+    regex is dropped with a note (it would otherwise raise
+    re.error inside the alert-processing path on every message,
+    and a pathological one could hang the thread)."""
+    import re as _re
+
+    valid = []
+    for pattern in patterns or []:
+        if not isinstance(pattern, str) or not pattern.strip():
+            continue
+        try:
+            _re.compile(pattern)
+        except _re.error as e:
+            print(
+                f"config: dropping invalid custom_patterns entry "
+                f"{pattern!r}: {e}"
+            )
+            continue
+        valid.append(pattern)
+    return valid
+
+
+def _section(raw, key):
+    """The named config section as a dict - a scalar/list where a
+    mapping belongs (a typo, an accidental paste) must not crash
+    the startup with an AttributeError inside _get; the section
+    is treated as absent instead."""
+    value = raw.get(key)
+    return value if isinstance(value, dict) else {}
 
 
 def _opt_float(d, key):
@@ -367,9 +407,9 @@ def load_config(path: str) -> Config:
             break
     if pipeline_raw is None:
         pipeline_raw = {}
-    trading_raw = raw.get("trading") or {}
-    ws_raw = raw.get("wealthsimple") or {}
-    parser_raw = raw.get("parser") or {}
+    trading_raw = _section(raw, "trading")
+    ws_raw = _section(raw, "wealthsimple")
+    parser_raw = _section(raw, "parser")
 
     # role: consumer = the trading app; info = the alert source
     # server (reader ingest + feed, no trading) - the section key
@@ -390,7 +430,7 @@ def load_config(path: str) -> Config:
             )
         )
 
-    feed_raw = raw.get("feed") or {}
+    feed_raw = _section(raw, "feed")
     feed = FeedConfig(
         url=str(_get(feed_raw, "url", "")).strip(),
         token=str(_get(feed_raw, "token", "")).strip(),
@@ -398,7 +438,7 @@ def load_config(path: str) -> Config:
         verify_ssl=bool(_get(feed_raw, "verify_ssl", False)),
     )
 
-    discord_raw = raw.get("discord") or {}
+    discord_raw = _section(raw, "discord")
     webhook = (
         os.environ.get("DISCORD_WEBHOOK_URL")
         or str(_get(discord_raw, "trade_alert_webhook_url", ""))
@@ -414,10 +454,7 @@ def load_config(path: str) -> Config:
         for tier_name, tier_raw in raw_tiers.items():
             size_tiers[str(tier_name).lower()] = _norm_tier(tier_raw)
 
-    raw_stock_tiers = (
-        trading_raw.get("stock_size_tiers") or {}
-        if isinstance(trading_raw, dict) else {}
-    )
+    raw_stock_tiers = _section(trading_raw, "stock_size_tiers")
     stock_size_tiers = _default_stock_size_tiers()
     for k, v in raw_stock_tiers.items():
         name = str(k).strip().lower()
@@ -476,7 +513,6 @@ def load_config(path: str) -> Config:
         ticker_whitelist=[
             t.upper() for t in _get(trading_raw, "ticker_whitelist", [])
         ],
-        sell_only_if_held=bool(_get(trading_raw, "sell_only_if_held", True)),
         max_daily_loss_pct=float(
             _get(trading_raw, "max_daily_loss_pct", 0.0)
         ),
@@ -522,78 +558,80 @@ def load_config(path: str) -> Config:
             ),
         ),
         parser=ParserConfig(
-            custom_patterns=list(_get(parser_raw, "custom_patterns", [])),
+            custom_patterns=_valid_custom_patterns(
+                _get(parser_raw, "custom_patterns", [])
+            ),
         ),
         paper=PaperConfig(
-            enabled=bool(_get(raw.get("paper") or {}, "enabled", False)),
-            mirror=bool(_get(raw.get("paper") or {}, "mirror", True)),
+            enabled=bool(_get(_section(raw, "paper"), "enabled", False)),
+            mirror=bool(_get(_section(raw, "paper"), "mirror", True)),
             mirror_interval_seconds=int(
-                _get(raw.get("paper") or {},
+                _get(_section(raw, "paper"),
                      "mirror_interval_seconds", 60)
             ),
         ),
         auto_update=AutoUpdateConfig(
-            enabled=bool(_get(raw.get("auto_update") or {}, "enabled", True)),
+            enabled=bool(_get(_section(raw, "auto_update"), "enabled", True)),
             interval_seconds=int(
-                _get(raw.get("auto_update") or {}, "interval_seconds", 600)
+                _get(_section(raw, "auto_update"), "interval_seconds", 600)
             ),
             github_token=str(
-                _get(raw.get("auto_update") or {}, "github_token", "")
+                _get(_section(raw, "auto_update"), "github_token", "")
             ),
             release_tag=str(
-                _get(raw.get("auto_update") or {}, "release_tag",
+                _get(_section(raw, "auto_update"), "release_tag",
                      "consumer-latest")
             ),
         ),
         reader=ReaderConfig(
             pipeline_url=str(
-                _get(raw.get("reader") or {}, "pipeline_url",
+                _get(_section(raw, "reader"), "pipeline_url",
                      "http://localhost:8080/alert")
             ),
             poll_interval=float(
-                _get(raw.get("reader") or {}, "poll_interval", 0.5)
+                _get(_section(raw, "reader"), "poll_interval", 0.5)
             ),
-            max_items=int(_get(raw.get("reader") or {}, "max_items", 40)),
-            auth_token=str(_get(raw.get("reader") or {}, "auth_token", "")),
+            max_items=int(_get(_section(raw, "reader"), "max_items", 40)),
+            auth_token=str(_get(_section(raw, "reader"), "auth_token", "")),
             channels=[
                 str(c).strip().lower()
-                for c in (raw.get("reader") or {}).get("channels") or []
+                for c in (_section(raw, "reader")).get("channels") or []
                 if str(c).strip()
             ],
             channel_servers={
                 str(k).strip().lower(): str(v).strip()
                 for k, v in (
-                    (raw.get("reader") or {}).get("channel_servers")
+                    (_section(raw, "reader")).get("channel_servers")
                     or {}
                 ).items()
                 if str(k).strip() and str(v).strip()
             },
             auto_switch_channel=bool(
-                _get(raw.get("reader") or {},
+                _get(_section(raw, "reader"),
                      "auto_switch_channel", True)
             ),
             discord_reopen_seconds=int(
-                _get(raw.get("reader") or {},
+                _get(_section(raw, "reader"),
                      "discord_reopen_seconds", 15)
             ),
             discord_restart_seconds=int(
-                _get(raw.get("reader") or {},
+                _get(_section(raw, "reader"),
                      "discord_restart_seconds", 90)
             ),
             auto_scroll=bool(
-                _get(raw.get("reader") or {}, "auto_scroll", True)
+                _get(_section(raw, "reader"), "auto_scroll", True)
             ),
         ),
         quotes=QuotesConfig(
-            enabled=bool(_get(raw.get("quotes") or {}, "enabled", False)),
+            enabled=bool(_get(_section(raw, "quotes"), "enabled", False)),
             provider=str(
-                _get(raw.get("quotes") or {}, "provider", "ws")
+                _get(_section(raw, "quotes"), "provider", "ws")
             ).lower(),
             moomoo_host=str(
-                _get(raw.get("quotes") or {}, "moomoo_host", "127.0.0.1")
+                _get(_section(raw, "quotes"), "moomoo_host", "127.0.0.1")
             ),
             moomoo_port=int(
-                _get(raw.get("quotes") or {}, "moomoo_port", 11111)
+                _get(_section(raw, "quotes"), "moomoo_port", 11111)
             ),
         ),
         consumers=consumers,

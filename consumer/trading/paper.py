@@ -157,7 +157,22 @@ class PaperLedger:
             self._chain_backoff_until = time.time() + 600
             return quotes
         added = False
-        for key, pos in pending:
+        # bound the walk: each unpriced contract costs two ws
+        # round-trips (security + option resolve, 15s timeout
+        # each) - an unbounded loop over many positions would
+        # stall the stop monitor / dashboard refresh for minutes.
+        # the window rotates so every contract eventually gets a
+        # turn across successive refreshes
+        cursor = (
+            getattr(self, "_chain_cursor", 0) % len(pending)
+            if pending else 0
+        )
+        batch = [
+            pending[(cursor + i) % len(pending)]
+            for i in range(min(6, len(pending)))
+        ]
+        self._chain_cursor = cursor + 6
+        for key, pos in batch:
             try:
                 sec_id = resolver._resolve_security(
                     ws, pos["underlying"]

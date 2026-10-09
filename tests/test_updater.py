@@ -60,13 +60,13 @@ def test_updater_restart_on_local_change(tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()
     subprocess.run(["git", "init"], cwd=repo, capture_output=True, check=True)
-    _write(repo, "trader/server.py", "x")
+    _write(repo, "core/server.py", "x")
     _git_run(repo, "add", "-A")
     _commit(repo, "a")
 
     calls = []
     up = AutoUpdater(_cfg(), str(repo), "", restart=lambda *a, **k: calls.append(1))
-    _write(repo, "trader/server.py", "y")
+    _write(repo, "core/server.py", "y")
     _git_run(repo, "add", "-A")
     _commit(repo, "b")
     up._restart_for_local_change()
@@ -108,7 +108,7 @@ def test_check_once_pulls_and_restarts(tmp_path):
 
     work = tmp_path / "work"
     git(tmp_path, "clone", str(origin), str(work))
-    _write(work, "trader/server.py", "1")
+    _write(work, "core/server.py", "1")
     git(work, "add", "-A")
     git(work, "commit", "-m", "initial")
     git(work, "push", "-u", "origin", "HEAD")
@@ -121,14 +121,14 @@ def test_check_once_pulls_and_restarts(tmp_path):
 
     other = tmp_path / "other"
     git(tmp_path, "clone", str(origin), str(other))
-    _write(other, "trader/server.py", "2")
+    _write(other, "core/server.py", "2")
     git(other, "add", "-A")
     git(other, "commit", "-m", "second")
     git(other, "push")
 
     assert up.check_once() is True, up.last_result
     assert calls == [1]
-    assert (work / "trader" / "server.py").read_text() == "2"
+    assert (work / "core" / "server.py").read_text() == "2"
     remote_head = _git(str(other), "rev-parse", "HEAD").stdout.strip()
     assert _git(str(work), "rev-parse", "HEAD").stdout.strip() == remote_head
 
@@ -169,7 +169,7 @@ def test_seed_record_from_reflog(tmp_path):
         ["git", "clone", str(origin), str(work)],
         capture_output=True, check=True,
     )
-    _write(work, "trader/server.py", "1")
+    _write(work, "core/server.py", "1")
     subprocess.run(
         ["git", "add", "-A"], cwd=work, env=env,
         capture_output=True, check=True,
@@ -188,7 +188,7 @@ def test_seed_record_from_reflog(tmp_path):
         ["git", "clone", str(origin), str(other)],
         capture_output=True, check=True,
     )
-    _write(other, "trader/server.py", "2")
+    _write(other, "core/server.py", "2")
     subprocess.run(
         ["git", "add", "-A"], cwd=other, env=env,
         capture_output=True, check=True,
@@ -298,7 +298,7 @@ def test_updater_ignores_untracked_files(tmp_path):
     repo.mkdir()
     subprocess.run(["git", "init"], cwd=repo, capture_output=True,
                    check=True)
-    _write(repo, "trader/server.py", "1")
+    _write(repo, "core/server.py", "1")
     _git_run(repo, "add", "-A")
     _commit(repo, "a")
 
@@ -308,7 +308,7 @@ def test_updater_ignores_untracked_files(tmp_path):
     work = tmp_path / "work"
     subprocess.run(["git", "clone", str(origin), str(work)],
                    capture_output=True, check=True)
-    _write(work, "trader/server.py", "1")
+    _write(work, "core/server.py", "1")
     _git_run(work, "add", "-A")
     _commit(work, "initial")
     _git_run(work, "push", "-u", "origin", "HEAD")
@@ -319,7 +319,7 @@ def test_updater_ignores_untracked_files(tmp_path):
     other = tmp_path / "other"
     subprocess.run(["git", "clone", str(origin), str(other)],
                    capture_output=True, check=True)
-    _write(other, "trader/server.py", "2")
+    _write(other, "core/server.py", "2")
     _git_run(other, "add", "-A")
     _commit(other, "second")
     _git_run(other, "push")
@@ -465,7 +465,7 @@ def test_check_once_records_no_restart_pull(tmp_path):
 
     work = tmp_path / "work"
     git(tmp_path, "clone", str(origin), str(work))
-    _write(work, "trader/server.py", "1")
+    _write(work, "core/server.py", "1")
     git(work, "add", "-A")
     git(work, "commit", "-m", "initial")
     git(work, "push", "-u", "origin", "HEAD")

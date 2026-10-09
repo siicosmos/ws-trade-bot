@@ -4,8 +4,8 @@ State lives apart from code so an update swap can never touch it:
 
   config/   the live configs (config/<role>.config.yaml) + the
             shipped examples (<role>.example.config.yaml)
-  db/       the ledgers (<role>.trades.db) + the reader's
-            seen-set
+  db/       the ledgers (<role>.trades.db); the reader's
+            seen-set lives in reader/
 
 run.py loads the config, cleans up stale instances of the same
 config, and hands off to the role's main.

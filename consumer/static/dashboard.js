@@ -49,6 +49,7 @@ function jsq(s) {
   // decoded attribute value is a correctly quoted js literal.
   return esc(
     String(s ?? "").split("\\").join("\\\\").split("'").join("\\'")
+      .split("\n").join("\\n").split("\r").join("\\r")
   );
 }
 
@@ -249,8 +250,10 @@ function openPaperSettings(label) {
   document.getElementById("paperSettingsBackdrop").style.display = "flex";
   document.getElementById("paperSettingsFloat").style.display = "flex";
   const list = document.getElementById("padj-holdings");
+  let holdingSeq = 0;
   function holdingRow(h) {
     const isOpt = !!h.right;
+    const uid = "padj-h" + (++holdingSeq);
     const div = document.createElement("div");
     div.className = "acct-card";
     div.innerHTML =
@@ -261,16 +264,16 @@ function openPaperSettings(label) {
       '<div class="set-field"><label>type</label><label style="display:flex;gap:6px;align-items:center;font-size:12px;color:var(--muted)">' +
       '<input type="checkbox" class="padj-h-isopt"' + (isOpt ? " checked" : "") + '> option</label></div>' +
       (isOpt
-        ? _txtField("padj-h-underlying", "underlying", h.underlying || "", "", "", true) +
-          _txtField("padj-h-expiry", "expiry (yyyy-mm-dd)", h.expiry || "", "", "", true) +
-          _numField("padj-h-strike", "strike", h.strike, "", "") +
+        ? _txtField(uid + "-underlying", "underlying", h.underlying || "", "", "", true) +
+          _txtField(uid + "-expiry", "expiry (yyyy-mm-dd)", h.expiry || "", "", "", true) +
+          _numField(uid + "-strike", "strike", h.strike, "", "") +
           '<div class="set-field"><label>right</label><select class="padj-h-right">' +
           '<option value="C"' + (h.right === "C" ? " selected" : "") + '>call</option>' +
           '<option value="P"' + (h.right === "P" ? " selected" : "") + '>put</option>' +
           '</select></div>'
-        : _txtField("padj-h-underlying", "symbol", h.underlying || "", "", "", true)) +
-      _numField("padj-h-qty", "qty", h.qty, "", "") +
-      _numField("padj-h-avg", "avg price", h.avg, "", "") +
+        : _txtField(uid + "-underlying", "symbol", h.underlying || "", "", "", true)) +
+      _numField(uid + "-qty", "qty", h.qty, "", "") +
+      _numField(uid + "-avg", "avg price", h.avg, "", "") +
       '</div>';
     div.querySelector("[data-remove]").onclick = function() { div.remove(); };
     // the type switch rebuilds the row in place (same position,
@@ -560,7 +563,7 @@ async function doPaperSell(label, key) {
     if (res.status === 200) {
       openModal(
         "Sold",
-        "Sold " + data.sold + "x " + key + " @ $" + data.price +
+        "Sold " + data.sold + "x " + key + (data.price != null ? " @ $" + data.price : "") +
           " · realized " + (data.realized >= 0 ? "+$" : "-$") +
           Math.abs(data.realized).toLocaleString("en-CA",
             { maximumFractionDigits: 2 }),
@@ -681,7 +684,7 @@ function renderSummary(data) {
       '</span></div>' +
       '<div class="value">' + (hidden ? "••••••" :
         (showUsd ? fmtMoney(a.usd_value) + " USD" : fmtMoney(a.value) + " CAD") +
-        (a.value_age ? ' <span style="font-size:12px;color:#d29922">(cached ' + a.value_age + ')</span>' : '') +
+        (a.value_age ? ' <span style="font-size:12px;color:#d29922">(cached ' + esc(a.value_age) + ')</span>' : '') +
         (showUsd
           ? ' <span style="font-size:13px;color:var(--muted)">' + fmtMoney(a.value) + ' CAD</span>'
           : (a.usd_value
@@ -832,7 +835,7 @@ function renderSummary(data) {
               '<td class=num>' + (phidden ? "••••••" : (r.cost != null ? fmtMoney(r.cost) + cadB(r.cost_cad) : "—")) + '</td>' +
               '<td class=num style="color:' + rc + '">' + (r.pnl == null ? "—" :
                 (r.pnl >= 0 ? "+" : "") + r.pnl.toFixed(1) + "%" + guardChips +
-                (phidden ? "" : ' <span class="subv">(' + (r.pnl_dollars >= 0 ? "+" : "-$") +
+                (phidden || r.pnl_dollars == null ? "" : ' <span class="subv">(' + (r.pnl_dollars >= 0 ? "+" : "-$") +
                   Math.abs(r.pnl_dollars).toLocaleString("en-CA", { maximumFractionDigits: 2 }) + ")</span>")) + '</td>' +
               (isAdmin() ? actionCell : '') + '</tr>';
           }).join("") + '</table></div>' : '<div class="empty" style="font-size:12px;padding:8px">no positions</div>') : '');
@@ -1053,10 +1056,17 @@ function discardAndCloseSettings() {
 
 document.addEventListener("keydown", function(e) {
   if (e.key !== "Escape") return;
-  const modal = document.getElementById("modalBackdrop");
-  if (modal && modal.style.display === "flex") { closeModal(); return; }
-  const sp = document.getElementById("settingsBackdrop");
-  if (sp && sp.style.display === "flex") requestCloseSettings();
+  const closers = [
+    ["modalBackdrop", closeModal],
+    ["settingsBackdrop", requestCloseSettings],
+    ["paperSettingsBackdrop", closePaperSettings],
+    ["levelsBackdrop", closeLevels],
+    ["usersBackdrop", closeUsers],
+  ];
+  for (const [id, close] of closers) {
+    const el = document.getElementById(id);
+    if (el && el.style.display === "flex") { close(); return; }
+  }
 });
 
 // a scroll gesture starting on a modal's dim backdrop fires a
@@ -1299,13 +1309,20 @@ function autoSearch() {
 }
 
 async function historyNav(dir) {
+  clearTimeout(_searchDebounce);
   historyOffset = Math.max(0, historyOffset + dir * 50);
   await fetchHistoryPage();
 }
 
+let _historySeq = 0;
+
 async function fetchHistoryPage() {
+  const seq = ++_historySeq;
   try {
     const data = await api("/api/history?" + historyQuery(historyOffset));
+    // a slower stale response (an earlier filter's fetch that
+    // landed late) must not overwrite the newest query's results
+    if (seq !== _historySeq) return;
     renderHistoryResults(data);
   } catch (e) { /* 401 redirect or network - surfaced by the banner */ }
 }
@@ -1377,7 +1394,8 @@ function renderHistoryResults(data) {
 
 function clearHistorySearch() {
   clearTimeout(_searchDebounce);
-  for (const id of ["hs-q","hs-ticker","hs-kind","hs-status","hs-since","hs-until"]) document.getElementById(id).value = "";
+  for (const id of ["hs-q","hs-ticker","hs-status","hs-since","hs-until"]) document.getElementById(id).value = "";
+  document.getElementById("hs-kind").value = "both";
   document.getElementById("history-results").innerHTML = "";
   historyOffset = 0;
 }
@@ -1397,15 +1415,25 @@ function setSettingsDirty(v) {
 
 function revertSettings() {
   // back to the last saved state: re-fetch + re-render (the
-  // poll-driven re-render is skipped while the modal is open)
-  setSettingsDirty(false);
+  // poll-driven re-render is skipped while the modal is open).
+  // the dirty flag clears only after the reload lands - a
+  // failed revert must not hide the Save button over unsaved
+  // edits
   load().then(function() {
+    // the dirty flag clears before the re-render (renderSettings
+    // leaves the form alone while dirty) but only after the
+    // reload landed - a failed revert must not hide the Save
+    // button over unsaved edits
+    setSettingsDirty(false);
     renderSettings((lastPayload && lastPayload.settings) || lastSettings);
     const msg = document.getElementById("settings-msg");
     if (msg) {
       msg.textContent = "Reverted";
       setTimeout(() => msg.textContent = "", 3000);
     }
+  }).catch(function() {
+    const msg = document.getElementById("settings-msg");
+    if (msg) msg.textContent = "revert failed - still unsaved";
   });
 }
 
@@ -1701,7 +1729,7 @@ function renderSettings(s) {
     tiers += '<div class="set-field"><label' +
       ' title="alert size keywords map to these risk caps and contract bounds"' +
       '>' + esc(name) + '</label>' +
-      '<input id="tier-' + esc(name) + '-risk" type="number" step="any" value="' + esc(tier.risk_pct_max) + '" title="risk % cap">' +
+      '<input id="tier-' + esc(name) + '-risk" data-tier="' + esc(name) + '" type="number" step="any" value="' + esc(tier.risk_pct_max) + '" title="risk % cap">' +
       '<div class="tier-row">' +
       '<input id="tier-' + esc(name) + '-min" type="number" value="' + esc(tier.contracts_min) + '" title="min contracts">' +
       '<input id="tier-' + esc(name) + '-max" type="number" value="' + esc(tier.contracts_max) + '" title="max contracts">' +
@@ -1755,9 +1783,6 @@ function renderSettings(s) {
       "days to keep signals and trades; 0 = keep forever (takes effect after restart)") +
     '</div>' +
     '<div class="set-checks" style="margin:10px 0 0">' +
-      _check("set-sell_only_if_held", "sell only if held",
-        t.sell_only_if_held,
-        "refuse sells when the ledger shows no open position") +
     '</div>');
 
   // 4. filters
@@ -1904,16 +1929,14 @@ async function saveSettings() {
     trading[k] = num("set-" + k);
   }
   trading.order_type = val("set-order_type");
-  trading.sell_only_if_held = document.getElementById("set-sell_only_if_held").checked;
   trading.trading_paused = document.getElementById("set-trading_paused").checked;
   trading.back_to_entry_enabled = document.getElementById("set-back_to_entry_enabled").checked;
   const toList = (id) => val(id).split(",").map(function(s) { return s.trim(); }).filter(Boolean);
   trading.ticker_whitelist = toList("set-ticker_whitelist");
   trading.skip_underlyings = toList("set-skip_underlyings");
   const tiers = {};
-  document.querySelectorAll("[id^=tier-]").forEach(() => {});
   const names = new Set();
-  document.querySelectorAll("[id^=tier-]").forEach(el => names.add(el.id.split("-")[1]));
+  document.querySelectorAll("[data-tier]").forEach(el => names.add(el.dataset.tier));
   for (const name of names) {
     tiers[name] = { risk_pct_max: num("tier-" + name + "-risk"), contracts_min: parseInt(val("tier-" + name + "-min")), contracts_max: parseInt(val("tier-" + name + "-max")) };
     // per-size stop loss: empty = the global stop applies
@@ -2261,13 +2284,6 @@ function parseLevelsText(text) {
   return out;
 }
 
-let levelsView = null;
-
-function setLevelsView(ticker) {
-  levelsView = ticker;
-  renderLevelsChart();
-}
-
 function buildLevelsLadder(host, ticker, rows, pivot, headerHtml,
                            spot, tag) {
   rows = rows.slice();
@@ -2316,8 +2332,8 @@ function renderLevelsChart() {
   const el = document.getElementById("levels-chart");
   let data = null;
   try { data = JSON.parse(localStorage.getItem("spx_levels") || "null"); } catch (e) {}
-  if (!data || (!data.levels.length && data.pivot == null &&
-      !(data.tickers && Object.keys(data.tickers).length))) {
+  if (!data || (!data.levels || !data.levels.length) && data.pivot == null &&
+      !(data.tickers && Object.keys(data.tickers).length)) {
     el.innerHTML = '<div class="empty">no levels parsed yet</div>';
     return;
   }
@@ -2398,7 +2414,7 @@ async function refreshUsers() {
     for (const u of users) {
       html += "<tr><td>" + esc(u.username) + "</td>" +
         '<td><span class="role-' + esc(u.role) + '">' + esc(u.role) + "</span></td>" +
-        "<td>" + (u.last_login_ts ? fmtIso(u.last_login_ts).slice(0, 16) : "never") + "</td>" +
+        "<td>" + (u.last_login_ts ? esc(fmtTime(u.last_login_ts)) : "never") + "</td>" +
         '<td>' + (u.username === (me && me.username) ? "" :
           '<button class="btn sm" onclick="deleteUser(\'' + jsq(u.username) + '\')">remove</button>') +
         "</td></tr>";

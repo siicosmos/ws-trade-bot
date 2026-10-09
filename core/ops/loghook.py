@@ -151,6 +151,16 @@ def install_log_webhook(url, log_path=None):
     log_file = LogFile(log_path) if log_path else None
     if batcher is None and log_file is None:
         return None
+    # idempotent: a second install must not nest TeeStreams
+    # (every line would be stamped and flushed twice) - the
+    # existing streams adopt the new batcher/file instead
+    if isinstance(sys.stdout, TeeStream):
+        sys.stdout._batcher = batcher or sys.stdout._batcher
+        sys.stdout._log_file = log_file or sys.stdout._log_file
+        if isinstance(sys.stderr, TeeStream):
+            sys.stderr._batcher = sys.stdout._batcher
+            sys.stderr._log_file = sys.stdout._log_file
+        return batcher
     sys.stdout = TeeStream(sys.stdout, batcher, log_file)
     sys.stderr = TeeStream(sys.stderr, batcher, log_file)
     return batcher

@@ -69,14 +69,38 @@ def apply(root):
     # consumer/ individually and rmtree'd the dir - when the
     # state files were not in consumer/ the wipe took the config,
     # tokens and ledger with it)
+    #
+    # order matters: copy the staged tree OVER the live one
+    # first (a mid-copy failure leaves the old code intact and
+    # running), and only after the copy succeeded remove the
+    # files the new release deleted - a destructive step first
+    # (rmtree + overlay) could brick the tree on a locked file
+    # and would keep resurrecting modules the new release removed
     for d in CODE_DIRS:
-        shutil.rmtree(os.path.join(root, d), ignore_errors=True)
-        if os.path.isdir(os.path.join(staging, d)):
-            # dirs_exist_ok: a partial rmtree (a locked file) must
-            # not leave the copytree failing on an existing dir -
-            # the staged content fully overwrites whatever survived
-            shutil.copytree(os.path.join(staging, d),
-                            os.path.join(root, d), dirs_exist_ok=True)
+        src_dir = os.path.join(staging, d)
+        if not os.path.isdir(src_dir):
+            continue
+        dst_dir = os.path.join(root, d)
+        shutil.copytree(src_dir, dst_dir, dirs_exist_ok=True)
+        staged = set()
+        for dirpath, _dirnames, filenames in os.walk(src_dir):
+            rel = os.path.relpath(dirpath, src_dir)
+            for fn in filenames:
+                staged.add(
+                    fn if rel == "." else os.path.join(rel, fn)
+                )
+        for dirpath, _dirnames, filenames in os.walk(dst_dir):
+            rel = os.path.relpath(dirpath, dst_dir)
+            for fn in filenames:
+                if rel != "." and "__pycache__" in rel.split(os.sep):
+                    continue
+                if fn.endswith(".pyc"):
+                    continue
+                if fn not in staged:
+                    try:
+                        os.remove(os.path.join(dirpath, fn))
+                    except OSError:
+                        pass
 
     for name in CODE_FILES:
         src = os.path.join(staging, name)
@@ -95,11 +119,22 @@ def apply(root):
     if os.path.isdir(scripts_src):
         scripts_dst = os.path.join(root, "scripts")
         os.makedirs(scripts_dst, exist_ok=True)
+        staged_scripts = set()
         for fn in os.listdir(scripts_src):
             if fn.endswith(".bat"):
                 continue
+            staged_scripts.add(fn)
             shutil.copy2(os.path.join(scripts_src, fn),
                          os.path.join(scripts_dst, fn))
+        # scripts the new release dropped (the other roles'
+        # launchers) do not linger on the install
+        for fn in os.listdir(scripts_dst):
+            if fn in staged_scripts or fn.endswith(".bat"):
+                continue
+            try:
+                os.remove(os.path.join(scripts_dst, fn))
+            except OSError:
+                pass
     # record + clear the staging area
     commit = str(pending.get("commit") or "?")
     try:
@@ -108,6 +143,13 @@ def apply(root):
         atomic_write_json(
             update_record_path(root, "consumer"),
             {"how": "release", "commit": commit, "ts": time.time()},
+        )
+        # any other live role on this checkout (the info server)
+        # sees this marker and restarts - lazily-imported modules
+        # would otherwise mix the old and new code
+        atomic_write_json(
+            os.path.join(root, ".code_swapped.json"),
+            {"commit": commit, "ts": time.time()},
         )
     except OSError:
         pass

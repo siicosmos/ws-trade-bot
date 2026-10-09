@@ -4,6 +4,7 @@ import time
 
 from core.ops.notify import notify_discord
 from core.parser import Alert
+from core.store import et_now
 
 
 class StopMonitor:
@@ -91,8 +92,8 @@ class StopMonitor:
         if not entry or entry <= 0:
             return False
         expiry = str(pos.get("expiry") or "")[:10]
-        if expiry != _dt.date.today().isoformat():
-            return False   # not an expiry-day position
+        if expiry != et_now().date().isoformat():
+            return False   # not an expiry-day position (ET clock)
         if not peak or peak <= entry:
             return False   # never had a gain to protect
         tier = self._tier_for(pos)
@@ -151,6 +152,7 @@ class StopMonitor:
             right=pos["right"],
             premium=bid,
             size=pos.get("size"),
+            stop_exit=True,
             raw=(
                 f"{tag} auto {reason.replace('_', ' ')} on "
                 f"{pos['contract_key']} at {bid} "

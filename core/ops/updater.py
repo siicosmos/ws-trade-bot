@@ -20,7 +20,7 @@ def update_record_path(root, role):
 
 
 PIPELINE_RESTART_FILES = (
-    "trader/*", "core/*", "info/*", "consumer/*",
+    "core/*", "info/*", "consumer/*",
     "run.py", "requirements.txt",
 )
 # per-role globs: each app restarts only when code it executes
@@ -43,6 +43,8 @@ def atomic_write_json(path, data):
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(data, f)
+            f.flush()
+            os.fsync(f.fileno())
         for attempt in range(5):
             try:
                 os.replace(tmp, path)
@@ -98,8 +100,11 @@ def _clear_stale_lock(root):
         age = time.time() - os.path.getmtime(lock)
     except OSError:
         return False
-    if age < 300:
-        return False   # possibly live - hands off
+    if age < 1800:
+        # possibly live - hands off (the mtime is written once at
+        # creation and never refreshed, so a slow fetch on a
+        # flapped network stays "young" for its whole run)
+        return False
     try:
         os.remove(lock)
         print(
@@ -117,7 +122,7 @@ RUNTIME_IGNORED = (
     "db/*",
     ".last_update_info.json", ".last_update_consumer.json",
     ".update_pending_consumer.json", ".reader_seen.json",
-    ".session_key",
+    ".consumer_session_key", ".code_swapped.json",
     "config/consumer.config.yaml", "config/info.config.yaml",
     "config/reader.config.yaml", "config/ws_tokens.env",
     "*.pyc", "__pycache__/*",
@@ -217,6 +222,7 @@ class AutoUpdater:
         self.restart_files = restart_files or PIPELINE_RESTART_FILES
         self._restart = restart or (lambda: os._exit(77))
         self._thread = None
+        self.started = time.time()
         self.last_check = None
         self.last_result = "not checked yet"
         self.errors = 0
@@ -254,6 +260,17 @@ class AutoUpdater:
         if r.returncode == 0:
             return r.stdout.strip() or None
         return None
+
+    def _code_swapped_after_start(self):
+        """True when a release install swapped the code dirs after
+        this process started (the marker records the swap time)."""
+        path = os.path.join(self.root, ".code_swapped.json")
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+            return float(data.get("ts") or 0) > self.started
+        except (OSError, ValueError, TypeError):
+            return False
 
     def _local_head_changed(self):
         current = self._head()
@@ -316,7 +333,11 @@ class AutoUpdater:
         committed and then locally modified."""
         healed = []
         for line in dirty_lines:
-            path = line[3:].strip('"').strip()
+            # porcelain -z separates entries with NUL and never
+            # quotes: rename pairs ("old -> new") and non-ascii
+            # paths (quoted octal escapes in the line format)
+            # parsed garbage here
+            path = line[3:].split(" -> ")[-1].strip("\x00").strip()
             if not path or not _is_ignored_runtime_file(
                 self.root, path
             ):
@@ -387,14 +408,25 @@ class AutoUpdater:
                     break
                 time.sleep(min(15, remain))
                 try:
+                    if self._code_swapped_after_start():
+                        print(
+                            "auto-update: the code dirs were swapped "
+                            "by a release install - restarting to "
+                            "load it"
+                        )
+                        self._restart()
+                        return
                     if self._local_head_changed():
                         # only leave the loop when a restart was
                         # actually initiated; a docs-only local
                         # change must not kill the update thread
                         if self._restart_for_local_change():
                             return
-                except Exception:
-                    pass
+                except Exception as e:
+                    # keep the loop alive, but stay visible: a
+                    # persistently failing local-change check must
+                    # not look like "everything is fine"
+                    print(f"auto-update: local-change check failed: {e}")
             try:
                 self.check_once()
             except Exception as e:
@@ -413,18 +445,26 @@ class AutoUpdater:
             self.last_result = "not a git repo"
             return False
 
-        status = _git(self.root, "status", "--porcelain")
+        status = _git(
+            self.root, "-c", "core.quotepath=false",
+            "status", "--porcelain", "-z",
+        )
         # untracked files never conflict with a pull (logs, dbs) -
-        # only modifications to tracked files block it
+        # only modifications to tracked files block it. -z: NUL-
+        # separated, never quoted (renames and non-ascii paths
+        # parsed garbage in the line format)
         dirty = [
-            line for line in status.stdout.splitlines()
+            line for line in status.stdout.split("\x00")
             if line.strip() and not line.startswith("??")
         ]
         if dirty:
             self._heal_ignored_runtime_files(dirty)
-            status = _git(self.root, "status", "--porcelain")
+            status = _git(
+                self.root, "-c", "core.quotepath=false",
+                "status", "--porcelain", "-z",
+            )
             dirty = [
-                line for line in status.stdout.splitlines()
+                line for line in status.stdout.split("\x00")
                 if line.strip() and not line.startswith("??")
             ]
         dirty_names = ", ".join(

@@ -163,7 +163,7 @@ def main():
         default=os.path.join(ROOT, "db", "consumer.trades.db"),
     )
     ap.add_argument("--mode", default="paper",
-                    choices=["paper", "live", "real"])
+                    choices=["paper", "live", "notify"])
     args = ap.parse_args()
     if not os.path.exists(args.db):
         print(f"database not found: {args.db}")

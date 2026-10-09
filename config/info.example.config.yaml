@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------------------
-# info server example config - copy to info/info.config.yaml and edit
+# info server example config - copy to config/info.config.yaml and edit
 #
 # the alert source: the reader posts Discord messages here, this
 # server parses + records them and serves the alert feed that

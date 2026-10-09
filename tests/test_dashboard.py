@@ -1396,7 +1396,7 @@ def test_manual_paper_sell_live_price_and_fx():
     assert r.status_code == 200, r.get_data(as_text=True)
     data = r.get_json()
     assert data["price"] == 3.0                      # the live quote
-    assert data["realized"] == 400.0                 # 4x(2.5-2.0)x100
+    assert data["realized"] == 540.0        # 4x(2.5-2.0)x100x1.35 cad
     # proceeds 4x$3.00x100 = $1000 usd -> cad at the ledger fx
     assert abs(store.paper_equity("RRSP") - (1000 + 1620)) < 0.01
     assert data["remaining"] == 0

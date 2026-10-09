@@ -51,6 +51,14 @@ def supervised(
                     f"{name} thread exited unexpectedly - "
                     f"restarting in {restart_delay}s"
                 )
+            except (KeyboardInterrupt, SystemExit) as e:
+                # a deliberate exit must not loop-restart (the
+                # interpreter only delivers KeyboardInterrupt to
+                # the main thread, but a worker can raise
+                # SystemExit itself)
+                state["last_error"] = str(e)
+                _report(f"{name} thread exited deliberately: {e}")
+                return
             except Exception as e:
                 state["restarts"] += 1
                 state["last_error"] = str(e)

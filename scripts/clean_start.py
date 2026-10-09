@@ -53,8 +53,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--db",
-        default=os.path.join(REPO_ROOT, "consumer",
-                             os.path.join("db", "consumer.trades.db")),
+        default=os.path.join(REPO_ROOT, "db", "consumer.trades.db"),
         help="path to the role's trades db "
              "(default: db/consumer.trades.db)",
     )
@@ -70,7 +69,9 @@ def main() -> int:
     # foreign db path (a test's tmp dir) must never touch the
     # real logs
     db_dir = os.path.dirname(os.path.abspath(args.db))
-    role = os.path.basename(db_dir)
+    # the role comes from the db's FILENAME (consumer.trades.db)
+    # - the db's folder is db/ for every role
+    role = os.path.basename(args.db).split(".")[0]
     log_files = []
     for pattern in ("pipeline.log*", "reader.log*",
                     "info.log*", "consumer.log*"):

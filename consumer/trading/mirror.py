@@ -95,6 +95,11 @@ def sweep_pending_orders(cfg, store, ws_account, label,
         getattr(getattr(cfg, "trading", None),
                 "partial_fill_cancel_pct", 0) or 0
     )
+    fx_fn = getattr(ws_account, "fx", None)
+    try:
+        fx = float(fx_fn()) if callable(fx_fn) else 1.0
+    except Exception:
+        fx = 1.0
     try:
         ws = ws_account._client()
     except Exception:
@@ -118,7 +123,7 @@ def sweep_pending_orders(cfg, store, ws_account, label,
                 if move >= shock_pct:
                     if _shock_cancel(
                         store, ws, row, float(current), move,
-                        shock_pct, webhook_url,
+                        shock_pct, webhook_url, fx=fx,
                     ):
                         continue
 
@@ -136,6 +141,7 @@ def sweep_pending_orders(cfg, store, ws_account, label,
                 mult=mult,
                 underlying=row["underlying"], expiry=row["expiry"],
                 strike=row["strike"], opt_right=row["opt_right"],
+                fx=fx,
             )
             store.settle_pending_order(row["id"], "partial")
             continue
@@ -147,6 +153,7 @@ def sweep_pending_orders(cfg, store, ws_account, label,
             mult=mult,
             underlying=row["underlying"], expiry=row["expiry"],
             strike=row["strike"], opt_right=row["opt_right"],
+            fx=fx,
         )
         store.settle_pending_order(row["id"], "expired")
 
@@ -177,7 +184,7 @@ def _contract_market_price(ws_account, row):
         opt, _ = resolver._resolve_option(ws, sec_id, alert)
         if not opt:
             return None
-        quote = opt.get("quote") or {}
+        quote = opt.get("quoteV2") or opt.get("quote") or {}
         price = (
             quote.get("bid") or quote.get("ask")
             or quote.get("last") or quote.get("price")
@@ -188,7 +195,7 @@ def _contract_market_price(ws_account, row):
 
 
 def _shock_cancel(store, ws, row, current_price, move_pct,
-                  shock_pct=0, webhook_url=""):
+                  shock_pct=0, webhook_url="", fx=1.0):
     """Cancel the unfilled remainder of a price-shocked partial
     order and settle the ledger to the filled part."""
     from core.ops.notify import notify_discord
@@ -212,6 +219,7 @@ def _shock_cancel(store, ws, row, current_price, move_pct,
         mult=mult,
         underlying=row["underlying"], expiry=row["expiry"],
         strike=row["strike"], opt_right=row["opt_right"],
+        fx=fx,
     )
     store.settle_pending_order(row["id"], "partial_cancelled")
     notify_discord(
@@ -232,7 +240,8 @@ def _shock_cancel(store, ws, row, current_price, move_pct,
 
 
 def reconcile_pending_fill(store, label, contract_key, action, qty,
-                           price, max_slippage_pct=0, webhook_url=""):
+                           price, max_slippage_pct=0, webhook_url="",
+                           fx=1.0):
     """Match an actual fill to the oldest open pending live order
     for the same contract and action, then correct the estimated
     booking toward the fill (qty + price), exactly.
@@ -371,10 +380,20 @@ def mirror_real_trades(cfg, store, ws_account, ledger=None,
                 amount = abs(float(amount or 0))
             except (TypeError, ValueError):
                 amount = 0.0
-            # amount is the executed total; per-unit premium for
-            # options divides by the contract multiplier
+            # amount is the executed total in the activity's
+            # settlement currency; per-unit premium for options
+            # divides by the contract multiplier. the ledger books
+            # premiums in the security's quote currency (usd for
+            # the us-listed names this bot trades) - a cad-settled
+            # amount divides by fx so the premium matches what the
+            # executor would have booked
             mult = 100 if info["kind"] == "option" else 1
-            premium = amount / (qty * mult) if qty else None
+            cad_amount = (
+                str(act.get("currency") or "").upper() == "CAD"
+                and fx != 1.0
+            )
+            divisor = qty * mult * (fx if cad_amount else 1.0)
+            premium = amount / divisor if qty and divisor else None
             occurred = str(act.get("occurredAt") or "")
             shim = MirrorShim(
                 action=action, premium=premium, entry=premium,
@@ -393,7 +412,8 @@ def mirror_real_trades(cfg, store, ws_account, ledger=None,
             )
             if action == "BUY" or real_held >= 1:
                 store.apply_position(
-                    "real", shim, delta, premium=premium, account=label
+                    "real", shim, delta, premium=premium, account=label,
+                    fx=fx,
                 )
             # reconcile the live ledger's estimated booking
             # against this actual fill (no-op when no pending
@@ -405,7 +425,7 @@ def mirror_real_trades(cfg, store, ws_account, ledger=None,
             reconcile_pending_fill(
                 store, label, shim.contract_key(), action, int(qty),
                 premium, max_slippage_pct=slippage_pct,
-                webhook_url=webhook_url,
+                webhook_url=webhook_url, fx=fx,
             )
             if action == "SELL":
                 held = store.get_position(
@@ -423,12 +443,17 @@ def mirror_real_trades(cfg, store, ws_account, ledger=None,
                 qty = min(int(qty), int(held))
             delta = int(qty) if action == "BUY" else -int(qty)
             store.apply_position(
-                "paper", shim, delta, premium=premium, account=label
+                "paper", shim, delta, premium=premium, account=label,
+                fx=fx,
             )
-            # per-unit basis keeps the paper equity consistent with
-            # what the ledger actually traded
-            proceeds = qty * (premium or 0.0) * mult * (
-                fx if info["kind"] == "option" else 1.0
+            # the cash delta is the actual settled amount - the
+            # premium times fx again would double-convert
+            # cad-settled fills
+            proceeds = (
+                amount if cad_amount
+                else qty * (premium or 0.0) * mult * (
+                    fx if info["kind"] == "option" else 1.0
+                )
             )
             if action == "BUY":
                 store.adjust_paper_equity(-proceeds, label)
@@ -445,10 +470,13 @@ def mirror_real_trades(cfg, store, ws_account, ledger=None,
                 f"{shim.contract_key()} @ {premium:g}"
             )
         if new_ids:
-            seen.update(new_ids)
+            # insertion-ordered dedupe: trimming an unordered set
+            # could evict just-added ids (a >200-fill hour would
+            # replay them on the next pass)
+            ordered = list(dict.fromkeys(list(seen) + list(new_ids)))
             store.meta_set(
                 f"mirror:{label}:ids",
-                json.dumps(list(seen)[-200:]),
+                json.dumps(ordered[-200:]),
             )
         store.meta_set(f"mirror:{label}:since", time.time())
     return applied

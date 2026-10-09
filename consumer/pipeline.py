@@ -12,8 +12,11 @@ from consumer.trading.risk import RiskEngine
 
 
 def _message_key(text: str, author: str = "") -> str:
-    payload = f"{author}:{text}"
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    # the shared definition (core.signals) - the feed client's
+    # backfill computes the same keys, so a divergence here would
+    # silently break dedupe
+    from core.signals import message_key
+    return message_key(text, author)
 
 
 def _paper_enabled(cfg):

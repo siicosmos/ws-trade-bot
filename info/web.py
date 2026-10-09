@@ -44,7 +44,8 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
     # first allowed channel from there for the "waiting for"
     # display (best effort; the reader and this app share the box)
     app.reader_state = {"channel": None, "ok": False, "last_seen": None}
-    app._last_reject_log = 0.0
+    app._last_reject_log_write = 0.0
+    app._last_reject_log_feed = 0.0
     app.reader_desired = ""
     try:
         import yaml as _yaml
@@ -89,8 +90,8 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
             # silent - werkzeug is quieted and the caller gives no
             # detail. rate-limited so a scanner cannot flood the log
             now = time.time()
-            if now - app._last_reject_log > 60:
-                app._last_reject_log = now
+            if now - app._last_reject_log_write > 60:
+                app._last_reject_log_write = now
                 logging.getLogger("info.write-guard").warning(
                     "write request rejected (bad or missing "
                     "X-Auth-Token) on %s %s - check that the "
@@ -145,6 +146,14 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
         Token-guarded: a fake alert would make every consumer
         app trade."""
         if not _reader_token_ok():
+            now = time.time()
+            if now - app._last_reject_log_write > 60:
+                app._last_reject_log_write = now
+                logging.getLogger("info.write-guard").warning(
+                    "alert ingest rejected (bad or missing "
+                    "X-Auth-Token) - check that the reader's "
+                    "auth_token matches"
+                )
             return jsonify({"error": "unauthorized"}), 401
         data = request.get_json(silent=True) or {}
         text = data.get("text", "")
@@ -195,8 +204,8 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
             # consumer's table dot just went hollow with no reason
             # logged anywhere. rate-limited like the write guard
             now = time.time()
-            if now - app._last_reject_log > 60:
-                app._last_reject_log = now
+            if now - app._last_reject_log_feed > 60:
+                app._last_reject_log_feed = now
                 logging.getLogger("info.feed-guard").warning(
                     "feed request rejected (bad or missing "
                     "X-Auth-Token) - the consumer's feed.token must "
@@ -228,14 +237,21 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
             wait = 0.0
         deadline = time.time() + wait
         rows = store.signals_since(since)
+        from .fanout import record_seen
         from .ingest import FEED_WAKE
 
-        with FEED_WAKE:
-            while not rows and time.time() < deadline:
-                # woken by ingest on every recorded signal; the 1s
-                # slice is a safety net against a missed wake
+        if not rows and wait:
+            # the wait can run 25s - refresh the seen-cursor up
+            # front so a healthy long-poller's dot stays green
+            record_seen(consumer.label, store.max_signal_rowid())
+        while not rows and time.time() < deadline:
+            with FEED_WAKE:
+                # woken by ingest on every recorded signal; the
+                # 1s slice is a safety net against a missed wake
                 FEED_WAKE.wait(timeout=min(deadline - time.time(), 1.0))
-                rows = store.signals_since(since)
+            # the query rides OUTSIDE the lock: ingest's notify
+            # must not queue behind every poller's db read
+            rows = store.signals_since(since)
         from core.parser import parse_alert
 
         alerts = []
@@ -436,6 +452,17 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
         if errors:
             return jsonify({"status": "error", "errors": errors}), 400
 
+        # snapshot for the rollback: a failed disk write must
+        # not leave the running process diverging from what a
+        # restart would load
+        snapshot = {
+            key: getattr(
+                cfg.auto_update if key.startswith("auto_update.")
+                else cfg.discord,
+                key.split(".", 1)[1],
+            )
+            for key in pending
+        }
         for key, value in pending.items():
             section, field = key.split(".", 1)
             if section == "auto_update":
@@ -468,6 +495,12 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
 
                 dump_yaml_config(raw, config_path)
             except OSError as e:
+                for key, value in snapshot.items():
+                    section, field = key.split(".", 1)
+                    if section == "auto_update":
+                        setattr(cfg.auto_update, field, value)
+                    else:
+                        setattr(cfg.discord, field, value)
                 return jsonify(
                     {"status": "error",
                      "errors": [f"could not write config: {e}"]}
@@ -476,7 +509,9 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
 
     @app.get("/api/signals")
     def api_signals():
-        limit = request.args.get("limit", default=50, type=int)
+        limit = min(max(
+            request.args.get("limit", default=50, type=int) or 50,
+            1), 200)
         return jsonify(store.recent_signals(limit))
 
     return app

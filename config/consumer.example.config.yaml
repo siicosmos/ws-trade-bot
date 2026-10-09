@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------------------
-# consumer app example config - copy to consumer/consumer.config.yaml
+# consumer app example config - copy to config/consumer.config.yaml
 # and edit
 #
 # the trading app: pulls the alert feed from the info server, runs
@@ -70,8 +70,10 @@ auto_update:
 # quotes - live option prices (used by the stop-loss monitor)
 # ---------------------------------------------------------------------------
 quotes:
-  enabled: false             # false = stop monitor stays off until you turn
-                             # this on (portal settings toggle does it live)
+  enabled: false             # false = prices come from the ws option
+                             # chains / the paper ledger; moomoo needs
+                             # this on (the portal settings toggle does
+                             # it live)
   provider: ws               # ws = Wealthsimple, moomoo = local moomoo terminal
   moomoo_host: "127.0.0.1"
   moomoo_port: 11111
@@ -141,7 +143,9 @@ trading:
                                 # cancelled - the filled part stays as the
                                 # position for future alerts (0 = off)
   stop_loss_pct: 25          # % drop from entry premium that triggers a sell
-                             # (paper/live only, needs quotes enabled)
+                             # (paper/live only; the stop monitor runs
+                             # without quotes.enabled too - this only
+                             # selects the pricing provider)
   trailing_stop_pct: 0       # % off the peak premium; 0 = off
   stop_check_seconds: 30     # how often positions are checked
   back_to_entry_enabled: true  # 0dte protection: sell back to entry when
@@ -154,15 +158,18 @@ trading:
   min_dte_days: 0            # skip options expiring sooner than this
   paper_account_value: 10000 # starting value for paper mode
   skip_underlyings: []       # never trade these tickers, e.g. [SPX]
-  max_trades_per_day: 5      # per account, resets at midnight
-  cooldown_seconds: 60       # min seconds between trades on the same contract
-  dedupe_window_minutes: 10  # same alert text inside this window is ignored
+  max_trades_per_day: 5      # per mode (all accounts), resets at midnight ET
+  cooldown_seconds: 60       # min seconds between BUYs (any contract), per mode
+  dedupe_window_minutes: 10  # a repeat of the same contract+action+premium
+                             # inside this window is ignored
   history_retention_days: 365 # daily prune of recorded signals/trades older
                              # than this; 0 = keep forever. the dashboard
                              # shows the latest 50 of each - older rows
                              # stay queryable via the history search
   ticker_whitelist: []       # only trade these tickers; empty = allow all
-  sell_only_if_held: true    # only sell contracts the account actually holds
+  # sells never short: a sell alert for a name the account does
+  # not hold is skipped (there is no sell_only_if_held toggle -
+  # the behavior is unconditional)
   max_daily_loss_pct: 0      # hard daily-loss breaker: pause new buys once
                              # today's realized pnl sinks below this % of
                              # account value (0 = off)

@@ -139,7 +139,7 @@ Conventions for every manual step below:
    ```
 2. The per-role dbs exist at the role paths:
    ```powershell
-   Get-ChildItem consumer\consumer.trades.db, info\info.trades.db
+   Get-ChildItem db\consumer.trades.db, db\info.trades.db
    ```
 3. Restart via `scripts\start_info.bat` +
    `scripts\start_consumer.bat`.
@@ -148,7 +148,7 @@ Conventions for every manual step below:
    show the pre-restart rows (a fresh db would show none).
    Row counts straight from sqlite:
    ```powershell
-   & .venv\Scripts\python -c "import sqlite3; print(sqlite3.connect(r'consumer\consumer.trades.db').execute('select count(*) from trades').fetchone())"
+   & .venv\Scripts\python -c "import sqlite3; print(sqlite3.connect(r'db\consumer.trades.db').execute('select count(*) from trades').fetchone())"
    ```
 
 ## 3. Updater routing (role-based)
@@ -174,10 +174,10 @@ Conventions for every manual step below:
 
 1. `scripts\start_consumer.bat`.
 2. ```powershell
-   Select-String "release channel|up to date|git fetch" logs\consumer.log | Select-Object -Last 5
+   Select-String "anchored to the git checkout|up to date|git fetch" logs\consumer.log | Select-Object -Last 5
    ```
-   Expect `release channel seeded from the git checkout
-   (<sha>)` then `up to date` — and NO `git fetch` /
+   Expect `auto-update: release comparison anchored to the git
+   checkout (<sha>)` then `up to date` — and NO `git fetch` /
    dirty-tree lines (a git-checkout consumer must not run
    git itself).
 3. The seeded marker matches the checkout:
@@ -206,10 +206,12 @@ Conventions for every manual step below:
 - Download + SHA256 verify; checksum mismatch aborts with no
   staging and no restart.
 - Staging extracts `core/` + `consumer/`, writes
-  `.update_pending.json`, restarts once.
-- `apply_update`: code dirs swapped, state files
-  (`consumer.config.yaml`, `ws_tokens.env`, `consumer.trades.db*`)
-  preserved, `VERSION` + `.last_update.json` written, staging +
+  `.update_pending_consumer.json`, restarts once.
+- `apply_update`: code dirs swapped (staged copy over the live
+  tree first, then files the release dropped are removed — a
+  mid-copy failure leaves the old code intact), `config/` +
+  `db/` never touched, root `VERSION` + `.last_update_consumer.json`
+  + the `.code_swapped.json` restart marker written, staging +
   marker cleaned, `.bat` files never swapped.
 - `apply_update` failure path: a swap that dies mid-way restores
   the state files (consumer/ recreated if needed) and leaves the
@@ -238,9 +240,9 @@ Conventions for every manual step below:
    ```
 3. The swap preserved the state:
    ```powershell
-   Get-ChildItem consumer\consumer.config.yaml, consumer\ws_tokens.env, consumer\consumer.trades.db
+   Get-ChildItem config\consumer.config.yaml, config\ws_tokens.env, db\consumer.trades.db
    Get-Content VERSION                    # -> the new sha (repo root)
-   Get-Content .last_update.json | ConvertFrom-Json
+   Get-Content .last_update_consumer.json | ConvertFrom-Json
    ```
 4. The dashboard still works (M-1.1 steps 8-9) and the
    trade log still shows history (M-2.1 step 4).
@@ -310,7 +312,7 @@ Run them directly:
 #### M-5.1 — Push a docs-only commit: info server pulls, posts "Info server updated (no restart)", keeps running. Then verify the update record followed the pull:
 
 ```powershell
-Get-Content .last_update.json | ConvertFrom-Json
+Get-Content .last_update_consumer.json | ConvertFrom-Json
 # "commit" must equal the current head:
 git rev-parse --short HEAD
 # "how" is "auto" and "ts" is within the last interval
@@ -359,7 +361,7 @@ Select-String "auto-update|starting" logs\info.log | Select-Object -Last 5
    401, is dropped, and the next save re-prompts. The
    read-only GETs stay open.
 
-#### M-5.5 — Dashboard git badge: open the info dashboard and confirm the badge shows the current head and the `last_pull` timestamp matches the record (`Get-Content .last_update.json`).
+#### M-5.5 — Dashboard git badge: open the info dashboard and confirm the badge shows the current head and the `last_pull` timestamp matches the record (`Get-Content .last_update_info.json`).
 
 
 ## 6. Reader (rides the info pull)
@@ -460,7 +462,7 @@ only for the read-only checks shown.
    ```
 4. The config gained the row:
    ```powershell
-   Select-String "account_id" consumer\consumer.config.yaml
+   Select-String "account_id" config\consumer.config.yaml
    ```
 
 #### M-7.2 — Remove an account, save, restart — card gone, ledger rows still in the db.
@@ -471,7 +473,7 @@ only for the read-only checks shown.
 2. `GET /api/summary` no longer lists it.
 3. The ledger rows survive:
    ```powershell
-   & .venv\Scripts\python -c "import sqlite3; print(sqlite3.connect(r'consumer\consumer.trades.db').execute('select distinct account from positions').fetchall())"
+   & .venv\Scripts\python -c "import sqlite3; print(sqlite3.connect(r'db\consumer.trades.db').execute('select distinct account from positions').fetchall())"
    ```
 
 #### M-7.3 — Margin behavior: the margin account shows a real margin breakdown; the RRSP (non_margin) suppresses it — also confirm an explicit `type` overrides what the WS API reports (set RRSP to `margin` temporarily and watch the card flip, then set it back).
@@ -553,8 +555,8 @@ id/type/enabled but no label input; a new row has one.
 1. Unzip to a fresh folder; run
    `scripts\install_consumer.bat` (creates the venv,
    installs requirements, seeds
-   `consumer\consumer.config.yaml` from the example).
-2. Edit `consumer\consumer.config.yaml`: a local
+   `config\consumer.config.yaml` from the example).
+2. Edit `config\consumer.config.yaml`: a local
    `auth_token`, the `feed:` section (info server URL +
    their consumer token), their
    `wealthsimple.accounts[]`.
@@ -570,11 +572,11 @@ id/type/enabled but no label input; a new row has one.
 **Steps:**
 
 1. ```powershell
-   Rename-Item consumer\consumer.config.yaml consumer.config.yaml.bak
+   Rename-Item config\consumer.config.yaml consumer.config.yaml.bak
    scripts\start_consumer.bat
-   # expect: consumer.config.yaml missing - copy ..\config\consumer.config.yaml here
+   # expect: config\consumer.config.yaml missing - copy ..\config\consumer.example.config.yaml there
    ```
-2. Restore: `Rename-Item consumer.config.yaml.bak consumer.config.yaml`
+2. Restore: `Rename-Item config\consumer.config.yaml.bak config\consumer.config.yaml`
    and start normally.
 
 #### M-9.2 — Crash loop: kill the python process — the loop restarts in 5s, writes `db\pipeline_exit_consumer.txt`, and the next start surfaces "previous run: ...".
@@ -629,8 +631,8 @@ id/type/enabled but no label input; a new row has one.
 **Steps:**
 
 1. During M-4.1, if the app is stopped between staging and
-   the self-restart, `consumer\.update_pending.json`
-   exists.
+   the self-restart, `.update_pending_consumer.json`
+   (repo root) exists.
 2. `scripts\start_consumer.bat` — the launcher window
    prints `apply_update: applied <sha>` before starting
    python, and the banner shows the new release sha.
@@ -665,8 +667,9 @@ id/type/enabled but no label input; a new row has one.
    .venv\Scripts\python tests\scripts\e2e_test.py
    .venv\Scripts\python tests\scripts\ui_test.py
    ```
-   Expect `RESULT: 64 passed, 0 failed` and
-   `UI RESULT: 31 passed, 0 failed`.
+   Expect `RESULT: ... passed, 0 failed` and
+   `UI RESULT: ... passed, 0 failed` (the pass COUNTS drift as
+   checks are added — assert 0 failed, not a specific total).
 
 #### M-10.2 — Notify-mode smoke on the live box: one alert flows reader → info → consumer → Discord embed, ledger row recorded, dashboard shows it.
 

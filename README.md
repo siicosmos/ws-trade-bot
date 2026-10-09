@@ -105,7 +105,7 @@ All wrapped by `core/ops/supervise.py` (crash → log + Discord notice
    (`.reader_seen.json` in the reader folder) + reaction-prefix detection, filters by the
    `reader.channels` allowlist.
 3. **Delivery to the info server** — each new message is POSTed to
-   `reader.pipeline_url` (default `http://localhost:8081/alert`) as
+   `reader.pipeline_url` (default `http://localhost:8080/alert`; the shipped template sets 8081) as
    JSON `{text, author, ts, parsed_ts, channel}` with header
    `X-Auth-Token: <reader.auth_token>` (must match the info server's
    `info.auth_token`). Messages count as seen only after a 2xx;
@@ -283,8 +283,9 @@ the `X-Auth-Token` machine token for scripts and the reader.
   the cash pools (cad + usd) and edit/remove/add holdings to match
   reality (e.g. after manual trades on the real account).
 - **recent alerts** (with ignored-chatter filter) and **trade log**.
-- **history search**: merged alert/trade stream, ticker/action/status/
-  mode/date filters, free text.
+- **history search**: merged alert/trade stream with a kind
+  filter (alerts + trades / alerts only / trades only), ticker,
+  trade-status, date-range and free-text filters.
 - **SPX levels ladder**: realtime SPX/SPY spot + the levels text
   synced from the info server's feed (read-only there — the editor
   lives on the info dashboard).
@@ -341,8 +342,8 @@ dashboard has no login). Admin-gated routes check the session role.
 | POST | `/api/settings` | admin | validate + apply + persist settings (no restart) |
 | POST | `/api/mode` | admin | the mode slider: validate + persist `trading.mode` + restart the app |
 | GET | `/api/update_status` | any | auto-updater status (last check/result/commit/branch) |
-| POST | `/api/reader_status` | token | reader heartbeat (`{channel, ok}`); returns `{}` — reader settings live in `config/reader.config.yaml` (an edit applies on the reader's restart) |
-| GET | `/api/reader_status` | any | current reader heartbeat state (dashboard reader line) |
+| POST | `/api/reader_status` | token | **info role only** — reader heartbeat (`{channel, ok}`); returns `{}` — reader settings live in `config/reader.config.yaml` (an edit applies on the reader's restart) |
+| GET | `/api/reader_status` | any | **info role only** — current reader heartbeat state (dashboard reader line) |
 | GET | `/api/users` | admin | list users (no hashes) |
 | POST | `/api/users` | admin | create/delete/set_password (self-change needs current password; cannot delete self or last admin) |
 | POST | `/alert` | token | **alert ingest** — JSON `{text, author, ts, parsed_ts, channel}`; runs `process_alert` (consumer) / `ingest_alert` (info) |
@@ -500,9 +501,10 @@ ws-trade-bot/
   config/      the live configs (consumer/info/reader.config.yaml)
                + the shipped examples (*.example.config.yaml)
                + ws_tokens.env
-  db/          consumer.trades.db · info.trades.db · the reader's
-               seen-set - state lives apart from code, an update
-               swap never touches it
+  db/          consumer.trades.db · info.trades.db - state
+               lives apart from code, an update swap never
+               touches it (the reader's seen-set lives in
+               reader/)
   info/        the info server's code
   consumer/    the consumer app's code
   reader/      the Discord watcher (own venv)
@@ -603,8 +605,8 @@ warning modal, and a typed `LIVE` confirmation for live mode.
 python -m venv .venv
 # windows: .venv\Scripts\python -m pip install -r requirements.txt
 .venv/bin/pip install -r requirements.txt
-cp config/consumer.config.yaml config.yaml   # keep host 127.0.0.1 for a dev stub
-.venv/bin/python run.py -c config.yaml       # windows: .venv\Scripts\python run.py -c config.yaml
+cp config/consumer.example.config.yaml config/consumer.config.yaml   # keep host 127.0.0.1 for a dev stub
+.venv/bin/python run.py -c config/consumer.config.yaml       # windows: .venv\Scripts\python run.py -c config/consumer.config.yaml
 ```
 
 The venv layout differs per OS: `.venv/bin/` on linux/macOS,
@@ -689,16 +691,15 @@ incl. the kill switch), `test_settings_update.py`, `test_users.py`,
 
 ```
 run.py                     # entry point: role wiring + threads + server
-config/                    # per-role documented config templates
-  consumer.config.yaml     # the trading app (copy to consumer/)
-  info.config.yaml         # the alert source (copy to info/)
-  reader.config.yaml       # the Discord watcher (copy to reader/)
-info/                      # the info server's runtime folder
-  info.config.yaml         # (gitignored)
-  info.trades.db           # signals + users (gitignored)
-consumer/                  # the consumer app's runtime folder (one per trader)
-  consumer.config.yaml     # (gitignored)
-  consumer.trades.db       # full trading state (gitignored)
+config/                    # per-role configs (live, gitignored) +
+                           # the shipped *.example.config.yaml templates
+  consumer.config.yaml     # the trading app (copy of the example)
+  info.config.yaml         # the alert source (copy of the example)
+  reader.config.yaml       # the Discord watcher (copy of the example)
+  ws_tokens.env            # the ws login tokens (gitignored)
+db/                        # the ledgers (gitignored) - state lives
+  consumer.trades.db       # apart from code, an update swap never
+  info.trades.db           # touches it
 scripts/
   start_info.bat           # info launcher + restart loop
   start_consumer.bat       # consumer launcher + restart loop (+ applies staged release updates)

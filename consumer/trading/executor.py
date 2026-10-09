@@ -2,6 +2,7 @@ import threading
 from dataclasses import dataclass, field
 from typing import Optional
 
+from consumer.trading.risk import RiskEngine
 from consumer.ws.account import account_label, effective_accounts
 
 
@@ -269,11 +270,25 @@ class PaperExecutor:
         self.cfg = cfg
         self.store = store
         self.account = account
+        # one trade at a time - the stop monitor thread, the feed
+        # thread and the flask request threads all execute here
+        # (the live executor documents the same hazard)
+        self._order_lock = threading.Lock()
 
     def _fx(self):
         # seeded ledgers are CAD; option premiums quote USD
         fn = getattr(self.account, "fx", None)
         return float(fn()) if callable(fn) else 1.0
+
+    def _account_fx(self):
+        """the account's usd->cad rate for cad-normalizing
+        realized pnl (the ws account and the paper ledger both
+        expose fx()); 1.0 when unavailable."""
+        fn = getattr(self.account, "fx", None)
+        try:
+            return float(fn()) if callable(fn) else 1.0
+        except Exception:
+            return 1.0
 
     def _stock_is_usd(self, key):
         """Stock alerts quote in the listing's currency - the
@@ -291,9 +306,18 @@ class PaperExecutor:
         return True
 
     def execute(self, alert, cfg, store) -> ExecutionResult:
-        if alert.kind == "option":
-            return self._option(alert, cfg, store)
-        return self._stock(alert, cfg, store)
+        with self._order_lock:
+            if not alert.stop_exit:
+                allowed, reason = RiskEngine(
+                    cfg, store, None
+                ).evaluate(alert)
+                if not allowed:
+                    return ExecutionResult(
+                        False, f"risk gate: {reason}"
+                    )
+            if alert.kind == "option":
+                return self._option(alert, cfg, store)
+            return self._stock(alert, cfg, store)
 
     def _option(self, alert, cfg, store) -> ExecutionResult:
         key = alert.contract_key()
@@ -394,7 +418,8 @@ class PaperExecutor:
             qty = sell_quantity(held, alert.scale)
             store.apply_position(
                     self.mode, alert, -qty,
-                    premium=alert.premium, account=label
+                    premium=alert.premium, account=label,
+                    fx=self._fx(),
                 )
             if alert.premium:
                 store.adjust_paper_equity(
@@ -481,7 +506,8 @@ class PaperExecutor:
             # service form sets both) - realized needs either
             store.apply_position(
                     self.mode, alert, -qty,
-                    premium=alert.premium or alert.entry, account=label
+                    premium=alert.premium or alert.entry, account=label,
+                    fx=self._fx() if self._stock_is_usd(key) else 1.0,
                 )
             if alert.entry:
                 store.adjust_paper_equity(
@@ -619,18 +645,25 @@ class WealthsimpleExecutor:
             return round(base * (1 + offset), 2)
         return round(base * (1 - offset), 2)
 
-    def _clamped_limit(self, base, premium, side, cfg):
+    def _clamped_limit(self, base, premium, side, cfg,
+                       marketable=False):
         """bound the live option limit to the alert's quoted
         premium: a stale or garbage chain quote must not be chased
         at any price (max_slippage_pct is the tolerated deviation;
         the post-fill slippage notice still reports the real fill
         against the estimate). a capped limit may simply not fill -
-        that is the safe outcome."""
+        that is the safe outcome. stop exits pass marketable=True:
+        their sell limit never sits above the live bid (a limit
+        above a gap-down market would not fill and the position
+        would sit unprotected until the pending sweep reverses
+        it)."""
         if not base or not premium:
             return base
         slip = getattr(cfg.trading, "max_slippage_pct", 2) / 100.0
         if side == "BUY":
             return round(min(base, premium * (1 + slip)), 2)
+        if marketable:
+            return round(min(base, premium * (1 - slip)), 2)
         return round(max(base, premium * (1 - slip)), 2)
 
     def execute(self, alert, cfg, store) -> ExecutionResult:
@@ -640,11 +673,37 @@ class WealthsimpleExecutor:
             )
 
         # serialize the whole resolve-order-book path (see
-        # _order_lock in __init__)
+        # _order_lock in __init__). the risk gates re-check under
+        # the lock: the pipeline evaluated them in its own thread,
+        # so two concurrent deliveries could both pass the caps
+        # and then serialize only the order placement (the
+        # account-dependent daily-loss gate ran pre-lock - the
+        # store-backed gates are the racy ones)
         with self._order_lock:
+            if not alert.stop_exit:
+                # auto-exits (stop loss / take profit / trailing)
+                # bypass the gates by design - protection is never
+                # dedupe-blocked or whitelist-blocked
+                allowed, reason = RiskEngine(
+                    cfg, store, None
+                ).evaluate(alert)
+                if not allowed:
+                    return ExecutionResult(
+                        False, f"risk gate: {reason}"
+                    )
             if alert.kind == "option":
                 return self._execute_option(alert, cfg, store)
             return self._execute_stock(alert, cfg, store)
+
+    def _account_fx(self):
+        """the account's usd->cad rate for cad-normalizing
+        realized pnl (the ws account exposes fx()); 1.0 when
+        unavailable."""
+        fn = getattr(self.account, "fx", None)
+        try:
+            return float(fn()) if callable(fn) else 1.0
+        except Exception:
+            return 1.0
 
     def _execute_option(self, alert, cfg, store) -> ExecutionResult:
         ws = self._client()
@@ -658,147 +717,169 @@ class WealthsimpleExecutor:
         if opt is None:
             return ExecutionResult(False, err)
 
-        quote = opt.get("quote") or {}
+        quote = opt.get("quoteV2") or opt.get("quote") or {}
         key = alert.contract_key()
         breakdown = {}
         total = 0
         order_ids = []
+        first_error = None
 
         for label, account_id, acct in self._account_ids(ws):
-            if alert.action == "BUY":
-                limit = self._clamped_limit(
-                    quote.get("ask") or alert.premium, alert.premium,
-                    "BUY", cfg,
-                )
-                if not limit:
-                    breakdown[label] = "no ask/premium to price order"
-                    continue
-                try:
-                    value = self.account.value(label)
-                except Exception:
-                    value = None
-                plan = tier_plan(alert, cfg, value, limit, acct)
-                # lotto / profits-only: the buy may spend at most a
-                # fraction of today's realized sell gains
-                gain_cap = lotto_gain_cap(store, self.mode, cfg, alert)
-                if gain_cap is not None:
-                    lotto_affordable = int(
-                        gain_cap // (limit * 100)
-                    ) if limit and limit > 0 else 0
-                    if lotto_affordable < max(1, plan["qty"]):
+            try:
+                if alert.action == "BUY":
+                    limit = self._clamped_limit(
+                        quote.get("ask") or alert.premium, alert.premium,
+                        "BUY", cfg,
+                    )
+                    if not limit:
+                        breakdown[label] = "no ask/premium to price order"
+                        continue
+                    try:
+                        value = self.account.value(label)
+                    except Exception:
+                        value = None
+                    plan = tier_plan(alert, cfg, value, limit, acct)
+                    # lotto / profits-only: the buy may spend at most a
+                    # fraction of today's realized sell gains
+                    gain_cap = lotto_gain_cap(store, self.mode, cfg, alert)
+                    if gain_cap is not None:
+                        lotto_affordable = int(
+                            gain_cap // (limit * 100)
+                        ) if limit and limit > 0 else 0
+                        if lotto_affordable < max(1, plan["qty"]):
+                            breakdown[label] = (
+                                f"skipped (lotto budget ${gain_cap:,.2f} = "
+                                f"{getattr(cfg.trading, 'lotto_gain_budget_pct', 75)}% "
+                                f"of today's realized gain "
+                                f"${store.realized_today(self.mode):,.2f})"
+                            )
+                            continue
+                        qty = min(plan["qty"], lotto_affordable)
+                    else:
+                        qty = plan["qty"]
+                    if qty < 1:
+                        if plan["affordable"] >= 1:
+                            breakdown[label] = (
+                                f"0 (budget ${plan['budget']:,.0f} affords "
+                                f"{plan['affordable']}, tier minimum "
+                                f"{plan['tier_min'] or 1})"
+                            )
+                        else:
+                            breakdown[label] = (
+                                f"0 (budget ${plan['budget']:,.0f} < "
+                                f"${plan['cost']:,.0f}/contract)"
+                            )
+                        continue
+                    note = ""
+                    if plan["affordable"] > qty:
+                        if (
+                            plan["tier_max"] is not None
+                            and plan["affordable"] > plan["tier_max"]
+                        ):
+                            note = (
+                                f" (tier max {plan['tier_max']}, "
+                                f"could afford {plan['affordable']})"
+                            )
+                        else:
+                            note = f" (capped from {plan['affordable']})"
+                    if _at_open_risk_cap(store, self.mode, label, value, cfg, acct):
                         breakdown[label] = (
-                            f"skipped (lotto budget ${gain_cap:,.2f} = "
-                            f"{getattr(cfg.trading, 'lotto_gain_budget_pct', 75)}% "
-                            f"of today's realized gain "
-                            f"${store.realized_today(self.mode):,.2f})"
+                            f"skipped (open risk cap reached, wanted {qty}x)"
                         )
                         continue
-                    qty = min(plan["qty"], lotto_affordable)
-                else:
-                    qty = plan["qty"]
-                if qty < 1:
-                    if plan["affordable"] >= 1:
-                        breakdown[label] = (
-                            f"0 (budget ${plan['budget']:,.0f} affords "
-                            f"{plan['affordable']}, tier minimum "
-                            f"{plan['tier_min'] or 1})"
-                        )
-                    else:
-                        breakdown[label] = (
-                            f"0 (budget ${plan['budget']:,.0f} < "
-                            f"${plan['cost']:,.0f}/contract)"
-                        )
-                    continue
-                note = ""
-                if plan["affordable"] > qty:
-                    if (
-                        plan["tier_max"] is not None
-                        and plan["affordable"] > plan["tier_max"]
+                    if _at_cluster_cap(
+                        store, self.mode, label, value, cfg, alert, limit
                     ):
-                        note = (
-                            f" (tier max {plan['tier_max']}, "
-                            f"could afford {plan['affordable']})"
+                        breakdown[label] = (
+                            f"skipped (cluster cap reached: {alert.underlying} "
+                            f"{alert.expiry} {alert.right} already "
+                            f"{getattr(cfg.trading, 'cluster_cap_pct', 0):g}% "
+                            f"of the account at risk)"
                         )
-                    else:
-                        note = f" (capped from {plan['affordable']})"
-                if _at_open_risk_cap(store, self.mode, label, value, cfg, acct):
-                    breakdown[label] = (
-                        f"skipped (open risk cap reached, wanted {qty}x)"
+                        continue
+                    order = ws.buy_option(
+                        account_id, opt["id"], qty, float(limit)
                     )
-                    continue
-                if _at_cluster_cap(
-                    store, self.mode, label, value, cfg, alert, limit
-                ):
-                    breakdown[label] = (
-                        f"skipped (cluster cap reached: {alert.underlying} "
-                        f"{alert.expiry} {alert.right} already "
-                        f"{getattr(cfg.trading, 'cluster_cap_pct', 0):g}% "
-                        f"of the account at risk)"
+                    pre_qty, pre_avg = store.position_state(
+                        self.mode, label, key
                     )
-                    continue
-                order = ws.buy_option(
-                    account_id, opt["id"], qty, float(limit)
-                )
-                pre_qty, pre_avg = store.position_state(
-                    self.mode, label, key
-                )
-                store.apply_position(
-                    self.mode, alert, qty, premium=float(limit), account=label
-                )
-                # the estimated booking rides the ledger now (the
-                # gates depend on it); the mirror reconciles the
-                # actual fill or reverses the estimate
-                store.record_pending_order(
-                    self.mode, label, str(order.get("orderId") or ""),
-                    "option", key, alert.underlying, alert.expiry,
-                    alert.strike, alert.right, alert.action, qty,
-                    float(limit), pre_qty=pre_qty, pre_avg=pre_avg,
-                )
-                breakdown[label] = f"{qty}x @ {limit}{note}"
-                total += qty
-                order_ids.append(str(order.get("orderId") or ""))
-            else:
-                held = store.get_position(self.mode, key, label)
-                if held < 1:
-                    breakdown[label] = "no position in ledger"
-                    continue
-                qty = sell_quantity(held, alert.scale)
-                limit = self._clamped_limit(
-                    quote.get("bid") or alert.premium, alert.premium,
-                    "SELL", cfg,
-                )
-                if not limit:
-                    breakdown[label] = "no bid/premium to price order"
-                    continue
-                order = ws.sell_option(
-                    account_id, opt["id"], qty, float(limit)
-                )
-                pre_qty, pre_avg = store.position_state(
-                    self.mode, label, key
-                )
-                store.apply_position(
-                    self.mode, alert, -qty,
-                    premium=float(limit), account=label
-                )
-                store.record_pending_order(
-                    self.mode, label, str(order.get("orderId") or ""),
-                    "option", key, alert.underlying, alert.expiry,
-                    alert.strike, alert.right, alert.action, qty,
-                    float(limit), pre_qty=pre_qty, pre_avg=pre_avg,
-                )
-                breakdown[label] = f"{qty}/{held}x @ {limit}"
-                total += qty
-                order_ids.append(str(order.get("orderId") or ""))
+                    store.apply_position(
+                        self.mode, alert, qty, premium=float(limit), account=label
+                    )
+                    # the estimated booking rides the ledger now (the
+                    # gates depend on it); the mirror reconciles the
+                    # actual fill or reverses the estimate
+                    store.record_pending_order(
+                        self.mode, label, str(order.get("orderId") or ""),
+                        "option", key, alert.underlying, alert.expiry,
+                        alert.strike, alert.right, alert.action, qty,
+                        float(limit), pre_qty=pre_qty, pre_avg=pre_avg,
+                    )
+                    breakdown[label] = f"{qty}x @ {limit}{note}"
+                    total += qty
+                    order_ids.append(str(order.get("orderId") or ""))
+                else:
+                    held = store.get_position(self.mode, key, label)
+                    if held < 1:
+                        breakdown[label] = "no position in ledger"
+                        continue
+                    qty = sell_quantity(held, alert.scale)
+                    limit = self._clamped_limit(
+                        quote.get("bid") or alert.premium, alert.premium,
+                        "SELL", cfg, marketable=alert.stop_exit,
+                    )
+                    if not limit:
+                        breakdown[label] = "no bid/premium to price order"
+                        continue
+                    order = ws.sell_option(
+                        account_id, opt["id"], qty, float(limit)
+                    )
+                    pre_qty, pre_avg = store.position_state(
+                        self.mode, label, key
+                    )
+                    store.apply_position(
+                        self.mode, alert, -qty,
+                        premium=float(limit), account=label,
+                        fx=self._account_fx(),
+                    )
+                    store.record_pending_order(
+                        self.mode, label, str(order.get("orderId") or ""),
+                        "option", key, alert.underlying, alert.expiry,
+                        alert.strike, alert.right, alert.action, qty,
+                        float(limit), pre_qty=pre_qty, pre_avg=pre_avg,
+                    )
+                    breakdown[label] = f"{qty}/{held}x @ {limit}"
+                    total += qty
+                    order_ids.append(str(order.get("orderId") or ""))
 
+            except Exception as e:
+                # per-account fault isolation: account #1's order
+                # is already live when account #2 raises - record
+                # the failure and keep going (the pending row and
+                # the ledger book inside this block, so a failure
+                # there leaves that account untouched)
+                breakdown[label] = f"error: {e}"
+                first_error = first_error or e
+
+        # nothing landed anywhere: raise so the pipeline records
+        # an "error" row (a returned failure records "skipped",
+        # which would mislabel a broker failure)
+        if total == 0 and first_error is not None:
+            raise first_error
         ok = total > 0
         action = alert.action
         detail = (
             f"{action} {total}x {key} | "
             + "; ".join(f"{k}: {v}" for k, v in breakdown.items())
         )
+        ref = (
+            (quote.get("bid") if alert.action == "SELL"
+             else quote.get("ask"))
+            or quote.get("bid") or quote.get("ask") or alert.premium
+        )
         return ExecutionResult(
             ok, detail, qty=total,
-            price=quote.get("ask") or quote.get("bid") or alert.premium,
+            price=ref,
             order_id=",".join(order_ids) or None,
             breakdown=breakdown,
         )
@@ -836,9 +917,11 @@ class WealthsimpleExecutor:
                 pct = stock_tiers.get(
                     tier_name, stock_tiers.get("medium")
                 )
-                value = None
+                # fetched on both budget paths: the open-risk cap
+                # check below is skipped when value is None, so a
+                # missing tier must not disable the cap
+                value = self.account.value(label)
                 if pct is not None:
-                    value = self.account.value(label)
                     budget = max(
                         0.0, float(value or 0) * pct / 100.0
                     )
@@ -878,16 +961,13 @@ class WealthsimpleExecutor:
             else:
                 held = self._held_quantity(ws, account_id, alert.ticker)
                 if held < 1:
-                    if cfg.trading.sell_only_if_held:
-                        breakdown[label] = "no position to sell"
-                        continue
-                    if not price:
-                        breakdown[label] = "no quote price available"
-                        continue
-                    held = int(cfg.trading.position_size_cad / price)
-                    if held < 1:
-                        breakdown[label] = "computed sell quantity below 1"
-                        continue
+                    # no shorting: a sell alert for a name the
+                    # account doesn't hold is skipped (the option
+                    # path is ledger-gated the same way; deriving a
+                    # quantity from position_size_cad would open an
+                    # unintended short at market)
+                    breakdown[label] = "no position to sell"
+                    continue
                 if cfg.trading.order_type == "limit" and price:
                     order = ws.limit_sell(
                         account_id, sec_id, held, self._limit_price(price, "SELL")

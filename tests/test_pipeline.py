@@ -659,10 +659,16 @@ def test_load_env_tokens_missing_file():
     assert wt.load_env_tokens(path="/nonexistent/ws_tokens.env") is False
 
 
-def test_load_env_tokens_reads_the_consumer_folder(tmp_path, monkeypatch):
+def test_load_env_tokens_reads_the_config_folder(tmp_path, monkeypatch):
     import consumer.ws.ws_tokens as wt
 
-    token_file = tmp_path / "consumer" / "ws_tokens.env"
+    # the real default lives in config/ (not the pre-refactor
+    # consumer/ folder) - pinned so a regression is caught
+    assert wt._TOKEN_PATH.replace(os.sep, "/").endswith(
+        "config/ws_tokens.env"
+    )
+
+    token_file = tmp_path / "config" / "ws_tokens.env"
     token_file.parent.mkdir()
     token_file.write_text("export WS_ACCESS_TOKEN=tok\n")
     monkeypatch.setattr(wt, "_TOKEN_PATH", str(token_file))
@@ -2164,7 +2170,7 @@ def test_update_relevance_gating(monkeypatch, tmp_path):
 
     def fake_git2(r, *args):
         if args[0] == "diff":
-            return FakeResult(0, "trader/server.py\n")
+            return FakeResult(0, "core/server.py\n")
         return FakeResult(0, "")
 
     monkeypatch.setattr(up, "_git", fake_git2)
@@ -3243,6 +3249,28 @@ def test_paper_only_contract_priced_from_ws_chain():
     assert ledger._chain_backoff_until == 0.0
 
 
+def test_clean_start_default_db_and_role(tmp_path, monkeypatch):
+    """the default --db points at db/consumer.trades.db and the
+    role (for the shared logs/ sweep) derives from the db's
+    FILENAME - the pre-refactor default (consumer/db/...) and
+    the folder-derived role ("db") silently skipped the sweep."""
+    import scripts.clean_start as cs
+
+    # the parser's default: a repo-shaped tree without --db.
+    # REPO_ROOT is read at parse time via the module global
+    import argparse as _ap
+
+    orig_parse = _ap.ArgumentParser.parse_args
+
+    def fake_parse(self, args=None):
+        return orig_parse(self, ["--yes"])
+
+    monkeypatch.setattr(_ap.ArgumentParser, "parse_args", fake_parse)
+    monkeypatch.setattr(cs, "REPO_ROOT", str(tmp_path))
+    # no db at the default path: the script reports and exits 1
+    assert cs.main() == 1
+
+
 def test_clean_start_script(tmp_path):
     import sqlite3
     import subprocess
@@ -3526,7 +3554,7 @@ def test_updater_clears_stale_index_lock(tmp_path):
     fresh_lock = fresh / ".git" / "index.lock"
     fresh_lock.write_text("")
 
-    old = os.path.getmtime(str(lock)) - 600
+    old = os.path.getmtime(str(lock)) - 1900
     os.utime(str(lock), (old, old))
     # old lock gets removed, fresh one is left alone
     assert _clear_stale_lock(str(root)) is True
@@ -4943,7 +4971,7 @@ def test_quote_provider_startup_survives_opend_down(monkeypatch):
         )
     )
     t0 = time.time()
-    fn = q.make_quote_provider(cfg, None)
+    fn, src = q.make_quote_provider(cfg, None)
     elapsed = time.time() - t0
     assert elapsed < 5, elapsed
     # no account -> the ws fallback yields None, but quickly

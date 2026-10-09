@@ -420,3 +420,103 @@ def test_checksum_missing_from_sums_aborts(tmp_path, monkeypatch):
     assert "checksum missing" in up.last_result
     assert not os.path.exists(os.path.join(
         str(tmp_path), ru.PENDING_FILE))
+
+
+def test_read_version_falls_back_to_consumer_folder(tmp_path):
+    """an install an intermediate build touched carries the
+    marker in consumer/ - it stays readable (and the root copy
+    wins when both exist)."""
+    _write(tmp_path, "consumer/VERSION", json.dumps(
+        {"commit": "aaa", "repo": "o/r"}
+    ))
+    assert read_version(str(tmp_path))["commit"] == "aaa"
+    # the root marker wins
+    _write(tmp_path, "VERSION", json.dumps(
+        {"commit": "bbb", "repo": "o/r"}
+    ))
+    assert read_version(str(tmp_path))["commit"] == "bbb"
+
+
+def test_startup_migrates_stray_consumer_version_marker(tmp_path):
+    """the intermediate build wrote VERSION into consumer/ - the
+    first updater start moves it to the root (or drops the
+    duplicate when the root already has one)."""
+    stray = json.dumps({"commit": "aaa", "repo": "o/r"})
+    _write(tmp_path, "consumer/VERSION", stray)
+    ReleaseUpdater(
+        _cfg(), str(tmp_path), "", restart=lambda *a, **k: None
+    )
+    assert (tmp_path / "VERSION").exists()
+    assert not (tmp_path / "consumer" / "VERSION").exists()
+
+    # both present: the stray duplicate is removed, the root
+    # marker survives untouched
+    _write(tmp_path, "consumer/VERSION", stray)
+    root_before = (tmp_path / "VERSION").read_text()
+    ReleaseUpdater(
+        _cfg(), str(tmp_path), "", restart=lambda *a, **k: None
+    )
+    assert (tmp_path / "VERSION").read_text() == root_before
+    assert not (tmp_path / "consumer" / "VERSION").exists()
+
+
+def test_release_older_than_checkout_head_is_skipped(tmp_path, monkeypatch):
+    """a git checkout whose head already contains the release
+    commit must not stage a downgrade (the shared checkout's
+    consumer must not drag the repo backwards)."""
+    import subprocess
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    env = {
+        **os.environ,
+        "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+        "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t",
+    }
+
+    def git(*args):
+        subprocess.run(
+            ["git", *args], cwd=repo, env=env,
+            capture_output=True, check=True,
+        )
+
+    git("init")
+    _write(repo, "core/x.py", "v1")
+    git("add", "-A")
+    git("commit", "-m", "v1")
+    v1 = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, env=env,
+        capture_output=True, text=True,
+    ).stdout.strip()
+    _write(repo, "core/x.py", "v2")
+    git("add", "-A")
+    git("commit", "-m", "v2")
+    git("remote", "add", "origin",
+        "git@github.com:owner/repo.git")
+
+    _write(repo, "VERSION", json.dumps(
+        {"commit": v1[:8], "repo": "owner/repo"}
+    ))
+    release = {
+        "tag_name": "consumer-latest",
+        "assets": [
+            {"name": f"consumer-{v1[:8]}.zip",
+             "url": f"https://fake/{v1[:8]}.zip"},
+        ],
+    }
+
+    def download(url, token, dest):
+        _make_zip(dest, v1[:8])
+
+    monkeypatch.setattr(ru, "latest_release", lambda *a, **k: release)
+    monkeypatch.setattr(ru, "download_file", download)
+
+    calls = []
+    up = ReleaseUpdater(
+        _cfg(), str(repo), "", restart=lambda *a, **k: calls.append(1)
+    )
+    assert up.check_once() is False
+    assert calls == []
+    assert "older than the checkout head" in up.last_result
+    assert not os.path.exists(os.path.join(
+        str(repo), ru.PENDING_FILE))

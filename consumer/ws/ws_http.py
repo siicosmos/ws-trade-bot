@@ -22,12 +22,18 @@ def install():
     except ImportError:
         return
     real_post = _requests.post
+    real_get = _requests.get
 
     def post(*args, **kwargs):
         kwargs.setdefault("timeout", WS_HTTP_TIMEOUT)
         return real_post(*args, **kwargs)
 
+    def get(*args, **kwargs):
+        kwargs.setdefault("timeout", WS_HTTP_TIMEOUT)
+        return real_get(*args, **kwargs)
+
     _client_mod.requests = type(
-        "requests_shim", (), {"post": staticmethod(post)}
+        "requests_shim", (),
+        {"post": staticmethod(post), "get": staticmethod(get)},
     )
     _installed = True

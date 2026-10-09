@@ -67,9 +67,12 @@ def main():
 
         # read-only: a diagnostic must not create or migrate the
         # production db (Store() runs the schema/migration path)
-        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-        conn.execute("SELECT COUNT(*) FROM signals").fetchone()
-        conn.close()
+        uri = f"file:{db_path.replace(os.sep, '/')}?mode=ro"
+        conn = sqlite3.connect(uri, uri=True)
+        try:
+            conn.execute("SELECT COUNT(*) FROM signals").fetchone()
+        finally:
+            conn.close()
         result(OK, "consumer.trades.db opens read-only (schema present)")
     except sqlite3.OperationalError as e:
         result(WARN, "consumer.trades.db", f"{e} (missing or pre-schema)")
@@ -113,7 +116,8 @@ def main():
         hint = ""
         if "10013" in detail or "access" in detail.lower():
             hint = (" - likely a Windows/Hyper-V excluded port range; "
-                    "change pipeline.port in config.yaml (e.g. 8081) "
+                    "change the port in config/<role>.config.yaml "
+                    "(e.g. 8081) "
                     "and update reader.pipeline_url to match")
         exit_code = 1
         result(FAIL, f"port {port} can be bound", detail + hint)

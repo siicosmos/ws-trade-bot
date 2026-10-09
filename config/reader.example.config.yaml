@@ -1,12 +1,12 @@
 # ---------------------------------------------------------------------------
-# reader example config - copy to reader/reader.config.yaml and edit
+# reader example config - copy to config/reader.config.yaml and edit
 #
 # the Windows app that watches the official Discord client via UI
 # Automation and posts every new message to the info server. Flat
 # keys (no nesting). The reader's own webhooks live here too.
 # ---------------------------------------------------------------------------
 
-# where the info server's ingest endpoint lives (its pipeline.port)
+# where the info server's ingest endpoint lives (its port)
 pipeline_url: "http://localhost:8081/alert"   # use https:// if TLS is on
 
 # --- delivery ---

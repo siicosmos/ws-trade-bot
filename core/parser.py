@@ -20,6 +20,9 @@ class Alert:
     # "profits only": the alert may only spend what was realized
     # selling today (lotto rules apply to the budget either way)
     profits_only: bool = False
+    # set on auto-exits (stop loss / take profit / trailing): the
+    # sell limit is priced marketable (protection over price)
+    stop_exit: bool = False
     entry: Optional[float] = None
     stop_loss: Optional[float] = None
     take_profit: Optional[float] = None

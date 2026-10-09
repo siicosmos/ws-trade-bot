@@ -29,7 +29,8 @@ def _epoch(iso_ts):
         return None
 
 
-def _backfill_signals(base, store, limit=50):
+def _backfill_signals(base, store, limit=50, headers=None,
+                      verify=True):
     """Pull the info server's recent signals into the consumer's
     signals table as ALREADY-CLAIMED rows: the dashboard's recent
     alerts survive a wiped/rebuilt consumer db, and the dedupe
@@ -39,18 +40,19 @@ def _backfill_signals(base, store, limit=50):
     here) so the rowid order matches the time order and the
     dashboard shows newest on top."""
     try:
-        r = requests.get(f"{base}/api/signals?limit={limit}",
-                         timeout=10)
+        r = requests.get(
+            f"{base}/api/signals?limit={limit}",
+            headers=headers, timeout=10, verify=verify,
+        )
         r.raise_for_status()
-        rows = r.json() if isinstance(r.json(), list) else []
-        rows = list(reversed(rows))
-    except Exception:
+        data = r.json()
+        rows = list(reversed(data)) if isinstance(data, list) else []
+    except Exception as e:
+        print(f"feed backfill failed: {e}")
         return 0
     added = 0
     for row in rows:
         try:
-            from datetime import datetime
-
             ts = row.get("ts")
             ts_epoch = (
                 datetime.fromisoformat(ts).timestamp() if ts else None
@@ -106,11 +108,14 @@ def _loop(cfg, store, on_alert, state=None):
                     state["last_seen"] = time.time()
                     state["ok"] = True
                     state["cursor"] = cursor
+                    state.pop("error", None)
                 # a fresh/wiped consumer db: pull the info server's
                 # recent signals in as claimed rows - the dashboard's
                 # recent alerts list is not empty and the dedupe
                 # memory covers the info server's window
-                _backfill_signals(base, store)
+                _backfill_signals(
+                    base, store, headers=headers, verify=verify
+                )
             else:
                 r = requests.get(
                     f"{base}/api/feed",
@@ -130,6 +135,7 @@ def _loop(cfg, store, on_alert, state=None):
                     state["last_seen"] = time.time()
                     state["ok"] = True
                     state["cursor"] = cursor
+                    state.pop("error", None)
                 levels = data.get("levels")
                 if levels and levels != store.meta_get(
                     "spx_levels_text"

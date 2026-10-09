@@ -120,7 +120,10 @@ def _tick(store, consumers, cursors):
     for c in consumers:
         if time.time() >= deadline:
             break
-        rows = store.signals_since(cursors.get(c.token, 0), limit=50)
+        # the cursor keys by label (the identity everywhere
+        # else): two consumers sharing a token would otherwise
+        # share one cursor and skip each other's rows
+        rows = store.signals_since(cursors.get(c.label, 0), limit=50)
         if not rows:
             continue
         verify = bool(getattr(c, "push_verify_ssl", False))
@@ -130,13 +133,13 @@ def _tick(store, consumers, cursors):
             ok, err = _push(consumer=c, row=row,
                             verify_ssl=verify)
             record_push(c.label, ok, err)
-            cursors[c.token] = row["id"]
+            cursors[c.label] = row["id"]
 
 
 def _loop(cfg, store, consumers):
     # start at the current head: restarts never re-push history,
     # consumers backfill via their pull cursor if needed
-    cursors = {c.token: store.max_signal_rowid() for c in consumers}
+    cursors = {c.label: store.max_signal_rowid() for c in consumers}
     while True:
         time.sleep(0.5)
         _tick(store, consumers, cursors)

@@ -100,10 +100,6 @@ def _paper_card_metrics(
         cfg.wealthsimple, "margin_rate_overrides", {}
     ) or {}
 
-    from consumer.trading.margin import (
-        Holding, compute_requirement, resolve_rate,
-    )
-
     holdings = []
     for r in rows:
         if r.get("kind") != "stock":
@@ -1146,7 +1142,10 @@ def create_app(cfg, store: Store, risk, executor, account=None,
     app.config["SESSION_COOKIE_NAME"] = "ws_session_" + str(
         getattr(cfg.pipeline, "port", 8080)
     )
-    app.permanent_session_lifetime = timedelta(days=30)
+    # a stolen cookie on a trading dashboard must not stay valid
+    # for a month - 12h covers a trading day and re-login is one
+    # token away
+    app.permanent_session_lifetime = timedelta(hours=12)
     app.config["MAX_CONTENT_LENGTH"] = 1024 * 1024
     # the dashboard assets change with every release - the flask
     # default (hours of browser caching) serves stale js after an
@@ -1635,10 +1634,6 @@ def create_app(cfg, store: Store, risk, executor, account=None,
             ), 400
         mult = 100 if is_option else 1
         avg = float(row["avg_premium"] or 0.0)
-        realized = round(qty * (price - avg) * mult, 2) if avg else 0.0
-        store.apply_position(
-            "paper", alert, -qty, premium=price, account=label
-        )
         # the proceeds return to the paper cash the same way an
         # executed sell books them: options x100 in usd->cad, at
         # the ledger's fx; stocks per share in cad
@@ -1649,6 +1644,12 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                 fx = ledger.fx() or 1.0
             except Exception:
                 fx = 1.0
+        realized = (
+            round(qty * (price - avg) * mult * fx, 2) if avg else 0.0
+        )
+        store.apply_position(
+            "paper", alert, -qty, premium=price, account=label, fx=fx
+        )
         credit = qty * price * (100 if is_option else 1)
         store.adjust_paper_equity(
             credit * (fx if is_option else 1.0), label
@@ -1684,12 +1685,16 @@ def create_app(cfg, store: Store, risk, executor, account=None,
 
     @app.get("/api/signals")
     def api_signals():
-        limit = request.args.get("limit", default=50, type=int)
+        limit = min(max(
+            request.args.get("limit", default=50, type=int) or 50,
+            1), 200)
         return jsonify(store.recent_signals(limit))
 
     @app.get("/api/trades")
     def api_trades():
-        limit = request.args.get("limit", default=50, type=int)
+        limit = min(max(
+            request.args.get("limit", default=50, type=int) or 50,
+            1), 200)
         return jsonify(store.recent_trades(limit))
 
     @app.get("/api/spx")
@@ -2099,27 +2104,25 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                 return jsonify(
                     {"error": "password must be at least 6 characters"}
                 ), 400
-            if target != me.get("username"):
-                if not admin:
+            if target == me.get("username"):
+                # self change requires the current password (an
+                # admin too - a hijacked session must not silently
+                # take over the account)
+                current = str(data.get("current_password") or "")
+                user = store.verify_user(me.get("username"), current)
+                if user is None:
                     return jsonify(
-                        {"error": "admin required"}
+                        {"error": "current password is wrong"}
                     ), 403
-            if target != me.get("username") or admin:
-                if not admin:
-                    return jsonify({"error": "admin required"}), 403
-                if not store.get_user(target):
-                    return jsonify({"error": "unknown user"}), 404
-                if not store.update_password(target, new_password):
-                    return jsonify({"error": "update failed"}), 400
+                store.update_password(target, new_password)
                 return jsonify({"status": "ok"})
-            # self change requires the current password
-            current = str(data.get("current_password") or "")
-            user = store.verify_user(me.get("username"), current)
-            if user is None:
-                return jsonify(
-                    {"error": "current password is wrong"}
-                ), 403
-            store.update_password(target, new_password)
+            # someone else's password: admin only
+            if not admin:
+                return jsonify({"error": "admin required"}), 403
+            if not store.get_user(target):
+                return jsonify({"error": "unknown user"}), 404
+            if not store.update_password(target, new_password):
+                return jsonify({"error": "update failed"}), 400
             return jsonify({"status": "ok"})
 
         return jsonify({"error": "unknown action"}), 400

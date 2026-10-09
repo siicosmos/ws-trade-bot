@@ -17,7 +17,6 @@ REGISTERED_ACCOUNT_TYPES = {
     "LRIF",
     "PRIF",
     "RDSP",
-    "RESP",
     "LOCKED_IN",
 }
 

@@ -292,12 +292,12 @@ def test_live_stock_buy_respects_tier_and_open_risk(monkeypatch):
     assert len(ws.orders) == 1
 
 
-def test_live_stock_sell_only_if_held(monkeypatch):
-    """a live stock sell refuses when ws shows no holdings and
-    sell_only_if_held is on."""
+def test_live_stock_sell_never_shorts(monkeypatch):
+    """a live stock sell refuses when ws shows no holdings -
+    sells never open a short (unconditional)."""
     ws = FakeWS(ask=100.0, bid=99.0)
     _patch_client(monkeypatch, ws)
-    cfg = _live_cfg(sell_only_if_held=True)
+    cfg = _live_cfg()
     store = _store()
     account = StubAccount(_account_values())
     ex = _executor(cfg, store, account)

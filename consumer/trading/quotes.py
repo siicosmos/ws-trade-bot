@@ -9,12 +9,15 @@ ACTIVE_QUOTE_PROVIDER = None
 
 
 def make_quote_provider(cfg, account):
+    """returns (quote_fn, source_label) - the label reflects the
+    provider actually in use (moomoo silently falls back to the
+    ws chains when unavailable)."""
     if not cfg.quotes.enabled:
         print(
             "live option quotes disabled (quotes.enabled=false) - "
             "stop monitor off"
         )
-        return None
+        return None, None
     provider = (cfg.quotes.provider or "ws").lower()
     if provider == "moomoo":
         global ACTIVE_QUOTE_PROVIDER
@@ -26,16 +29,19 @@ def make_quote_provider(cfg, account):
                 f"quotes: moomoo OpenD at {cfg.quotes.moomoo_host}:"
                 f"{cfg.quotes.moomoo_port}"
             )
-            return moomoo
+            return moomoo, "moomoo"
         except Exception as e:
             print(
                 f"quotes: moomoo unavailable ({e}) - falling back to "
                 f"Wealthsimple option chains"
             )
-    return make_ws_quote_provider(cfg, account)
+    ws_fn = make_ws_quote_provider(cfg, account)
+    return ws_fn, ("ws quotes" if ws_fn is not None else None)
 
 
 def make_ws_quote_provider(cfg, account):
+    """the quote fn itself (no label) - the stop monitor's
+    per-position provider."""
     try:
         from consumer.trading.executor import WealthsimpleExecutor
 
@@ -59,7 +65,8 @@ def make_ws_quote_provider(cfg, account):
             opt, _ = resolver._resolve_option(ws, sec_id, alert)
             if not opt:
                 return None
-            return (opt.get("quote") or {}).get("bid")
+            quote = opt.get("quoteV2") or opt.get("quote") or {}
+            return quote.get("bid")
 
         print("quotes: Wealthsimple option chains")
         return quote
@@ -107,9 +114,6 @@ def us_session(now=None):
         if mins < 1200:
             return "post"         # 16:00-20:00
         return None               # friday evening: no overnight
-    if wd == 6 and mins >= 1200:  # sunday from 20:00
-        return "overnight"
-    return None                   # saturday
     if wd == 6 and mins >= 1200:  # sunday from 20:00
         return "overnight"
     return None                   # saturday
@@ -235,6 +239,7 @@ class MoomooQuoteProvider:
                     price = price or p
             if price:
                 self._index_error = None
+                self._index_proxy = False
                 break
             if proxy and proxy_price and gi == len(groups) - 1:
                 # the index snapshot carries no usable price on
@@ -317,13 +322,19 @@ class MoomooQuoteProvider:
 
     def _connect_loop(self):
         # blocks inside the constructor until opend accepts - the
-        # moment it comes up, _ctx is set and every caller sees it
+        # moment it comes up, _ctx is set and every caller sees
+        # it. a failure records err so callers fail fast instead
+        # of burning the full wait (and a later cycle retries)
         from moomoo import OpenQuoteContext
 
-        self._ctx = OpenQuoteContext(
-            host=self.cfg.quotes.moomoo_host,
-            port=self.cfg.quotes.moomoo_port,
-        )
+        try:
+            self._ctx = OpenQuoteContext(
+                host=self.cfg.quotes.moomoo_host,
+                port=self.cfg.quotes.moomoo_port,
+            )
+        except Exception as e:
+            self._conn_slot["err"] = str(e)
+            self._ctx_backoff_until = time.time() + 30.0
 
     @staticmethod
     def candidate_codes(pos):

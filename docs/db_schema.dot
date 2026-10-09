@@ -34,7 +34,7 @@ digraph db_schema {
       <TR><TD ALIGN="LEFT">detail</TD><TD ALIGN="LEFT">TEXT · sizing</TD></TR>
       <TR><TD ALIGN="LEFT">message_key</TD><TD ALIGN="LEFT">TEXT → signals</TD></TR>
       <TR><TD ALIGN="LEFT">dedupe_key</TD><TD ALIGN="LEFT">TEXT → signals</TD></TR>
-      <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="9"><I>idx: (mode, ts) · (dedupe_key, ts)</I></FONT></TD><TD ALIGN="LEFT"><FONT POINT-SIZE="9"><I>daily prune &gt; retention</I></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="9"><I>idx: (mode, ts) · (dedupe_key, ts) · (message_key, ts)</I></FONT></TD><TD ALIGN="LEFT"><FONT POINT-SIZE="9"><I>daily prune &gt; retention</I></FONT></TD></TR>
     </TABLE>>];
 
   positions [label=<

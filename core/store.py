@@ -8,6 +8,21 @@ import threading
 from datetime import datetime, timedelta, timezone
 
 
+def et_now() -> datetime:
+    """the wall clock in the market's timezone
+    (America/New_York) - the day-boundary gates (trades today,
+    loss streak, realized today, 0dte detection) bucket by the
+    ET calendar day: the post/overnight sessions run past
+    midnight ET, so UTC-day bucketing would roll evening trades
+    into the next day (and a non-UTC box would disagree with
+    both). falls back to UTC if zoneinfo is unavailable."""
+    try:
+        from zoneinfo import ZoneInfo
+        return datetime.now(ZoneInfo("America/New_York"))
+    except Exception:
+        return datetime.now(timezone.utc)
+
+
 class Store:
     def __init__(self, path: str = "trades.db", retention_days=90):
         self.path = path
@@ -412,9 +427,11 @@ class Store:
                 )
 
     def trades_today(self, mode: str) -> int:
-        midnight = datetime.now(timezone.utc).replace(
-            hour=0, minute=0, second=0, microsecond=0
-        ).isoformat(timespec="seconds")
+        midnight = (
+            et_now().replace(
+                hour=0, minute=0, second=0, microsecond=0
+            ).astimezone(timezone.utc).isoformat(timespec="seconds")
+        )
         with self._conn:
             row = self._conn.execute(
                 "SELECT COUNT(*) FROM trades WHERE ts >= ? AND mode = ? "
@@ -463,8 +480,8 @@ class Store:
         message_key: str = None,
     ):
         self.maybe_prune()
-        self._touch()
         with self._write_lock, self._conn:
+            self._touch()
             self._conn.execute(
                 "INSERT INTO trades (ts, mode, action, ticker, qty, price, entry, "
                 "stop_loss, take_profit, status, detail, message_key, dedupe_key, "
@@ -533,7 +550,8 @@ class Store:
             return [dict(r) for r in rows]
 
     def apply_position(
-        self, mode: str, alert, delta: int, premium=None, account="default"
+        self, mode: str, alert, delta: int, premium=None, account="default",
+        fx: float = 1.0,
     ):
         key = alert.contract_key()
         with self._write_lock, self._conn:
@@ -568,7 +586,15 @@ class Store:
                 # alert) clamps qty to 0 and must not book p&l for
                 # contracts that were never there
                 closed = min(-delta, old_qty)
-                realized = old_realized + closed * (premium - old_avg) * mult
+                # realized is booked in cad (the ledger's cash
+                # unit): premiums quote in the security's currency
+                # (usd for the us-listed names) - without the
+                # conversion the daily-loss breaker and the lotto
+                # budget compare usd pnl against cad floors
+                realized = (
+                    old_realized
+                    + closed * (premium - old_avg) * mult * fx
+                )
 
             self._conn.execute(
                 "INSERT INTO positions (mode, account, contract_key, underlying, "
@@ -590,7 +616,7 @@ class Store:
             # lotto / profits-only sizing is capped by today's
             # realized gain and the account cards show it per label
             if delta < 0 and realized != old_realized:
-                today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+                today = et_now().strftime("%Y-%m-%d")
                 delta_realized = round(realized - old_realized, 2)
                 for meta_key in (
                     f"realized_today:{mode}:{today}",
@@ -629,7 +655,7 @@ class Store:
         # second `with self._conn` here would commit the outer
         # write mid-flight (a later failure would leave the streak
         # committed but the position row not)
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        today = et_now().strftime("%Y-%m-%d")
         streak = self._get_streak_unlocked(mode)
         if streak["date"] != today:
             streak = {"count": 0, "date": today}
@@ -664,7 +690,7 @@ class Store:
             return self._get_streak_unlocked(mode)
 
     def loss_streak(self, mode: str) -> int:
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        today = et_now().strftime("%Y-%m-%d")
         streak = self._get_streak(mode)
         if streak["date"] != today:
             return 0
@@ -710,10 +736,10 @@ class Store:
         """Per-position take-profit: sell the whole remaining
         position when its gain vs the entry premium reaches this
         percent. None clears the target."""
-        self._touch()
-        self._positions_version += 1
-        self._positions_cache.clear()
         with self._write_lock, self._conn:
+            self._touch()
+            self._positions_version += 1
+            self._positions_cache.clear()
             self._conn.execute(
                 "UPDATE positions SET tp_gain_pct = ? "
                 "WHERE mode = ? AND account = ? AND contract_key = ?",
@@ -729,10 +755,10 @@ class Store:
         this % off its peak (overrides the global trailing stop
         for this position; 0 disables trailing here, None falls
         back to the global setting)."""
-        self._touch()
-        self._positions_version += 1
-        self._positions_cache.clear()
         with self._write_lock, self._conn:
+            self._touch()
+            self._positions_version += 1
+            self._positions_cache.clear()
             self._conn.execute(
                 "UPDATE positions SET trail_pct = ? "
                 "WHERE mode = ? AND account = ? AND contract_key = ?",
@@ -1019,10 +1045,10 @@ class Store:
     ):
         """Insert a seeded position row (used to mirror live
         holdings into the paper ledger)."""
-        self._touch()
-        self._positions_version += 1
-        self._positions_cache.clear()
         with self._write_lock, self._conn:
+            self._touch()
+            self._positions_version += 1
+            self._positions_cache.clear()
             self._conn.execute(
                 "INSERT INTO positions (mode, account, contract_key, "
                 "underlying, expiry, strike, right, qty, updated_ts, "
@@ -1039,10 +1065,10 @@ class Store:
 
     def reset_paper_account(self, label: str = "default"):
         """Drop a paper account's ledger so it can be re-seeded."""
-        self._touch()
-        self._positions_version += 1
-        self._positions_cache.clear()
         with self._write_lock, self._conn:
+            self._touch()
+            self._positions_version += 1
+            self._positions_cache.clear()
             self._conn.execute(
                 "DELETE FROM positions WHERE mode = 'paper' "
                 "AND account = ?", (label,)
@@ -1067,8 +1093,8 @@ class Store:
             return float(row[0]) if row else None
 
     def set_paper_cash_usd(self, value: float, label: str = "default"):
-        self._touch()
         with self._write_lock, self._conn:
+            self._touch()
             self._conn.execute(
                 "INSERT INTO meta (key, value) VALUES (?, ?) "
                 "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -1079,10 +1105,10 @@ class Store:
         """Replace a paper account's holdings (the adjust
         editor): each row is (contract_key, underlying, expiry,
         strike, right, qty, avg_premium)."""
-        self._touch()
-        self._positions_version += 1
-        self._positions_cache.clear()
         with self._write_lock, self._conn:
+            self._touch()
+            self._positions_version += 1
+            self._positions_cache.clear()
             self._conn.execute(
                 "DELETE FROM positions WHERE mode = 'paper' "
                 "AND account = ?", (label,)
@@ -1117,8 +1143,8 @@ class Store:
             return float(row[0]) if row else None
 
     def set_paper_equity(self, value: float, label: str = "default"):
-        self._touch()
         with self._write_lock, self._conn:
+            self._touch()
             self._conn.execute(
                 "INSERT INTO meta (key, value) VALUES (?, ?) "
                 "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -1158,8 +1184,8 @@ class Store:
         fill or expire the estimate. pre_qty/pre_avg snapshot
         the position before the estimate so the correction can
         restore the exact basis."""
-        self._touch()
         with self._write_lock, self._conn:
+            self._touch()
             self._conn.execute(
                 "INSERT INTO pending_orders (mode, account, order_id, "
                 "kind, contract_key, underlying, expiry, strike, "
@@ -1208,8 +1234,8 @@ class Store:
         """Accumulate an actual fill onto an open order: the
         running filled qty and its blended price. Returns the
         updated totals."""
-        self._touch()
         with self._write_lock, self._conn:
+            self._touch()
             row = self._conn.execute(
                 "SELECT filled_qty, filled_price FROM pending_orders "
                 "WHERE id = ?", (row_id,),
@@ -1232,8 +1258,8 @@ class Store:
             return total, blended
 
     def settle_pending_order(self, row_id, status):
-        self._touch()
         with self._write_lock, self._conn:
+            self._touch()
             self._conn.execute(
                 "UPDATE pending_orders SET status = ? WHERE id = ?",
                 (status, row_id),
@@ -1242,7 +1268,7 @@ class Store:
     def _bump_realized_today(self, mode, account, delta):
         """Move the realized-today accumulators by a correction
         delta - the same keys apply_position maintains."""
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        today = et_now().strftime("%Y-%m-%d")
         for meta_key in (
             f"realized_today:{mode}:{today}",
             f"realized_today:{mode}:{account}:{today}",
@@ -1268,7 +1294,7 @@ class Store:
         self, mode, account, contract_key, action, filled_qty,
         actual_price, pre_qty, pre_avg, booked_qty, booked_price,
         mult=100, underlying="", expiry=None, strike=None,
-        opt_right=None,
+        opt_right=None, fx: float = 1.0,
     ):
         """Reconcile an estimated live booking against the actual
         ws fill, exactly: the pre-order snapshot (pre_qty,
@@ -1280,10 +1306,10 @@ class Store:
             int(filled_qty) if action == "BUY" else -int(filled_qty)
         )
         new_qty = max(0, int(pre_qty) + signed_fill)
-        self._touch()
-        self._positions_version += 1
-        self._positions_cache.clear()
         with self._write_lock, self._conn:
+            self._touch()
+            self._positions_version += 1
+            self._positions_cache.clear()
             row = self._conn.execute(
                 "SELECT qty, avg_premium, realized FROM positions "
                 "WHERE mode = ? AND account = ? AND contract_key = ?",
@@ -1304,7 +1330,7 @@ class Store:
                     int(booked_qty) * ((booked_price or 0) - basis)
                     * mult if basis else 0.0
                 )
-                corr = round(truth - est, 2)
+                corr = round((truth - est) * fx, 2)
                 if corr:
                     sets.append("realized = ?")
                     params.append(round(realized + corr, 2))
@@ -1332,7 +1358,7 @@ class Store:
         """Realized pnl booked today (sell gains minus sell
         losses) - the account card shows it per label and the
         lotto / profits-only budget reads the mode aggregate."""
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        today = et_now().strftime("%Y-%m-%d")
         key = (
             f"realized_today:{mode}:{account}:{today}"
             if account
@@ -1393,9 +1419,12 @@ class Store:
     def verify_user(self, username: str, password: str):
         """The user dict (without the hash) on a match, else None."""
         user = self.get_user(username)
-        if user is None or not _verify_password(
-            password, user["password_hash"]
-        ):
+        if user is None:
+            # burn the same pbkdf2 work as a real check - an
+            # unknown username must not be faster to probe
+            _verify_password(password, _DUMMY_HASH)
+            return None
+        if not _verify_password(password, user["password_hash"]):
             return None
         with self._write_lock, self._conn:
             self._conn.execute(
@@ -1450,6 +1479,11 @@ def _hash_password(password: str) -> str:
         "sha256", password.encode("utf-8"), salt, 200_000
     )
     return f"pbkdf2$200000${salt.hex()}${digest.hex()}"
+
+
+# a fixed hash burned on unknown-username logins so probing a
+# username by timing gains nothing
+_DUMMY_HASH = _hash_password("timing-equalizer")
 
 
 def _verify_password(password: str, stored: str) -> bool:

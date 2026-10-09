@@ -120,8 +120,6 @@ digraph architecture {
   reader -> iweb [label="POST /alert\ntoken", dir=forward];
   reader -> iweb [label="heartbeat\nreader status", style=dashed];
   iweb -> iweb [label="fan-out: push each\nsignal to consumers", style=dashed];
-  iweb -> store_note [style=invis];
-  store_note [style=invis];
   iweb -> istore [dir=forward];
   cfeed -> cproc [label="alert", dir=forward];
   cproc -> cexec [dir=forward];
@@ -132,7 +130,7 @@ digraph architecture {
 
   phone -> cdash [label="Tailscale\n(optional)", dir=forward];
   phone -> infodash [label="Tailscale", dir=forward];
-  phone -> iweb [label="consumer push\n(when reachable)", style=dashed, color="#8957e5"];
+  iweb -> cdash [label="push to consumers\n(when reachable)", style=dashed, color="#8957e5"];
   cfeed -> iweb [label="long-pull\nGET /api/feed", style=dashed, color="#238636"];
 
   cexec -> ws [label="positions · values\norders (live)", style=dashed];

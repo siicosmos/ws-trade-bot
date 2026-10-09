@@ -3,7 +3,7 @@ rem consumer app: the trading pipeline fed by the info server's
 rem alert feed. state lives apart from code:
 rem   config\consumer.config.yaml · db\consumer.trades.db
 rem this launcher lives in scripts\ - it cds into ..\consumer
-cd /d %~dp0..\consumer
+cd /d "%~dp0..\consumer"
 
 if not exist ..\.venv (
   echo creating venv...
@@ -29,7 +29,7 @@ if not exist ..\config\consumer.config.yaml (
 )
 
 :start
-rem apply a staged release update (no-op without .update_pending.json)
+rem apply a staged release update (no-op without .update_pending_consumer.json)
 ..\.venv\Scripts\python.exe ..\scripts\apply_update.py ..
 if errorlevel 1 (
   echo warning: apply_update failed - running the existing code

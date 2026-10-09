@@ -92,7 +92,11 @@ class WealthsimpleAccount:
                     rate = rate / 100.0
         except Exception:
             rate = None
-        rates[security_id] = (rate, now)
+        # a transient failure caches briefly - a real rate pins
+        # for the full 12h
+        rates[security_id] = (
+            rate, now + (0 if rate is not None else 42600)
+        )
         return rate
 
     def account_type_map(self):
@@ -216,6 +220,14 @@ class WealthsimpleAccount:
         self._usd_cache_ts = now
         return result
 
+    def fx(self) -> float:
+        """USD:CAD rate for cad-normalizing realized pnl (the
+        paper ledger exposes the same interface)."""
+        try:
+            return float(self._usd_cad_quote() or 1.0) or 1.0
+        except Exception:
+            return 1.0
+
     def _usd_cad_quote(self):
         """USD:CAD rate from the WS quote API, cached for an hour."""
         now = time.time()
@@ -234,11 +246,13 @@ class WealthsimpleAccount:
                 if not sid:
                     continue
                 quote = ws.get_security_quote(sid) or {}
+                amount = quote.get("amount")
                 price = (
                     quote.get("price")
-                    or (quote.get("amount") or {}).get("amount")
-                    if isinstance(quote.get("amount"), dict)
-                    else quote.get("amount")
+                    or (amount.get("amount")
+                        if isinstance(amount, dict) else None)
+                    or (amount if not isinstance(amount, dict)
+                        else None)
                     or quote.get("lastPrice")
                 )
                 if price:

@@ -58,12 +58,9 @@ def repo_slug():
         return slug
     r = _git("remote", "get-url", "origin")
     url = r.stdout.strip() if r.returncode == 0 else ""
-    # git@github.com:owner/repo.git or https://.../owner/repo.git
-    if ":" in url:
-        url = url.split(":", 1)[1]
-    elif "github.com/" in url:
-        url = url.split("github.com/", 1)[1]
-    return url.removesuffix(".git")
+    # the shared parser handles ssh + https origins alike
+    from core.ops.remotes import repo_slug_from_url
+    return repo_slug_from_url(url)
 
 
 def include_file(rel):

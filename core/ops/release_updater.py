@@ -19,6 +19,7 @@ import zipfile
 
 import requests
 
+from core.ops.remotes import repo_slug_from_url  # noqa: E402
 from core.ops.updater import update_record_path  # noqa: E402
 
 # the consumer's release marker at the repo root - outside the
@@ -29,18 +30,6 @@ VERSION_FILE = "VERSION"
 # clobber them
 PENDING_FILE = ".update_pending_consumer.json"
 STAGING_DIR = ".update_staging"
-
-# state files that must survive an update swap - they live inside
-# consumer/, whose code dirs are replaced wholesale. everything at
-# the repo root (logs/, certs/, the update records, ...) is never
-# touched by the swap
-STATE_FILES = (
-    "consumer.config.yaml",
-    "ws_tokens.env",
-    "consumer.trades.db", "consumer.trades.db-shm",
-    "consumer.trades.db-wal",
-    "pipeline_exit.txt",
-)
 
 
 def read_version(root):
@@ -234,11 +223,7 @@ class ReleaseUpdater:
         commit = head.stdout.strip()[:8]
         remote = _git(self.root, "remote", "get-url", "origin")
         url = remote.stdout.strip() if remote.returncode == 0 else ""
-        if ":" in url:
-            url = url.split(":", 1)[1]
-        elif "github.com/" in url:
-            url = url.split("github.com/", 1)[1]
-        slug = url.removesuffix(".git").strip()
+        slug = repo_slug_from_url(url)
         if not slug:
             return False
         if (
@@ -347,38 +332,48 @@ class ReleaseUpdater:
             return False
 
         checksum_asset = find_checksum_asset(release)
-        if checksum_asset is not None:
-            sums_path = os.path.join(staging, "SHA256SUMS")
-            try:
-                download_file(checksum_asset["url"], token, sums_path)
-                with open(sums_path, encoding="utf-8") as f:
-                    sums = parse_checksums(f.read())
-            except requests.RequestException as e:
-                self.errors += 1
-                self.last_result = f"checksum download failed: {e}"[:120]
-                print(f"auto-update: {self.last_result}")
-                shutil.rmtree(staging, ignore_errors=True)
-                return False
-            expected = sums.get(asset["name"])
-            if not expected:
-                # a sums file that does not list this asset means
-                # the release is not what we expected (renamed
-                # artifact, partial upload) - installing an
-                # unverified zip is not an option
-                self.errors += 1
-                self.last_result = (
-                    f"checksum missing for {asset['name']} - "
-                    "the SHA256SUMS file does not list it"
-                )
-                print(f"auto-update: {self.last_result} - not staging")
-                shutil.rmtree(staging, ignore_errors=True)
-                return False
-            if expected != sha256_file(zip_path):
-                self.errors += 1
-                self.last_result = f"checksum mismatch for {remote}"
-                print(f"auto-update: {self.last_result} - not staging")
-                shutil.rmtree(staging, ignore_errors=True)
-                return False
+        if checksum_asset is None:
+            # the build always uploads SHA256SUMS - a release
+            # without one is truncated or tampered, and this zip
+            # replaces the bot's own code: never install it
+            self.errors += 1
+            self.last_result = (
+                "release has no SHA256SUMS asset - not installing"
+            )
+            print(f"auto-update: {self.last_result}")
+            shutil.rmtree(staging, ignore_errors=True)
+            return False
+        sums_path = os.path.join(staging, "SHA256SUMS")
+        try:
+            download_file(checksum_asset["url"], token, sums_path)
+            with open(sums_path, encoding="utf-8") as f:
+                sums = parse_checksums(f.read())
+        except requests.RequestException as e:
+            self.errors += 1
+            self.last_result = f"checksum download failed: {e}"[:120]
+            print(f"auto-update: {self.last_result}")
+            shutil.rmtree(staging, ignore_errors=True)
+            return False
+        expected = sums.get(asset["name"])
+        if not expected:
+            # a sums file that does not list this asset means
+            # the release is not what we expected (renamed
+            # artifact, partial upload) - installing an
+            # unverified zip is not an option
+            self.errors += 1
+            self.last_result = (
+                f"checksum missing for {asset['name']} - "
+                "the SHA256SUMS file does not list it"
+            )
+            print(f"auto-update: {self.last_result} - not staging")
+            shutil.rmtree(staging, ignore_errors=True)
+            return False
+        if expected != sha256_file(zip_path):
+            self.errors += 1
+            self.last_result = f"checksum mismatch for {remote}"
+            print(f"auto-update: {self.last_result} - not staging")
+            shutil.rmtree(staging, ignore_errors=True)
+            return False
 
         try:
             with zipfile.ZipFile(zip_path) as z:

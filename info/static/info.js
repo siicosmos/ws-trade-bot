@@ -123,11 +123,15 @@ function renderReader() {
     : Math.round(r.age_seconds + (Date.now() - r.receivedAt) / 1000);
   const ageTxt =
     age === null || age > 30 ? "offline" : age + "s ago";
+  const errTxt = r.ok === false && r.error
+    ? " - " + String(r.error).slice(0, 80) : "";
   el.textContent = r.channel
-    ? "watching: " + r.channel + " (" + ageTxt + ")"
-    : "waiting for: " + (r.desired || "any open channel") + " (" + ageTxt + ")";
+    ? "watching: " + r.channel + " (" + ageTxt + ")" + errTxt
+    : "waiting for: " + (r.desired || "any open channel") +
+      " (" + ageTxt + ")" + errTxt;
   el.style.color =
-    age !== null && age <= 30 ? "var(--green)" : "var(--yellow)";
+    age !== null && age <= 30 && r.ok !== false
+      ? "var(--green)" : "var(--red)";
 }
 
 let gitInfo = null;
@@ -364,7 +368,11 @@ function loadSettings() {
   // the write token - send it when it is already stored (no
   // prompt on open; the save flow prompts when needed)
   const token = localStorage.getItem("info_write_token") || "";
-  return jget("/api/settings", !!token).then(function (s) {
+  return jget("/api/settings", !!token).catch(function () {
+    // the stored token may be stale - the masked (unauthenticated)
+    // view still renders the editable fields
+    return jget("/api/settings", false);
+  }).then(function (s) {
     lastSettings = s;
     renderSettings(s);
     setSettingsDirty(false);

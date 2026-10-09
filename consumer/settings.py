@@ -1,4 +1,5 @@
 import os
+import threading
 
 import yaml
 
@@ -32,7 +33,7 @@ EDITABLE_SCALARS = {
 }
 EDITABLE_ENUMS = {"order_type": ("market", "limit")}
 EDITABLE_BOOLS = (
-    "sell_only_if_held", "back_to_entry_enabled", "trading_paused",
+    "back_to_entry_enabled", "trading_paused",
 )
 EDITABLE_LISTS = ("ticker_whitelist", "skip_underlyings")
 EDITABLE_ACCOUNT_NUMERIC = {
@@ -168,7 +169,12 @@ def apply_settings(cfg, payload: dict, config_path=None) -> tuple:
     for key in EDITABLE_BOOLS:
         if key not in trading_payload:
             continue
-        value = bool(trading_payload[key])
+        value = trading_payload[key]
+        if not isinstance(value, bool):
+            errors.append(
+                f"trading.{key}: must be true or false"
+            )
+            continue
         setattr(cfg.trading, key, value)
         applied[f"trading.{key}"] = value
 
@@ -497,16 +503,25 @@ def apply_settings(cfg, payload: dict, config_path=None) -> tuple:
 
     if not errors and config_path and applied:
         try:
-            _persist(cfg, config_path)
+            with _PERSIST_LOCK:
+                _persist(cfg, config_path)
         except OSError as e:
             errors.append(f"could not write config: {e}")
 
     return applied, errors
 
 
+_PERSIST_LOCK = threading.Lock()
+
+
 def set_mode(cfg, mode, config_path=None):
     """Persist trading.mode (the mode slider). Returns False
     when the write failed."""
+    with _PERSIST_LOCK:
+        return _set_mode_locked(cfg, mode, config_path)
+
+
+def _set_mode_locked(cfg, mode, config_path):
     try:
         with open(config_path, encoding="utf-8") as f:
             raw = yaml.safe_load(f) or {}
@@ -523,6 +538,8 @@ def set_mode(cfg, mode, config_path=None):
 
 
 def _persist(cfg, config_path):
+    # the caller holds _PERSIST_LOCK (update_settings) - the
+    # load-modify-dump cycle must not interleave with set_mode's
     with open(config_path, encoding="utf-8") as f:
         raw = yaml.safe_load(f) or {}
 
