@@ -80,10 +80,13 @@ function esc(s) {
 }
 
 function fmtAge(secs) {
-  if (secs < 5) return "just now";
-  if (secs < 3600) return secs + "s ago";
-  if (secs < 86400) return Math.round(secs / 60) + "m ago";
-  return Math.round(secs / 3600) + "h ago";
+  // the sub-minute range shows the raw seconds so the age ticks
+  // like a clock (the consumer dashboard's fmtAge matches)
+  if (secs < 1) return "just now";
+  if (secs < 60) return secs + "s ago";
+  if (secs < 3600) return Math.round(secs / 60) + "m ago";
+  if (secs < 86400) return Math.round(secs / 3600) + "h ago";
+  return Math.round(secs / 86400) + "d ago";
 }
 
 function ago(ts) {
@@ -100,6 +103,8 @@ function tickClock() {
     el.textContent = "data refreshed " + fmtAge(secs);
     el.style.color = secs <= 10 ? "#3fb950" : secs <= 30 ? "#d29922" : "#f85149";
   }
+  // the git line ticks from the cached gitInfo (fetched every 30s)
+  if (gitInfo) renderGit();
 }
 
 let readerInfo = null;

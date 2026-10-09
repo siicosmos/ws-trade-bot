@@ -202,6 +202,7 @@ def install_auth(app, cfg, store, login_html, exempt_paths=()):
     login route and logout. exempt_paths skip the guard (they do
     their own auth - the info server's consumer-token feed)."""
     exempt = set(exempt_paths)
+    app._last_reject_log = 0.0
 
     @app.before_request
     def auth_guard():
@@ -213,12 +214,27 @@ def install_auth(app, cfg, store, login_html, exempt_paths=()):
         if session.get("auth"):
             return None
         supplied = request.headers.get("X-Auth-Token", "")
-        if supplied and token and hmac.compare_digest(supplied, token):
+        if supplied and token and hmac.compare_digest(
+            supplied.encode("utf-8", "ignore"),
+            token.encode("utf-8", "ignore"),
+        ):
             from flask import g
 
             g.admin = True
             return None
         if request.path.startswith("/api/") or request.path == "/alert":
+            # a rejected machine token (e.g. the info server pushing
+            # with a stale consumers[] token after the consumer's
+            # auth_token changed) used to be fully silent
+            now = time.time()
+            if now - app._last_reject_log > 60:
+                app._last_reject_log = now
+                app.logger.warning(
+                    "request rejected (bad or missing X-Auth-Token) "
+                    "on %s %s - the caller's token must match this "
+                    "app's auth_token",
+                    request.method, request.path,
+                )
             return jsonify({"error": "unauthorized"}), 401
         return redirect("/login")
 

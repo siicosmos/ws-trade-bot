@@ -191,6 +191,17 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
             request.headers.get("X-Auth-Token", "")
         )
         if consumer is None:
+            # a rejected pull used to be fully silent - the
+            # consumer's table dot just went hollow with no reason
+            # logged anywhere. rate-limited like the write guard
+            now = time.time()
+            if now - app._last_reject_log > 60:
+                app._last_reject_log = now
+                logging.getLogger("info.feed-guard").warning(
+                    "feed request rejected (bad or missing "
+                    "X-Auth-Token) - the consumer's feed.token must "
+                    "match a consumers[] entry on this server"
+                )
             return jsonify({"error": "invalid consumer token"}), 401
         head = store.max_signal_rowid()
         raw_since = request.args.get("since", None)

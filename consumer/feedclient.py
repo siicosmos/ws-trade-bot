@@ -44,6 +44,11 @@ def _loop(cfg, store, on_alert, state=None):
                     f"{base}/api/feed", headers=headers, timeout=10,
                     verify=verify,
                 )
+                if r.status_code == 401:
+                    raise RuntimeError(
+                        "feed token rejected (401) - feed.token must "
+                        "match a consumers[] entry on the info server"
+                    )
                 r.raise_for_status()
                 cursor = int(r.json()["cursor"])
                 backoff = BACKOFF_MIN
@@ -57,6 +62,11 @@ def _loop(cfg, store, on_alert, state=None):
                     params={"since": cursor, "wait": 25},
                     headers=headers, timeout=35, verify=verify,
                 )
+                if r.status_code == 401:
+                    raise RuntimeError(
+                        "feed token rejected (401) - feed.token must "
+                        "match a consumers[] entry on the info server"
+                    )
                 r.raise_for_status()
                 data = r.json()
                 cursor = int(data["cursor"])

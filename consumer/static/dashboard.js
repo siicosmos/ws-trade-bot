@@ -2078,6 +2078,9 @@ function tickClock() {
     el.textContent = "data refreshed …";
     el.style.color = "var(--muted)";
   }
+  // the git badge ticks from the cached update status (fetched
+  // on the 5s poll)
+  if (gitStatus) renderGitStatus(gitStatus);
 }
 window.addEventListener("pageshow", (e) => {
   if (e.persisted) {

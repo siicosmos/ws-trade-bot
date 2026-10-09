@@ -479,3 +479,39 @@ def test_non_ascii_token_header_is_401_not_500():
     r = client.post("/alert", json={"text": "x"},
                     headers={"X-Auth-Token": "tökën"})
     assert r.status_code == 401
+
+
+def test_info_feed_rejects_unknown_consumer_token_without_seen():
+    """a pull with a token that matches no consumers[] entry gets a
+    401 and must not touch the consumer's last_seen - the table's
+    dot goes hollow (the visible symptom) while the rejection is
+    logged on the server."""
+    store = _fresh_store()
+    cfg = ConfigStub(TradingConfig(mode="notify"), auth_token="t")
+    cfg.consumers = [type(
+        "C", (), {"label": "owner", "token": "t", "push_url": "",
+                  "push_verify_ssl": False},
+    )()]
+    app = __import__(
+        "info.web", fromlist=["create_app"]
+    ).create_app(cfg, store)
+    client = app.test_client()
+
+    # the fan-out state is module-level and persists across tests
+    fanout = __import__("info.fanout", fromlist=["FEED_STATE"])
+    with fanout._lock:
+        fanout.FEED_STATE["consumers"].clear()
+
+    # an unknown token: rejected, and the consumer state untouched
+    r = client.get("/api/feed", headers=_headers("wrong"))
+    assert r.status_code == 401
+    snap = __import__(
+        "info.fanout", fromlist=["snapshot"]).snapshot()
+    assert snap["consumers"] == []
+
+    # the right token anchors and marks the consumer seen
+    client.get("/api/feed", headers=_headers("t"))
+    snap = __import__(
+        "info.fanout", fromlist=["snapshot"]).snapshot()
+    assert len(snap["consumers"]) == 1
+    assert snap["consumers"][0]["last_seen"] is not None

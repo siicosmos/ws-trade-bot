@@ -135,3 +135,44 @@ def test_client_backs_off_on_errors(monkeypatch):
             break
     # exponential: 2, 4, 8...
     assert backoffs[:3] == [2.0, 4.0, 8.0]
+
+
+def test_wrong_token_is_reported_specifically(monkeypatch):
+    """a wrong feed.token used to be fully silent: the state
+    captured a generic error that nothing rendered, and no log
+    line said why. the error now names the mismatch and lands in
+    the reader line via the state."""
+    import requests as _requests
+
+    store = _fresh_store()
+    cfg = _FeedCfg()
+    calls = []
+    state = {}
+
+    class _Resp:
+        status_code = 401
+
+        def raise_for_status(self):
+            import requests as _r
+
+            raise _r.HTTPError("401 Client Error")
+
+        def json(self):
+            return {}
+
+    def _fake_get(url, params=None, headers=None, timeout=0,
+                  verify=False):
+        calls.append(url)
+        return _Resp()
+
+    monkeypatch.setattr(_requests, "get", _fake_get)
+    monkeypatch.setattr(feedclient.time, "sleep", lambda s: None)
+
+    t = feedclient.start_feed_client(cfg, store, lambda *a: None,
+                                     state=state)
+    deadline = time.time() + 2
+    while time.time() < deadline and "error" not in state:
+        time.sleep(0.05)
+    assert state.get("ok") is False
+    assert "feed token rejected (401)" in state.get("error", "")
+    t.join(timeout=1)
