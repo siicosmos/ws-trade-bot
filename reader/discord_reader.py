@@ -794,7 +794,11 @@ def post_raw_alert(url, text):
         pass
 
 
+_last_post_fail_log = 0.0
+
+
 def post_message(url, text, token="", ts=None, verify=True, channel=""):
+    global _last_post_fail_log
     headers = {"X-Auth-Token": token} if token else {}
     sent = ts.strftime("%m-%d %H:%M") if ts else None
     try:
@@ -809,9 +813,27 @@ def post_message(url, text, token="", ts=None, verify=True, channel=""):
             },
             headers=headers, timeout=10, verify=verify,
         )
-        prefix = f"[sent {sent}] " if sent else ""
-        log(f"-> {resp.status_code} {prefix}{text[:80]}")
-        return 200 <= resp.status_code < 300
+        ok = 200 <= resp.status_code < 300
+        # the pending-retry loop re-posts every poll until the
+        # pipeline accepts - a persistent rejection (token mismatch,
+        # server down) spammed the log every ~2s per message. log
+        # the successes fully; rate-limit the failures to 1 / 30s
+        if ok:
+            prefix = f"[sent {sent}] " if sent else ""
+            log(f"-> {resp.status_code} {prefix}{text[:80]}")
+        else:
+            now = time.time()
+            if now - _last_post_fail_log > 30:
+                _last_post_fail_log = now
+                hint = (
+                    " - check reader.auth_token vs info.auth_token"
+                    if resp.status_code == 401 else ""
+                )
+                log(
+                    f"-> {resp.status_code} posting {text[:60]!r} "
+                    f"(retrying){hint}"
+                )
+        return ok
     except requests.RequestException as e:
         log(f"post failed: {e}")
         return False
@@ -1284,6 +1306,14 @@ def main():
             time.sleep(2)
 
     log(f"watching window {window.Name!r} (poll every {poll_interval}s)")
+    if not auth_token:
+        # a silent misconfig: every alert post and the heartbeat
+        # would be rejected with 401 and nothing would say why
+        log(
+            "auth_token is EMPTY - the info server will reject "
+            "every alert and heartbeat (401). set it to the info "
+            "server's info.auth_token"
+        )
     if channels:
         log(f"allowed channels: {channels}")
     if channel_servers:
