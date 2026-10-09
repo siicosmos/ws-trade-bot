@@ -4,7 +4,7 @@ import subprocess
 import threading
 import time
 
-from core.redact import format_error
+from core.redact import format_error, short_error
 
 
 # per-role update records: the info server and the consumer app
@@ -458,7 +458,7 @@ class AutoUpdater:
                 self.errors += 1
                 # the git badge renders one line - type + message
                 # there, the traceback in the log
-                self.last_result = f"error: {type(e).__name__}: {e}"
+                self.last_result = f"error: {short_error(e)}"
                 print(f"auto-update error: {format_error(e)}")
 
     def check_once(self) -> bool:

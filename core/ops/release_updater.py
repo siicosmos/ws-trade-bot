@@ -15,9 +15,9 @@ import json
 import os
 import shutil
 import time
-
-from core.redact import format_error
 import zipfile
+
+from core.redact import format_error, short_error
 
 import requests
 
@@ -200,7 +200,7 @@ class ReleaseUpdater:
                 self.errors += 1
                 # the git badge renders one line - type + message
                 # there, the traceback in the log
-                self.last_result = f"error: {type(e).__name__}: {e}"
+                self.last_result = f"error: {short_error(e)}"
                 print(f"auto-update error: {format_error(e)}")
 
     def _token(self):

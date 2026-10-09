@@ -1,6 +1,7 @@
 import threading
 import time
 
+from core.redact import short_error
 from core.parser import Alert
 
 # the live quote provider, held for the web layer (the spx
@@ -33,7 +34,7 @@ def make_quote_provider(cfg, account):
         except Exception as e:
             print(
                 f"quotes: moomoo unavailable "
-                f"({type(e).__name__}: {e}) - falling back to "
+                f"({short_error(e)}) - falling back to "
                 f"Wealthsimple option chains"
             )
     ws_fn = make_ws_quote_provider(cfg, account)
@@ -74,7 +75,7 @@ def make_ws_quote_provider(cfg, account):
     except Exception as e:
         print(
             f"quotes: Wealthsimple unavailable "
-            f"({type(e).__name__}: {e}) - run "
+            f"({short_error(e)}) - run "
             f"scripts/ws_login.py to enable auto stop-losses"
         )
         return None
@@ -213,7 +214,7 @@ class MoomooQuoteProvider:
                 ret, data = self._context().get_market_snapshot(codes)
             except Exception as e:
                 # the reconnect path (same as option quotes)
-                self._index_error = f"{type(e).__name__}: {e}"
+                self._index_error = short_error(e)
                 try:
                     self._ctx.close()
                 except Exception:
@@ -335,7 +336,7 @@ class MoomooQuoteProvider:
                 port=self.cfg.quotes.moomoo_port,
             )
         except Exception as e:
-            self._conn_slot["err"] = f"{type(e).__name__}: {e}"
+            self._conn_slot["err"] = short_error(e)
             self._ctx_backoff_until = time.time() + 30.0
 
     @staticmethod

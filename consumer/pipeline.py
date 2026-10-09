@@ -1,5 +1,6 @@
 import hashlib
 
+from core.redact import short_error
 from consumer.trading.executor import ExecutionResult, account_sizing
 from core.ops.notify import (
     notify_alert,
@@ -213,7 +214,7 @@ def process_alert(
     except Exception as e:
         store.record_trade(
             executor.mode, alert.action, alert.ticker, 0, None,
-            alert, "error", f"{type(e).__name__}: {e}", key,
+            alert, "error", short_error(e), key,
         )
         notify_discord(
             cfg.discord.trade_alert_webhook_url,

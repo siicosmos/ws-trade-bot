@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 import requests
 
 from core.ops.supervise import supervised
-from core.redact import redact, redact_url
+from core.redact import redact_url, short_error
 
 # how hard the push tries before leaving the alert to the
 # consumer's pull cursor
@@ -103,10 +103,8 @@ def _push(consumer, row, verify_ssl):
                 return True, None
             last_error = f"HTTP {r.status_code}"
         except Exception as e:
-            last_error = redact_url(
-                redact(f"{type(e).__name__}: {e}", *_secrets),
-                *_secrets,
-            )
+            last_error = redact_url(short_error(e, *_secrets),
+                                    *_secrets)
         if attempt < PUSH_ATTEMPTS - 1:
             time.sleep(PUSH_RETRY_SECONDS)
     return False, last_error

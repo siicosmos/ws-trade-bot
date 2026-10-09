@@ -15,6 +15,7 @@ from datetime import timedelta
 
 from flask import Flask, Response, g, jsonify, request, session
 
+from core.redact import short_error
 from consumer.dashboard import (
     LOGIN_HTML, dashboard_css, dashboard_html,
 )
@@ -653,7 +654,7 @@ def create_app(cfg, store: Store, risk, executor, account=None,
                     error = getattr(provider, "_index_error", None)
             except Exception as e:
                 price = None
-                error = f"{type(e).__name__}: {e}"
+                error = short_error(e)
         if not price:
             # ws fallback: a live quote straight from the ws api
             # (the index when listed, else the spy etf x ratio)
