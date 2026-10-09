@@ -85,12 +85,8 @@ def _purge_login_fails(now):
 def load_secret_key(config_path):
     if not config_path:
         return secrets.token_hex(32)
-    # the consumer's login-session signing key - lives with the
-    # consumer app, named for the role (the info server has no
-    # sessions)
     key_file = os.path.join(
-        os.path.dirname(os.path.abspath(config_path)),
-        ".consumer_session_key",
+        os.path.dirname(os.path.abspath(config_path)), ".session_key"
     )
     try:
         with open(key_file, encoding="utf-8") as f:

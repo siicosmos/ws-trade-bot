@@ -423,7 +423,7 @@ def _startup_banner():
         )
     )
     try:
-        with open(os.path.join(root, ".last_update_info.json"),
+        with open(os.path.join(root, "info", ".last_update_info.json"),
                   encoding="utf-8") as f:
             rec = json.load(f)
         if (
@@ -1031,9 +1031,10 @@ def repo_root():
     return os.path.abspath(os.path.join(here, ".."))
 
 
-# the seen-set lives at the repo root
+# the seen-set lives in the reader's own folder - git pulls never
+# touch untracked files, so the dedupe history survives updates
 SEEN_FILE = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", ".reader_seen.json"
+    os.path.dirname(os.path.abspath(__file__)), ".reader_seen.json"
 )
 SEEN_RETAIN_SECONDS = 48 * 3600
 

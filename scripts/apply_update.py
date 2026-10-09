@@ -72,8 +72,11 @@ def apply(root):
     for d in CODE_DIRS:
         shutil.rmtree(os.path.join(root, d), ignore_errors=True)
         if os.path.isdir(os.path.join(staging, d)):
+            # dirs_exist_ok: a partial rmtree (a locked file) must
+            # not leave the copytree failing on an existing dir -
+            # the staged content fully overwrites whatever survived
             shutil.copytree(os.path.join(staging, d),
-                            os.path.join(root, d))
+                            os.path.join(root, d), dirs_exist_ok=True)
     for name in CODE_FILES:
         src = os.path.join(staging, name)
         if os.path.exists(src):

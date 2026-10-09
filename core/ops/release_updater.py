@@ -21,8 +21,7 @@ import requests
 
 from core.ops.updater import update_record_path  # noqa: E402
 
-# the consumer's release marker lives with the consumer app
-VERSION_FILE = os.path.join("consumer", "VERSION")
+VERSION_FILE = "VERSION"
 # the consumer's own pending marker + update record - the info
 # server shares the checkout on the owner's box and must not
 # clobber them
@@ -229,9 +228,6 @@ class ReleaseUpdater:
             "repo": slug,
         }
         try:
-            os.makedirs(os.path.dirname(
-                os.path.join(self.root, VERSION_FILE)
-            ), exist_ok=True)
             with open(os.path.join(self.root, VERSION_FILE), "w",
                       encoding="utf-8") as f:
                 json.dump(ver, f, indent=2)
