@@ -5,7 +5,6 @@ login."""
 import os
 import sys
 import tempfile
-import time
 
 import pytest
 
@@ -18,10 +17,12 @@ pytestmark = pytest.mark.essential
 
 TOKEN = "s3cret-feed-token-value"
 
-# never set: a fake requests.get parks here so the feed thread
-# stops emitting without dying (a raised SystemExit would trip
-# pytest's unhandled-thread-exception warning)
-_PARK = __import__("threading").Event()
+
+class _StopLoop(BaseException):
+    """Ends the feed loop's single iteration: raised by the
+    patched time.sleep (outside the loop's `except Exception`),
+    so the test runs _loop synchronously - no threads to park or
+    leak across tests."""
 
 
 # ------------------------------------------------- tls defaults
@@ -83,30 +84,18 @@ def test_push_verify_ssl_defaults_to_true(tmp_path):
     assert cfg.consumers[0].push_verify_ssl is True
 
 
-def _run_feed_loop(monkeypatch, cfg, store, state=None):
-    """Start the feed loop with a capped sleep (the real backoff
-    would stall the test); the fake requests.get parks the thread
-    once its scenario is done (see _PARK)."""
+def _run_one_loop_iteration(monkeypatch, cfg, store, state=None):
+    """Run feedclient._loop until its first sleep: the fake
+    requests.get raises (or returns) once, the patched sleep then
+    ends the loop - synchronously, in the test's own thread."""
     from consumer import feedclient
 
-    real_sleep = time.sleep
-    monkeypatch.setattr(feedclient, "time", type(
-        "T", (), {
-            "sleep": staticmethod(
-                lambda s: real_sleep(min(s, 0.01))),
-            "time": staticmethod(time.time),
-        },
-    )())
-    import threading
+    def _stop(seconds):
+        raise _StopLoop()
 
-    t = threading.Thread(
-        target=feedclient._loop,
-        args=(cfg, store, print) + ((state,)
-                                    if state is not None else ()),
-        daemon=True,
-    )
-    t.start()
-    return t
+    monkeypatch.setattr(feedclient.time, "sleep", _stop)
+    with pytest.raises(_StopLoop):
+        feedclient._loop(cfg, store, print, state)
 
 
 def test_feedclient_defaults_verify_to_true(monkeypatch, capsys):
@@ -123,19 +112,14 @@ def test_feedclient_defaults_verify_to_true(monkeypatch, capsys):
 
     def _fake_get(url, params=None, headers=None, timeout=0, verify=True):
         seen["verify"] = verify
-        _PARK.wait()   # park - the thread never emits again
-        raise SystemExit
+        raise RuntimeError("stop")
 
     import requests as _requests
     monkeypatch.setattr(_requests, "get", _fake_get)
-    t = _run_feed_loop(monkeypatch, cfg, _fresh_store())
-    deadline = time.time() + 2
-    while time.time() < deadline and "verify" not in seen:
-        time.sleep(0.05)
+    _run_one_loop_iteration(monkeypatch, cfg, _fresh_store())
     assert seen.get("verify") is True
     out = capsys.readouterr().out
     assert "verification is DISABLED" not in out
-    t.join(timeout=1)
 
 
 def test_feedclient_warns_when_verification_off(monkeypatch, capsys):
@@ -149,22 +133,14 @@ def test_feedclient_warns_when_verification_off(monkeypatch, capsys):
     cfg = type("C", (), {"feed": _Feed()})()
 
     def _fake_get(url, params=None, headers=None, timeout=0, verify=True):
-        _PARK.wait()   # park - the warning already printed
-        raise SystemExit
+        raise RuntimeError("stop")
 
     import requests as _requests
     monkeypatch.setattr(_requests, "get", _fake_get)
-    t = _run_feed_loop(monkeypatch, cfg, _fresh_store())
-    found = ""
-    deadline = time.time() + 2
-    while time.time() < deadline:
-        found += capsys.readouterr().out
-        if "verification is DISABLED" in found:
-            break
-        time.sleep(0.05)
-    assert "verification is DISABLED" in found
-    assert "feed.verify_ssl" in found
-    t.join(timeout=1)
+    _run_one_loop_iteration(monkeypatch, cfg, _fresh_store())
+    out = capsys.readouterr().out
+    assert "verification is DISABLED" in out
+    assert "feed.verify_ssl" in out
 
 
 # ---------------------------------------------------- redaction
@@ -237,25 +213,17 @@ def test_feedclient_error_state_never_carries_token(monkeypatch, capsys):
 
     cfg = type("C", (), {"feed": _Feed()})()
     state = {}
-    calls = {"n": 0}
 
     def _fake_get(url, params=None, headers=None, timeout=0, verify=True):
-        calls["n"] += 1
-        if calls["n"] > 1:
-            _PARK.wait()   # error path ran - park the thread
         raise RuntimeError(f"handshake with {TOKEN} at {url} failed")
 
     import requests as _requests
     monkeypatch.setattr(_requests, "get", _fake_get)
-    t = _run_feed_loop(monkeypatch, cfg, _fresh_store(), state=state)
-    deadline = time.time() + 2
-    while time.time() < deadline and "error" not in state:
-        time.sleep(0.05)
+    _run_one_loop_iteration(monkeypatch, cfg, _fresh_store(), state=state)
     assert state.get("error")
     assert TOKEN not in state["error"]
     out = capsys.readouterr().out
     assert TOKEN not in out
-    t.join(timeout=1)
 
 
 # ------------------------------------------------- info login
@@ -293,10 +261,11 @@ def test_info_login_flow_and_session_write():
     # the dashboard and the reads open for the session
     assert client.get("/").status_code == 200
     assert client.get("/api/signals").status_code == 200
-    # a session can write (no token header needed)
+    # a session can write (no token header needed) - verified
+    # through the public read, not the store's internal meta key
     r = client.post("/api/spx-levels", json={"text": "Pivot 6800"})
     assert r.status_code == 200
-    assert store.meta_get("spx_levels_text") == "Pivot 6800"
+    assert client.get("/api/levels").get_json()["text"] == "Pivot 6800"
     # the settings endpoint trusts the session (no masking)
     s = client.get("/api/settings").get_json()
     assert "discord" in s

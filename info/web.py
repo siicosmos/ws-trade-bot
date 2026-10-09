@@ -422,10 +422,12 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
     # --------------------------------------------------------
     @app.get("/api/settings")
     def api_settings_get():
-        # the dashboard requires login, but the webhook urls are
-        # bearer credentials - only a trusted request (a session
-        # or the write token) sees the real values; anything else
-        # gets a placeholder
+        # the session/token guard (install_auth) already 401s
+        # every unauthenticated api request, so a request reaching
+        # this handler is always trusted - the mask below is a
+        # second layer that only fires if that guard ever loosens
+        # (the webhook urls are bearer credentials; they must
+        # never ride out on a read that is not explicitly trusted)
         trusted = _trusted()
         mask = "••••••••"
 

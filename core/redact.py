@@ -10,6 +10,10 @@ from any string before it is stored, printed, or reported.
 
 from urllib.parse import urlsplit, urlunsplit
 
+import logging
+
+log = logging.getLogger("redact")
+
 
 # a secret shorter than this is skipped: replacing a 1-2 char
 # token would mangle the surrounding text (every "t" in the
@@ -47,6 +51,8 @@ def redact_url(url, *secrets):
                 (parts.scheme, netloc, parts.path, parts.query,
                  parts.fragment)
             )
-    except ValueError:
-        pass
+    except ValueError as e:
+        # a malformed url (e.g. a bad port) - the text is still
+        # token-scrubbed above; note the parse failure at debug
+        log.debug("redact_url: urlsplit failed (%s)", e)
     return out

@@ -16,29 +16,9 @@ from consumer.pipeline import process_alert
 from consumer.trading.risk import RiskEngine
 from core.store import Store
 
-
-class ConfigStub:
-    def __init__(self, trading, accounts=None, auth_token=""):
-        self.trading = trading
-        self.pipeline = type("PI", (), {"auth_token": auth_token})()
-        self.auto_update = type("AU", (), {
-            "enabled": False, "interval_seconds": 600})()
-        self.quotes = type("Q", (), {
-            "enabled": False, "provider": "ws",
-            "moomoo_host": "", "moomoo_port": 11111})()
-        self.discord = type("D", (), {
-            "trade_alert_webhook_url": "",
-            "consumer_log_webhook_url": "",
-            "update_webhook_url": "", "notify": True})()
-        self.parser = type("P", (), {"custom_patterns": []})()
-        self.wealthsimple = WealthsimpleConfig(accounts=accounts or [])
-        self.reader = ReaderConfig()
-
-
-def _fresh_store():
-    fd, path = tempfile.mkstemp(suffix=".db")
-    os.close(fd)
-    return Store(path)
+# the shared stubs live in conftest.py - re-exported here so the
+# modules importing them from test_pipeline keep working
+from conftest import ConfigStub, _fresh_store  # noqa: F401
 
 
 def _setup(**trading_kw):
