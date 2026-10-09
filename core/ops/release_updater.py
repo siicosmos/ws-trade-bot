@@ -344,16 +344,16 @@ class ReleaseUpdater:
             shutil.rmtree(staging, ignore_errors=True)
             return False
 
-        with open(os.path.join(self.root, PENDING_FILE), "w",
-                      encoding="utf-8") as f:
-            json.dump(
-                {
-                    "staging": STAGING_DIR,
-                    "commit": remote,
-                    "ts": time.time(),
-                },
-                f,
-            )
+        from core.ops.updater import atomic_write_json
+
+        atomic_write_json(
+            os.path.join(self.root, PENDING_FILE),
+            {
+                "staging": STAGING_DIR,
+                "commit": remote,
+                "ts": time.time(),
+            },
+        )
 
         from core.ops.notify import notify_discord
 

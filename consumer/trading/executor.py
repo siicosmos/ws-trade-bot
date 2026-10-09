@@ -546,7 +546,13 @@ class WealthsimpleExecutor:
         for exp in expiries:
             if not isinstance(exp, str):
                 continue
-            if exp == alert.expiry or exp.endswith(alert.expiry[5:]):
+            # exact match, or a year-less chain entry ("MM-DD")
+            # matching the alert's month-day - a full-date chain
+            # entry must match the year too (the old bare-suffix
+            # match resolved the wrong contract across years)
+            if exp == alert.expiry or (
+                len(exp) == 5 and exp == alert.expiry[5:]
+            ):
                 chosen = exp
                 break
         if chosen is None:

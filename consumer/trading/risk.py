@@ -28,7 +28,7 @@ class RiskEngine:
                     return False, "daily trade limit reached"
 
             if t.cooldown_seconds > 0:
-                last = self.store.last_buy_time()
+                last = self.store.last_buy_time(mode)
                 if last:
                     elapsed = (
                         datetime.now(timezone.utc) - datetime.fromisoformat(last)

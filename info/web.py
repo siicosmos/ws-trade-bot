@@ -197,7 +197,9 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
         try:
             since = int(raw_since)
         except (TypeError, ValueError):
-            since = 0
+            # an unparsable cursor must not fall back to 0 - that
+            # would replay the entire alert history to the consumer
+            return jsonify({"error": "invalid since"}), 400
         try:
             wait = min(
                 max(float(request.args.get("wait", 0) or 0), 0.0), 25.0
@@ -206,9 +208,14 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
             wait = 0.0
         deadline = time.time() + wait
         rows = store.signals_since(since)
-        while not rows and time.time() < deadline:
-            time.sleep(0.3)
-            rows = store.signals_since(since)
+        from .ingest import FEED_WAKE
+
+        with FEED_WAKE:
+            while not rows and time.time() < deadline:
+                # woken by ingest on every recorded signal; the 1s
+                # slice is a safety net against a missed wake
+                FEED_WAKE.wait(timeout=min(deadline - time.time(), 1.0))
+                rows = store.signals_since(since)
         from core.parser import parse_alert
 
         alerts = []
@@ -370,10 +377,14 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
         # loaded the settings without the token means "unchanged"
         mask = "••••••••"
 
+        # validate everything first, then apply - the old order
+        # mutated cfg before the validation result was known, so a
+        # 400 left the in-memory config diverging from disk
+        pending = {}
+
         au = data.get("auto_update") or {}
         if "enabled" in au:
-            cfg.auto_update.enabled = bool(au["enabled"])
-            applied["auto_update.enabled"] = cfg.auto_update.enabled
+            pending["auto_update.enabled"] = bool(au["enabled"])
         if "interval_seconds" in au:
             try:
                 value = int(au["interval_seconds"])
@@ -384,8 +395,7 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
                     "auto_update.interval_seconds: must be 30-86400"
                 )
             else:
-                cfg.auto_update.interval_seconds = value
-                applied["auto_update.interval_seconds"] = value
+                pending["auto_update.interval_seconds"] = value
 
         dc = data.get("discord") or {}
         for field in (
@@ -401,11 +411,18 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
                         f"discord.{field}: must be an https URL"
                     )
                 else:
-                    setattr(cfg.discord, field, url)
-                    applied[f"discord.{field}"] = url
+                    pending[f"discord.{field}"] = url
 
         if errors:
             return jsonify({"status": "error", "errors": errors}), 400
+
+        for key, value in pending.items():
+            section, field = key.split(".", 1)
+            if section == "auto_update":
+                setattr(cfg.auto_update, field, value)
+            else:
+                setattr(cfg.discord, field, value)
+            applied[key] = value
         if applied and config_path:
             try:
                 with open(config_path, encoding="utf-8") as f:

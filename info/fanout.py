@@ -73,7 +73,7 @@ def snapshot():
         }
 
 
-def _push(cfg, consumer, row, verify_ssl):
+def _push(consumer, row, verify_ssl):
     """Deliver one signal in the reader's /alert payload shape."""
     try:
         ts = datetime.fromisoformat(row["ts"]).timestamp()
@@ -104,17 +104,30 @@ def _push(cfg, consumer, row, verify_ssl):
     return False, last_error
 
 
+# one fan-out pass spends at most this much wall clock - a dead
+# consumer (3 attempts x 5s timeout + retries ~= 19s per row) must
+# not starve the healthy ones for minutes; the cut consumer's
+# cursor stays where it stopped and the next tick (plus the pull
+# cursor) backfills the rest
+TICK_BUDGET_SECONDS = 30
+
+
 def _tick(store, consumers, cursors):
     """One fan-out pass: push every signal past each consumer's
     cursor and advance it (even on failure - the pull cursor
     backfills)."""
+    deadline = time.time() + TICK_BUDGET_SECONDS
     for c in consumers:
+        if time.time() >= deadline:
+            break
         rows = store.signals_since(cursors.get(c.token, 0), limit=50)
         if not rows:
             continue
         verify = bool(getattr(c, "push_verify_ssl", False))
         for row in rows:
-            ok, err = _push(cfg=None, consumer=c, row=row,
+            if time.time() >= deadline:
+                break
+            ok, err = _push(consumer=c, row=row,
                             verify_ssl=verify)
             record_push(c.label, ok, err)
             cursors[c.token] = row["id"]

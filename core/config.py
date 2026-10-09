@@ -239,6 +239,10 @@ class ConsumerEntry:
     label: str = ""
     token: str = ""
     push_url: str = ""
+    # verify the consumer's TLS certificate on push (the self
+    # signed dev certs need this off; a proper CA or Tailscale
+    # cert turns it on)
+    push_verify_ssl: bool = False
 
 
 @dataclass
@@ -387,6 +391,7 @@ def load_config(path: str) -> Config:
                 label=str(entry.get("label", "")).strip(),
                 token=str(entry.get("token", "")).strip(),
                 push_url=str(entry.get("push_url", "")).strip(),
+                push_verify_ssl=bool(entry.get("push_verify_ssl", False)),
             )
         )
 

@@ -398,8 +398,14 @@ class Store:
                 (cutoff,),
             ).fetchone()[0]
             if gone_s or gone_t:
+                # never empty the signals table: rowids restart at 1
+                # on an empty table, which would rewind every feed
+                # consumer's cursor (they would silently stop
+                # receiving until they re-anchor) - keep the newest
+                # row as the epoch anchor
                 self._conn.execute(
-                    "DELETE FROM signals WHERE ts < ?", (cutoff,)
+                    "DELETE FROM signals WHERE ts < ? AND rowid < "
+                    "(SELECT MAX(rowid) FROM signals)", (cutoff,)
                 )
                 self._conn.execute(
                     "DELETE FROM trades WHERE ts < ?", (cutoff,)
@@ -422,12 +428,20 @@ class Store:
             ).fetchone()
             return row[0] if row else 0
 
-    def last_buy_time(self) -> str:
+    def last_buy_time(self, mode: str = None) -> str:
+        """the last executed BUY - scoped to the mode when given
+        (a paper buy must not start the live cooldown)."""
         with self._conn:
-            row = self._conn.execute(
-                "SELECT ts FROM trades WHERE action = 'BUY' AND status = 'executed' "
-                "ORDER BY id DESC LIMIT 1"
-            ).fetchone()
+            query = (
+                "SELECT ts FROM trades WHERE action = 'BUY' "
+                "AND status = 'executed'"
+            )
+            params = []
+            if mode:
+                query += " AND mode = ?"
+                params.append(mode)
+            query += " ORDER BY id DESC LIMIT 1"
+            row = self._conn.execute(query, params).fetchone()
             return row[0] if row else None
 
     def recent_trade(self, dedupe_key: str, window_minutes: int):
@@ -616,6 +630,10 @@ class Store:
                 self._record_close(mode, realized)
 
     def _record_close(self, mode: str, realized: float):
+        # runs inside apply_position's transaction - opening a
+        # second `with self._conn` here would commit the outer
+        # write mid-flight (a later failure would leave the streak
+        # committed but the position row not)
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         streak = self._get_streak_unlocked(mode)
         if streak["date"] != today:
@@ -624,15 +642,14 @@ class Store:
             streak["count"] += 1
         else:
             streak["count"] = 0
-        with self._conn:
-            self._conn.execute(
-                "INSERT INTO meta (key, value) VALUES (?, ?) "
-                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-                (
-                    f"loss_streak:{mode}",
-                    json.dumps(streak),
-                ),
-            )
+        self._conn.execute(
+            "INSERT INTO meta (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (
+                f"loss_streak:{mode}",
+                json.dumps(streak),
+            ),
+        )
 
     def _get_streak_unlocked(self, mode: str) -> dict:
         row = self._conn.execute(
@@ -659,16 +676,23 @@ class Store:
         return int(streak.get("count") or 0)
 
     def update_peak_bid(self, mode, contract_key, bid, account="default"):
-        self._touch()
-        self._positions_version += 1
-        self._positions_cache.clear()
         with self._write_lock, self._conn:
+            before = self._conn.total_changes
             self._conn.execute(
                 "UPDATE positions SET peak_bid = MAX("
                 "COALESCE(peak_bid, COALESCE(avg_premium, 0)), ?) "
                 "WHERE mode = ? AND account = ? AND contract_key = ?",
                 (bid, mode, account, contract_key),
             )
+            # the cache bumps ride the lock (they raced
+            # apply_position outside it) and only fire when the
+            # row actually changed - the stop monitor calls this
+            # for every position every cycle and each bump
+            # invalidated the dashboard's summary cache
+            if self._conn.total_changes > before:
+                self._touch()
+                self._positions_version += 1
+                self._positions_cache.clear()
 
     def open_risk(self, mode: str, account=None) -> float:
         # option positions only: stocks carry no option-style

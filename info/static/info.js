@@ -63,7 +63,7 @@ async function jget(url, auth=false) {
     showReconnect(true);
     throw e;
   }
-  if (r.status === 401) { location.href = "/login"; throw new Error("auth"); }
+  if (r.status === 401) { throw new Error("auth"); }
   try {
     const data = await r.json();
     showReconnect(false);
@@ -252,11 +252,16 @@ async function loadGit() {
   } catch (e) { /* transient */ }
 }
 
+let levelsTouched = false;
+
 async function loadLevels() {
   try {
     const d = await jget("/api/levels");
-    if (d.text != null && document.getElementById("levels-input").value === "") {
-      document.getElementById("levels-input").value = d.text;
+    const el = document.getElementById("levels-input");
+    // prefill only while the user has not touched the field - the
+    // 30s poll used to resurrect cleared text mid-edit
+    if (d.text != null && el.value === "" && !levelsTouched) {
+      el.value = d.text;
     }
   } catch (e) { /* transient */ }
 }
@@ -404,6 +409,11 @@ async function saveSettings() {
     alert((d.errors || ["save failed"]).join("\n"));
   }
 }
+
+// the user editing the field stops the 30s poll from prefilling it
+document.getElementById("levels-input").addEventListener(
+  "input", function () { levelsTouched = true; }
+);
 
 document.getElementById("levels-save").onclick = async function () {
   const btn = document.getElementById("levels-save");

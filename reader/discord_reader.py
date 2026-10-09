@@ -163,10 +163,14 @@ def internet_offset():
         import struct
 
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.settimeout(5)
-        s.sendto(b"\x1b" + 47 * b"\0", ("pool.ntp.org", 123))
-        data, _ = s.recvfrom(1024)
-        s.close()
+        try:
+            s.settimeout(5)
+            s.sendto(b"\x1b" + 47 * b"\0", ("pool.ntp.org", 123))
+            data, _ = s.recvfrom(1024)
+        finally:
+            # a recv timeout used to leak the socket (a new one
+            # every 600s clock check)
+            s.close()
         true_unix = struct.unpack("!12I", data)[10] - 2208988800
         return true_unix - time.time()
     except OSError:
@@ -445,7 +449,13 @@ def _startup_banner():
 
 def log(msg):
     line = f"{time.strftime('%d/%b/%Y %H:%M:%S')} {msg}"
-    print(line)
+    try:
+        print(line)
+    except UnicodeEncodeError:
+        # a redirected .bat console (cp1252/cp936) cannot encode
+        # every discord string - a crash here escaped the main
+        # loop's UIA handler and killed the reader
+        print(line.encode("ascii", "replace").decode("ascii"))
     if _log_hook is not None:
         _log_hook.add(line)
     _append_reader_log(line)
@@ -751,7 +761,7 @@ def current_messages(container, max_items=40, floor=None):
     return texts
 
 
-def new_messages(current, tail):
+def new_messages(current, tail, seen=None):
     if not current:
         return []
     if not tail:
@@ -760,6 +770,13 @@ def new_messages(current, tail):
     for i in range(len(current) - 1, -1, -1):
         if current[i] == last:
             return current[i + 1 :]
+    # the tail anchor scrolled out of the window (a chatter burst
+    # pushed it off) - the old behaviour returned nothing and
+    # every new message was skipped until a channel switch forced
+    # a resync. fall back to what this window shows that was never
+    # seen (the dedupe set gates the delivery downstream)
+    if seen is not None:
+        return [m for m in current[-10:] if m[0] not in seen]
     return []
 
 
@@ -1232,8 +1249,13 @@ def main():
         seen.add(text)
         seen_at[text] = time.time()
         if len(seen) > 5000:
-            seen.clear()
-            seen_at.clear()
+            # prune the oldest entries instead of clearing: a full
+            # wipe forgot the whole dedupe history at once and the
+            # next resync re-delivered recent messages
+            oldest = sorted(seen_at.items(), key=lambda kv: kv[1])
+            for text_old, _ in oldest[:1000]:
+                seen.discard(text_old)
+                seen_at.pop(text_old, None)
         save_seen(seen_at)
     log("looking for Discord window...")
     window = None
@@ -1288,7 +1310,10 @@ def main():
                     mtime = os.path.getmtime(config_path)
                 except OSError:
                     mtime = None
-                if config_mtime and mtime and mtime != config_mtime:
+                if config_mtime is not None and mtime != config_mtime:
+                    # a config created AFTER startup (mtime was
+                    # None) must be watched too - the old guard
+                    # `config_mtime and ...` never watched it
                     log("reader/reader.config.yaml changed - restarting "
                         "reader to apply it")
                     notify_restart(
@@ -1639,7 +1664,7 @@ def main():
                 ]
                 resync = False
             else:
-                fresh = new_messages(msgs, tail)
+                fresh = new_messages(msgs, tail, seen)
             if fresh:
                 tail = msgs
                 for text, ts in fresh:

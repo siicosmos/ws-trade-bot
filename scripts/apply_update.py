@@ -114,12 +114,12 @@ def apply(root):
     # 4. record + clear the staging area
     commit = str(pending.get("commit") or "?")
     try:
-        with open(os.path.join(root, UPDATE_RECORD), "w",
-                      encoding="utf-8") as f:
-            json.dump(
-                {"how": "release", "commit": commit, "ts": time.time()},
-                f,
-            )
+        from core.ops.updater import atomic_write_json
+
+        atomic_write_json(
+            os.path.join(root, UPDATE_RECORD),
+            {"how": "release", "commit": commit, "ts": time.time()},
+        )
     except OSError:
         pass
     shutil.rmtree(staging, ignore_errors=True)

@@ -681,3 +681,20 @@ def test_oversell_clamps_realized_to_held_contracts():
     # the today accumulator (lotto budget / daily-loss breaker)
     # carries the clamped number too
     assert store.realized_today("paper") == 500.0
+
+
+def test_cooldown_is_mode_scoped():
+    """a paper buy must not start the live cooldown (and vice
+    versa) - the gates run per mode on the same store."""
+    store = _fresh_store()
+    cfg = ConfigStub(TradingConfig(mode="live", cooldown_seconds=300,
+                                   dedupe_window_minutes=0))
+    account = PaperAccount(cfg, store)
+    risk = RiskEngine(cfg, store, account)
+
+    alert = parse_alert("BOUGHT 0DTE SPY 759c @ 1.5")
+    store.record_trade("paper", "BUY", "SPY", 1, 1.5, alert,
+                       "executed", "paper buy")
+
+    ok, reason = risk.evaluate(parse_alert("BOUGHT 0DTE SPY 760c @ 1.5"))
+    assert ok, f"paper buy leaked into the live cooldown: {reason}"

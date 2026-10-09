@@ -40,6 +40,18 @@ function esc(s) {
   return out;
 }
 
+function jsq(s) {
+  // esc() is html-safe but NOT js-string-safe inside an inline
+  // onclick attribute: the browser html-decodes the attribute
+  // value before the js parser runs, so a label containing '
+  // re-terminates the string (broken buttons, script injection).
+  // jsq escapes the js string first, then html-escapes - the
+  // decoded attribute value is a correctly quoted js literal.
+  return esc(
+    String(s ?? "").split("\\").join("\\\\").split("'").join("\\'")
+  );
+}
+
 function showReconnect(on) {
   const el = document.getElementById("reconnect");
   if (el) el.style.display = on ? "block" : "none";
@@ -663,8 +675,8 @@ function renderSummary(data) {
       '<div class="label" style="display:flex;justify-content:space-between;align-items:center;gap:6px;min-width:0">' +
       '<span class="cardtitle" title="' + esc(a.label) + '">' + esc(a.label) + '</span>' +
       '<span style="display:flex;gap:4px;flex-shrink:0;align-items:center">' +
-      '<button class="cur-toggle" title="flip account value currency" onclick="flipCardCurrency(\'' + esc(a.label) + '\')">' + cur.toUpperCase() + ' ⇄</button> ' +
-      '<button class="cur-toggle" title="' + (hidden ? "show account value" : "hide account value") + '" onclick="toggleCardHidden(\'' + esc(a.label) + '\')">' + (hidden ? EYE_OFF_SVG : EYE_SVG) + '</button>' +
+      '<button class="cur-toggle" title="flip account value currency" onclick="flipCardCurrency(\'' + jsq(a.label) + '\')">' + cur.toUpperCase() + ' ⇄</button> ' +
+      '<button class="cur-toggle" title="' + (hidden ? "show account value" : "hide account value") + '" onclick="toggleCardHidden(\'' + jsq(a.label) + '\')">' + (hidden ? EYE_OFF_SVG : EYE_SVG) + '</button>' +
       '</span></div>' +
       '<div class="value">' + (hidden ? "••••••" :
         (showUsd ? fmtMoney(a.usd_value) + " USD" : fmtMoney(a.value) + " CAD") +
@@ -691,7 +703,7 @@ function renderSummary(data) {
         ? '<div class="sub mrow"><span class="cell"><span class="lab">total margin used</span><span class="val">' + (hidden ? "••••••" :
             fmtMoney(a.margin_used_usd || 0) + ' usd' +
             ' · ' + fmtMoney(a.margin_used_cad || 0) + ' cad') +
-          '</span></span><span class="cell" style="cursor:pointer" onclick="toggleMarginBreakdown(' + cardIdx + ', \'' + esc(a.label) + '\')"><span class="lab">margin requirement</span><span class="val">' + (hidden ? "••••••" : fmtMoney(a.margin_requirement) + " cad") + ' <span id="mbda-' + cardIdx + '">' + (mbdOpen === a.label ? "▼" : "▲") + '</span></span></span></div>' +
+          '</span></span><span class="cell" style="cursor:pointer" onclick="toggleMarginBreakdown(' + cardIdx + ', \'' + jsq(a.label) + '\')"><span class="lab">margin requirement</span><span class="val">' + (hidden ? "••••••" : fmtMoney(a.margin_requirement) + " cad") + ' <span id="mbda-' + cardIdx + '">' + (mbdOpen === a.label ? "▼" : "▲") + '</span></span></span></div>' +
           '<div id="mbd-' + cardIdx + '" class="sub" style="display:' + (mbdOpen === a.label ? "block" : "none") + ';color:var(--muted);font-size:11px;white-space:pre-line">' + breakdownText(a.margin_breakdown, hidden) + '</div>' +
           '<div class="sub mrow"><span class="cell"><span class="lab">portfolio value</span><span class="val">' + (hidden ? "••••••" : (a.portfolio_value != null ? fmtMoney(a.portfolio_value) + " cad" : '')) +
           '</span></span><span class="cell"><span class="lab">max buying power</span><span class="val">' + (hidden ? "••••••" : fmtMoney(a.max_buying_power || 0) + " cad") + '</span></span></div>'
@@ -740,10 +752,10 @@ function renderSummary(data) {
       pc.innerHTML =
         '<div class="label" style="display:flex;justify-content:space-between;align-items:center;gap:6px;min-width:0"><span class="cardtitle">paper · ' + esc(a.label).replace(/-/g, "\u2011") + '</span>' +
         '<span style="display:flex;gap:4px;flex-shrink:0;align-items:center">' +
-        '<button class="mini-toggle" title="flip paper value currency" onclick="flipPaperCurrency(\'' + esc(a.label) + '\')">' + pcur.toUpperCase() + ' ⇄</button> ' +
-        '<button class="mini-toggle" onclick="togglePaper(\'' + esc(a.label) + '\')">' + "holdings " + (open ? "▼" : "▲") + '</button> ' +
-        (isAdmin() ? '<button class="mini-toggle" title="paper account settings: reset, resize, adjust cash + holdings" onclick="openPaperSettings(\'' + esc(a.label) + '\')">⚙</button> ' : '') +
-        '<button class="mini-toggle" title="' + (phidden ? "show paper value" : "hide paper value") + '" onclick="togglePaperHidden(\'' + esc(a.label) + '\')">' + (phidden ? EYE_OFF_SVG : EYE_SVG) + '</button></span></div>' +
+        '<button class="mini-toggle" title="flip paper value currency" onclick="flipPaperCurrency(\'' + jsq(a.label) + '\')">' + pcur.toUpperCase() + ' ⇄</button> ' +
+        '<button class="mini-toggle" onclick="togglePaper(\'' + jsq(a.label) + '\')">' + "holdings " + (open ? "▼" : "▲") + '</button> ' +
+        (isAdmin() ? '<button class="mini-toggle" title="paper account settings: reset, resize, adjust cash + holdings" onclick="openPaperSettings(\'' + jsq(a.label) + '\')">⚙</button> ' : '') +
+        '<button class="mini-toggle" title="' + (phidden ? "show paper value" : "hide paper value") + '" onclick="togglePaperHidden(\'' + jsq(a.label) + '\')">' + (phidden ? EYE_OFF_SVG : EYE_SVG) + '</button></span></div>' +
         '<div class="value" style="font-size:20px">' + (phidden? "••••••" : pshowUsd ? fmtMoney(a.paper_usd_value) + " USD" : fmtMoney(a.paper_value) + " CAD") +
         (!phidden && !pshowUsd && a.paper_usd_value ? ' <span style="font-size:12px;color:var(--muted)">$' + a.paper_usd_value.toLocaleString("en-CA", {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' USD</span>' : '') +
         (!phidden && pshowUsd ? ' <span style="font-size:12px;color:var(--muted)">' + fmtMoney(a.paper_value) + ' CAD</span>' : '') +
@@ -761,7 +773,7 @@ function renderSummary(data) {
         ((a.paper_margin_requirement != null && !isNaN(a.paper_margin_requirement))
           ? '<div class="sub mrow"><span class="cell"><span class="lab">total margin used</span><span class="val">' + (phidden? "••••••" : fmtMoney(a.paper_margin_used || 0) + " cad") +
             (phidden || !(a.paper_margin_used > 0) ? '' : ' · ledger loan') +
-            '</span></span><span class="cell" style="cursor:pointer" onclick="togglePaperBreakdown(' + cardIdx + ', \'' + esc(a.label) + '\')"><span class="lab">margin requirement</span><span class="val">' + (phidden? "••••••" : fmtMoney(a.paper_margin_requirement) + " cad") + ' <span id="pmbda-' + cardIdx + '">' + (pmbdOpen === a.label ? "▼" : "▲") + '</span></span></span></div>' +
+            '</span></span><span class="cell" style="cursor:pointer" onclick="togglePaperBreakdown(' + cardIdx + ', \'' + jsq(a.label) + '\')"><span class="lab">margin requirement</span><span class="val">' + (phidden? "••••••" : fmtMoney(a.paper_margin_requirement) + " cad") + ' <span id="pmbda-' + cardIdx + '">' + (pmbdOpen === a.label ? "▼" : "▲") + '</span></span></span></div>' +
           '<div id="pmbd-' + cardIdx + '" class="sub" style="display:' + (pmbdOpen === a.label ? "block" : "none") + ';color:var(--muted);font-size:11px;white-space:pre-line">' + ((a.paper_margin_breakdown || []).length ? breakdownText(a.paper_margin_breakdown, phidden) : "no holdings") + '</div>' +
           '<div class="sub mrow"><span class="cell"><span class="lab">portfolio value</span><span class="val">' + (phidden? "••••••" : (a.paper_portfolio_value != null ? fmtMoney(a.paper_portfolio_value) + " cad" : '')) +
             '</span></span><span class="cell"><span class="lab">max buying power</span><span class="val">' + (phidden? "••••••" : fmtMoney(a.paper_max_buying_power || 0) + " cad") + '</span></span></div>'
@@ -808,8 +820,8 @@ function renderSummary(data) {
                   r.trail_pct + '%</span>' : "");
             const actionCell = isAdmin() && r.qty > 0
               ? '<td class=num>' +
-                (isOpt ? '<button class="mini-toggle" title="take-profit / trailing for this position" onclick="setTp(\'paper\', \'' + esc(a.label) + '\', \'' + esc(r.contract_key) + '\', ' + (r.tp_gain_pct == null ? "null" : r.tp_gain_pct) + ', ' + (r.trail_pct == null ? "null" : r.trail_pct) + ')">tp</button> ' : '') +
-                '<button class="mini-toggle danger" title="sell at the live price" onclick="sellPaper(\'' + esc(a.label) + '\', \'' + esc(r.contract_key) + '\', ' + r.qty + ', ' + (r.price == null ? "null" : r.price) + ')">sell</button></td>'
+                (isOpt ? '<button class="mini-toggle" title="take-profit / trailing for this position" onclick="setTp(\'paper\', \'' + jsq(a.label) + '\', \'' + jsq(r.contract_key) + '\', ' + (r.tp_gain_pct == null ? "null" : r.tp_gain_pct) + ', ' + (r.trail_pct == null ? "null" : r.trail_pct) + ')">tp</button> ' : '') +
+                '<button class="mini-toggle danger" title="sell at the live price" onclick="sellPaper(\'' + jsq(a.label) + '\', \'' + jsq(r.contract_key) + '\', ' + r.qty + ', ' + (r.price == null ? "null" : r.price) + ')">sell</button></td>'
               : '<td></td>';
             return '<tr><td>' + esc(r.contract_key) + '</td>' +
               '<td class=num>' + r.qty + '</td>' +
@@ -996,8 +1008,8 @@ function renderPositionsInto(elId, rows, emptyText, monMode) {
       (isAdmin() && !isStock
         ? '<td class=num>' +
           (monMode === "live"
-            ? '<button class="mini-toggle" title="take-profit / trailing for this position" onclick="setTp(\'' + monMode + '\', \'' + esc(p.account) + '\', \'' + esc(p.contract_key) + '\', ' + (p.tp_gain_pct == null ? "null" : p.tp_gain_pct) + ', ' + (p.trail_pct == null ? "null" : p.trail_pct) + ')">tp</button> ' +
-            '<button class="mini-toggle danger" title="place a REAL sell order at the current bid" onclick="sellPosition(\'' + monMode + '\', \'' + esc(p.account) + '\', \'' + esc(p.contract_key) + '\', ' + (p.qty || 0) + ', ' + (p.current_price == null ? "null" : p.current_price) + ', ' + (p.avg_premium == null ? "null" : p.avg_premium) + ')">sell</button></td>'
+            ? '<button class="mini-toggle" title="take-profit / trailing for this position" onclick="setTp(\'' + monMode + '\', \'' + jsq(p.account) + '\', \'' + jsq(p.contract_key) + '\', ' + (p.tp_gain_pct == null ? "null" : p.tp_gain_pct) + ', ' + (p.trail_pct == null ? "null" : p.trail_pct) + ')">tp</button> ' +
+            '<button class="mini-toggle danger" title="place a REAL sell order at the current bid" onclick="sellPosition(\'' + monMode + '\', \'' + jsq(p.account) + '\', \'' + jsq(p.contract_key) + '\', ' + (p.qty || 0) + ', ' + (p.current_price == null ? "null" : p.current_price) + ', ' + (p.avg_premium == null ? "null" : p.avg_premium) + ')">sell</button></td>'
             : '<button class="mini-toggle" disabled title="live mode only - these buttons act on real positions (the paper card buttons manage the paper ledger)">tp</button> ' +
               '<button class="mini-toggle danger" disabled title="live mode only - these buttons act on real positions">sell</button></td>')
         : '<td></td>') + "</tr>";
@@ -2384,7 +2396,7 @@ async function refreshUsers() {
         '<td><span class="role-' + esc(u.role) + '">' + esc(u.role) + "</span></td>" +
         "<td>" + (u.last_login_ts ? fmtIso(u.last_login_ts).slice(0, 16) : "never") + "</td>" +
         '<td>' + (u.username === (me && me.username) ? "" :
-          '<button class="btn sm" onclick="deleteUser(\'' + esc(u.username) + '\')">remove</button>') +
+          '<button class="btn sm" onclick="deleteUser(\'' + jsq(u.username) + '\')">remove</button>') +
         "</td></tr>";
     }
     el.innerHTML = html + "</table>";

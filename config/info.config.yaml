@@ -33,6 +33,10 @@ consumers:
   - label: owner
     token: "GENERATE_A_TOKEN"
     push_url: "http://127.0.0.1:8080/alert"   # the consumer's /alert route
+    # push_verify_ssl: true   # verify the consumer's TLS cert on push
+    #                          (off by default - the self-signed dev
+    #                          certs fail verification; a proper CA or
+    #                          Tailscale cert turns it on)
 
 # ---------------------------------------------------------------------------
 # auto_update - the info server is a git checkout: fetch +

@@ -20,6 +20,35 @@ CONSUMER_RESTART_FILES = ("core/*", "consumer/*", "run.py",
                           "requirements.txt")
 
 
+def atomic_write_json(path, data):
+    """Crash-safe json state write: temp file + os.replace (with
+    the windows permission retry). A torn .update_pending.json
+    made apply_update drop a staged update; .last_update.json is
+    the banner's update provenance."""
+    import tempfile
+
+    directory = os.path.dirname(os.path.abspath(path))
+    fd, tmp = tempfile.mkstemp(dir=directory, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+        for attempt in range(5):
+            try:
+                os.replace(tmp, path)
+                break
+            except PermissionError:
+                if attempt == 4:
+                    os.unlink(tmp)
+                    raise
+                time.sleep(0.2 * (attempt + 1))
+    except OSError:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
 def git_changed_files(root, old, new):
     """Files changed between two commits, None when unknown."""
     try:
@@ -217,18 +246,14 @@ class AutoUpdater:
     def _record_update(self, how):
         new = self._head()
         try:
-            with open(
-                os.path.join(self.root, UPDATE_RECORD), "w",
-                encoding="utf-8",
-            ) as f:
-                json.dump(
-                    {
-                        "how": how,
-                        "commit": new[:8] if new else "?",
-                        "ts": time.time(),
-                    },
-                    f,
-                )
+            atomic_write_json(
+                os.path.join(self.root, UPDATE_RECORD),
+                {
+                    "how": how,
+                    "commit": new[:8] if new else "?",
+                    "ts": time.time(),
+                },
+            )
         except OSError:
             pass
 
