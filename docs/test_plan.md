@@ -101,15 +101,15 @@ Conventions for every manual step below:
    curl.exe -s -H "X-Auth-Token: <consumer-token>" http://127.0.0.1:8080/api/summary
    # -> JSON with mode / accounts[] / reader
    ```
-      10. The dispatch did not cross wires: `http://127.0.0.1:8081/`
-          shows no trading UI, and the consumer has no info-only
-          routes — unauthenticated the auth guard answers first:
-          ```powershell
-          curl.exe -s -o NUL -w "%{http_code}" http://127.0.0.1:8080/api/feed-status
-          # -> 401 (guard runs before routing)
-          curl.exe -s -o NUL -w "%{http_code}" -H "X-Auth-Token: <consumer-token>" http://127.0.0.1:8080/api/feed-status
-          # -> 404 (authenticated: the route really does not exist)
-          ```
+10. The dispatch did not cross wires: `http://127.0.0.1:8081/`
+    shows no trading UI, and the consumer has no info-only
+    routes — unauthenticated the auth guard answers first:
+    ```powershell
+    curl.exe -s -o NUL -w "%{http_code}" http://127.0.0.1:8080/api/feed-status
+    # -> 401 (guard runs before routing)
+    curl.exe -s -o NUL -w "%{http_code}" -H "X-Auth-Token: <consumer-token>" http://127.0.0.1:8080/api/feed-status
+    # -> 404 (authenticated: the route really does not exist)
+    ```
 
 ## 2. Per-role file names
 
@@ -126,35 +126,35 @@ Conventions for every manual step below:
 
 #### M-2.1 — On the live box: stop both apps, confirm the per-role dbs exist, restart via the `.bat`s, and confirm the dashboards still show full history (no fresh empty db).
 
-      **Steps:**
+**Steps:**
 
-      1. Stop both roles — killing the python processes alone is
-         not enough (the launcher loops restart them in 5s); kill
-         each launcher tree (cmd + its python child):
-         ```powershell
-         Get-CimInstance Win32_Process -Filter "Name='cmd.exe'" |
-           Where-Object { $_.CommandLine -match "start_consumer.bat|start_info.bat" } |
-           ForEach-Object { taskkill /F /T /PID $_.ProcessId }
-         ```
-         (Closing the launcher console windows works too — it
-         kills the attached python.) Verify nothing is listening:
-         ```powershell
-         curl.exe -s -o NUL -w "%{http_code}" http://127.0.0.1:8081/health
-         # -> 000 (connection refused)
-         ```
-      2. The per-role dbs exist at the role paths:
-         ```powershell
-         Get-ChildItem consumer\consumer.trades.db, info\info.trades.db
-         ```
-      3. Restart via `scripts\start_info.bat` +
-         `scripts\start_consumer.bat`.
-      4. History survived: log into
-         `http://127.0.0.1:8080/` — the trade log / recent alerts
-         show the pre-restart rows (a fresh db would show none).
-         Row counts straight from sqlite:
-         ```powershell
-         & .venv\Scripts\python -c "import sqlite3; print(sqlite3.connect(r'consumer\consumer.trades.db').execute('select count(*) from trades').fetchone())"
-         ```
+1. Stop both roles — killing the python processes alone is
+   not enough (the launcher loops restart them in 5s); kill
+   each launcher tree (cmd + its python child):
+   ```powershell
+   Get-CimInstance Win32_Process -Filter "Name='cmd.exe'" |
+     Where-Object { $_.CommandLine -match "start_consumer.bat|start_info.bat" } |
+     ForEach-Object { taskkill /F /T /PID $_.ProcessId }
+   ```
+   (Closing the launcher console windows works too — it
+   kills the attached python.) Verify nothing is listening:
+   ```powershell
+   curl.exe -s -o NUL -w "%{http_code}" http://127.0.0.1:8081/health
+   # -> 000 (connection refused)
+   ```
+2. The per-role dbs exist at the role paths:
+   ```powershell
+   Get-ChildItem consumer\consumer.trades.db, info\info.trades.db
+   ```
+3. Restart via `scripts\start_info.bat` +
+   `scripts\start_consumer.bat`.
+4. History survived: log into
+   `http://127.0.0.1:8080/` — the trade log / recent alerts
+   show the pre-restart rows (a fresh db would show none).
+   Row counts straight from sqlite:
+   ```powershell
+   & .venv\Scripts\python -c "import sqlite3; print(sqlite3.connect(r'consumer\consumer.trades.db').execute('select count(*) from trades').fetchone())"
+   ```
 
 ## 3. Updater routing (role-based)
 
