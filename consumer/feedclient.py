@@ -16,7 +16,7 @@ from datetime import datetime
 import requests
 
 from core.ops.supervise import supervised
-from core.redact import format_error
+from core.redact import format_error, short_error
 
 # backoff on feed errors: seconds between polls after failures
 BACKOFF_MIN = 2.0
@@ -166,17 +166,19 @@ def _loop(cfg, store, on_alert, state=None):
                         # one bad alert must not kill the feed
                         pass
         except Exception as e:
-            err = format_error(e, cfg.feed.token)
             if state is not None:
                 state["ok"] = False
                 # the dashboard's reader line renders one line -
-                # type + message there, the traceback in the log
-                state["error"] = err.split("\n")[0][:200]
+                # type + message there
+                state["error"] = short_error(e, cfg.feed.token)[:200]
             # the failure used to be fully silent: a wrong feed
             # token (401) left the dashboard's reader line offline
             # with no reason in the log or the ui. the growing
-            # backoff rate-limits the log naturally
-            print(f"feed client: {err.rstrip()}\n"
+            # backoff rate-limits the log naturally - and the line
+            # stays one line: a long-poll reset is routine (every
+            # info restart drops every poller), a traceback per
+            # retry would flood the log the webhook ships
+            print(f"feed client: {short_error(e, cfg.feed.token)} "
                   f"- retrying in {backoff:.0f}s")
             time.sleep(backoff)
             backoff = min(backoff * 2, BACKOFF_MAX)

@@ -242,11 +242,11 @@ def test_feedclient_error_state_never_carries_token(monkeypatch, capsys):
     assert state["error"].startswith("RuntimeError:")
     assert TOKEN not in state["error"]
     out = capsys.readouterr().out
-    # the log gets the full standard rendering: type + message
-    # lead, the traceback follows - and stays token-free (the
-    # traceback's last line repeats the message verbatim)
+    # the backoff line stays ONE line: a long-poll reset is
+    # routine (every info restart drops every poller) - type +
+    # message, no traceback, and token-free
     assert "RuntimeError: handshake" in out
-    assert "Traceback" in out
+    assert "Traceback" not in out
     assert TOKEN not in out
 
 
