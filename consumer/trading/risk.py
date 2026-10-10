@@ -85,7 +85,12 @@ class RiskEngine:
                 for label, v in values.items():
                     if not v:
                         continue
-                    self.store.record_equity_peak(mode, label, v)
+                    self.store.record_equity_sample(
+                        mode, label, v,
+                        lookback_days=int(
+                            getattr(t, "drawdown_lookback_days", 5)
+                        ),
+                    )
                     dd = self.store.drawdown_pct(
                         mode, label, v,
                         lookback_days=int(
