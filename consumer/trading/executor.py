@@ -139,9 +139,17 @@ class PaperExecutor:
                     qty = plan["qty"]
                 # the dynamic sizing scalar (vix / kelly, default
                 # off) shrinks the tier quantity - never amplifies,
-                # floored at 1 contract
+                # floored at 1 contract; the -1 veto means the
+                # kelly component found no edge - skip the account
                 if qty >= 1:
                     scaled = sizing_multiplier(cfg, store, self.mode)
+                    if scaled < 0:
+                        breakdown[label] = (
+                            "skipped (kelly: no edge - the mode's "
+                            "closed round trips carry negative "
+                            "expectancy)"
+                        )
+                        continue
                     if scaled < 1.0:
                         qty = max(1, int(round(qty * scaled)))
                 if qty < 1:
@@ -668,11 +676,20 @@ class WealthsimpleExecutor:
                         qty = plan["qty"]
                     # the dynamic sizing scalar (vix / kelly,
                     # default off) shrinks the tier quantity -
-                    # never amplifies, floored at 1 contract
+                    # never amplifies, floored at 1 contract; the
+                    # -1 veto means the kelly component found no
+                    # edge - skip the account
                     if qty >= 1:
                         scaled = sizing_multiplier(
                             cfg, store, self.mode
                         )
+                        if scaled < 0:
+                            breakdown[label] = (
+                                "skipped (kelly: no edge - the mode's "
+                                "closed round trips carry negative "
+                                "expectancy)"
+                            )
+                            continue
                         if scaled < 1.0:
                             qty = max(
                                 1, int(round(qty * scaled))

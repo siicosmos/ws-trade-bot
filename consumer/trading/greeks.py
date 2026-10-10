@@ -79,15 +79,16 @@ def bs_greeks(S, K, T, r=0.05, sigma=0.30, right="C"):
     # move is 0.01 in sigma)
     out["vega"] = S * _norm_pdf(d1) * sq_t / 100.0
     # theta per day (the standard /365 convention)
-    theta = (
-        -S * _norm_pdf(d1) * sigma / (2 * sq_t)
-        - (r * K * disc * (nd2 if call else (1 - nd2)))
-        if call
-        else (
+    if call:
+        theta = (
+            -S * _norm_pdf(d1) * sigma / (2 * sq_t)
+            - r * K * disc * nd2
+        )
+    else:
+        theta = (
             -S * _norm_pdf(d1) * sigma / (2 * sq_t)
             + r * K * disc * (1 - nd2)
         )
-    )
     out["theta"] = theta / 365.0
     return out
 

@@ -445,41 +445,51 @@ class MoomooQuoteProvider:
 
     def vix_quote(self, ttl=60.0):
         """The vix level for the sizing scalar - a regime input,
-        not a pricing input. Tries the index snapshot first (this
-        opend build may refuse index quotes) and falls back to
-        the vixy etf as the regime proxy: vixy tracks vix futures
-        with drift, but the scalar only needs the regime class
-        (calm vs stressed), not the exact level. None = unknown -
-        the sizing multiplier fails open."""
+        not a pricing input. Reads the index snapshot only: a
+        vixy/vxx etf proxy would feed a decoupled price into a
+        vix-calibrated formula (vixy trades 10-20 with its own
+        futures-roll decay - plausible-looking, wrongly-scaled
+        numbers), so when the index snapshot yields nothing this
+        returns None and the sizing scalar fails open at 1.0."""
         now = time.time()
         if self._vix_cache is not None and now - self._vix_ts < ttl:
             return self._vix_cache
-        for sym in ("VIX", "VIXY"):
+        try:
+            ret, data = self._context().get_market_snapshot(
+                ["US.VIX"]
+            )
+        except Exception:
             try:
-                ret, data = self._context().get_market_snapshot(
-                    [f"US.{sym}"]
-                )
+                self._ctx.close()
             except Exception:
-                try:
-                    self._ctx.close()
-                except Exception:
-                    pass
-                self._ctx = None
-                return self._vix_cache
-            if ret != 0 or data is None or (
-                hasattr(data, "empty") and data.empty
-            ):
-                continue
+                pass
+            self._ctx = None
+            return self._vix_cache
+        level = None
+        if ret == 0 and data is not None and not (
+            hasattr(data, "empty") and data.empty
+        ):
             try:
                 for i in range(len(data)):
                     row = data.iloc[i]
                     p = self.extract_price(row)
                     if p:
-                        self._vix_cache = p
-                        self._vix_ts = now
-                        return p
+                        level = p
+                        break
             except Exception:
-                continue
+                level = None
+        if level:
+            self._vix_cache = level
+            self._vix_ts = now
+            self._vix_warned = False
+        elif not getattr(self, "_vix_warned", False):
+            # once per process: the scalar's regime input is
+            # unavailable - the sizing multiplier fails open
+            self._vix_warned = True
+            print(
+                "quotes: no vix snapshot (index quote rights?) - "
+                "the vix sizing scalar fails open at 1.0"
+            )
         return self._vix_cache
 
     def daily_bars(self, symbol, n=14):
@@ -495,8 +505,8 @@ class MoomooQuoteProvider:
             return None
         day = et_day()
         hit = self._bars_cache.get(sym)
-        if hit and hit[0] == day:
-            return hit[1]
+        if hit and hit[0] == day and len(hit[1]) >= n + 1:
+            return hit[1][-(n + 1):]
         try:
             from moomoo import KLType
         except ImportError:
@@ -524,12 +534,22 @@ class MoomooQuoteProvider:
             return None
         bars = []
         try:
+            import math as _math
+
             for i in range(len(data)):
                 row = data.iloc[i]
 
                 def _f(key):
                     try:
-                        return float(row.get(key))
+                        v = float(row.get(key))
+                        # pandas returns float('nan') for missing
+                        # numerics and bool(nan) is True - a nan
+                        # row would poison the atr (nan propagates
+                        # through max() and every later comparison
+                        # goes False, silently disabling the floor)
+                        if v is None or _math.isnan(v):
+                            return None
+                        return v
                     except (TypeError, ValueError):
                         return None
 
@@ -540,8 +560,51 @@ class MoomooQuoteProvider:
             return None
         if len(bars) < 2:
             return None
-        self._bars_cache[sym] = (day, bars[-(n + 1):])
+        # the cache holds what was fetched; a later request for a
+        # LARGER window refetches (a smaller one slices) - the
+        # key is the day, the bars answer the largest n seen
+        self._bars_cache[sym] = (day, bars)
         return bars[-(n + 1):]
+
+    def option_delta(self, pos, ttl=10.0):
+        """The contract's delta from the snapshot's option_data
+        when this opend build provides it - preferred over the
+        flat-iv bs estimate for the delta limit (the real greek
+        rides the same payload as the bid). None when absent -
+        callers fall back to the bs estimate."""
+        code = self.candidate_codes(pos)
+        if not code:
+            return None
+        key = f"delta:{code[0]}"
+        now = time.time()
+        hit = self._stock_cache.get(key)
+        if hit and now - hit[0] < ttl:
+            return hit[1]
+        try:
+            ret, data = self._context().get_market_snapshot(code)
+        except Exception:
+            try:
+                self._ctx.close()
+            except Exception:
+                pass
+            self._ctx = None
+            return None
+        if ret != 0 or data is None or (
+            hasattr(data, "empty") and data.empty
+        ):
+            return None
+        try:
+            row = data.iloc[0] if hasattr(data, "iloc") else data[0]
+            option = row.get("option_data")
+            if isinstance(option, dict):
+                d = option.get("delta")
+                if d is not None:
+                    delta = float(d)
+                    self._stock_cache[key] = (now, delta)
+                    return delta
+        except Exception:
+            return None
+        return None
 
     def __call__(self, pos):
         return self.quote(pos)

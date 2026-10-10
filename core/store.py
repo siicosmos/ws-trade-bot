@@ -1546,40 +1546,58 @@ class Store:
             row = self._conn.execute(query, params).fetchone()
         return float(row[0]) if row and row[0] is not None else 0.0
 
-    def record_equity_peak(self, mode: str, label: str, value) -> None:
-        """Ratchet the rolling equity peak used by the drawdown
-        circuit breaker. Writes only when the peak rises (the
-        dashboard's own poll calls this every few seconds - a
-        write per poll would invalidate its own summary cache,
-        so no _touch here)."""
+    def record_equity_sample(self, mode: str, label: str, value,
+                             lookback_days: int = 5) -> None:
+        """Sample the account's equity into the rolling window the
+        drawdown breaker measures against: one sample per calendar
+        day, and the day's sample is its HIGH-WATER mark (a lower
+        intraday reading must not erase the peak the drawdown is
+        measured from), pruned to the lookback.
+
+        Writes only when the day is new or the value exceeds the
+        day's mark - the dashboard's own poll calls this every few
+        seconds, and a write per poll would invalidate its own
+        summary cache (no _touch here)."""
         if value is None:
             return
         try:
             value = float(value)
         except (TypeError, ValueError):
             return
-        key = f"equity_peak:{mode}:{label}"
+        if value <= 0:
+            return
+        key = f"equity_series:{mode}:{label}"
+        today = et_now().strftime("%Y-%m-%d")
         with self._write_lock, self._tx:
             row = self._conn.execute(
                 "SELECT value FROM meta WHERE key = ?", (key,),
             ).fetchone()
             try:
-                peak, _ts = json.loads(row[0]) if row else (0.0, "")
+                series = json.loads(row[0]) if row else {}
             except (TypeError, ValueError):
-                peak, _ts = 0.0, ""
-            if value > peak:
-                self._conn.execute(
-                    "INSERT INTO meta (key, value) VALUES (?, ?) "
-                    "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-                    (key, json.dumps([value, self._now()])),
-                )
+                series = {}
+            prev = series.get(today)
+            if prev is not None and value <= prev:
+                return
+            series[today] = round(value, 2)
+            keep = sorted(series)[-max(1, int(lookback_days)):]
+            pruned = {d: series[d] for d in keep}
+            self._conn.execute(
+                "INSERT INTO meta (key, value) VALUES (?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (key, json.dumps(pruned)),
+            )
 
     def drawdown_pct(self, mode: str, label: str, current,
                      lookback_days: int = 5) -> float:
-        """The account's drawdown from its rolling peak equity
-        (percent, 0 = at or above the peak). Peaks older than the
-        lookback window are ignored - a months-old high must not
-        throttle trading forever."""
+        """The account's drawdown from the rolling window's peak
+        equity (percent, 0 = at or above it).
+
+        The window is the last `lookback_days` of daily samples:
+        a sustained grind stays armed (each day's lower sample
+        becomes the window's reference), while an old regime ages
+        out of the window naturally instead of throttling trading
+        forever."""
         if current is None:
             return 0.0
         try:
@@ -1588,24 +1606,23 @@ class Store:
             return 0.0
         if current <= 0:
             return 0.0
-        row = self._conn.execute(
-            "SELECT value FROM meta WHERE key = ?",
-            (f"equity_peak:{mode}:{label}",),
-        ).fetchone()
+        with self._tx:
+            row = self._conn.execute(
+                "SELECT value FROM meta WHERE key = ?",
+                (f"equity_series:{mode}:{label}",),
+            ).fetchone()
         try:
-            peak, ts = json.loads(row[0]) if row else (0.0, "")
+            series = json.loads(row[0]) if row else {}
         except (TypeError, ValueError):
             return 0.0
-        if not peak or peak <= 0:
+        if not series:
             return 0.0
-        try:
-            age_days = (
-                datetime.now(timezone.utc)
-                - datetime.fromisoformat(ts)
-            ).total_seconds() / 86400
-        except (TypeError, ValueError):
-            return 0.0
-        if age_days > lookback_days:
+        # the window is the most recent `lookback_days` distinct
+        # sample dates - defined at read time so a stale window
+        # (no writes since the last decline) still rolls forward
+        keep = sorted(series)[-max(1, int(lookback_days)):]
+        peak = max(series[d] for d in keep)
+        if peak <= 0:
             return 0.0
         return max(0.0, (peak - current) / peak * 100.0)
 
@@ -1614,7 +1631,15 @@ class Store:
         (position rows at qty 0 with booked realized - the same
         definition scripts/expectancy.py reports on). Feeds the
         kelly sizing scalar; callers must treat n below their
-        minimum as 'not enough history'."""
+        minimum as 'not enough history'.
+
+        Caveat: the classification is CONTRACT level, not trip
+        level - a re-entered contract_key's earlier round trip
+        vanishes from the stats when the row reopens, and partial
+        scale-outs accumulate several exits into one realized
+        figure. Kelly's independence assumption is therefore
+        approximate here; the kelly_min_trades floor and the
+        quarter-kelly fraction absorb the bias."""
         with self._tx:
             rows = self._conn.execute(
                 "SELECT realized FROM positions "

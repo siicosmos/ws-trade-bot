@@ -145,10 +145,12 @@ trading:
                                 # this % of account value (research-backed 2-3 for
                                 # 0dte strategies; 0 = off)
   max_drawdown_pct: 0           # drawdown circuit breaker: new buys block once the
-                                # account draws down this % from its rolling peak
-                                # (5-day lookback; exits stay allowed; 0 = off)
-  drawdown_lookback_days: 5     # the peak's lookback window - a months-old high
-                                # must not throttle trading forever
+                                # account draws down this % from its rolling
+                                # equity window (exits stay allowed; 0 = off)
+  drawdown_lookback_days: 5     # the window: the last N days of daily equity
+                                # samples - a sustained grind stays armed (each
+                                # day's lower sample becomes the reference) and
+                                # an old regime ages out naturally
   # dynamic sizing (moomoo opend data, both default off): the
   # alert's tier quantity is SHRUNK by the scalar, never amplified,
   # floored at 1 contract; missing data fails open at 1.0

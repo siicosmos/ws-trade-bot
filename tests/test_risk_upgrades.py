@@ -144,20 +144,13 @@ def test_zero_dte_cap_gates_the_paper_executor():
 
 def test_drawdown_pct_and_lookback():
     store = _fresh_store()
-    store.record_equity_peak("paper", "M", 1000.0)
+    store.record_equity_sample("paper", "M", 1000.0, lookback_days=5)
     assert store.drawdown_pct("paper", "M", 900.0) == pytest.approx(10.0)
     assert store.drawdown_pct("paper", "M", 1100.0) == 0.0
     assert store.drawdown_pct("paper", "M", None) == 0.0
-    # a peak older than the lookback is ignored
-    import json as _json
-
-    with store._write_lock, store._tx:
-        store._conn.execute(
-            "UPDATE meta SET value = ? WHERE key = ?",
-            (_json.dumps([1000.0, "2026-01-01T00:00:00+00:00"]),
-             "equity_peak:paper:M"),
-        )
-    assert store.drawdown_pct("paper", "M", 900.0) == 0.0
+    # the window prunes to the lookback: an empty window reads 0
+    empty = _fresh_store()
+    assert empty.drawdown_pct("paper", "M", 900.0) == 0.0
 
 
 def test_drawdown_breaker_blocks_buys():
@@ -167,12 +160,12 @@ def test_drawdown_breaker_blocks_buys():
     cfg = ConfigStub(TradingConfig(mode="paper"))
     cfg.trading.max_drawdown_pct = 5.0
     account = type("A", (), {"values": lambda self: {"M": 900.0}})()
-    store.record_equity_peak("paper", "M", 1000.0)
+    store.record_equity_sample("paper", "M", 1000.0, lookback_days=5)
     risk = RiskEngine(cfg, store, account)
     ok, reason = risk.evaluate(_alert())
     assert not ok
     assert "drawdown breaker" in reason
-    # recovered equity: the gate passes and the peak ratchets
+    # recovered equity: the gate passes and the window follows
     account.values = lambda: {"M": 1100.0}
     ok, reason = risk.evaluate(_alert())
     assert ok, reason
@@ -257,8 +250,10 @@ def test_sizing_multiplier_kelly_from_closed_trades():
         "updated_ts = '2026-01-30T15:00:00' WHERE contract_key = 'x1'"
     )
     # p=8/11, avg_win 200, avg_loss 2200/3 -> b < 1 and
-    # p*b - (1-p) < 0: full kelly goes negative -> scalar 0
-    assert sizing_multiplier(cfg, store, "paper") == 0.0
+    # p*b - (1-p) < 0: full kelly goes negative -> the -1 veto
+    # (the executor skips the account instead of trading an
+    # uneconomic 1-contract minimum)
+    assert sizing_multiplier(cfg, store, "paper") == -1.0
 
 
 def test_sizing_multiplier_caps_at_one():
@@ -287,14 +282,16 @@ def test_atr_stop_price_scales_underlying_atr_by_delta():
         {"high": 104.0, "low": 102.0, "close": 103.0},
     ]
     provider = _StubProvider(bars={"SPX": bars})
-    today = et_now().strftime("%Y-%m-%d")
-    pos = {"underlying": "SPX", "expiry": today, "strike": 6000,
+    expiry = (et_now() + timedelta(days=30)).strftime("%Y-%m-%d")
+    pos = {"underlying": "SPX", "expiry": expiry, "strike": 102.0,
            "right": "C", "qty": 2, "contract_key": "k"}
-    # itm strike (spot 103 > strike 102): 0dte delta = 1 ->
-    # stop = peak - 2 x 1 x atr(2.0) = 1.0
-    pos["strike"] = 102.0
+    # stop = peak - k x |delta(spot 103, strike 102, 30d)| x atr
+    from consumer.trading.greeks import bs_greeks
+
+    delta = abs(bs_greeks(103.0, 102.0, 30 / 365, 0.05,
+                          0.30, "C")["delta"])
     stop = atr_stop_price(provider, pos, peak=5.0, t=cfg.trading)
-    assert stop == pytest.approx(1.0)
+    assert stop == pytest.approx(5.0 - 2.0 * delta * 2.0)
     # disabled: None
     cfg.trading.atr_trailing = False
     assert atr_stop_price(provider, pos, 5.0, cfg.trading) is None
@@ -312,7 +309,7 @@ def test_stop_price_takes_the_tighter_floor():
     cfg.trading.trailing_stop_pct = 0
     cfg.trading.atr_trailing = True
     cfg.trading.atr_period = 3
-    cfg.trading.atr_multiplier = 0.5
+    cfg.trading.atr_multiplier = 2.0
     bars = [
         {"high": 101.0, "low": 99.0, "close": 100.0},
         {"high": 102.0, "low": 100.0, "close": 101.0},
@@ -322,16 +319,21 @@ def test_stop_price_takes_the_tighter_floor():
     provider = _StubProvider(bars={"SPX": bars})
     monitor = StopMonitor(cfg, _fresh_store(), None, None,
                           provider=provider)
-    today = et_now().strftime("%Y-%m-%d")
-    pos = {"underlying": "SPX", "expiry": today, "strike": 102.0,
+    expiry = (et_now() + timedelta(days=30)).strftime("%Y-%m-%d")
+    pos = {"underlying": "SPX", "expiry": expiry, "strike": 102.0,
            "right": "C", "qty": 1, "size": "micro",
            "contract_key": "k"}
     # entry 2.0, stop_loss 50% -> pct floor 1.0; the atr floor
-    # = peak - 0.5 x delta(1) x atr(2) - with a high peak it
-    # sits above the pct floor and wins
+    # = peak - 2 x delta x atr(2) - with a high peak it sits
+    # above the pct floor and wins
+    from consumer.trading.greeks import bs_greeks
+
+    delta = abs(bs_greeks(103.0, 102.0, 30 / 365, 0.05,
+                          0.30, "C")["delta"])
     stop = monitor.stop_price(2.0, 4.5, pos)
-    assert stop == pytest.approx(3.5)
-    # a low peak: the pct floor wins
+    assert stop == pytest.approx(4.5 - 2.0 * delta * 2.0)
+    # a low peak: the atr floor clamps to 0.01 and the pct
+    # floor wins
     assert monitor.stop_price(2.0, 2.0, pos) == pytest.approx(1.0)
 
 
@@ -412,3 +414,187 @@ def test_daily_bars_cached_per_day(monkeypatch):
     assert len(calls) == 1   # same day: served from cache
     provider.daily_bars("SPY", 14)
     assert len(calls) == 2
+
+
+# ------------------------------------------------- review fixes
+
+def test_atr_stop_price_bails_on_missing_peak():
+    """peak arrives from stop_price unguarded in the caller - a
+    None/zero peak must return None, not crash or produce a
+    silent 0.01 floor that never wins the tighter-floor race."""
+    from consumer.trading.stops import atr_stop_price
+
+    cfg = ConfigStub(TradingConfig(mode="paper"))
+    cfg.trading.atr_trailing = True
+    bars = [{"high": 101.0, "low": 99.0, "close": 100.0},
+            {"high": 102.0, "low": 100.0, "close": 101.0},
+            {"high": 103.0, "low": 101.0, "close": 102.0}]
+    provider = _StubProvider(bars={"SPX": bars})
+    pos = {"underlying": "SPX", "expiry": "2026-12-18",
+           "strike": 100.0, "right": "C", "qty": 1}
+    assert atr_stop_price(provider, pos, None, cfg.trading) is None
+    assert atr_stop_price(provider, pos, 0, cfg.trading) is None
+
+
+def test_daily_bars_drops_nan_rows():
+    """pandas returns float('nan') for missing numerics and
+    bool(nan) is True - a nan row must be dropped, not flow into
+    the atr window where it would poison every later comparison."""
+    from consumer.trading.quotes import MoomooQuoteProvider
+    import math
+
+    cfg = type("C", (), {"quotes": type("Q", (), {
+        "moomoo_host": "127.0.0.1", "moomoo_port": 11111})()})()
+    provider = MoomooQuoteProvider(cfg)
+
+    class _Row:
+        def __init__(self, d):
+            self._d = d
+
+        def get(self, key):
+            return self._d.get(key)
+
+    nan = float("nan")
+    rows = [
+        _Row({"high": 101.0, "low": 99.0, "close": 100.0}),
+        _Row({"high": nan, "low": 100.0, "close": 101.0}),   # dropped
+        _Row({"high": 103.0, "low": 101.0, "close": 102.0}),
+    ]
+
+    class _Data:
+        empty = False
+
+        def __len__(self):
+            return len(rows)
+
+        @property
+        def iloc(self):
+            return rows
+
+    class _Ctx:
+        def request_history_kline(self, code, **kw):
+            return 0, _Data()
+
+    provider._ctx = _Ctx()
+    bars = provider.daily_bars("SPX", 14)
+    assert bars is not None and len(bars) == 2
+    assert all(
+        math.isfinite(b["high"]) and math.isfinite(b["close"])
+        for b in bars
+    )
+
+
+def test_vix_scalar_refuses_the_etf_proxy():
+    """vixy trades 10-20 with its own futures-roll decay - feeding
+    it into the vix-calibrated formula produces plausible-looking,
+    wrongly-scaled numbers. the scalar reads the index snapshot
+    only and fails open when it yields nothing."""
+    from consumer.trading.quotes import MoomooQuoteProvider
+    from consumer.trading.sizing import sizing_multiplier
+
+    cfg = type("C", (), {"quotes": type("Q", (), {
+        "moomoo_host": "127.0.0.1", "moomoo_port": 11111})()})()
+    cfg.trading = TradingConfig(mode="paper")
+    cfg.trading.vix_size_scalar = True
+    provider = MoomooQuoteProvider(cfg)
+
+    class _Row:
+        def get(self, key):
+            return {"code": "US.VIXY", "last_price": 15.0}.get(key)
+
+    class _Data:
+        empty = False
+
+        def __len__(self):
+            return 1
+
+        @property
+        def iloc(self):
+            return [self]
+
+    class _Ctx:
+        def get_market_snapshot(self, codes):
+            # the index snapshot is refused (no rights) - the etf
+            # proxy must NOT be consulted
+            assert codes == ["US.VIX"], codes
+            return 0, _Data()
+
+    provider._ctx = _Ctx()
+    assert provider.vix_quote() is None
+    assert sizing_multiplier(cfg, provider=provider) == 1.0
+
+
+def test_kelly_veto_skips_the_account():
+    """kelly <= 0 means no edge - the executor skips the account
+    instead of executing an uneconomic 1-contract minimum."""
+    from consumer.trading.executor import PaperExecutor
+    from consumer.trading.sizing import sizing_multiplier
+
+    store = _fresh_store()
+    cfg = ConfigStub(TradingConfig(mode="paper"))
+    cfg.trading.kelly_size_scalar = True
+    cfg.trading.kelly_min_trades = 5
+    cfg.trading.kelly_fraction = 1.0
+    for i in range(2):
+        store.seed_position("paper", "M", f"w{i}", "SPX",
+                            "2026-01-10", 6000, "C", 1, 1.0)
+        store._conn.execute(
+            "UPDATE positions SET qty = 0, realized = 100, "
+            "updated_ts = ? WHERE contract_key = ?",
+            (f"2026-01-1{i}T15:00:00", f"w{i}"),
+        )
+    for i in range(6):
+        store.seed_position("paper", "M", f"l{i}", "SPX",
+                            "2026-01-10", 6000, "P", 1, 1.0)
+        store._conn.execute(
+            "UPDATE positions SET qty = 0, realized = -300, "
+            "updated_ts = ? WHERE contract_key = ?",
+            (f"2026-01-2{i}T15:00:00", f"l{i}"),
+        )
+    # p=0.25, b=1/3 -> full kelly deeply negative -> veto
+    assert sizing_multiplier(cfg, store, "paper") == -1.0
+
+    account = __import__(
+        "consumer.ws.account", fromlist=["PaperAccount"]
+    ).PaperAccount(cfg, store)
+    store.set_paper_equity(10000.0, "default")
+    executor = PaperExecutor(cfg, store, account)
+    result = executor.execute(_alert(), cfg, store)
+    assert not result.ok
+    assert "kelly: no edge" in result.detail
+
+
+def test_drawdown_window_stays_armed_through_a_grind():
+    """the rolling window keeps the breaker armed during a
+    sustained multi-day decline (each day's lower sample becomes
+    the window's reference) and ages an old regime out naturally."""
+    store = _fresh_store()
+    from datetime import datetime, timedelta, timezone
+
+    # seed the window with samples across the lookback: the
+    # window's peak is day-1's 1000, the latest sample 700
+    series = {}
+    base = datetime.now(timezone.utc)
+    for i, v in enumerate((1000.0, 950.0, 900.0, 850.0, 800.0, 700.0)):
+        d = (base - timedelta(days=5 - i)).strftime("%Y-%m-%d")
+        series[d] = v
+    import json as _json
+
+    with store._write_lock, store._tx:
+        store._conn.execute(
+            "INSERT INTO meta (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            ("equity_series:paper:M", _json.dumps(series)),
+        )
+    # the window is the last 5 distinct days (950..700, peak
+    # 950): the grind is STILL armed at 26.3% - a naive
+    # "5 days from the peak" clock would have disarmed on day 6
+    assert store.drawdown_pct("paper", "M", 700.0) == pytest.approx(
+        (950.0 - 700.0) / 950.0 * 100
+    )
+    # a higher reading for today rewrites the day's high-water
+    # mark (700 -> 750): the drawdown narrows with the recovery
+    store.record_equity_sample("paper", "M", 750.0, lookback_days=5)
+    assert store.drawdown_pct("paper", "M", 750.0) == pytest.approx(
+        (950.0 - 750.0) / 950.0 * 100
+    )

@@ -450,6 +450,11 @@ def _account_summary(ctx, snap, label, value):
         "vega": greeks["vega"],
         "theta": greeks["theta"],
         "unpriced_greeks": greeks["unpriced"],
+        # the card's delta tint keys off the configured soft cap
+        # (20 is the display default when the cap is off)
+        "delta_cap_pct": float(
+            getattr(cfg.trading, "delta_cap_pct", 0) or 0
+        ) or 20,
         "risk_per_trade_pct": t.risk_per_trade_pct,
         "per_trade_budget": (
             value * (t.risk_per_trade_pct / 100.0)

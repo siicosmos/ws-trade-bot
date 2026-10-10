@@ -220,16 +220,21 @@ def sizing_multiplier(cfg, store=None, mode=None, provider=None):
 
     - vix_size_scalar: size shrinks as vix rises above its
       long-run average (min(1, 15 / vix)); the vix comes from the
-      moomoo provider (index snapshot, vixy etf proxy fallback) -
-      unavailable means fail open at 1.0.
-    - kelly_size_scalar: a quarter-kelly fraction from the mode's
-      own closed round trips (win rate x odds); fewer closed
-      trades than kelly_min_trades means fail open at 1.0.
+      moomoo provider's index snapshot - unavailable means fail
+      open at 1.0 (an etf proxy is refused: its price is
+      decoupled from the vix level the formula is calibrated for).
+    - kelly_size_scalar: a fractional-kelly fraction from the
+      mode's own closed round trips; fewer closed trades than
+      kelly_min_trades means fail open at 1.0.
 
-    The executor floors the scaled quantity at 1 contract, so a
-    0 scalar throttles to the minimum rather than vetoing."""
+    Returns -1.0 as a VETO sentinel when the kelly component
+    finds no edge (full kelly <= 0): the executor skips the
+    account instead of executing an uneconomic 1-contract
+    minimum. The executor floors positive scalars at 1 contract,
+    so a 0 scalar throttles to the minimum rather than vetoing."""
     t = cfg.trading
     mult = 1.0
+    veto = False
     if getattr(t, "vix_size_scalar", False):
         vix = _vix_level(provider)
         if vix:
@@ -237,7 +242,12 @@ def sizing_multiplier(cfg, store=None, mode=None, provider=None):
     if getattr(t, "kelly_size_scalar", False) and store is not None:
         k = _kelly_fraction(store, mode, t)
         if k is not None:
-            mult *= k
+            if k < 0:
+                veto = True
+            else:
+                mult *= k
+    if veto:
+        return -1.0
     return max(0.0, min(1.0, mult))
 
 
@@ -261,7 +271,9 @@ def _vix_level(provider):
 
 def _kelly_fraction(store, mode, t):
     """The fractional-kelly scalar from the mode's closed round
-    trips - None (fail open) below kelly_min_trades."""
+    trips - None (fail open) below kelly_min_trades, -1.0 (veto)
+    when full kelly is negative (the book has no edge), else the
+    clamped fraction."""
     try:
         stats = store.closed_trade_stats(
             mode, int(getattr(t, "kelly_min_trades", 10) or 10) * 5
@@ -273,11 +285,13 @@ def _kelly_fraction(store, mode, t):
         return None
     p = wins / n
     avg_win, avg_loss = stats["avg_win"], stats["avg_loss"]
+    # a book with no losses has avg_loss 0 - no odds to compute,
+    # fail open rather than divide (the streak breaker covers it)
     if avg_win <= 0 or avg_loss <= 0:
         return None
     b = avg_win / avg_loss
     full_kelly = (p * b - (1 - p)) / b
     if full_kelly <= 0:
-        return 0.0
+        return -1.0
     frac = float(getattr(t, "kelly_fraction", 0.25) or 0.25)
     return max(0.0, min(1.0, full_kelly * frac))

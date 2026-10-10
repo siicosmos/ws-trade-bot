@@ -698,7 +698,7 @@ function renderSummary(data) {
       '<div class="sub"><span style="color:' + color + (pct >= (a.max_open_risk_pct || 30) ? ';font-weight:700' : '') + '">open risk ' + (hidden ? "••••••" : fmtMoney(risk) + " " + (showUsd ? "usd" : "cad")) + ' (' + (a.open_risk_pct ?? 0) + '%)</span>' +
       '<span>cap ' + (a.max_open_risk_pct) + '%</span></div>' +
       ((a.delta != null && !hidden)
-        ? '<div class="sub"><span' + (Math.abs(a.delta) > (a.value || 0) * 0.2 ? ' style="color:#d29922"' : '') + '>delta ' + (a.delta > 0 ? "+" : "") + Math.round(a.delta).toLocaleString() + (a.unpriced_greeks ? ' (' + a.unpriced_greeks + ' unpriced)' : '') + '</span>' +
+        ? '<div class="sub"><span' + (Math.abs(a.delta) > (a.value || 0) * ((a.delta_cap_pct || 20) / 100) ? ' style="color:#d29922"' : '') + '>delta ' + (a.delta > 0 ? "+" : "") + Math.round(a.delta).toLocaleString() + ' <span style="color:var(--muted)">(flat iv)</span>' + (a.unpriced_greeks ? ' (' + a.unpriced_greeks + ' unpriced)' : '') + '</span>' +
           '<span>' + (a.value ? '\u2248' + (Math.abs(a.delta) / a.value * 100).toFixed(1) + '% of value' : '') + '</span></div>'
         : '') +
       ((a.cluster_cap_pct > 0 && a.open_risk_cluster > 0 && a.value &&

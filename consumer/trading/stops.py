@@ -15,12 +15,23 @@ def atr_stop_price(provider, pos, peak, t):
     the peak bid. Volatility-adaptive where the percentage trail
     is fixed - wide in stressed markets, tight in calm ones.
 
-    None when disabled, when the provider has no bar history, or
-    when the position cannot be priced - the caller falls back
-    to the percentage trail (whichever is tighter wins)."""
+    None when disabled, when the position cannot be priced (no
+    bars, no peak, or a zero delta), or on expiry day - a 0dte
+    delta is the binary intrinsic step, so the atr floor adds no
+    signal over the percentage trail and the back-to-entry
+    guard; the caller falls back to the percentage trail
+    (whichever is tighter wins)."""
     if not getattr(t, "atr_trailing", False):
         return None
     if provider is None or not hasattr(provider, "daily_bars"):
+        return None
+    if peak is None or peak <= 0:
+        return None
+    # expiry day: the delta step is binary (0 or 1) - the atr
+    # floor would be either absent or the full underlying range
+    from consumer.trading.greeks import days_to_expiry
+
+    if days_to_expiry(pos.get("expiry")) == 0:
         return None
     period = int(getattr(t, "atr_period", 14) or 14)
     bars = provider.daily_bars(pos.get("underlying"), period)
@@ -39,7 +50,7 @@ def atr_stop_price(provider, pos, peak, t):
     # the option's delta scales the underlying's range into the
     # option's expected range - from the store's own greeks math
     # (flat-iv approximation; the real spot rides the last close)
-    from consumer.trading.greeks import bs_greeks, days_to_expiry
+    from consumer.trading.greeks import bs_greeks
 
     spot = bars[-1]["close"]
     g = bs_greeks(
@@ -279,7 +290,28 @@ class StopMonitor:
                 spots[u] = spot
         from consumer.trading.greeks import portfolio_greeks
 
-        agg = portfolio_greeks(rows, spots)
+        # per-contract delta: the opend snapshot's own greek when
+        # the build provides it, the flat-iv bs estimate otherwise
+        # (the fallback is tagged in the discord payload)
+        deltas = {}
+        bs_needed = []
+        for p in rows:
+            d = None
+            if hasattr(provider, "option_delta"):
+                try:
+                    d = provider.option_delta(p)
+                except Exception:
+                    d = None
+            if d is None:
+                bs_needed.append(p)
+            else:
+                deltas[p["contract_key"]] = d * 100 * int(
+                    p.get("qty") or 0
+                )
+        agg = portfolio_greeks(bs_needed, spots)
+        agg["delta"] = round(
+            agg["delta"] + sum(deltas.values()), 2
+        )
         equity = 0.0
         try:
             equity = sum(
@@ -297,7 +329,8 @@ class StopMonitor:
             return
         self._delta_warn_ts = now
         msg = (
-            f"delta warning: net delta {agg['delta']:+,.0f} "
+            f"options delta warning: net options delta "
+            f"{agg['delta']:+,.0f} "
             f"({projected / equity * 100:.1f}% of equity) past the "
             f"{cap_pct:g}% cap"
             + (
@@ -308,7 +341,7 @@ class StopMonitor:
         print(f"stop monitor: {msg}")
         notify_discord(
             self.webhook_url, "Delta limit (soft)",
-            {"delta": agg["delta"], "equity": round(equity, 2),
+            {"options_delta": agg["delta"], "equity": round(equity, 2),
              "cap_pct": cap_pct},
             ok=False,
         )
