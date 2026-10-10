@@ -9,6 +9,41 @@ import time
 from datetime import datetime, timedelta, timezone
 
 
+class _Tx:
+    """Reentrant transaction wrapper for the store's per-thread
+    connection.
+
+    A plain `with conn:` commits on EVERY block exit, so a helper
+    opening its own block inside a caller's transaction would
+    commit the caller's work mid-flight (a later failure would
+    leave half of it applied - the _record_close hazard). Nested
+    `with store._tx:` blocks share the outermost transaction: the
+    outermost exit commits, an exception rolls everything back.
+    Requires the connection in autocommit mode (isolation_level
+    = None) so the explicit BEGIN/COMMIT own the transaction.
+    """
+
+    def __init__(self, conn_getter):
+        self._conn_getter = conn_getter
+        self._depth = threading.local()
+
+    def __enter__(self):
+        depth = getattr(self._depth, "n", 0)
+        if depth == 0:
+            self._conn_getter().execute("BEGIN")
+        self._depth.n = depth + 1
+        return self
+
+    def __exit__(self, exc_type, *_exc):
+        self._depth.n -= 1
+        if self._depth.n == 0:
+            conn = self._conn_getter()
+            if exc_type is None:
+                conn.execute("COMMIT")
+            else:
+                conn.execute("ROLLBACK")
+
+
 def et_now() -> datetime:
     """the wall clock in the market's timezone
     (America/New_York) - the day-boundary gates (trades today,
@@ -35,6 +70,8 @@ class Store:
         self._local = threading.local()
         self._write_lock = threading.Lock()
         self._cache_lock = threading.Lock()
+                # reentrant transactions over the per-thread connection
+        self._tx = _Tx(lambda: self._conn)
         # positions cache: bumped on every write so reads between
         # trades are served from memory
         self._positions_version = 0
@@ -47,17 +84,42 @@ class Store:
     @property
     def _conn(self):
         """Per-thread connection: WAL lets readers run alongside
-        the writer without a global lock (plan #9)."""
+        the writer without a global lock (plan #9). Autocommit
+        mode - the _tx wrapper owns transaction boundaries
+        explicitly (a bare execute outside a _tx block commits
+        immediately instead of silently joining whatever
+        transaction happens to be open on the connection)."""
         conn = getattr(self._local, "conn", None)
         if conn is None:
             conn = sqlite3.connect(
                 self.path, check_same_thread=False
             )
+            conn.isolation_level = None
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA synchronous=NORMAL")
             conn.execute("PRAGMA busy_timeout=5000")
             self._local.conn = conn
         return conn
+
+    def close(self):
+        """Close this thread's connection - tests use it to
+        release the db file (the WAL/SHM siblings go with it);
+        the process's own connections die with the process."""
+        conn = getattr(self._local, "conn", None)
+        if conn is not None:
+            conn.close()
+            self._local.conn = None
+
+    def _invalidate_positions(self):
+        """Bump the positions cache version and drop the cached
+        rows - under BOTH locks. The writer holds _write_lock,
+        the reader holds _cache_lock; without the reader's lock
+        here, a reader that captured the old version before this
+        bump could store its (possibly pre-commit) rows under
+        the new version and serve them once."""
+        with self._cache_lock:
+            self._positions_version += 1
+            self._positions_cache.clear()
 
     def _init_schema(self):
         with self._write_lock, self._conn:
@@ -324,7 +386,7 @@ class Store:
         return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
     def seen_signal(self, message_key: str) -> bool:
-        with self._conn:
+        with self._tx:
             row = self._conn.execute(
                 "SELECT 1 FROM signals WHERE message_key = ?", (message_key,)
             ).fetchone()
@@ -353,7 +415,7 @@ class Store:
         )
         # everything is stored in UTC; the browser renders it in the
         # user's timezone
-        with self._write_lock, self._conn:
+        with self._write_lock, self._tx:
             self._touch()
             cur = self._conn.execute(
                 "INSERT OR IGNORE INTO signals "
@@ -371,7 +433,7 @@ class Store:
         position (insertion order)."""
         keys = ("id", "message_key", "ts", "author", "text", "parsed",
                 "correction", "channel", "received_ts")
-        with self._conn:
+        with self._tx:
             rows = self._conn.execute(
                 "SELECT rowid AS id, message_key, ts, author, text, "
                 "parsed, correction, channel, received_ts "
@@ -382,7 +444,7 @@ class Store:
         return [dict(zip(keys, r)) for r in rows]
 
     def max_signal_rowid(self) -> int:
-        with self._conn:
+        with self._tx:
             row = self._conn.execute(
                 "SELECT COALESCE(MAX(rowid), 0) FROM signals"
             ).fetchone()
@@ -396,12 +458,17 @@ class Store:
             return
         now = now or datetime.now(timezone.utc)
         today = now.date().isoformat()
-        if self._prune_day == today:
-            return
+        # check-and-set under a lock: two threads passing a bare
+        # guard together would both run the prune (the second
+        # deletes nothing but still takes the write lock)
+        with self._claim_lock:
+            if self._prune_day == today:
+                return
+            self._prune_day = today
         cutoff = (
             now - timedelta(days=int(retention))
         ).isoformat(timespec="seconds")
-        with self._write_lock, self._conn:
+        with self._write_lock, self._tx:
             gone_s = self._conn.execute(
                 "SELECT COUNT(*) FROM signals WHERE ts < ?",
                 (cutoff,),
@@ -436,7 +503,7 @@ class Store:
                 hour=0, minute=0, second=0, microsecond=0
             ).astimezone(timezone.utc).isoformat(timespec="seconds")
         )
-        with self._conn:
+        with self._tx:
             row = self._conn.execute(
                 "SELECT COUNT(*) FROM trades WHERE ts >= ? AND mode = ? "
                 "AND status = 'executed' AND action = 'BUY'",
@@ -447,7 +514,7 @@ class Store:
     def last_buy_time(self, mode: str = None) -> str:
         """the last executed BUY - scoped to the mode when given
         (a paper buy must not start the live cooldown)."""
-        with self._conn:
+        with self._tx:
             query = (
                 "SELECT ts FROM trades WHERE action = 'BUY' "
                 "AND status = 'executed'"
@@ -496,7 +563,7 @@ class Store:
         cutoff = (
             datetime.now(timezone.utc) - timedelta(minutes=window_minutes)
         ).isoformat(timespec="seconds")
-        with self._conn:
+        with self._tx:
             return self._conn.execute(
                 "SELECT 1 FROM trades WHERE dedupe_key = ? AND ts >= ? "
                 "AND status = 'executed' LIMIT 1",
@@ -516,7 +583,7 @@ class Store:
         message_key: str = None,
     ):
         self.maybe_prune()
-        with self._write_lock, self._conn:
+        with self._write_lock, self._tx:
             self._touch()
             self._conn.execute(
                 "INSERT INTO trades (ts, mode, action, ticker, qty, price, entry, "
@@ -539,7 +606,7 @@ class Store:
     def last_buy_contract(self, ticker, expiry):
         """Strike/right of the most recent BUY for this underlying
         and expiry, for sell-mismatch detection."""
-        with self._conn:
+        with self._tx:
             row = self._conn.execute(
                 "SELECT strike, opt_right FROM trades "
                 "WHERE action = 'BUY' AND ticker = ? AND expiry = ? "
@@ -551,7 +618,7 @@ class Store:
         return {"strike": row[0], "right": row[1] or "?"}
 
     def get_position(self, mode: str, contract_key: str, account="default") -> int:
-        with self._conn:
+        with self._tx:
             row = self._conn.execute(
                 "SELECT qty FROM positions WHERE mode = ? AND account = ? "
                 "AND contract_key = ?",
@@ -595,7 +662,7 @@ class Store:
         fx: float = 1.0,
     ):
         key = alert.contract_key()
-        with self._write_lock, self._conn:
+        with self._write_lock, self._tx:
             row = self._conn.execute(
                 "SELECT qty, avg_premium, realized FROM positions "
                 "WHERE mode = ? AND account = ? AND contract_key = ?",
@@ -607,8 +674,7 @@ class Store:
                 old_qty, old_avg, old_realized = int(row[0]), row[1], row[2] or 0.0
 
             self._touch()
-            self._positions_version += 1
-            self._positions_cache.clear()
+            self._invalidate_positions()
             new_qty = max(0, old_qty + delta)
             new_avg = old_avg
             realized = old_realized
@@ -698,10 +764,10 @@ class Store:
                 )
 
     def _record_close(self, mode: str, realized: float):
-        # runs inside apply_position's transaction - opening a
-        # second `with self._conn` here would commit the outer
-        # write mid-flight (a later failure would leave the streak
-        # committed but the position row not)
+        # runs inside apply_position's transaction - a nested
+        # `with self._tx:` would join it (the pre-_Tx hazard was
+        # a plain `with self._conn:` committing the outer write
+        # mid-flight), so this helper deliberately opens none
         today = et_now().strftime("%Y-%m-%d")
         streak = self._get_streak_unlocked(mode)
         if streak["date"] != today:
@@ -744,7 +810,7 @@ class Store:
         return int(streak.get("count") or 0)
 
     def update_peak_bid(self, mode, contract_key, bid, account="default"):
-        with self._write_lock, self._conn:
+        with self._write_lock, self._tx:
             before = self._conn.total_changes
             self._conn.execute(
                 "UPDATE positions SET peak_bid = MAX("
@@ -759,12 +825,16 @@ class Store:
             # invalidated the dashboard's summary cache
             if self._conn.total_changes > before:
                 self._touch()
-                self._positions_version += 1
-                self._positions_cache.clear()
+                self._invalidate_positions()
 
     def open_risk(self, mode: str, account=None) -> float:
-        # option positions only: stocks carry no option-style
-        # open risk (and the x100 multiplier is options-specific)
+        """Option positions only: stocks carry no option-style
+        open risk (and the x100 multiplier is options-specific).
+
+        A position with a NULL avg_premium contributes zero - the
+        seeders (apply_position, seed_position, the ws mapping)
+        always set a basis, so NULL means a manually crafted row;
+        flag those instead of fabricating exposure here."""
         query = (
             "SELECT SUM(qty * COALESCE(avg_premium, 0) * 100) "
             "FROM positions "
@@ -774,7 +844,7 @@ class Store:
         if account is not None:
             query += " AND account = ?"
             params.append(account)
-        with self._conn:
+        with self._tx:
             row = self._conn.execute(query, params).fetchone()
         return float(row[0]) if row and row[0] is not None else 0.0
 
@@ -783,10 +853,9 @@ class Store:
         """Per-position take-profit: sell the whole remaining
         position when its gain vs the entry premium reaches this
         percent. None clears the target."""
-        with self._write_lock, self._conn:
+        with self._write_lock, self._tx:
             self._touch()
-            self._positions_version += 1
-            self._positions_cache.clear()
+            self._invalidate_positions()
             self._conn.execute(
                 "UPDATE positions SET tp_gain_pct = ? "
                 "WHERE mode = ? AND account = ? AND contract_key = ?",
@@ -802,10 +871,9 @@ class Store:
         this % off its peak (overrides the global trailing stop
         for this position; 0 disables trailing here, None falls
         back to the global setting)."""
-        with self._write_lock, self._conn:
+        with self._write_lock, self._tx:
             self._touch()
-            self._positions_version += 1
-            self._positions_cache.clear()
+            self._invalidate_positions()
             self._conn.execute(
                 "UPDATE positions SET trail_pct = ? "
                 "WHERE mode = ? AND account = ? AND contract_key = ?",
@@ -819,7 +887,10 @@ class Store:
         """Clustered open risk: option positions grouped by
         (underlying, expiry, right) - three same-direction SPX
         0dte calls are one bet x3, not three positions. Returns
-        [{underlying, expiry, right, risk}] largest first."""
+        [{underlying, expiry, right, risk}] largest first.
+
+        Same NULL-basis assumption as open_risk: a position
+        without an avg_premium contributes zero here."""
         query = (
             "SELECT underlying, expiry, right, "
             "SUM(qty * COALESCE(avg_premium, 0) * 100) AS risk "
@@ -831,7 +902,7 @@ class Store:
             query += " AND account = ?"
             params.append(account)
         query += " GROUP BY underlying, expiry, right ORDER BY risk DESC"
-        with self._conn:
+        with self._tx:
             rows = self._conn.execute(query, params).fetchall()
         return [
             {
@@ -843,10 +914,15 @@ class Store:
 
     def signal_text(self, message_key: str):
         """The original alert text for a message key (used to
-        recover the size keyword when re-sizing past trades)."""
+        recover the size keyword when re-sizing past trades).
+
+        Returns None when the signal is gone - trades and signals
+        share the retention window, but a trade's message_key can
+        point at a signal from an earlier window (a correction or
+        a delayed exit), so callers must tolerate None."""
         if not message_key:
             return None
-        with self._conn:
+        with self._tx:
             row = self._conn.execute(
                 "SELECT text FROM signals WHERE message_key = ?",
                 (message_key,),
@@ -854,7 +930,7 @@ class Store:
         return row[0] if row else None
 
     def recent_trades(self, limit=50):
-        with self._conn:
+        with self._tx:
             rows = self._conn.execute(
                 "SELECT ts, mode, action, ticker, qty, price, status, detail, "
                 "message_key "
@@ -876,7 +952,7 @@ class Store:
         cutoff = datetime.now(timezone.utc) - timedelta(
             seconds=within_seconds
         )
-        with self._conn:
+        with self._tx:
             rows = self._conn.execute(
                 "SELECT ts, text FROM signals "
                 "ORDER BY rowid DESC LIMIT ?",
@@ -897,7 +973,7 @@ class Store:
         return False
 
     def recent_signals(self, limit=50):
-        with self._conn:
+        with self._tx:
             rows = self._conn.execute(
                 "SELECT ts, text, parsed, correction, channel, received_ts "
                 "FROM signals ORDER BY rowid DESC LIMIT ?",
@@ -917,22 +993,24 @@ class Store:
         if kind not in ("trades", "signals", "both"):
             kind = "trades"
 
+        # normalize the date bounds ONCE, before _run is defined:
+        # the "both" mode calls _run twice, and a nonlocal that
+        # mutates its argument per call made correctness depend on
+        # the second call seeing already-stretched text
+        if since:
+            since = str(since)
+        if until:
+            until = str(until)
+            # date-only until stretches to cover the end date
+            if len(until) == 10:
+                until += "T99"
+
         def _run(tk, limit_, offset_):
             def _like(term):
                 return (
                     "%" + str(term).replace("\\", "\\\\")
                     .replace("%", "\\%").replace("_", "\\_") + "%"
                 )
-
-            # date-only bounds: since is inclusive by prefix
-            # ordering, until is stretched to cover the end date
-            nonlocal since, until
-            if since:
-                since = str(since)
-            if until:
-                until = str(until)
-            if until and len(until) == 10:
-                until += "T99"
 
             where, params = [], []
             if since:
@@ -989,7 +1067,7 @@ class Store:
                     params += [like, like]
 
             clause = (" WHERE " + " AND ".join(where)) if where else ""
-            with self._conn:
+            with self._tx:
                 total = self._conn.execute(
                     f"SELECT COUNT(*) FROM {table}" + clause, params
                 ).fetchone()[0]
@@ -1006,6 +1084,9 @@ class Store:
             # so the pair stays adjacent, alert on top - with
             # second-precision timestamps the raw order cannot
             # distinguish them.
+            # the merge is in-memory (up to 2x merge_cap rows
+            # sorted here) - the retention window bounds it; move
+            # the merge into SQL if history ever grows unbounded
             merge_cap = 5000
             trades, t_total = _run("trades", merge_cap, 0)
             signals, s_total = _run("signals", merge_cap, 0)
@@ -1041,7 +1122,7 @@ class Store:
         return rows, total
 
     def get_cached_value(self, label: str):
-        with self._conn:
+        with self._tx:
             row = self._conn.execute(
                 "SELECT value FROM meta WHERE key = ?",
                 (f"ws_value:{label}",),
@@ -1058,7 +1139,7 @@ class Store:
 
     def set_cached_value(self, label: str, value: float, ts: str):
         payload = json.dumps({"value": float(value), "ts": ts})
-        with self._write_lock, self._conn:
+        with self._write_lock, self._tx:
             self._conn.execute(
                 "INSERT INTO meta (key, value) VALUES (?, ?) "
                 "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -1073,14 +1154,14 @@ class Store:
         self._data_version += 1
 
     def meta_get(self, key: str, default=None):
-        with self._conn:
+        with self._tx:
             row = self._conn.execute(
                 "SELECT value FROM meta WHERE key = ?", (key,)
             ).fetchone()
             return row[0] if row else default
 
     def meta_set(self, key: str, value):
-        with self._write_lock, self._conn:
+        with self._write_lock, self._tx:
             self._conn.execute(
                 "INSERT INTO meta (key, value) VALUES (?, ?) "
                 "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -1093,10 +1174,9 @@ class Store:
     ):
         """Insert a seeded position row (used to mirror live
         holdings into the paper ledger)."""
-        with self._write_lock, self._conn:
+        with self._write_lock, self._tx:
             self._touch()
-            self._positions_version += 1
-            self._positions_cache.clear()
+            self._invalidate_positions()
             self._conn.execute(
                 "INSERT INTO positions (mode, account, contract_key, "
                 "underlying, expiry, strike, right, qty, updated_ts, "
@@ -1113,10 +1193,9 @@ class Store:
 
     def reset_paper_account(self, label: str = "default"):
         """Drop a paper account's ledger so it can be re-seeded."""
-        with self._write_lock, self._conn:
+        with self._write_lock, self._tx:
             self._touch()
-            self._positions_version += 1
-            self._positions_cache.clear()
+            self._invalidate_positions()
             self._conn.execute(
                 "DELETE FROM positions WHERE mode = 'paper' "
                 "AND account = ?", (label,)
@@ -1142,7 +1221,7 @@ class Store:
     def paper_cash_usd(self, label: str = "default"):
         """The account's USD cash pool (the adjust editor); the
         main paper_equity pool is CAD."""
-        with self._conn:
+        with self._tx:
             row = self._conn.execute(
                 "SELECT value FROM meta WHERE key = ?",
                 (f"paper_cash_usd:{label}",),
@@ -1150,7 +1229,7 @@ class Store:
             return float(row[0]) if row else None
 
     def set_paper_cash_usd(self, value: float, label: str = "default"):
-        with self._write_lock, self._conn:
+        with self._write_lock, self._tx:
             self._touch()
             self._conn.execute(
                 "INSERT INTO meta (key, value) VALUES (?, ?) "
@@ -1162,10 +1241,9 @@ class Store:
         """Replace a paper account's holdings (the adjust
         editor): each row is (contract_key, underlying, expiry,
         strike, right, qty, avg_premium)."""
-        with self._write_lock, self._conn:
+        with self._write_lock, self._tx:
             self._touch()
-            self._positions_version += 1
-            self._positions_cache.clear()
+            self._invalidate_positions()
             self._conn.execute(
                 "DELETE FROM positions WHERE mode = 'paper' "
                 "AND account = ?", (label,)
@@ -1192,7 +1270,7 @@ class Store:
                 )
 
     def paper_equity(self, label: str = "default"):
-        with self._conn:
+        with self._tx:
             row = self._conn.execute(
                 "SELECT value FROM meta WHERE key = ?",
                 (f"paper_equity:{label}",),
@@ -1200,7 +1278,7 @@ class Store:
             return float(row[0]) if row else None
 
     def set_paper_equity(self, value: float, label: str = "default"):
-        with self._write_lock, self._conn:
+        with self._write_lock, self._tx:
             self._touch()
             self._conn.execute(
                 "INSERT INTO meta (key, value) VALUES (?, ?) "
@@ -1209,10 +1287,21 @@ class Store:
             )
 
     def adjust_paper_equity(self, delta: float, label: str = "default"):
-        current = self.paper_equity(label)
-        if current is None:
-            return
-        self.set_paper_equity(current + delta, label)
+        # read-modify-write under the write lock: two concurrent
+        # adjustments (a fill booking and the adjust editor) must
+        # not both read the same current and lose one delta
+        with self._write_lock, self._tx:
+            row = self._conn.execute(
+                "SELECT value FROM meta WHERE key = ?",
+                (f"paper_equity:{label}",),
+            ).fetchone()
+            if row is None:
+                return
+            self._touch()
+            self._conn.execute(
+                "UPDATE meta SET value = ? WHERE key = ?",
+                (str(float(row[0]) + delta), f"paper_equity:{label}"),
+            )
 
     # ---- pending live orders (fill reconciliation) ----
 
@@ -1220,7 +1309,7 @@ class Store:
         """(qty, avg_premium) snapshot of a ledger position -
         the pre-order state a pending-order correction restores
         against."""
-        with self._conn:
+        with self._tx:
             row = self._conn.execute(
                 "SELECT qty, avg_premium FROM positions "
                 "WHERE mode = ? AND account = ? AND contract_key = ?",
@@ -1241,7 +1330,7 @@ class Store:
         fill or expire the estimate. pre_qty/pre_avg snapshot
         the position before the estimate so the correction can
         restore the exact basis."""
-        with self._write_lock, self._conn:
+        with self._write_lock, self._tx:
             self._touch()
             self._conn.execute(
                 "INSERT INTO pending_orders (mode, account, order_id, "
@@ -1260,7 +1349,7 @@ class Store:
 
     def open_pending_orders(self, mode, account=None):
         """Open (unreconciled) live orders, oldest first."""
-        with self._conn:
+        with self._tx:
             query = (
                 "SELECT id, mode, account, order_id, kind, "
                 "contract_key, underlying, expiry, strike, "
@@ -1291,7 +1380,7 @@ class Store:
         """Accumulate an actual fill onto an open order: the
         running filled qty and its blended price. Returns the
         updated totals."""
-        with self._write_lock, self._conn:
+        with self._write_lock, self._tx:
             self._touch()
             row = self._conn.execute(
                 "SELECT filled_qty, filled_price FROM pending_orders "
@@ -1320,7 +1409,7 @@ class Store:
             return total, blended
 
     def settle_pending_order(self, row_id, status):
-        with self._write_lock, self._conn:
+        with self._write_lock, self._tx:
             self._touch()
             self._conn.execute(
                 "UPDATE pending_orders SET status = ? WHERE id = ?",
@@ -1368,10 +1457,9 @@ class Store:
             int(filled_qty) if action == "BUY" else -int(filled_qty)
         )
         new_qty = max(0, int(pre_qty) + signed_fill)
-        with self._write_lock, self._conn:
+        with self._write_lock, self._tx:
             self._touch()
-            self._positions_version += 1
-            self._positions_cache.clear()
+            self._invalidate_positions()
             row = self._conn.execute(
                 "SELECT qty, avg_premium, realized FROM positions "
                 "WHERE mode = ? AND account = ? AND contract_key = ?",
@@ -1380,6 +1468,10 @@ class Store:
             if row is None:
                 return
             _qty, _avg, realized = (row[0], row[1], row[2] or 0.0)
+            # the SET clauses and params are built in lockstep and
+            # the order is load-bearing: qty, updated_ts, then the
+            # conditional realized/avg_premium appends, then the
+            # WHERE triple (mode, account, contract_key) last
             sets = ["qty = ?", "updated_ts = ?"]
             params = [new_qty, self._now()]
             if action == "SELL":
@@ -1437,7 +1529,7 @@ class Store:
     # ---- users ----
 
     def user_count(self) -> int:
-        with self._conn:
+        with self._tx:
             return self._conn.execute(
                 "SELECT COUNT(*) FROM users"
             ).fetchone()[0]
@@ -1450,7 +1542,8 @@ class Store:
         ):
             return False
         try:
-            with self._write_lock, self._conn:
+            with self._write_lock, self._tx:
+                self._touch()
                 self._conn.execute(
                     "INSERT INTO users (username, password_hash, "
                     "role, created_ts) VALUES (?, ?, ?, ?)",
@@ -1464,7 +1557,7 @@ class Store:
             return False
 
     def get_user(self, username: str):
-        with self._conn:
+        with self._tx:
             row = self._conn.execute(
                 "SELECT username, password_hash, role FROM users "
                 "WHERE username = ?",
@@ -1488,7 +1581,7 @@ class Store:
             return None
         if not _verify_password(password, user["password_hash"]):
             return None
-        with self._write_lock, self._conn:
+        with self._write_lock, self._tx:
             self._conn.execute(
                 "UPDATE users SET last_login_ts = ? "
                 "WHERE username = ?",
@@ -1498,7 +1591,7 @@ class Store:
 
     def list_users(self) -> list:
         """No password hashes in listings."""
-        with self._conn:
+        with self._tx:
             rows = self._conn.execute(
                 "SELECT username, role, created_ts, last_login_ts "
                 "FROM users ORDER BY username"
@@ -1507,7 +1600,7 @@ class Store:
         return [dict(zip(keys, r)) for r in rows]
 
     def delete_user(self, username: str) -> bool:
-        with self._write_lock, self._conn:
+        with self._write_lock, self._tx:
             cur = self._conn.execute(
                 "DELETE FROM users WHERE username = ?", (username,)
             )
@@ -1516,7 +1609,7 @@ class Store:
     def update_password(self, username: str, password: str) -> bool:
         if not password:
             return False
-        with self._write_lock, self._conn:
+        with self._write_lock, self._tx:
             cur = self._conn.execute(
                 "UPDATE users SET password_hash = ? "
                 "WHERE username = ?",
@@ -1527,7 +1620,7 @@ class Store:
     def update_role(self, username: str, role: str) -> bool:
         if role not in ("admin", "viewer"):
             return False
-        with self._write_lock, self._conn:
+        with self._write_lock, self._tx:
             cur = self._conn.execute(
                 "UPDATE users SET role = ? WHERE username = ?",
                 (role, username),
