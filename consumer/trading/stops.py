@@ -8,6 +8,52 @@ from core.redact import format_error
 from core.store import et_now
 
 
+def atr_stop_price(provider, pos, peak, t):
+    """The ATR trailing floor for one option position: the
+    UNDERLYING's daily ATR (from the moomoo provider's cached
+    daily bars) scaled by the option's delta, subtracted from
+    the peak bid. Volatility-adaptive where the percentage trail
+    is fixed - wide in stressed markets, tight in calm ones.
+
+    None when disabled, when the provider has no bar history, or
+    when the position cannot be priced - the caller falls back
+    to the percentage trail (whichever is tighter wins)."""
+    if not getattr(t, "atr_trailing", False):
+        return None
+    if provider is None or not hasattr(provider, "daily_bars"):
+        return None
+    period = int(getattr(t, "atr_period", 14) or 14)
+    bars = provider.daily_bars(pos.get("underlying"), period)
+    if not bars or len(bars) < 2:
+        return None
+    trs = []
+    for prev, cur in zip(bars, bars[1:]):
+        trs.append(max(
+            cur["high"] - cur["low"],
+            abs(cur["high"] - prev["close"]),
+            abs(cur["low"] - prev["close"]),
+        ))
+    atr = sum(trs[-period:]) / min(period, len(trs))
+    if atr <= 0:
+        return None
+    # the option's delta scales the underlying's range into the
+    # option's expected range - from the store's own greeks math
+    # (flat-iv approximation; the real spot rides the last close)
+    from consumer.trading.greeks import bs_greeks, days_to_expiry
+
+    spot = bars[-1]["close"]
+    g = bs_greeks(
+        spot, pos.get("strike"),
+        days_to_expiry(pos.get("expiry")) / 365.0,
+        0.05, 0.30, pos.get("right"),
+    )
+    delta = abs(g["delta"])
+    if delta <= 0:
+        return None
+    k = float(getattr(t, "atr_multiplier", 2.0) or 2.0)
+    return max(0.01, peak - k * delta * atr)
+
+
 def adaptive_trail_pct(t, pos, peak, entry):
     """The effective trail distance for a position: the
     position's own trail_pct when pinned in the ui (0 = off for
@@ -62,15 +108,18 @@ class StopMonitor:
     On a 0dte expiry day a position that had a gain and gave it
     back to its entry is sold before it expires worthless."""
 
-    def __init__(self, cfg, store, trade_executor, quote_fn, webhook_url=""):
+    def __init__(self, cfg, store, trade_executor, quote_fn, webhook_url="",
+                 provider=None):
         self.cfg = cfg
         self.store = store
         self.trader = trade_executor
         self.quote_fn = quote_fn
+        self.provider = provider
         self.webhook_url = webhook_url
         self._thread = None
         self.last_run = None
         self.errors = 0
+        self._delta_warn_ts = 0.0
 
     def start(self):
         if self._thread is None or not self._thread.is_alive():
@@ -115,8 +164,26 @@ class StopMonitor:
         if trail_pct is not None and trail_pct > 0 and peak and peak > entry:
             trail = peak * (1 - trail_pct / 100.0)
             if stop is None or trail > stop:
-                return trail
+                stop = trail
+        # the atr floor (volatility-adaptive, default off) - the
+        # tighter of the two wins
+        atr = atr_stop_price(self._provider(), pos, peak, t)
+        if atr is not None and (stop is None or atr > stop):
+            return atr
         return stop
+
+    def _provider(self):
+        """The active quote provider object (the atr bars and the
+        delta spots come from it, not from the per-position quote
+        fn) - the module global the app registered at startup."""
+        if self.provider is not None:
+            return self.provider
+        try:
+            from consumer.trading.quotes import ACTIVE_QUOTE_PROVIDER
+
+            return ACTIVE_QUOTE_PROVIDER
+        except Exception:
+            return None
 
     def _tier_for(self, pos):
         t = self.cfg.trading
@@ -179,6 +246,72 @@ class StopMonitor:
             tp = pos.get("tp_gain_pct")
             if tp and entry > 0 and bid >= entry * (1 + float(tp) / 100.0):
                 self._fire(pos, bid, reason="tp")
+        self._delta_warning()
+
+    def _delta_warning(self):
+        """The soft delta limit (rollout step 1): the book's net
+        delta vs delta_cap_pct of equity, logged + discorded -
+        never a rejection. Hard-gate later once the cap is
+        calibrated against the dashboard's live delta. Rate
+        limited to one notice per 10 minutes."""
+        t = self.cfg.trading
+        cap_pct = float(getattr(t, "delta_cap_pct", 0) or 0)
+        if cap_pct <= 0:
+            return
+        provider = self._provider()
+        if provider is None or not hasattr(provider, "stock_quote"):
+            return
+        rows = [
+            p for p in self.store.list_positions(self.trader.mode)
+            if p.get("right")
+        ]
+        if not rows:
+            return
+        spots = {}
+        for u in sorted({p["underlying"] for p in rows}):
+            spot = provider.stock_quote(u)
+            if not spot and hasattr(provider, "index_quote"):
+                try:
+                    spot = provider.index_quote(u)
+                except Exception:
+                    spot = None
+            if spot:
+                spots[u] = spot
+        from consumer.trading.greeks import portfolio_greeks
+
+        agg = portfolio_greeks(rows, spots)
+        equity = 0.0
+        try:
+            equity = sum(
+                v for v in (self.trader.account.values() or {}).values()
+                if v
+            )
+        except Exception:
+            return
+        if equity <= 0:
+            return
+        projected = abs(agg["delta"])
+        limit = equity * cap_pct / 100.0
+        now = time.time()
+        if projected <= limit or now - self._delta_warn_ts < 600:
+            return
+        self._delta_warn_ts = now
+        msg = (
+            f"delta warning: net delta {agg['delta']:+,.0f} "
+            f"({projected / equity * 100:.1f}% of equity) past the "
+            f"{cap_pct:g}% cap"
+            + (
+                f" - {agg['unpriced']} position(s) unpriced"
+                if agg["unpriced"] else ""
+            )
+        )
+        print(f"stop monitor: {msg}")
+        notify_discord(
+            self.webhook_url, "Delta limit (soft)",
+            {"delta": agg["delta"], "equity": round(equity, 2),
+             "cap_pct": cap_pct},
+            ok=False,
+        )
 
     def _fire(self, pos, bid, reason="stop"):
         tag = {"stop": "[STOP]", "back_to_entry": "[B2E]",

@@ -19,7 +19,7 @@ from consumer.ws.account import account_label, effective_accounts
 # dashboard and the tests import them from here)
 from consumer.trading.sizing import (  # noqa: F401
     account_sizing, effective_contract_cap, effective_risk_pct,
-    sell_quantity, tier_for, tier_plan,
+    sell_quantity, sizing_multiplier, tier_for, tier_plan,
 )
 from consumer.trading.risk_gates import (  # noqa: F401
     at_cluster_cap, at_open_risk_cap, at_zero_dte_cap,
@@ -137,6 +137,13 @@ class PaperExecutor:
                     qty = min(plan["qty"], lotto_affordable)
                 else:
                     qty = plan["qty"]
+                # the dynamic sizing scalar (vix / kelly, default
+                # off) shrinks the tier quantity - never amplifies,
+                # floored at 1 contract
+                if qty >= 1:
+                    scaled = sizing_multiplier(cfg, store, self.mode)
+                    if scaled < 1.0:
+                        qty = max(1, int(round(qty * scaled)))
                 if qty < 1:
                     if plan["affordable"] >= 1:
                         breakdown[label] = (
@@ -659,6 +666,17 @@ class WealthsimpleExecutor:
                         qty = min(plan["qty"], lotto_affordable)
                     else:
                         qty = plan["qty"]
+                    # the dynamic sizing scalar (vix / kelly,
+                    # default off) shrinks the tier quantity -
+                    # never amplifies, floored at 1 contract
+                    if qty >= 1:
+                        scaled = sizing_multiplier(
+                            cfg, store, self.mode
+                        )
+                        if scaled < 1.0:
+                            qty = max(
+                                1, int(round(qty * scaled))
+                            )
                     if qty < 1:
                         if plan["affordable"] >= 1:
                             breakdown[label] = (

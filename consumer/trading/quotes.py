@@ -4,6 +4,14 @@ import time
 from core.redact import short_error
 from core.parser import Alert
 
+
+def et_day():
+    """Today's date in ET (the daily-cache key for the underlying
+    bars - the bars roll over with the market's own clock)."""
+    from core.store import et_now
+
+    return et_now().date().isoformat()
+
 # the live quote provider, held for the web layer (the spx
 # levels ladder polls the index spot through it)
 ACTIVE_QUOTE_PROVIDER = None
@@ -138,6 +146,9 @@ class MoomooQuoteProvider:
         # should still show the last close (marked stale)
         self._index_last = None
         self._stock_cache = {}   # symbol -> (ts, price)
+        self._vix_cache = None
+        self._vix_ts = 0.0
+        self._bars_cache = {}    # symbol -> (day, bars)
 
     def stock_quote(self, symbol, ttl=5.0, extended=False):
         """Realtime stock/etf spot from the snapshot, cached
@@ -431,6 +442,106 @@ class MoomooQuoteProvider:
         # trading pricing: the regular-session quote (no session
         # override - the ladder's extended spot is display-only)
         return self.extract_price(row)
+
+    def vix_quote(self, ttl=60.0):
+        """The vix level for the sizing scalar - a regime input,
+        not a pricing input. Tries the index snapshot first (this
+        opend build may refuse index quotes) and falls back to
+        the vixy etf as the regime proxy: vixy tracks vix futures
+        with drift, but the scalar only needs the regime class
+        (calm vs stressed), not the exact level. None = unknown -
+        the sizing multiplier fails open."""
+        now = time.time()
+        if self._vix_cache is not None and now - self._vix_ts < ttl:
+            return self._vix_cache
+        for sym in ("VIX", "VIXY"):
+            try:
+                ret, data = self._context().get_market_snapshot(
+                    [f"US.{sym}"]
+                )
+            except Exception:
+                try:
+                    self._ctx.close()
+                except Exception:
+                    pass
+                self._ctx = None
+                return self._vix_cache
+            if ret != 0 or data is None or (
+                hasattr(data, "empty") and data.empty
+            ):
+                continue
+            try:
+                for i in range(len(data)):
+                    row = data.iloc[i]
+                    p = self.extract_price(row)
+                    if p:
+                        self._vix_cache = p
+                        self._vix_ts = now
+                        return p
+            except Exception:
+                continue
+        return self._vix_cache
+
+    def daily_bars(self, symbol, n=14):
+        """Daily OHLC bars for an UNDERLYING (the atr trailing
+        stop computes the range on the underlying and scales it
+        by the option's delta - per-contract bars would be noisy
+        and burn the history-kline quota). Cached per symbol per
+        calendar day: one request_history_kline call per
+        underlying per day. Returns [{high, low, close}] oldest
+        first, or None when unavailable."""
+        sym = str(symbol or "").upper()
+        if not sym:
+            return None
+        day = et_day()
+        hit = self._bars_cache.get(sym)
+        if hit and hit[0] == day:
+            return hit[1]
+        try:
+            from moomoo import KLType
+        except ImportError:
+            return None
+        try:
+            from datetime import datetime, timedelta
+
+            start = (
+                datetime.now() - timedelta(days=max(n * 3, 30))
+            ).strftime("%Y-%m-%d")
+            ret, data = self._context().request_history_kline(
+                f"US.{sym}", start=start, ktype=KLType.K_DAY,
+                maxcount=n + 1,
+            )
+        except Exception:
+            try:
+                self._ctx.close()
+            except Exception:
+                pass
+            self._ctx = None
+            return None
+        if ret != 0 or data is None or (
+            hasattr(data, "empty") and data.empty
+        ):
+            return None
+        bars = []
+        try:
+            for i in range(len(data)):
+                row = data.iloc[i]
+
+                def _f(key):
+                    try:
+                        return float(row.get(key))
+                    except (TypeError, ValueError):
+                        return None
+
+                h, l, c = _f("high"), _f("low"), _f("close")
+                if h and l and c:
+                    bars.append({"high": h, "low": l, "close": c})
+        except Exception:
+            return None
+        if len(bars) < 2:
+            return None
+        self._bars_cache[sym] = (day, bars[-(n + 1):])
+        return bars[-(n + 1):]
 
     def __call__(self, pos):
         return self.quote(pos)

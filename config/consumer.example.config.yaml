@@ -149,6 +149,32 @@ trading:
                                 # (5-day lookback; exits stay allowed; 0 = off)
   drawdown_lookback_days: 5     # the peak's lookback window - a months-old high
                                 # must not throttle trading forever
+  # dynamic sizing (moomoo opend data, both default off): the
+  # alert's tier quantity is SHRUNK by the scalar, never amplified,
+  # floored at 1 contract; missing data fails open at 1.0
+  vix_size_scalar: false        # shrink size as vix rises above its long-run
+                                # average (min(1, 15/vix); vix from the opend
+                                # snapshot, vixy etf proxy fallback)
+  kelly_size_scalar: false      # a fractional kelly from this mode's own closed
+                                # round trips (win rate x avg win/loss)
+  kelly_fraction: 0.25          # quarter kelly (the fraction of full kelly applied)
+  kelly_min_trades: 10          # closed trades below this = not enough history
+                                # (the scalar fails open at 1.0)
+  # atr trailing stop (moomoo daily bars, default off): an extra
+  # stop floor = peak_bid - atr_multiplier x (delta-scaled
+  # underlying atr); the tighter of the atr floor and the
+  # percentage trail wins, and missing bar data falls back to
+  # the percentage trail
+  atr_trailing: false
+  atr_period: 14                # daily bars per atr reading (underlying, not
+                                # the option - the option's range is the
+                                # underlying's scaled by delta)
+  atr_multiplier: 2.0           # stop distance = multiplier x atr
+  delta_cap_pct: 0              # SOFT delta limit: the stop monitor warns (log +
+                                # discord, rate-limited) when the book's net delta
+                                # passes this % of equity - watch it against the
+                                # dashboard's live delta before any hard gate
+                                # (0 = off)
   max_slippage_pct: 2           # notice when an actual fill lands this % away
                                 # from the order's estimated price (discord
                                 # notice only - data first, no auto-pause)

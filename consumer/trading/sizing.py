@@ -209,3 +209,75 @@ def sell_quantity(held: int, scale: Optional[float]) -> int:
         return held
     qty = int(held * scale + 0.5)
     return min(held, max(1, qty))
+
+
+def sizing_multiplier(cfg, store=None, mode=None, provider=None):
+    """A 0..1 scalar applied ON TOP of the alert's tier size -
+    never a replacement for it (the alert's tier contract stands;
+    the scalar only shrinks, never amplifies).
+
+    Two optional components, both default-off in the config:
+
+    - vix_size_scalar: size shrinks as vix rises above its
+      long-run average (min(1, 15 / vix)); the vix comes from the
+      moomoo provider (index snapshot, vixy etf proxy fallback) -
+      unavailable means fail open at 1.0.
+    - kelly_size_scalar: a quarter-kelly fraction from the mode's
+      own closed round trips (win rate x odds); fewer closed
+      trades than kelly_min_trades means fail open at 1.0.
+
+    The executor floors the scaled quantity at 1 contract, so a
+    0 scalar throttles to the minimum rather than vetoing."""
+    t = cfg.trading
+    mult = 1.0
+    if getattr(t, "vix_size_scalar", False):
+        vix = _vix_level(provider)
+        if vix:
+            mult *= min(1.0, 15.0 / max(float(vix), 1.0))
+    if getattr(t, "kelly_size_scalar", False) and store is not None:
+        k = _kelly_fraction(store, mode, t)
+        if k is not None:
+            mult *= k
+    return max(0.0, min(1.0, mult))
+
+
+def _vix_level(provider):
+    """The vix regime level from the active moomoo provider -
+    None (fail open) when there is none or it cannot answer."""
+    if provider is None:
+        try:
+            from consumer.trading.quotes import ACTIVE_QUOTE_PROVIDER
+
+            provider = ACTIVE_QUOTE_PROVIDER
+        except Exception:
+            return None
+    if provider is None or not hasattr(provider, "vix_quote"):
+        return None
+    try:
+        return provider.vix_quote()
+    except Exception:
+        return None
+
+
+def _kelly_fraction(store, mode, t):
+    """The fractional-kelly scalar from the mode's closed round
+    trips - None (fail open) below kelly_min_trades."""
+    try:
+        stats = store.closed_trade_stats(
+            mode, int(getattr(t, "kelly_min_trades", 10) or 10) * 5
+        )
+    except Exception:
+        return None
+    n, wins = stats["n"], stats["wins"]
+    if n < int(getattr(t, "kelly_min_trades", 10) or 10):
+        return None
+    p = wins / n
+    avg_win, avg_loss = stats["avg_win"], stats["avg_loss"]
+    if avg_win <= 0 or avg_loss <= 0:
+        return None
+    b = avg_win / avg_loss
+    full_kelly = (p * b - (1 - p)) / b
+    if full_kelly <= 0:
+        return 0.0
+    frac = float(getattr(t, "kelly_fraction", 0.25) or 0.25)
+    return max(0.0, min(1.0, full_kelly * frac))

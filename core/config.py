@@ -156,6 +156,30 @@ class TradingConfig:
     # the peak's lookback window (days) - a months-old high must
     # not throttle trading forever
     drawdown_lookback_days: int = 5
+    # dynamic sizing (opend data, both default off): the vix
+    # scalar shrinks the tier quantity as vix rises above its
+    # long-run average; the kelly scalar applies a fractional
+    # kelly from the mode's own closed round trips. Both fail
+    # open at 1.0 when the data is unavailable, and the scaled
+    # quantity floors at 1 contract - the alert's tier contract
+    # is never replaced, only modulated
+    vix_size_scalar: bool = False
+    kelly_size_scalar: bool = False
+    kelly_fraction: float = 0.25
+    kelly_min_trades: int = 10
+    # atr trailing stop (opend daily bars, default off): the
+    # stop floor is peak_bid - atr_multiplier x (delta-scaled
+    # underlying atr); the tighter of the atr floor and the
+    # percentage trail wins, and missing data falls back to the
+    # percentage trail
+    atr_trailing: bool = False
+    atr_period: int = 14
+    atr_multiplier: float = 2.0
+    # the soft delta limit (opend spots, 0 = off): the stop
+    # monitor warns (log + discord, rate-limited) when the book's
+    # net delta passes this % of equity - rollout step 1 before
+    # any hard gate
+    delta_cap_pct: float = 0.0
     # notice when an actual fill lands this % away from the
     # order's estimated price (data only, no auto-pause)
     max_slippage_pct: float = 2.0
@@ -605,6 +629,24 @@ def load_config(path: str) -> Config:
         drawdown_lookback_days=int(
             _get(trading_raw, "drawdown_lookback_days", 5)
         ),
+        vix_size_scalar=bool(
+            _get(trading_raw, "vix_size_scalar", False)
+        ),
+        kelly_size_scalar=bool(
+            _get(trading_raw, "kelly_size_scalar", False)
+        ),
+        kelly_fraction=float(
+            _get(trading_raw, "kelly_fraction", 0.25)
+        ),
+        kelly_min_trades=int(
+            _get(trading_raw, "kelly_min_trades", 10)
+        ),
+        atr_trailing=bool(_get(trading_raw, "atr_trailing", False)),
+        atr_period=int(_get(trading_raw, "atr_period", 14)),
+        atr_multiplier=float(
+            _get(trading_raw, "atr_multiplier", 2.0)
+        ),
+        delta_cap_pct=float(_get(trading_raw, "delta_cap_pct", 0.0)),
         max_slippage_pct=float(_get(trading_raw, "max_slippage_pct", 2.0)),
         partial_fill_cancel_pct=float(
             _get(trading_raw, "partial_fill_cancel_pct", 10.0)

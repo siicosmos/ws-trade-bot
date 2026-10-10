@@ -1609,6 +1609,33 @@ class Store:
             return 0.0
         return max(0.0, (peak - current) / peak * 100.0)
 
+    def closed_trade_stats(self, mode: str, limit: int = 50) -> dict:
+        """Win/loss stats over the most recent closed round trips
+        (position rows at qty 0 with booked realized - the same
+        definition scripts/expectancy.py reports on). Feeds the
+        kelly sizing scalar; callers must treat n below their
+        minimum as 'not enough history'."""
+        with self._tx:
+            rows = self._conn.execute(
+                "SELECT realized FROM positions "
+                "WHERE mode = ? AND qty = 0 "
+                "AND realized IS NOT NULL AND realized != 0 "
+                "ORDER BY updated_ts DESC LIMIT ?",
+                (mode, int(limit)),
+            ).fetchall()
+        n = len(rows)
+        wins = sum(1 for r in rows if (r[0] or 0) > 0)
+        sum_win = sum(r[0] for r in rows if (r[0] or 0) > 0)
+        sum_loss = sum(r[0] for r in rows if (r[0] or 0) <= 0)
+        avg_win = (sum_win / wins) if wins else 0.0
+        avg_loss = (
+            (sum_loss / (n - wins)) if n > wins else 0.0
+        )
+        return {
+            "n": n, "wins": wins,
+            "avg_win": avg_win, "avg_loss": abs(avg_loss),
+        }
+
     # ---- users ----
 
     def user_count(self) -> int:
