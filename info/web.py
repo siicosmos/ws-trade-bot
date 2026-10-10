@@ -10,12 +10,12 @@ Session login (the same machinery as the consumer app, with its
 own cookie name and signing key so the two apps never fight on
 the same host): every route requires a logged-in browser or a
 matching X-Auth-Token header, except /health, /favicon.ico,
-/login, /alert (the reader's pipeline token) and /api/feed (the
-per-consumer feed token - a fake alert would make every
-consumer app trade, and a fake levels text reaches every
-consumer's ladder, so the write routes carry the same token
-guard on top). No localStorage token: the browser holds only
-the HttpOnly session cookie.
+/login, /alert (the reader's pipeline token), /api/feed and
+/api/signals (the per-consumer feed token - a fake alert would
+make every consumer app trade, and a fake levels text reaches
+every consumer's ladder, so the write routes carry the same
+token guard on top). No localStorage token: the browser holds
+only the HttpOnly session cookie.
 """
 
 import hmac
@@ -141,7 +141,10 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
     # session login for the dashboard + the machine-token guard
     # for the reader/scripts; /api/feed does its own per-consumer
     # token auth (see the route below)
-    install_auth(app, cfg, store, LOGIN_HTML, exempt_paths=("/api/feed",))
+    install_auth(
+        app, cfg, store, LOGIN_HTML,
+        exempt_paths=("/api/feed", "/api/signals"),
+    )
 
     @app.get("/")
     def info_page():
@@ -559,6 +562,27 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
 
     @app.get("/api/signals")
     def api_signals():
+        # exempted from the session guard (install_auth) because
+        # the consumer's backfill reads it with its per-consumer
+        # feed token - the same identity /api/feed accepts; a
+        # browser needs the session (or the pipeline token) as
+        # everywhere else
+        if not (
+            session.get("auth")
+            or _reader_token_ok()
+            or _consumer_by_token(
+                request.headers.get("X-Auth-Token", "")
+            )
+        ):
+            now = time.time()
+            if now - app._last_reject_log_feed > 60:
+                app._last_reject_log_feed = now
+                logging.getLogger("info.feed-guard").warning(
+                    "signals request rejected (bad or missing "
+                    "X-Auth-Token) - browsers need the session, "
+                    "consumers need a consumers[] token"
+                )
+            return jsonify({"error": "unauthorized"}), 401
         limit = min(max(
             request.args.get("limit", default=50, type=int) or 50,
             1), 200)

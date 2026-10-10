@@ -374,3 +374,37 @@ def test_info_session_key_file_is_separate(tmp_path, monkeypatch):
         assert captured["role"] == "info"
     finally:
         os.unlink(path)
+
+
+def test_info_signals_serves_the_consumer_backfill():
+    """/api/signals is exempt from the session guard for the same
+    identity as /api/feed: the consumer's backfill reads it with
+    its per-consumer token (every fresh consumer start anchors at
+    the head and backfills its recent-alerts list). Regression:
+    the session lockdown 401'd that call - the backfill failed on
+    every consumer restart while the feed itself kept working."""
+    entry = __import__("core.config", fromlist=["ConsumerEntry"]) \
+        .ConsumerEntry(label="c1", token="tok1")
+    store = _fresh_store()
+    cfg = ConfigStub(TradingConfig(mode="notify"), auth_token="t")
+    cfg.consumers = [entry]
+    app = __import__(
+        "info.web", fromlist=["create_app"]
+    ).create_app(cfg, store)
+    client = app.test_client()
+
+    # anonymous and wrong-token requests stay rejected
+    assert client.get("/api/signals").status_code == 401
+    r = client.get("/api/signals",
+                   headers={"X-Auth-Token": "wrong"})
+    assert r.status_code == 401
+
+    # the consumer's feed token passes - the backfill path
+    r = client.get("/api/signals?limit=10",
+                   headers={"X-Auth-Token": "tok1"})
+    assert r.status_code == 200
+    assert r.get_json() == []
+
+    # a logged-in browser still reads it as before
+    client.post("/login", data={"username": "admin", "password": "t"})
+    assert client.get("/api/signals").status_code == 200
