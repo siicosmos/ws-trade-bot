@@ -12,6 +12,7 @@ from consumer.trading.executor import (
     PaperExecutor, account_sizing, sell_quantity, tier_plan,
 )
 from core.parser import parse_alert
+from core.store import et_now
 from consumer.pipeline import process_alert
 from consumer.trading.risk import RiskEngine
 
@@ -4176,7 +4177,7 @@ def test_notify_paper_respects_risk_gates():
     assert r2["paper"]["ok"] is True
     from datetime import date
 
-    key = f"SPY-{date.today().isoformat()}-759-C"
+    key = f"SPY-{et_now().date().isoformat()}-759-C"
     assert store.get_position("paper", key, "default") >= 1
 
 
@@ -4390,7 +4391,7 @@ class _FakeWsForQuotes:
                 "optionDetails": {
                     "underlyingSecurity": {"stock": {"symbol": "SPY"}},
                     "expiryDate": (
-                        date.today().isoformat()
+                        et_now().date().isoformat()
                         + "T00:00:00.000-04:00"
                     ),
                     "strikePrice": 759.0,

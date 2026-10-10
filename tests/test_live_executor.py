@@ -13,7 +13,7 @@ import types
 from datetime import date
 
 from core.config import TradingConfig, WealthsimpleConfig
-from core.store import Store
+from core.store import Store, et_now
 from consumer.trading.executor import (
     ExecutionResult, WealthsimpleExecutor,
 )
@@ -21,7 +21,8 @@ from core.parser import parse_alert
 from consumer.ws.account import WSAccountConfig
 
 # 0DTE alerts parse to today's date - the fake chain serves it
-TODAY = date.today().isoformat()
+# the et clock - the 0dte gates and the store bucket by it
+TODAY = et_now().date().isoformat()
 
 
 def _chain_entry(opt_id, strike, ask, bid):

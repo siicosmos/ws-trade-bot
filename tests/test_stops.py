@@ -11,7 +11,7 @@ from consumer.trading.executor import PaperExecutor
 from core.parser import parse_alert
 from consumer.trading.risk import RiskEngine
 from consumer.trading.stops import StopMonitor
-from core.store import Store
+from core.store import Store, et_now
 import pytest  # noqa: E402
 
 
@@ -99,7 +99,7 @@ def test_min_dte_gate():
     assert not ok
     assert "min_dte_days" in reason
 
-    far = (date.today() + timedelta(days=30)).strftime("%m/%d")
+    far = (et_now().date() + timedelta(days=30)).strftime("%m/%d")
     ok, _ = risk.evaluate(
         parse_alert(f"BOUGHT {far} SPY 759c @ 1.5 @everyone small size")
     )
@@ -400,7 +400,7 @@ def test_back_to_entry_sells_0dte_gain_gone():
     positions without a prior gain are left alone."""
     cfg = ConfigStub(TradingConfig(mode="paper"))
     monitor = StopMonitor(cfg, _fresh_store(), None, lambda pos: None)
-    today = date.today().isoformat()
+    today = et_now().date().isoformat()
     pos = {
         "contract_key": "SPY-2026-10-02-759-C", "right": "C",
         "avg_premium": 1.5, "expiry": today, "size": "lotto",
@@ -412,7 +412,7 @@ def test_back_to_entry_sells_0dte_gain_gone():
     # never had a gain -> nothing to protect
     assert monitor._back_to_entry_hit(pos, 1.0, 1.0, 0.9) is False
     # not expiring today -> leave it
-    old = dict(pos, expiry=(date.today() + timedelta(days=7)).isoformat())
+    old = dict(pos, expiry=(et_now().date() + timedelta(days=7)).isoformat())
     assert monitor._back_to_entry_hit(old, 1.0, 3.0, 1.0) is False
     # the global kill switch
     cfg.trading.back_to_entry_enabled = False
@@ -902,6 +902,14 @@ def test_adaptive_trail_expiry_day_tighten(monkeypatch):
     store = _fresh_store()
     monitor = StopMonitor(cfg, store, None, lambda pos: None)
 
+    # the fixture's "today" must ride the SAME patched clock the
+    # tighten math reads - the real et date marches on and the
+    # test would date-bake itself to failure
+    monkeypatch.setattr(
+        cs, "et_now",
+        lambda: datetime(2026, 10, 9, 14, 0,
+                         tzinfo=ZoneInfo("America/New_York")),
+    )
     today = cs.et_now().date().isoformat()
     pos_today = {"expiry": today}
     pos_0dte_off = {"expiry": "2026-01-01"}   # not expiry day

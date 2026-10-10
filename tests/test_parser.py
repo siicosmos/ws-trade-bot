@@ -2,6 +2,8 @@ import os
 import sys
 from datetime import date
 
+from core.store import et_now
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from core.parser import parse_alert
@@ -23,7 +25,7 @@ def test_option_buy_0dte():
     assert a.strike == 7645
     assert a.right == "C"
     assert a.premium == 0.65
-    assert a.expiry == date.today().isoformat()
+    assert a.expiry == et_now().date().isoformat()
     assert a.size == "lotto"
 
 

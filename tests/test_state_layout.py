@@ -157,6 +157,17 @@ def test_et_day_bucketing(monkeypatch, tmp_path):
     store = cs.Store(str(tmp_path / "t.db"))
     alert = parse_alert("BOUGHT 09/25 COIN 210c @ 2.0")
 
+    # the recorded trade's ts must be deterministic too: the real
+    # utc now can sit on either side of the et midnight this test
+    # simulates (ci runs utc - past 04:00 utc the et date has
+    # already flipped and the real now lands "on the 10th")
+    monkeypatch.setattr(
+        store, "_now",
+        lambda: et_at(9, 23).astimezone(timezone.utc).isoformat(
+            timespec="seconds"
+        ),
+    )
+
     # 23:59 ET on the 9th (= 03:59 utc on the 10th): the trade
     # books on the ET day "2026-10-09"
     monkeypatch.setattr(cs, "et_now", lambda: et_at(9, 23))
