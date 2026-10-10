@@ -659,8 +659,17 @@ class Store:
 
     def apply_position(
         self, mode: str, alert, delta: int, premium=None, account="default",
-        fx: float = 1.0,
+        fx: float = 1.0, pre_qty=None, pre_avg=None,
     ):
+        """Book a fill against the positions ledger.
+
+        pre_qty/pre_avg anchor the quantity and basis to the
+        snapshot the order was sized against: the live executor
+        snapshots before placing the broker order, and without
+        the anchor a mirror reconciliation landing between the
+        snapshot and this write would move the base the estimate
+        lands on. Realized continues from the row's current
+        value (the mirror's corrections own realized)."""
         key = alert.contract_key()
         with self._write_lock, self._tx:
             row = self._conn.execute(
@@ -672,6 +681,14 @@ class Store:
                 old_qty, old_avg, old_realized = 0, None, 0.0
             else:
                 old_qty, old_avg, old_realized = int(row[0]), row[1], row[2] or 0.0
+            if pre_qty is not None:
+                # the snapshot wins: the estimated booking is
+                # computed against the state the order was sized
+                # against, not whatever the row shows now
+                old_qty = int(pre_qty)
+                old_avg = pre_avg
+                if row is None:
+                    old_realized = 0.0
 
             self._touch()
             self._invalidate_positions()

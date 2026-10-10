@@ -35,6 +35,20 @@ class MirrorShim(SimpleNamespace):
         return f"MIRROR|{self.underlying}|{self.expiry}|{self.action}|{self.ts}"
 
 
+def _correct_fill(store, *args, **kwargs):
+    """correct_fill under the executor's order lock - a fill
+    reconciliation must not interleave with an in-flight order's
+    snapshot -> broker order -> pending row -> estimated-booking
+    sequence (the executor holds the same module-level lock
+    across execute(); without it a same-contract correction
+    landing between the executor's pre_qty snapshot and its
+    estimated booking would be clobbered by that booking)."""
+    from consumer.trading.executor import ORDER_LOCK
+
+    with ORDER_LOCK:
+        return store.correct_fill(*args, **kwargs)
+
+
 def _option_shim(act):
     strike = act.get("strikePrice")
     try:
@@ -133,7 +147,7 @@ def sweep_pending_orders(cfg, store, ws_account, label,
         if filled:
             # the filled part is real: correct the estimated
             # booking down to it and let the rest go
-            store.correct_fill(
+            _correct_fill(store, 
                 "live", row["account"], row["contract_key"],
                 row["action"], filled_qty=filled,
                 actual_price=row.get("filled_price"),
@@ -146,7 +160,7 @@ def sweep_pending_orders(cfg, store, ws_account, label,
             )
             store.settle_pending_order(row["id"], "partial")
             continue
-        store.correct_fill(
+        _correct_fill(store, 
             "live", row["account"], row["contract_key"], row["action"],
             filled_qty=0, actual_price=None,
             pre_qty=row["pre_qty"], pre_avg=row["pre_avg"],
@@ -211,7 +225,7 @@ def _shock_cancel(store, ws, row, current_price, move_pct,
             print(f"pending-order cancel: {short_error(e)}")
     mult = 100 if (row.get("kind") or "option") == "option" else 1
     filled = int(row.get("filled_qty") or 0)
-    store.correct_fill(
+    _correct_fill(store, 
         "live", row["account"], row["contract_key"], row["action"],
         filled_qty=filled,
         actual_price=row.get("filled_price"),
@@ -263,7 +277,7 @@ def reconcile_pending_fill(store, label, contract_key, action, qty,
         total_filled, blended = store.update_pending_fill(
             row["id"], int(qty), price
         )
-        store.correct_fill(
+        _correct_fill(store, 
             "live", row["account"], contract_key, action,
             filled_qty=total_filled, actual_price=blended,
             pre_qty=row["pre_qty"], pre_avg=row["pre_avg"],

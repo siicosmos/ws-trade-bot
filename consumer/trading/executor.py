@@ -12,6 +12,29 @@ import threading
 from dataclasses import dataclass, field
 from typing import Optional
 
+# one lock per process for the whole snapshot -> broker order ->
+# pending row -> estimated-booking sequence: the executor holds
+# it across execute(), and the mirror's fill reconciliation takes
+# it around correct_fill so a correction can never interleave
+# with an in-flight order's booking (the pre_qty anchor alone
+# would still be clobbered by a same-contract correction)
+ORDER_LOCK = threading.Lock()
+
+
+def _describe(prefix, action, total, key, price, breakdown, unit=""):
+    """The execution result's detail line - one formatter for the
+    four call shapes (paper/live x option/stock) so the next
+    formatting change cannot drift between them. price=None (the
+    live paths report the fill later) omits the '@ price' tail."""
+    detail = f"{action} {total}{unit} {key}"
+    if price is not None:
+        detail += f" @ {price}"
+    if prefix:
+        detail = f"{prefix} {detail}"
+    return detail + " | " + "; ".join(
+        f"{k}: {v}" for k, v in breakdown.items()
+    )
+
 from consumer.trading.risk import RiskEngine
 from consumer.ws.account import account_label, effective_accounts
 
@@ -87,6 +110,11 @@ class PaperExecutor:
                         False,
                         f"{alert.ticker} in skip_underlyings",
                     )
+                # the account argument is None here ON PURPOSE -
+                # the account-dependent gates (daily loss, drawdown)
+                # ran pre-lock in the pipeline; passing self.account
+                # would re-read equity inside the lock and re-open
+                # the race the claim closes
                 allowed, reason = RiskEngine(
                     cfg, store, None
                 ).evaluate(alert)
@@ -275,15 +303,19 @@ class PaperExecutor:
                 breakdown[label] = "no position"
                 continue
             qty = sell_quantity(held, alert.scale)
+            # option premiums quote usd (the alerted names are
+            # us-listed - the same assumption _stock_is_usd makes
+            # explicit for stocks)
             store.apply_position(
                     self.mode, alert, -qty,
                     premium=alert.premium, account=label,
                     fx=self._fx(),
                 )
-            if alert.premium:
-                store.adjust_paper_equity(
-                    qty * alert.premium * 100 * self._fx(), label
-                )
+            # the unparsed-sell early return above guarantees
+            # alert.premium is truthy here
+            store.adjust_paper_equity(
+                qty * alert.premium * 100 * self._fx(), label
+            )
             breakdown[label] = f"{qty}/{held}x @ {alert.premium}"
             total += qty
         ok = total > 0
@@ -366,24 +398,26 @@ class PaperExecutor:
                 continue
             qty = sell_quantity(held, alert.scale)
             # generic stock alerts carry the price in entry (the
-            # service form sets both) - realized needs either
+            # service form sets both) - realized and the cash
+            # credit must use the SAME price or the ledger and
+            # the equity pool disagree by the difference
+            sell_price = alert.premium or alert.entry
             store.apply_position(
                     self.mode, alert, -qty,
-                    premium=alert.premium or alert.entry, account=label,
+                    premium=sell_price, account=label,
                     fx=self._fx() if self._stock_is_usd(key) else 1.0,
                 )
-            if alert.entry:
+            if sell_price:
                 store.adjust_paper_equity(
-                    qty * alert.entry * (self._fx()
-                                         if self._stock_is_usd(key)
-                                         else 1.0), label
+                    qty * sell_price * (self._fx()
+                                        if self._stock_is_usd(key)
+                                        else 1.0), label
                 )
-            breakdown[label] = f"{qty}/{held} @ {alert.entry}"
+            breakdown[label] = f"{qty}/{held} @ {sell_price}"
             total += qty
         ok = total > 0
-        detail = (
-            f"[PAPER] SELL {total} {key} @ {alert.entry} | "
-            + "; ".join(f"{k}: {v}" for k, v in breakdown.items())
+        detail = _describe(
+            "[PAPER]", "SELL", total, key, sell_price, breakdown
         )
         return ExecutionResult(ok, detail, qty=total, price=alert.entry,
                               breakdown=breakdown)
@@ -411,9 +445,13 @@ class WealthsimpleExecutor:
 
             install()
             self._ws = WealthsimpleV2()
-        from consumer.ws.ws_tokens import persist_env_tokens
+            # the token persistence rides the one-time client
+            # build, not every order path (it is a write, it can
+            # raise, and the order path should only run after the
+            # tokens are known good)
+            from consumer.ws.ws_tokens import persist_env_tokens
 
-        persist_env_tokens()
+            persist_env_tokens()
         return self._ws
 
     def _resolve_security(self, ws, ticker):
@@ -425,8 +463,14 @@ class WealthsimpleExecutor:
         for sec in results:
             if sec["stock"]["symbol"].upper() == ticker.upper():
                 return sec["id"]
+        # no exact symbol match: fail the order rather than trade
+        # the first fuzzy result (aapl -> aapl.mx would be a
+        # wrong-security order on the real money path)
         if results:
-            return results[0]["id"]
+            print(
+                f"executor: no exact symbol match for {ticker!r} "
+                f"({len(results)} search results) - order refused"
+            )
         return None
 
     def _resolve_option(self, ws, sec_id, alert):
@@ -499,6 +543,8 @@ class WealthsimpleExecutor:
         for pos in positions:
             symbol = pos["security"]["stock"]["symbol"].upper()
             if symbol == ticker.upper():
+                # floor, not round: never sell more than held - a
+                # fractional remnant (drip, partial fill) stays
                 return int(pos["quantity"])
         return 0
 
@@ -519,7 +565,8 @@ class WealthsimpleExecutor:
         their sell limit never sits above the live bid (a limit
         above a gap-down market would not fill and the position
         would sit unprotected until the pending sweep reverses
-        it)."""
+        it). a 0/None base passes through unchanged and the
+        caller treats a falsy return as "no price to order"."""
         if not base or not premium:
             return base
         slip = getattr(cfg.trading, "max_slippage_pct", 2) / 100.0
@@ -651,10 +698,12 @@ class WealthsimpleExecutor:
                     if not limit:
                         breakdown[label] = "no ask/premium to price order"
                         continue
-                    try:
-                        value = self.account.value(label)
-                    except Exception:
-                        value = None
+                    # fail-safe like the stock path: a value read
+                    # failure raises into the per-account handler
+                    # (the account is skipped with an error note) -
+                    # a None here would silently skip the open-risk,
+                    # cluster and 0dte caps
+                    value = self.account.value(label)
                     plan = tier_plan(alert, cfg, value, limit, acct)
                     # lotto / profits-only: the buy may spend at most a
                     # fraction of today's realized sell gains
@@ -746,32 +795,48 @@ class WealthsimpleExecutor:
                             f"of the account)"
                         )
                         continue
-                    order = ws.buy_option(
-                        account_id, opt["id"], qty, float(limit)
-                    )
+                    # snapshot BEFORE the broker order: pre_qty
+                    # is the state this order is sized against,
+                    # and reading it after the ws call would race
+                    # the mirror's reconciliations
                     pre_qty, pre_avg = store.position_state(
                         self.mode, label, key
+                    )
+                    order = ws.buy_option(
+                        account_id, opt["id"], qty, float(limit)
                     )
                     # the pending row lands before the ledger
                     # booking: a booking failure then leaves a row
                     # the sweep can reconcile or reverse (instead
                     # of an orphaned live order)
                     store.record_pending_order(
-                        self.mode, label, str(order.get("orderId") or ""),
+                        self.mode, label,
+                        str((order or {}).get("orderId") or ""),
                         "option", key, alert.underlying, alert.expiry,
                         alert.strike, alert.right, alert.action, qty,
                         float(limit), pre_qty=pre_qty, pre_avg=pre_avg,
                     )
                     # the estimated booking rides the ledger now (the
-                    # gates depend on it); the mirror reconciles the
-                    # actual fill or reverses the estimate
+                    # gates depend on it) and is anchored to the
+                    # snapshot; the mirror reconciles the actual
+                    # fill or reverses the estimate
                     store.apply_position(
-                        self.mode, alert, qty, premium=float(limit), account=label
+                        self.mode, alert, qty, premium=float(limit),
+                        account=label, pre_qty=pre_qty,
+                        pre_avg=pre_avg,
                     )
                     breakdown[label] = f"{qty}x @ {limit}{note}"
                     total += qty
                     order_ids.append(str(order.get("orderId") or ""))
                 else:
+                    # the LEDGER is authoritative for option sells:
+                    # every option order is pending-reconciled and
+                    # the mirror keeps it near ws-truth, and a
+                    # ledger-gated sell can never oversell an
+                    # estimated booking whose fill is in flight.
+                    # (the stock path queries ws instead - stock
+                    # ledger rows may not exist for seeded/manual
+                    # holdings, and a stock sell must not short.)
                     held = store.get_position(self.mode, key, label)
                     if held < 1:
                         breakdown[label] = "no position in ledger"
@@ -784,16 +849,19 @@ class WealthsimpleExecutor:
                     if not limit:
                         breakdown[label] = "no bid/premium to price order"
                         continue
-                    order = ws.sell_option(
-                        account_id, opt["id"], qty, float(limit)
-                    )
+                    # snapshot BEFORE the broker order (the buy
+                    # path documents the race)
                     pre_qty, pre_avg = store.position_state(
                         self.mode, label, key
+                    )
+                    order = ws.sell_option(
+                        account_id, opt["id"], qty, float(limit)
                     )
                     # the pending row lands before the ledger
                     # booking (see the buy path)
                     store.record_pending_order(
-                        self.mode, label, str(order.get("orderId") or ""),
+                        self.mode, label,
+                        str((order or {}).get("orderId") or ""),
                         "option", key, alert.underlying, alert.expiry,
                         alert.strike, alert.right, alert.action, qty,
                         float(limit), pre_qty=pre_qty, pre_avg=pre_avg,
@@ -801,7 +869,8 @@ class WealthsimpleExecutor:
                     store.apply_position(
                         self.mode, alert, -qty,
                         premium=float(limit), account=label,
-                        fx=self._account_fx(),
+                        fx=self._account_fx(), pre_qty=pre_qty,
+                        pre_avg=pre_avg,
                     )
                     breakdown[label] = f"{qty}/{held}x @ {limit}"
                     total += qty
@@ -823,9 +892,8 @@ class WealthsimpleExecutor:
             raise first_error
         ok = total > 0
         action = alert.action
-        detail = (
-            f"{action} {total}x {key} | "
-            + "; ".join(f"{k}: {v}" for k, v in breakdown.items())
+        detail = _describe(
+            "", action, total, key, None, breakdown, unit="x"
         )
         ref = (
             (quote.get("bid") if alert.action == "SELL"
@@ -908,24 +976,27 @@ class WealthsimpleExecutor:
                             f"skipped (open risk cap reached, wanted {qty})"
                         )
                         continue
+                    # snapshot BEFORE the broker order (the
+                    # option buy path documents the race)
+                    pre_qty, pre_avg = store.position_state(
+                        self.mode, label, alert.ticker
+                    )
                     if cfg.trading.order_type == "limit":
                         order = ws.limit_buy(
                             account_id, sec_id, qty, self._limit_price(price, "BUY")
                         )
                     else:
                         order = ws.market_buy(account_id, sec_id, qty)
-                    pre_qty, pre_avg = store.position_state(
-                        self.mode, label, alert.ticker
-                    )
                     store.record_pending_order(
-                        self.mode, label, str(order.get("orderId") or ""),
+                        self.mode, label,
+                        str((order or {}).get("orderId") or ""),
                         "stock", alert.ticker, alert.ticker, None, None,
                         None, alert.action, qty, price,
                         pre_qty=pre_qty, pre_avg=pre_avg,
                     )
                     breakdown[label] = f"{qty} @ ~{price}"
                     total += qty
-                    order_ids.append(str(order.get("orderId") or ""))
+                    order_ids.append(str((order or {}).get("orderId") or ""))
                 else:
                     held = self._held_quantity(ws, account_id, alert.ticker)
                     if held < 1:
@@ -936,24 +1007,27 @@ class WealthsimpleExecutor:
                         # unintended short at market)
                         breakdown[label] = "no position to sell"
                         continue
+                    # snapshot BEFORE the broker order (the
+                    # option buy path documents the race)
+                    pre_qty, pre_avg = store.position_state(
+                        self.mode, label, alert.ticker
+                    )
                     if cfg.trading.order_type == "limit" and price:
                         order = ws.limit_sell(
                             account_id, sec_id, held, self._limit_price(price, "SELL")
                         )
                     else:
                         order = ws.market_sell(account_id, sec_id, held)
-                    pre_qty, pre_avg = store.position_state(
-                        self.mode, label, alert.ticker
-                    )
                     store.record_pending_order(
-                        self.mode, label, str(order.get("orderId") or ""),
+                        self.mode, label,
+                        str((order or {}).get("orderId") or ""),
                         "stock", alert.ticker, alert.ticker, None, None,
                         None, alert.action, held, price,
                         pre_qty=pre_qty, pre_avg=pre_avg,
                     )
                     breakdown[label] = f"{held} @ ~{price}" if price else f"{held}"
                     total += held
-                    order_ids.append(str(order.get("orderId") or ""))
+                    order_ids.append(str((order or {}).get("orderId") or ""))
 
             except Exception as e:
                 # per-account fault isolation (the option loop
@@ -967,9 +1041,8 @@ class WealthsimpleExecutor:
         if total == 0 and first_error is not None:
             raise first_error
         ok = total > 0
-        detail = (
-            f"{alert.action} {total} {alert.ticker} | "
-            + "; ".join(f"{k}: {v}" for k, v in breakdown.items())
+        detail = _describe(
+            "", alert.action, total, alert.ticker, None, breakdown
         )
         return ExecutionResult(
             ok, detail, qty=total, price=price,

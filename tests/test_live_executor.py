@@ -7,6 +7,7 @@ The fake client mimics the surface the executor touches
 position queries) and records every order for assertions.
 """
 import os
+import pytest
 import tempfile
 import types
 from datetime import date
@@ -715,3 +716,84 @@ def test_live_sell_without_price_skips_to_trail(monkeypatch):
     assert store.get_position(
         "live", buy.contract_key(), "RRSP"
     ) == 4
+
+
+def test_live_buy_fails_safe_when_value_read_raises(monkeypatch):
+    """a transient account-value read failure must not skip the
+    open-risk / cluster / 0dte caps - the account errors out
+    (fail-safe) instead of trading uncapped."""
+    ws = FakeWS(ask=1.5, bid=1.2)
+    _patch_client(monkeypatch, ws)
+    cfg = _live_cfg()
+    store = _store()
+
+    class _BrokenAccount(StubAccount):
+        def value(self, label="default"):
+            raise RuntimeError("ws equity read failed")
+
+    account = _BrokenAccount(_account_values())
+    ex = _executor(cfg, store, account)
+    with pytest.raises(RuntimeError):
+        ex.execute(
+            parse_alert("BOUGHT 0DTE SPY 759c @ 1.2 medium size"),
+            cfg, store,
+        )
+    assert ws.orders == []
+    assert store.get_position(
+        "live", f"SPY-{TODAY}-759-C", "RRSP"
+    ) == 0
+
+
+def test_live_buy_anchors_the_estimate_to_the_pre_order_snapshot(
+    monkeypatch,
+):
+    """the estimated booking is computed from the pre-order
+    snapshot, not whatever the row shows when the booking runs -
+    a mirror reconciliation landing between the snapshot and the
+    booking cannot move the base."""
+    ws = FakeWS(ask=1.5, bid=1.2)
+    _patch_client(monkeypatch, ws)
+    cfg = _live_cfg()
+    store = _store()
+    account = StubAccount(_account_values())
+    ex = _executor(cfg, store, account)
+
+    key = f"SPY-{TODAY}-759-C"
+    store.apply_position(
+        "live", parse_alert("BOUGHT 0DTE SPY 759c @ 1.0"), 5,
+        premium=1.0, account="RRSP",
+    )
+
+    real_apply = store.apply_position
+    seen = {}
+
+    def spying_apply(mode, alert, delta, premium=None,
+                     account="default", fx=1.0, pre_qty=None,
+                     pre_avg=None):
+        seen["pre"] = (pre_qty, pre_avg)
+        seen["delta"] = delta
+        # simulate the mirror reconciling ANOTHER pending order
+        # between the snapshot and this booking: the row jumps to
+        # 9 before the estimated booking runs
+        store._conn.execute(
+            "UPDATE positions SET qty = 9 WHERE mode = ? AND "
+            "account = ? AND contract_key = ?",
+            (mode, account, key),
+        )
+        return real_apply(mode, alert, delta, premium=premium,
+                          account=account, fx=fx,
+                          pre_qty=pre_qty, pre_avg=pre_avg)
+
+    monkeypatch.setattr(store, "apply_position", spying_apply)
+    res = ex.execute(
+        parse_alert("BOUGHT 0DTE SPY 759c @ 1.2 medium size"),
+        cfg, store,
+    )
+    assert res.ok
+    # the booking anchored at the pre-order snapshot (5): the
+    # final qty is 5 + delta, NOT the mirror-moved 9 + delta
+    assert seen["pre"] == (5, 1.0)
+    assert store.get_position("live", key, "RRSP") == (
+        5 + seen["delta"]
+    )
+    assert store.get_position("live", key, "RRSP") != 9 + seen["delta"]
