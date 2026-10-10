@@ -72,6 +72,36 @@ class RiskEngine:
                             f"new buys resume tomorrow"
                         )
 
+            # the drawdown circuit breaker: equity drawn down
+            # this % from its rolling 5-day peak blocks new buys
+            # (exits stay allowed). the peak ratchets in the
+            # store as the dashboard and this gate sample equity
+            if t.max_drawdown_pct > 0 and self.account is not None:
+                try:
+                    values = self.account.values() or {}
+                except Exception:
+                    values = {}
+                worst_label, worst_dd = None, 0.0
+                for label, v in values.items():
+                    if not v:
+                        continue
+                    self.store.record_equity_peak(mode, label, v)
+                    dd = self.store.drawdown_pct(
+                        mode, label, v,
+                        lookback_days=int(
+                            getattr(t, "drawdown_lookback_days", 5)
+                        ),
+                    )
+                    if dd > worst_dd:
+                        worst_label, worst_dd = label, dd
+                if worst_dd > t.max_drawdown_pct:
+                    return False, (
+                        f"drawdown breaker: {worst_label or 'account'} "
+                        f"down {worst_dd:.1f}% from its "
+                        f"{int(getattr(t, 'drawdown_lookback_days', 5))}-day "
+                        f"peak (cap {t.max_drawdown_pct:g}%)"
+                    )
+
             if (
                 t.min_dte_days > 0
                 and alert.kind == "option"

@@ -144,6 +144,18 @@ class TradingConfig:
     # cluster may never exceed this % of the account value (the
     # global open-risk cap still applies on top). 0 = off
     cluster_cap_pct: float = 50.0
+    # 0dte daily-risk cap: premium at risk in positions expiring
+    # TODAY plus the new order may not exceed this % of the
+    # account value (research-backed 2-3 for 0dte strategies).
+    # 0 = off
+    zero_dte_cap_pct: float = 0.0
+    # drawdown circuit breaker: block new BUYs once the account's
+    # equity draws down this % from its rolling peak (exits stay
+    # allowed). 0 = off
+    max_drawdown_pct: float = 0.0
+    # the peak's lookback window (days) - a months-old high must
+    # not throttle trading forever
+    drawdown_lookback_days: int = 5
     # notice when an actual fill lands this % away from the
     # order's estimated price (data only, no auto-pause)
     max_slippage_pct: float = 2.0
@@ -584,6 +596,15 @@ def load_config(path: str) -> Config:
         ),
         max_open_risk_pct=float(_get(trading_raw, "max_open_risk_pct", 30.0)),
         cluster_cap_pct=float(_get(trading_raw, "cluster_cap_pct", 50.0)),
+        zero_dte_cap_pct=float(
+            _get(trading_raw, "zero_dte_cap_pct", 0.0)
+        ),
+        max_drawdown_pct=float(
+            _get(trading_raw, "max_drawdown_pct", 0.0)
+        ),
+        drawdown_lookback_days=int(
+            _get(trading_raw, "drawdown_lookback_days", 5)
+        ),
         max_slippage_pct=float(_get(trading_raw, "max_slippage_pct", 2.0)),
         partial_fill_cancel_pct=float(
             _get(trading_raw, "partial_fill_cancel_pct", 10.0)

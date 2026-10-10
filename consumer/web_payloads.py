@@ -14,6 +14,7 @@ from .web_cards import (
     _acct_by_label, _effective_open_risk_cap, _margin_metrics,
     _paper_card_metrics, _registered_plan,
 )
+from consumer.trading.greeks import portfolio_greeks
 
 
 def _real_positions(ctx):
@@ -292,6 +293,28 @@ def _account_summary(ctx, snap, label, value):
             for r in live["positions"]
         ), 2)
 
+    # portfolio greeks for the card's delta line: live rows when
+    # the ws fetch worked, ledger rows otherwise, plus the stock
+    # holdings (delta one per share). spots ride the bounded
+    # quote cache - an underlying we cannot quote lands in
+    # "unpriced" instead of fabricating a greek
+    greek_rows = []
+    if live is not None:
+        greek_rows += live["positions"]
+    else:
+        greek_rows += store.list_positions(ctx.mode, label)
+    greek_rows += (sk or [])
+    spots = {}
+    if account is not None:
+        for u in sorted({
+            r.get("underlying") for r in greek_rows
+            if r.get("underlying")
+        }):
+            q = _ws_stock_quote(account, u)
+            if q and q[0]:
+                spots[u] = q[0]
+    greeks = portfolio_greeks(greek_rows, spots)
+
     # allocation base: gross assets, independent of how the
     # loan is reported - holdings plus positive cash only
     alloc_base = None
@@ -422,6 +445,11 @@ def _account_summary(ctx, snap, label, value):
             else None
         ),
         "max_open_risk_pct": _effective_open_risk_cap(cfg, label),
+        "delta": greeks["delta"],
+        "gamma": greeks["gamma"],
+        "vega": greeks["vega"],
+        "theta": greeks["theta"],
+        "unpriced_greeks": greeks["unpriced"],
         "risk_per_trade_pct": t.risk_per_trade_pct,
         "per_trade_budget": (
             value * (t.risk_per_trade_pct / 100.0)

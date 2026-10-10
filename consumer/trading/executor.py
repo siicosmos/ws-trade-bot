@@ -22,8 +22,9 @@ from consumer.trading.sizing import (  # noqa: F401
     sell_quantity, tier_for, tier_plan,
 )
 from consumer.trading.risk_gates import (  # noqa: F401
-    at_cluster_cap, at_open_risk_cap, effective_open_risk_cap,
-    ledger_quote_price, lotto_gain_cap, position_row, stop_floor,
+    at_cluster_cap, at_open_risk_cap, at_zero_dte_cap,
+    effective_open_risk_cap, ledger_quote_price, lotto_gain_cap,
+    position_row, stop_floor,
 )
 
 
@@ -174,6 +175,17 @@ class PaperExecutor:
                         f"{alert.expiry} {alert.right} already "
                         f"{getattr(cfg.trading, 'cluster_cap_pct', 0):g}% "
                         f"of the account at risk)"
+                    )
+                    continue
+                if at_zero_dte_cap(
+                    store, self.mode, label, value, cfg, alert, price, qty
+                ):
+                    breakdown[label] = (
+                        f"skipped (0dte daily cap reached: "
+                        f"{alert.underlying} {alert.expiry} would take "
+                        f"today's expiring risk past "
+                        f"{getattr(cfg.trading, 'zero_dte_cap_pct', 0):g}% "
+                        f"of the account)"
                     )
                     continue
                 store.apply_position(
@@ -685,6 +697,18 @@ class WealthsimpleExecutor:
                             f"{alert.expiry} {alert.right} already "
                             f"{getattr(cfg.trading, 'cluster_cap_pct', 0):g}% "
                             f"of the account at risk)"
+                        )
+                        continue
+                    if at_zero_dte_cap(
+                        store, self.mode, label, value, cfg,
+                        alert, limit, qty
+                    ):
+                        breakdown[label] = (
+                            f"skipped (0dte daily cap reached: "
+                            f"{alert.underlying} {alert.expiry} would take "
+                            f"today's expiring risk past "
+                            f"{getattr(cfg.trading, 'zero_dte_cap_pct', 0):g}% "
+                            f"of the account)"
                         )
                         continue
                     order = ws.buy_option(

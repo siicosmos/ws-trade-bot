@@ -181,6 +181,8 @@ Sizing core (`trading/sizing.py`):
 |---|---|---|---|
 | open-risk cap | `max_open_risk_pct` (global, per-account override) | 30 | max % of account value in open positions; new buys skip at the cap |
 | cluster cap | `cluster_cap_pct` | 50 | correlation-aware: one (underlying, expiry, right) cluster may never exceed this % of value — a buy into a capped cluster skips even when the global cap has room (`store.open_risk_clusters`) |
+| 0DTE daily cap | `zero_dte_cap_pct` | 0 (off) | premium at risk in positions expiring **today** plus the new order may not exceed this % of value — the 0DTE tail-risk brake (research-backed 2–3); exits stay allowed (`store.zero_dte_exposure`) |
+| drawdown breaker | `max_drawdown_pct` (+ `drawdown_lookback_days`, 5) | 0 (off) | new buys block once the account draws down this % from its rolling equity peak — capital preservation; exits stay allowed (`store.drawdown_pct`) |
 | tier caps | `size_tiers` | lotto 0.5% → full 10% | risk budget + contract count per size keyword |
 | lotto gain cap | `lotto_gain_budget_pct` | — | profits-only alerts cap gains reinvestment |
 
@@ -425,7 +427,9 @@ dashboard, which persists + restarts), `order_type` (limit|market),
 `size_tiers` (lotto→full: risk_pct_max, contracts_min/max — options),
 plus every knob from [Safety systems](#safety-systems):
 `max_contracts_per_trade` (10), `max_open_risk_pct` (30),
-`cluster_cap_pct` (50), `max_slippage_pct` (2),
+`cluster_cap_pct` (50), `zero_dte_cap_pct` (0 = off),
+`max_drawdown_pct` (0 = off, `drawdown_lookback_days` 5),
+`max_slippage_pct` (2),
 `partial_fill_cancel_pct` (10), `stop_loss_pct` (25),
 `trailing_stop_pct` (0), `stop_check_seconds` (30),
 `back_to_entry_enabled`, `lotto_gain_budget_pct`,

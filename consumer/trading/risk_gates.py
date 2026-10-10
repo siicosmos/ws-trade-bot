@@ -9,6 +9,8 @@ and the running config.
 
 from typing import Optional
 
+from core.store import et_now
+
 
 def effective_open_risk_cap(acct, cfg) -> float:
     """The account's open-risk cap: its own override when set
@@ -62,6 +64,30 @@ def lotto_gain_cap(store, mode, cfg, alert) -> Optional[float]:
         return None
     frac = float(getattr(cfg.trading, "lotto_gain_budget_pct", 75.0))
     return max(0.0, store.realized_today(mode)) * frac / 100.0
+
+
+def at_zero_dte_cap(store, mode, label, value, cfg, alert, price,
+                    qty) -> bool:
+    """The 0dte daily-risk cap: total premium at risk in
+    positions expiring TODAY plus this order's projected risk
+    may not exceed zero_dte_cap_pct of the account value
+    (research-backed 2-3%; 0 disables). Exits are never gated -
+    the caller only invokes this on the buy path."""
+    cap_pct = float(
+        getattr(cfg.trading, "zero_dte_cap_pct", 0) or 0
+    )
+    if cap_pct <= 0 or value is None or value <= 0:
+        return False
+    if alert.kind != "option" or not alert.expiry:
+        return False
+    today = et_now().strftime("%Y-%m-%d")
+    if str(alert.expiry)[:10] != today:
+        return False
+    exposure = store.zero_dte_exposure(mode, label)
+    projected = (int(qty or 0) * float(price or 0) * 100
+                 if price is not None else 0.0)
+    limit = value * (cap_pct / 100.0)
+    return exposure + projected > limit
 
 
 def ledger_quote_price(account, key):

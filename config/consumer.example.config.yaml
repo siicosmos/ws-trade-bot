@@ -140,6 +140,15 @@ trading:
                                 # may never exceed this % of account value; a buy
                                 # into a capped cluster skips even when the global
                                 # cap has room (0 = off)
+  zero_dte_cap_pct: 0           # 0dte daily-risk cap: premium at risk in positions
+                                # expiring TODAY plus the new order may not exceed
+                                # this % of account value (research-backed 2-3 for
+                                # 0dte strategies; 0 = off)
+  max_drawdown_pct: 0           # drawdown circuit breaker: new buys block once the
+                                # account draws down this % from its rolling peak
+                                # (5-day lookback; exits stay allowed; 0 = off)
+  drawdown_lookback_days: 5     # the peak's lookback window - a months-old high
+                                # must not throttle trading forever
   max_slippage_pct: 2           # notice when an actual fill lands this % away
                                 # from the order's estimated price (discord
                                 # notice only - data first, no auto-pause)

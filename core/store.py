@@ -1526,6 +1526,89 @@ class Store:
         except (TypeError, ValueError):
             return 0.0
 
+    def zero_dte_exposure(self, mode: str, account=None) -> float:
+        """Total premium at risk for OPTION positions expiring
+        today (ET) - the 0dte daily-risk cap's input. Same
+        NULL-basis assumption as open_risk: a position without an
+        avg_premium contributes zero."""
+        today = et_now().strftime("%Y-%m-%d")
+        query = (
+            "SELECT SUM(qty * COALESCE(avg_premium, 0) * 100) "
+            "FROM positions "
+            "WHERE mode = ? AND qty > 0 AND right IS NOT NULL "
+            "AND expiry = ?"
+        )
+        params = [mode, today]
+        if account is not None:
+            query += " AND account = ?"
+            params.append(account)
+        with self._tx:
+            row = self._conn.execute(query, params).fetchone()
+        return float(row[0]) if row and row[0] is not None else 0.0
+
+    def record_equity_peak(self, mode: str, label: str, value) -> None:
+        """Ratchet the rolling equity peak used by the drawdown
+        circuit breaker. Writes only when the peak rises (the
+        dashboard's own poll calls this every few seconds - a
+        write per poll would invalidate its own summary cache,
+        so no _touch here)."""
+        if value is None:
+            return
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            return
+        key = f"equity_peak:{mode}:{label}"
+        with self._write_lock, self._tx:
+            row = self._conn.execute(
+                "SELECT value FROM meta WHERE key = ?", (key,),
+            ).fetchone()
+            try:
+                peak, _ts = json.loads(row[0]) if row else (0.0, "")
+            except (TypeError, ValueError):
+                peak, _ts = 0.0, ""
+            if value > peak:
+                self._conn.execute(
+                    "INSERT INTO meta (key, value) VALUES (?, ?) "
+                    "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                    (key, json.dumps([value, self._now()])),
+                )
+
+    def drawdown_pct(self, mode: str, label: str, current,
+                     lookback_days: int = 5) -> float:
+        """The account's drawdown from its rolling peak equity
+        (percent, 0 = at or above the peak). Peaks older than the
+        lookback window are ignored - a months-old high must not
+        throttle trading forever."""
+        if current is None:
+            return 0.0
+        try:
+            current = float(current)
+        except (TypeError, ValueError):
+            return 0.0
+        if current <= 0:
+            return 0.0
+        row = self._conn.execute(
+            "SELECT value FROM meta WHERE key = ?",
+            (f"equity_peak:{mode}:{label}",),
+        ).fetchone()
+        try:
+            peak, ts = json.loads(row[0]) if row else (0.0, "")
+        except (TypeError, ValueError):
+            return 0.0
+        if not peak or peak <= 0:
+            return 0.0
+        try:
+            age_days = (
+                datetime.now(timezone.utc)
+                - datetime.fromisoformat(ts)
+            ).total_seconds() / 86400
+        except (TypeError, ValueError):
+            return 0.0
+        if age_days > lookback_days:
+            return 0.0
+        return max(0.0, (peak - current) / peak * 100.0)
+
     # ---- users ----
 
     def user_count(self) -> int:
