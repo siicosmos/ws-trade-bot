@@ -671,8 +671,12 @@ class Store:
         would otherwise be CLOBBERED by the anchor, since the
         anchor replaces the base rather than composing with it),
         so on the reachable path the row already matches the
-        snapshot. Realized continues from the row's current
-        value (the mirror's corrections own realized)."""
+        snapshot. Realized is deliberately NOT anchored: it
+        continues from the row's current value (the mirror's
+        corrections own realized), and anchoring qty/avg while
+        reading realized from the row would mix two states on
+        the belt-and-braces path - harmless there, since the
+        mirror recomputes realized from its own pre snapshot."""
         key = alert.contract_key()
         with self._write_lock, self._tx:
             row = self._conn.execute(
@@ -1600,11 +1604,15 @@ class Store:
             if prev is not None and value <= prev:
                 return
             series[today] = round(value, 2)
-            # the write-time prune keeps a generous bound (not the
-            # configured lookback): narrowing the lookback must not
-            # destroy history a later widening would want back -
-            # drawdown_pct slices the window at read time
-            keep = sorted(series)[-30:]
+            # the write-time retention is derived from the
+            # lookback (2x, floored at 30) rather than fixed: a
+            # 60-day lookback reading "the last 30" would silently
+            # truncate with no signal to the operator. narrowing
+            # the lookback must not destroy history a later
+            # widening would want back - drawdown_pct slices the
+            # window at read time
+            retain = max(30, int(lookback_days) * 2)
+            keep = sorted(series)[-retain:]
             pruned = {d: series[d] for d in keep}
             self._conn.execute(
                 "INSERT INTO meta (key, value) VALUES (?, ?) "

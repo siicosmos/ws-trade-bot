@@ -160,7 +160,10 @@ def test_et_day_bucketing(monkeypatch, tmp_path):
     # the recorded trade's ts must be deterministic too: the real
     # utc now can sit on either side of the et midnight this test
     # simulates (ci runs utc - past 04:00 utc the et date has
-    # already flipped and the real now lands "on the 10th")
+    # already flipped and the real now lands "on the 10th").
+    # patched on the INSTANCE because the store calls self._now()
+    # everywhere - a future class-level/static helper would
+    # bypass this patch
     monkeypatch.setattr(
         store, "_now",
         lambda: et_at(9, 23).astimezone(timezone.utc).isoformat(

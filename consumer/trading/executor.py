@@ -431,7 +431,11 @@ class WealthsimpleExecutor:
         self.cfg = cfg
         self.account = account
         self._ws = None
-        self._resolve_warned = set()
+        # tickers whose no-exact-match refusal was logged - a dict
+        # (insertion order) cleared at 100 so a typo-laden feed
+        # cannot grow it without bound; clearing re-warns, which
+        # is the right failure direction
+        self._resolve_warned = {}
         # one order path at a time: the stop monitor, the feed
         # client, flask request threads and the mirror all call
         # execute() concurrently - get_position -> ws order ->
@@ -472,8 +476,11 @@ class WealthsimpleExecutor:
         # wrong-security order on the real money path). logged once
         # per ticker - a persisting convention mismatch (brk-b vs
         # brk.b) must not spam every order attempt
-        if results and ticker.upper() not in self._resolve_warned:
-            self._resolve_warned.add(ticker.upper())
+        ticker_key = ticker.upper()
+        if results and ticker_key not in self._resolve_warned:
+            if len(self._resolve_warned) >= 100:
+                self._resolve_warned.clear()
+            self._resolve_warned[ticker_key] = True
             print(
                 f"executor: no exact symbol match for {ticker!r} "
                 f"({len(results)} search results) - order refused; "

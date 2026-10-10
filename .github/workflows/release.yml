@@ -35,10 +35,14 @@ jobs:
       - name: Surface failed tests as annotations
         if: failure()
         run: |
-          grep -E "^(FAILED|ERROR)" pytest.log | head -20 | \
-            while IFS= read -r line; do
-              echo "::error::$line"
-            done
+          # head -10: github caps error annotations at 10 per
+          # step; the || true keeps a short grep from reporting
+          # SIGPIPE as a step failure if pipefail is ever added
+          grep -E "^(FAILED|ERROR)" pytest.log | head -10 \
+            > failed_tests.txt || true
+          while IFS= read -r line; do
+            echo "::error::$line"
+          done < failed_tests.txt
 
       - name: Black-box e2e (boots the real server)
         run: python tests/scripts/e2e_test.py
