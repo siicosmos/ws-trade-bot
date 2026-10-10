@@ -234,20 +234,19 @@ def sizing_multiplier(cfg, store=None, mode=None, provider=None):
     so a 0 scalar throttles to the minimum rather than vetoing."""
     t = cfg.trading
     mult = 1.0
-    veto = False
-    if getattr(t, "vix_size_scalar", False):
-        vix = _vix_level(provider)
-        if vix:
-            mult *= min(1.0, 15.0 / max(float(vix), 1.0))
+    # the kelly component first: its veto (-1) skips the vix
+    # fetch entirely - no point paying for a regime input the
+    # veto discards
     if getattr(t, "kelly_size_scalar", False) and store is not None:
         k = _kelly_fraction(store, mode, t)
         if k is not None:
             if k < 0:
-                veto = True
-            else:
-                mult *= k
-    if veto:
-        return -1.0
+                return -1.0
+            mult *= k
+    if getattr(t, "vix_size_scalar", False):
+        vix = _vix_level(provider)
+        if vix:
+            mult *= min(1.0, 15.0 / max(float(vix), 1.0))
     return max(0.0, min(1.0, mult))
 
 

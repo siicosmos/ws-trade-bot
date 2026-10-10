@@ -70,8 +70,10 @@ class PaperExecutor:
         self.account = account
         # one trade at a time - the stop monitor thread, the feed
         # thread and the flask request threads all execute here
-        # (the live executor documents the same hazard)
-        self._order_lock = threading.Lock()
+        # (the live executor documents the same hazard); the lock
+        # is the module-level ORDER_LOCK so the mirror's
+        # reconciliations exclude themselves from the same window
+        self._order_lock = ORDER_LOCK
 
     def _account_fx(self):
         """the account's usd->cad rate for cad-normalizing
@@ -240,9 +242,9 @@ class PaperExecutor:
                 breakdown[label] = f"{qty}x @ {price}{note}"
                 total += qty
             ok = total > 0
-            detail = (
-                f"[PAPER] BUY {total}x {key} @ {price} | "
-                + "; ".join(f"{k}: {v}" for k, v in breakdown.items())
+            detail = _describe(
+                "[PAPER]", "BUY", total, key, price, breakdown,
+                unit="x",
             )
             return ExecutionResult(ok, detail, qty=total, price=price,
                                   breakdown=breakdown)
@@ -319,9 +321,9 @@ class PaperExecutor:
             breakdown[label] = f"{qty}/{held}x @ {alert.premium}"
             total += qty
         ok = total > 0
-        detail = (
-            f"[PAPER] SELL {total}x {key} @ {alert.premium} | "
-            + "; ".join(f"{k}: {v}" for k, v in breakdown.items())
+        detail = _describe(
+            "[PAPER]", "SELL", total, key, alert.premium, breakdown,
+            unit="x",
         )
         return ExecutionResult(ok, detail, qty=total, price=alert.premium,
                               breakdown=breakdown)
@@ -381,9 +383,8 @@ class PaperExecutor:
                 breakdown[label] = f"{qty} @ {price}"
                 total += qty
             ok = total > 0
-            detail = (
-                f"[PAPER] BUY {total} {key} @ {price} | "
-                + "; ".join(f"{k}: {v}" for k, v in breakdown.items())
+            detail = _describe(
+                "[PAPER]", "BUY", total, key, price, breakdown
             )
             return ExecutionResult(ok, detail, qty=total, price=price,
                                   breakdown=breakdown)
@@ -430,12 +431,15 @@ class WealthsimpleExecutor:
         self.cfg = cfg
         self.account = account
         self._ws = None
+        self._resolve_warned = set()
         # one order path at a time: the stop monitor, the feed
         # client, flask request threads and the mirror all call
         # execute() concurrently - get_position -> ws order ->
         # apply_position is not atomic, and interleaved triggers
-        # would double-sell the same live position
-        self._order_lock = threading.Lock()
+        # would double-sell the same live position; the lock is
+        # the module-level ORDER_LOCK so the mirror's
+        # reconciliations exclude themselves from the same window
+        self._order_lock = ORDER_LOCK
 
     def _client(self):
         if self._ws is None:
@@ -465,11 +469,15 @@ class WealthsimpleExecutor:
                 return sec["id"]
         # no exact symbol match: fail the order rather than trade
         # the first fuzzy result (aapl -> aapl.mx would be a
-        # wrong-security order on the real money path)
-        if results:
+        # wrong-security order on the real money path). logged once
+        # per ticker - a persisting convention mismatch (brk-b vs
+        # brk.b) must not spam every order attempt
+        if results and ticker.upper() not in self._resolve_warned:
+            self._resolve_warned.add(ticker.upper())
             print(
                 f"executor: no exact symbol match for {ticker!r} "
-                f"({len(results)} search results) - order refused"
+                f"({len(results)} search results) - order refused; "
+                f"fix the ticker or the exchange hint"
             )
         return None
 

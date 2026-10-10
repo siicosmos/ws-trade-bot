@@ -292,7 +292,10 @@ class StopMonitor:
 
         # per-contract delta: the opend snapshot's own greek when
         # the build provides it, the flat-iv bs estimate otherwise
-        # (the fallback is tagged in the discord payload)
+        # (the fallback is tagged in the discord payload). only
+        # delta is read here - the gamma/vega/theta in the
+        # aggregate cover just the bs-needed rows and are
+        # discarded; the dashboard's aggregate is the display one
         deltas = {}
         bs_needed = []
         for p in rows:

@@ -664,11 +664,14 @@ class Store:
         """Book a fill against the positions ledger.
 
         pre_qty/pre_avg anchor the quantity and basis to the
-        snapshot the order was sized against: the live executor
-        snapshots before placing the broker order, and without
-        the anchor a mirror reconciliation landing between the
-        snapshot and this write would move the base the estimate
-        lands on. Realized continues from the row's current
+        snapshot the order was sized against. Belt-and-braces:
+        the executor and the mirror serialize on the module-level
+        ORDER_LOCK (the actual protection - a same-contract
+        correction landing between the snapshot and this write
+        would otherwise be CLOBBERED by the anchor, since the
+        anchor replaces the base rather than composing with it),
+        so on the reachable path the row already matches the
+        snapshot. Realized continues from the row's current
         value (the mirror's corrections own realized)."""
         key = alert.contract_key()
         with self._write_lock, self._tx:
@@ -1597,7 +1600,11 @@ class Store:
             if prev is not None and value <= prev:
                 return
             series[today] = round(value, 2)
-            keep = sorted(series)[-max(1, int(lookback_days)):]
+            # the write-time prune keeps a generous bound (not the
+            # configured lookback): narrowing the lookback must not
+            # destroy history a later widening would want back -
+            # drawdown_pct slices the window at read time
+            keep = sorted(series)[-30:]
             pruned = {d: series[d] for d in keep}
             self._conn.execute(
                 "INSERT INTO meta (key, value) VALUES (?, ?) "

@@ -145,7 +145,10 @@ class MoomooQuoteProvider:
         # snapshot returns nothing positive, but the ladder
         # should still show the last close (marked stale)
         self._index_last = None
-        self._stock_cache = {}   # symbol -> (ts, price)
+        # symbol -> (ts, price) for stock_quote, and
+        # "delta:<code>" -> (ts, delta) for option_delta - one
+        # cache, two prefixed namespaces
+        self._stock_cache = {}
         self._vix_cache = None
         self._vix_ts = 0.0
         self._bars_cache = {}    # symbol -> (day, bars)
@@ -560,9 +563,12 @@ class MoomooQuoteProvider:
             return None
         if len(bars) < 2:
             return None
-        # the cache holds what was fetched; a later request for a
-        # LARGER window refetches (a smaller one slices) - the
-        # key is the day, the bars answer the largest n seen
+        # the cache keeps the LONGER fetch of the day (a smaller
+        # later request slices; a larger one replaces) - the key
+        # is the day, the quota is protected by it
+        prev = self._bars_cache.get(sym)
+        if prev and prev[0] == day and len(prev[1]) > len(bars):
+            bars = prev[1]
         self._bars_cache[sym] = (day, bars)
         return bars[-(n + 1):]
 

@@ -569,12 +569,15 @@ def test_drawdown_window_stays_armed_through_a_grind():
     sustained multi-day decline (each day's lower sample becomes
     the window's reference) and ages an old regime out naturally."""
     store = _fresh_store()
-    from datetime import datetime, timedelta, timezone
+    from datetime import timedelta
 
     # seed the window with samples across the lookback: the
-    # window's peak is day-1's 1000, the latest sample 700
+    # window's peak is day-1's 1000, the latest sample 700. the
+    # date keys ride the ET clock - the store keys its samples by
+    # et_now, and a utc-seeded 'today' disagrees with it between
+    # 04:00 and 05:00 utc (and across dst transitions)
     series = {}
-    base = datetime.now(timezone.utc)
+    base = et_now()
     for i, v in enumerate((1000.0, 950.0, 900.0, 850.0, 800.0, 700.0)):
         d = (base - timedelta(days=5 - i)).strftime("%Y-%m-%d")
         series[d] = v
