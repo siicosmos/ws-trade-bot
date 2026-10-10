@@ -408,3 +408,35 @@ def test_info_signals_serves_the_consumer_backfill():
     # a logged-in browser still reads it as before
     client.post("/login", data={"username": "admin", "password": "t"})
     assert client.get("/api/signals").status_code == 200
+
+
+def test_info_admin_reseeds_when_the_token_rotates():
+    """the token IS the info app's admin credential (no users
+    panel, no recovery path) - a token rotation after the first
+    boot re-seeds the admin login instead of locking the
+    dashboard out. regression: the seed only ran on an empty
+    users table, so rotating the token stranded the login."""
+    import importlib
+
+    info_web = importlib.import_module("info.web")
+
+    store = _fresh_store()
+    cfg = ConfigStub(TradingConfig(mode="notify"),
+                     auth_token="old-token-value")
+    info_web.create_app(cfg, store)          # first boot: seeded
+    assert store.verify_user("admin", "old-token-value") is not None
+
+    # the token rotates in the yaml; the restart rebuilds the app
+    # on the SAME store
+    cfg.pipeline.auth_token = "fresh-token-value"
+    info_web.create_app(cfg, store)
+
+    # the current token logs in, the old one is gone
+    assert store.verify_user("admin", "fresh-token-value") is not None
+    assert store.verify_user("admin", "old-token-value") is None
+    client = __import__(
+        "info.web", fromlist=["create_app"]
+    ).create_app(cfg, store).test_client()
+    r = client.post("/login", data={"username": "admin",
+                                    "password": "fresh-token-value"})
+    assert r.status_code == 302

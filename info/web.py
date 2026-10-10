@@ -61,11 +61,28 @@ def create_app(cfg, store: Store, config_path=None) -> Flask:
     # revalidate (see the consumer app for the same note)
     app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
 
-    # first boot: the access token becomes the admin password -
-    # the token is the bootstrap (it is mandatory, see the
-    # refusal check in server.main)
-    if store.user_count() == 0 and cfg.pipeline.auth_token:
-        store.create_user("admin", cfg.pipeline.auth_token, "admin")
+    # the access token is the admin credential (it is mandatory,
+    # see the refusal check in server.main): first boot seeds the
+    # account, and a later token rotation re-seeds it - this app
+    # has no users panel, so a stale seed would lock the
+    # dashboard out with no recovery path
+    if cfg.pipeline.auth_token:
+        if store.user_count() == 0:
+            store.create_user("admin", cfg.pipeline.auth_token, "admin")
+        elif store.verify_user(
+            "admin", cfg.pipeline.auth_token
+        ) is None:
+            if not store.update_password(
+                "admin", cfg.pipeline.auth_token
+            ):
+                store.create_user(
+                    "admin", cfg.pipeline.auth_token, "admin"
+                )
+            print(
+                "info server: the admin login was re-seeded from "
+                "the current auth_token (the token had rotated "
+                "since the first boot)"
+            )
 
     # the reader's heartbeat state (dashboard reader line).
     # reader settings live in the reader's own yaml - read the
